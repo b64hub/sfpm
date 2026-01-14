@@ -1,12 +1,10 @@
 import { Command, Flags } from '@oclif/core';
 import { Org } from '@salesforce/core';
 import boxen from 'boxen';
-import chalk, { colorNames } from 'chalk';
+import chalk from 'chalk';
 
 /**
  * A base class that provides common funtionality for sfp commands
- *
- * @extends SfdxCommand
  */
 export default abstract class SfpCommand extends Command {
 
