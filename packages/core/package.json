@@ -2,7 +2,7 @@
   "name": "@b64/sfp-core",
   "version": "0.1.0",
   "description": "sfp core library",
-  "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -11,5 +11,17 @@
   "license": "MIT",
   "dependencies": {
     "@salesforce/core": "^8.24.2"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
   }
 }

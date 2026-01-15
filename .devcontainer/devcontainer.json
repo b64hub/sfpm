@@ -10,7 +10,8 @@
 		"ghcr.io/devcontainers-extra/features/heroku-cli:1": {},
 		"ghcr.io/jayree/devcontainer-features/sf-autocomplete:1": {},
 		"ghcr.io/devcontainers-extra/features/salesforce-cli:1": {},
-		"ghcr.io/devcontainers-extra/features/oclif:1": {}
+		"ghcr.io/devcontainers-extra/features/oclif:1": {},
+		"ghcr.io/devcontainers-extra/features/turborepo-npm:1": {}
 	},
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
