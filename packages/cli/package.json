@@ -1,5 +1,5 @@
 {
-  "name": "sfp-cli",
+  "name": "@b64/sfp-cli",
   "description": "sfp is the devops tool Salesforce engineers have been waiting for",
   "release": "Seedling",
   "version": "0.1.0",
@@ -17,7 +17,8 @@
     "boxen": "^8.0.1",
     "chalk": "^5.6.2",
     "object-treeify": "^5.0.1",
-    "ora": "^9.0.0"
+    "ora": "^9.0.0",
+    "@b64/sfp-core": "workspace:^0.1.0"
   },
   "devDependencies": {
     "@oclif/test": "^4",

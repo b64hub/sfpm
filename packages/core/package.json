@@ -1,0 +1,12 @@
+{
+  "name": "@b64/sfp-core",
+  "version": "0.1.0",
+  "description": "sfp core library",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "b64",
+  "license": "MIT"
+}
