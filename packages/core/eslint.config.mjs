@@ -1,6 +1,5 @@
 import { includeIgnoreFile } from '@eslint/compat'
-import oclif from 'eslint-config-oclif'
-import prettier from 'eslint-config-prettier'
+import rootConfig from '../../eslint.config.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -10,14 +9,13 @@ const gitignorePath = path.resolve(__dirname, '.gitignore')
 
 export default [
   includeIgnoreFile(gitignorePath),
-  ...oclif,
-  prettier,
+  ...rootConfig,
   
-  // Optional: Add any monorepo-wide rule overrides
   {
-    files: ['packages/*/src/**/*.ts'],
+    files: ['src/**/*.ts'],
     rules: {
-      // Your custom rules here if needed
+      'no-console': 'error',  // Libraries shouldn't use console
+      '@typescript-eslint/explicit-function-return-type': 'warn'
     }
   }
 ]
