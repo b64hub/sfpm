@@ -1,5 +1,5 @@
 {
-  "name": "sfp",
+  "name": "sfp-cli",
   "description": "sfp is the devops tool Salesforce engineers have been waiting for",
   "release": "Seedling",
   "version": "0.1.0",
