@@ -1,5 +1,4 @@
 import { Command, Flags } from '@oclif/core';
-import { Org } from '@salesforce/core';
 import boxen from 'boxen';
 import chalk from 'chalk';
 

@@ -6,6 +6,7 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
+    "watch": "turbo watch build",
     "test": "turbo test",
     "lint": "turbo lint",
     "format": "prettier --write \"packages/*/src/**/*.ts\"",
@@ -24,6 +25,7 @@
     "eslint-config-oclif": "^6.0.130",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.0.1",
+    "eslint-plugin-unicorn": "^62.0.0",
     "husky": "^8.0.3",
     "lint-staged": "^15.2.0",
     "prettier": "^3.1.0",

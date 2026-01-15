@@ -1,4 +1,4 @@
-import SfpCommand from '../../SfpCommand.js';
+import SfpCommand from '../../sfp-command.js';
 import { printTable } from '@oclif/table';
 import ora from 'ora';
 import chalk from 'chalk';

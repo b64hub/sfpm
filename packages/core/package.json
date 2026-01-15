@@ -10,7 +10,8 @@
   "author": "b64",
   "license": "MIT",
   "dependencies": {
-    "@salesforce/core": "^8.24.2"
+    "@salesforce/core": "^8.24.2",
+    "semver": "^7.7.3"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
