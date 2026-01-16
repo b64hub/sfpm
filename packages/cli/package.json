@@ -9,7 +9,7 @@
   },
   "bugs": "https://github.com/b64hub/sfp/issues",
   "dependencies": {
-    "@b64/sfp-core": "workspace:^0.1.0",
+    "@b64/sfpm-core": "workspace:^0.1.0",
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-plugins": "^5",
