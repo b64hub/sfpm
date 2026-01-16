@@ -5,7 +5,7 @@ import chalk from 'chalk';
 /**
  * A base class that provides common funtionality for sfp commands
  */
-export default abstract class SfpCommand extends Command {
+export default abstract class SfpmCommand extends Command {
 
     /**
      * Command run code goes here
@@ -16,7 +16,7 @@ export default abstract class SfpCommand extends Command {
      * Entry point of all commands
      */
     async run(): Promise<any> {
-        const { flags } = await this.parse(SfpCommand);
+        const { flags } = await this.parse(SfpmCommand);
 
         if (!this.jsonEnabled()) {
             this.logHeader();

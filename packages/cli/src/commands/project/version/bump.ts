@@ -1,9 +1,9 @@
 import {Args, Command, Flags} from '@oclif/core'
 import { SfpCore } from '@b64/sfp-core';
-import SfpCommand from '../../../sfp-command.js';
+import SfpmCommand from '../../../sfpm-command.js';
 import ora from 'ora';
 
-export default class ProjectVersionBump extends SfpCommand {
+export default class ProjectVersionBump extends SfpmCommand {
   public static description = 'Bump package versions in sfdx-project.json';
 
   static override args = {

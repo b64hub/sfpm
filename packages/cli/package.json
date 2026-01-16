@@ -1,6 +1,6 @@
 {
-  "name": "@b64/sfp-cli",
-  "description": "sfp is the devops tool Salesforce engineers have been waiting for",
+  "name": "@b64/sfpm-cli",
+  "description": "Salesforce package manager - CLI",
   "release": "Seedling",
   "version": "0.1.0",
   "author": "b64",

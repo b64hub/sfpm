@@ -1,7 +1,7 @@
 {
-  "name": "@b64/sfp-core",
+  "name": "@b64/sfpm-core",
   "version": "0.1.0",
-  "description": "sfp core library",
+  "description": "sfpm core library",
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -11,7 +11,10 @@
   "license": "MIT",
   "dependencies": {
     "@salesforce/core": "^8.24.2",
-    "semver": "^7.7.3"
+    "fs-extra": "^11.3.3",
+    "semver": "^7.7.3",
+    "simple-git": "^3.30.0",
+    "tmp": "^0.2.5"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,5 +27,10 @@
       "require": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/semver": "^7.7.1",
+    "@types/tmp": "^0.2.6"
   }
 }
