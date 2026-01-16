@@ -19,3 +19,5 @@ export * from './project/project-service.js';
 export * from './project/sfdx-project-reader.js';
 export * from './types/events.js';
 export * from './project/types.js';
+export * from './project/project-graph.js';
+export * from './types/package.js';

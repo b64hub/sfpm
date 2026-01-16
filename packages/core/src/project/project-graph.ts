@@ -3,7 +3,7 @@ import { ProjectDefinition, PackageDefinition } from './types.js';
 export class PackageNode {
     public readonly name: string;
     public readonly path: string;
-    public readonly originalDefinition: PackageDefinition;
+    public readonly definition: PackageDefinition;
 
     // Graph connections
     public readonly dependencies: Set<PackageNode> = new Set();
@@ -12,11 +12,11 @@ export class PackageNode {
     constructor(def: PackageDefinition) {
         this.name = def.package;
         this.path = def.path;
-        this.originalDefinition = def;
+        this.definition = def;
     }
 
     get version(): string | undefined {
-        return this.originalDefinition.versionNumber;
+        return this.definition.versionNumber;
     }
 }
 
@@ -39,8 +39,8 @@ export class ProjectGraph {
 
         // 2. Connect dependencies
         this.nodes.forEach(node => {
-            if (node.originalDefinition.dependencies) {
-                node.originalDefinition.dependencies.forEach(depDef => {
+            if (node.definition.dependencies) {
+                node.definition.dependencies.forEach(depDef => {
                     const depNode = this.nodes.get(depDef.package);
                     if (depNode) {
                         node.dependencies.add(depNode);
