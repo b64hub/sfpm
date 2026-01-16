@@ -15,10 +15,10 @@ export interface DiffPackageMetadata {
     destructiveChanges?: any;
     sourceDir?: string;
     invalidatedTestClasses?: ApexClasses;
-    isPayLoadContainTypesSupportedByProfiles?:boolean;
+    isPayLoadContainTypesSupportedByProfiles?: boolean;
 }
 
-export interface SfpPackageParams {
+export interface SfpmPackageParams {
     overridePackageTypeWith?: string;
     branch?: string;
     packageVersionNumber?: string;
@@ -28,4 +28,33 @@ export interface SfpPackageParams {
     pathToReplacementForceIgnore?: string;
     revisionFrom?: string;
     revisionTo?: string;
+}
+
+export interface PackageTypeInfo {
+    Id: string;
+    Name: string;
+    Description: string;
+    NamespacePrefix: string;
+    ContainerOptions: string;
+    IsOrgDependent: boolean | string;
+}
+
+export interface Package2Detail {
+    name: string;
+    package2Id?: string;
+    namespacePrefix?: string;
+    subscriberPackageVersionId?: string;
+    versionNumber?: string;
+    type?: string;
+    isOrgDependent?: boolean;
+    key?: string;
+}
+
+export interface InstalledArtifact {
+    name: string;
+    version: string;
+    commitId: string;
+    isInstalledBysfp?: boolean;
+    subscriberVersion?: string;
+    type?: string;
 }
