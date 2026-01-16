@@ -1,22 +1,18 @@
-import { Org } from "@salesforce/core";
 import SfpmPackage from "./sfpm-package.js";
-import { Logger } from "../types/logger.js";
 import { ArtifactService } from "../artifacts/artifact-service.js";
-import { Package2Detail, InstalledArtifact, PackageTypeInfo } from './types.js';
-
-// TODO: Implement these utilities - stubbed for now
-// import { convertUsernameToAlias } from '../utils/AliasList';
-// import InstalledPackagesQueryExecutor from './packageQuery/InstalledPackagesQueryExecutor';
+import { PackageService } from "./package-service.js";
+import { SubscriberPackage, InstalledArtifact, Package2 } from './types.js';
+import { Logger } from "../types/logger.js";
 
 export default class PackageManager {
     private artifactService: ArtifactService;
+    private packageService: PackageService;
     private logger: Logger;
-    private org: Org;
 
-    constructor(org: Org, logger: Logger) {
-        this.org = org;
+    constructor(artifactService: ArtifactService, packageService: PackageService, logger: Logger) {
         this.logger = logger;
-        this.artifactService = new ArtifactService(org, logger);
+        this.artifactService = artifactService;
+        this.packageService = packageService;
     }
 
     public async getInstalledPackages(): Promise<SfpmPackage[]> {
@@ -46,139 +42,89 @@ export default class PackageManager {
     }
 
     /**
-     * Retrieves all packages (recognized by Salesforce) installed in the org
-     * TODO: Implement InstalledPackagesQueryExecutor
+     * Retrieves all 2GP packages installed in the org
      */
-    public async getAllInstalled2GPPackages(): Promise<Package2Detail[]> {
-        // TODO: Implement this method once InstalledPackagesQueryExecutor is available
-        this.logger.warn('getAllInstalled2GPPackages not yet implemented - requires InstalledPackagesQueryExecutor');
-        return [];
-
-        /*
-        const installedPackages: Package2Detail[] = [];
-        let records = await InstalledPackagesQueryExecutor.exec(this.org.getConnection());
-
-        records.forEach((record) => {
-            let packageVersionNumber = `${record.SubscriberPackageVersion.MajorVersion}.${record.SubscriberPackageVersion.MinorVersion}.${record.SubscriberPackageVersion.PatchVersion}.${record.SubscriberPackageVersion.BuildNumber}`;
-
-            let packageDetails: Package2Detail = {
-                name: record.SubscriberPackage.Name,
-                package2Id: record.SubscriberPackageId,
-                namespacePrefix: record.SubscriberPackage.NamespacePrefix,
-                subscriberPackageVersionId: record.SubscriberPackageVersion.Id,
-                versionNumber: packageVersionNumber,
-                type: record.SubscriberPackageVersion.Package2ContainerOptions,
-                isOrgDependent: record.SubscriberPackageVersion.IsOrgDependent,
-            };
-
-            installedPackages.push(packageDetails);
-        });
-
-        return installedPackages;
-        */
+    public async getAllInstalled2GPPackages(): Promise<SubscriberPackage[]> {
+        return await this.packageService.getAllInstalled2GPPackages();
     }
 
     /**
-     * Retrieves all managed packages in the org
+     * Retrieves all managed packages (1GP) in the org
      */
-    public async getAllInstalledManagedPackages(): Promise<Package2Detail[]> {
-        const installedPackages = await this.getAllInstalled2GPPackages();
-        return installedPackages.filter((installedPackage) => installedPackage.type === 'Managed');
+    public async getAllInstalledManagedPackages(): Promise<SubscriberPackage[]> {
+        return await this.packageService.getAllInstalledManagedPackages();
     }
 
     /**
-     * List all the packages created in DevHub, will throw an error if it's not a DevHub
-     * TODO: Implement query helper for DevHub packages
+     * List all packages created in DevHub
+     * @throws Error if org is not a DevHub
      */
-    public async listAllPackages(): Promise<PackageTypeInfo[]> {
-        // TODO: Implement this method - requires DevHub check and query
-        this.logger.warn('listAllPackages not yet implemented - requires DevHub check');
-        return [];
-
-        /*
-        if (await this.org.determineIfDevHubOrg(true)) {
-            const packageQuery =
-                'SELECT Id,Name, Description, NamespacePrefix, ContainerOptions, IsOrgDependent ' +
-                'FROM Package2 ' +
-                'WHERE IsDeprecated != true ' +
-                'ORDER BY NamespacePrefix, Name';
-            
-            let records = await this.artifactService.query<PackageTypeInfo>(packageQuery, this.org.getConnection(), true);
-            records.forEach((record) => {
-                record.IsOrgDependent =
-                    record.ContainerOptions === 'Managed' ? 'N/A' : record.IsOrgDependent === true ? 'Yes' : 'No';
-            });
-
-            return records;
-        } else {
-            throw new Error('Package Type Information can only be fetched from a DevHub');
-        }
-        */
+    public async listAllPackages(): Promise<Package2[]> {
+        return await this.packageService.listAllPackages();
     }
 
     /**
-     * Get the alias for the org
-     * TODO: Implement convertUsernameToAlias utility
-     */
-    public async getAlias(): Promise<string> {
-        // TODO: Implement this method once convertUsernameToAlias is available
-        this.logger.warn('getAlias not yet implemented - requires convertUsernameToAlias utility');
-        return this.org.getUsername() || 'unknown';
-
-        // return await convertUsernameToAlias(this.org.getUsername());
-    }
-
-    /**
-     * Return all artifacts including sfpm as well as external unlocked/managed
-     * TODO: Implement once getAllInstalled2GPPackages is working
+     * Return all artifacts including sfpm as well as external unlocked/managed packages
      */
     public async getAllInstalledArtifacts(): Promise<InstalledArtifact[]> {
-        // TODO: Implement this method once getAllInstalled2GPPackages is available
-        this.logger.warn('getAllInstalledArtifacts not yet implemented - requires getAllInstalled2GPPackages');
-        return [];
+        try {
+            const artifacts = await this.artifactService.getInstalledPackages('Name');
+            const installedArtifacts: InstalledArtifact[] = [];
+            const installed2GPPackages = await this.packageService.getAllInstalled2GPPackages();
 
-        /*
-        let artifacts = await this.artifactService.getInstalledPackages('Name');
-        let installedArtifacts: InstalledArtifact[] = [];
-        let installed2GPPackages = await this.getAllInstalled2GPPackages();
-
-        artifacts.forEach((artifact) => {
-            let installedArtifact: InstalledArtifact = {
-                name: artifact.name,
-                version: artifact.version,
-                commitId: artifact.sourceVersion,
-                isInstalledBysfp: true,
-            };
-            let packageFound = installed2GPPackages.find((elem) => elem.name == artifact.name);
-            if (packageFound) {
-                installedArtifact.subscriberVersion = packageFound.subscriberPackageVersionId;
-                if (packageFound.isOrgDependent) installedArtifact.type = `OrgDependendent`;
-                else installedArtifact.type = `Unlocked`;
-            } else {
-                installedArtifact.subscriberVersion = `N/A`;
-                installedArtifact.type = `Source/Data`;
-            }
-            installedArtifacts.push(installedArtifact);
-        });
-
-        installed2GPPackages.forEach((installed2GPPackage) => {
-            let packageFound = installedArtifacts.find((elem) => elem.name == installed2GPPackage.name);
-            if (!packageFound) {
-                let installedArtifact: InstalledArtifact = {
-                    name: installed2GPPackage.name,
-                    version: installed2GPPackage.versionNumber!,
-                    commitId: `N/A`,
+            // Map sfpm artifacts
+            artifacts.forEach((artifact) => {
+                const installedArtifact: InstalledArtifact = {
+                    name: artifact.name,
+                    version: artifact.version,
+                    commitId: artifact.sourceVersion,
+                    isInstalledBySfpm: true,
                 };
-                if (installed2GPPackage.isOrgDependent) installedArtifact.type = `OrgDependendent`;
-                else if (installed2GPPackage.type == `Managed`) installedArtifact.type = `Managed`;
-                else installedArtifact.type = `Unlocked`;
 
-                installedArtifact.subscriberVersion = installed2GPPackage.subscriberPackageVersionId;
-                installedArtifact.isInstalledBysfp = false;
+                // Check if this artifact has a corresponding 2GP package
+                const packageFound = installed2GPPackages.find((elem) => elem.name === artifact.name);
+                if (packageFound) {
+                    installedArtifact.subscriberVersion = packageFound.subscriberPackageVersionId;
+                    if (packageFound.isOrgDependent) {
+                        installedArtifact.type = 'OrgDependent';
+                    } else {
+                        installedArtifact.type = 'Unlocked';
+                    }
+                } else {
+                    installedArtifact.subscriberVersion = 'N/A';
+                    installedArtifact.type = 'Source/Data';
+                }
                 installedArtifacts.push(installedArtifact);
-            }
-        });
-        return installedArtifacts;
-        */
+            });
+
+            // Add 2GP packages that don't have sfpm artifacts
+            installed2GPPackages.forEach((installed2GPPackage) => {
+                const packageFound = installedArtifacts.find((elem) => elem.name === installed2GPPackage.name);
+                if (!packageFound) {
+                    const installedArtifact: InstalledArtifact = {
+                        name: installed2GPPackage.name,
+                        version: installed2GPPackage.versionNumber || 'N/A',
+                        commitId: 'N/A',
+                    };
+
+                    if (installed2GPPackage.isOrgDependent) {
+                        installedArtifact.type = 'OrgDependent';
+                    } else if (installed2GPPackage.type?.toString() === 'managed') {
+                        installedArtifact.type = 'Managed';
+                    } else {
+                        installedArtifact.type = 'Unlocked';
+                    }
+
+                    installedArtifact.subscriberVersion = installed2GPPackage.subscriberPackageVersionId;
+                    installedArtifact.isInstalledBySfpm = false;
+                    installedArtifacts.push(installedArtifact);
+                }
+            });
+
+            return installedArtifacts;
+        } catch (error) {
+            this.logger.warn('Unable to fetch all installed artifacts');
+            return [];
+        }
     }
 }

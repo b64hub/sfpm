@@ -1,4 +1,5 @@
 import { ApexClasses } from "../types/apex.js";
+import { PackageType } from "../types/package.js";
 
 export interface DiffPackageMetadata {
     sourceVersionFrom?: string;
@@ -30,7 +31,10 @@ export interface SfpmPackageParams {
     revisionTo?: string;
 }
 
-export interface PackageTypeInfo {
+/**
+ * Represents Package2 metadata from DevHub
+ */
+export interface Package2 {
     Id: string;
     Name: string;
     Description: string;
@@ -39,22 +43,28 @@ export interface PackageTypeInfo {
     IsOrgDependent: boolean | string;
 }
 
-export interface Package2Detail {
+/**
+ * Represents installed subscriber package data from InstalledSubscriberPackage
+ */
+export interface SubscriberPackage {
     name: string;
     package2Id?: string;
     namespacePrefix?: string;
     subscriberPackageVersionId?: string;
     versionNumber?: string;
-    type?: string;
+    type?: Extract<PackageType, 'Unlocked' | 'Managed'>;
     isOrgDependent?: boolean;
     key?: string;
 }
 
+/**
+ * Represents merged view of sfpm artifacts + subscriber packages
+ */
 export interface InstalledArtifact {
     name: string;
     version: string;
     commitId: string;
-    isInstalledBysfp?: boolean;
+    isInstalledBySfpm?: boolean;
     subscriberVersion?: string;
-    type?: string;
+    type?: PackageType
 }

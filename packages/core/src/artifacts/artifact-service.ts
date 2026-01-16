@@ -2,6 +2,7 @@ import { Org, Connection } from "@salesforce/core";
 import SfpmPackage from "../package/sfpm-package.js";
 import { Logger } from "../types/logger.js";
 import { SfpmArtifact__c } from "./types.js";
+import { PackageType } from "../types/package.js";
 
 export class ArtifactService {
     private org: Org;
@@ -25,7 +26,7 @@ export class ArtifactService {
                 record.Name,
                 record.Version__c,
                 record.Tag__c,
-                'artifact', // type - could be enhanced based on your needs
+                undefined, // TODO: Add support for other package types
                 record.CommitId__c
             ));
         } catch (error) {

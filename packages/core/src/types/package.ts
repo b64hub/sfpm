@@ -1,6 +1,6 @@
 import { ApexClasses, ApexSortedByType } from "./apex.js";
 
-export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff' }
+export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff', Managed = 'managed' }
 
 export interface PackageInfo {
     id?: string;
