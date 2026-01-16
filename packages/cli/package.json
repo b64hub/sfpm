@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "b64",
   "bin": {
-    "sfp": "./bin/run.js"
+    "sfpm": "./bin/run.js"
   },
   "bugs": "https://github.com/b64hub/sfp/issues",
   "dependencies": {
@@ -46,8 +46,8 @@
   "main": "dist/index.js",
   "type": "module",
   "oclif": {
-    "bin": "sfp",
-    "dirname": "sfp",
+    "bin": "sfpm",
+    "dirname": "sfpm",
     "commands": "./dist/commands",
     "plugins": [
       "@oclif/plugin-help",

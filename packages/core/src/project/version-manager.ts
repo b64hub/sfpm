@@ -1,4 +1,5 @@
 import semver, { ReleaseType } from 'semver';
+import { EventEmitter } from 'events';
 import { ProjectDefinition, PackageDefinition } from './types.js';
 import { ProjectFileReader } from './project-file-reader.js';
 import { simpleGit } from 'simple-git';
@@ -31,13 +32,27 @@ export interface UpdateStrategy {
     getUpdatedPackages(packages: VersionTracker[]): Promise<VersionTracker[]>;
 }
 
-export class VersionManager {
+export interface UpdateStrategy {
+    getUpdatedPackages(packages: VersionTracker[]): Promise<VersionTracker[]>;
+}
+
+export declare interface VersionManager {
+    on(event: 'loading', listener: () => void): this;
+    on(event: 'loaded', listener: (graph: ProjectGraph) => void): this;
+    on(event: 'checking', listener: () => void): this;
+    on(event: 'checked', listener: (result: VersionUpdateResult) => void): this;
+    on(event: 'saving', listener: () => void): this;
+    on(event: 'saved', listener: () => void): this;
+}
+
+export class VersionManager extends EventEmitter {
     private graph?: ProjectGraph;
     private trackers: Map<string, VersionTracker> = new Map();
     private projectConfig?: ProjectDefinition;
     private fileReader?: ProjectFileReader;
 
     constructor(config: VersionManagerConfig) {
+        super();
         this.projectConfig = config.projectConfig;
         this.fileReader = config.fileReader;
         if (this.projectConfig) {
@@ -49,17 +64,25 @@ export class VersionManager {
         if (!this.fileReader) {
             throw new Error('ProjectFileReader not provided');
         }
+        this.emit('loading');
         this.projectConfig = await this.fileReader.read();
         this.loadPackages();
+        this.emit('loaded', this.graph);
     }
 
     public async save(): Promise<void> {
         if (!this.fileReader) {
             throw new Error('ProjectFileReader not provided');
         }
+        this.emit('saving');
         const updatedConfig = this.getUpdatedProjectConfig();
         await this.fileReader.write(updatedConfig);
         this.projectConfig = updatedConfig;
+        this.emit('saved');
+    }
+
+    public getGraph(): ProjectGraph | undefined {
+        return this.graph;
     }
 
     private loadPackages() {
@@ -85,6 +108,8 @@ export class VersionManager {
             throw new Error('Project not loaded. Call load() or provide projectConfig in constructor.');
         }
 
+        this.emit('checking');
+
         // Reset state
         this.trackers.forEach(p => p.reset());
 
@@ -108,6 +133,7 @@ export class VersionManager {
             dependencies: updatedDependencies.map(p => p.toOutput(true))
         };
 
+        this.emit('checked', result);
         return result;
     }
 

@@ -1,10 +1,23 @@
-export default class ProjectService {
+import { VersionManager, VersionManagerConfig } from './version-manager.js';
+import { ProjectGraph } from './project-graph.js';
+import { ProjectFileReader } from './project-file-reader.js';
+import { SfdxProjectReader } from './sfdx-project-reader.js';
 
-    constructor() {
+export default class ProjectService {
+    private versionManager: VersionManager;
+
+    constructor(config: VersionManagerConfig = {}) {
+        if (!config.fileReader) {
+            config.fileReader = new SfdxProjectReader();
+        }
+        this.versionManager = new VersionManager(config);
     }
 
-    public async getConfig(): Promise<any[]> {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        return [{ name: 'Project1' }, { name: 'Project2' }];
+    public getVersionManager(): VersionManager {
+        return this.versionManager;
+    }
+
+    public getProjectGraph(): ProjectGraph | undefined {
+        return this.versionManager.getGraph();
     }
 }
