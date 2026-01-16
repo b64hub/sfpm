@@ -2,6 +2,7 @@ import semver, { ReleaseType } from 'semver';
 import { ProjectDefinition, PackageDefinition } from './types.js';
 import { ProjectFileReader } from './project-file-reader.js';
 import { simpleGit } from 'simple-git';
+import { ProjectGraph, PackageNode } from './project-graph.js';
 
 const NEXT_SUFFIX = '.NEXT';
 const LATEST_SUFFIX = '.LATEST';
@@ -13,25 +14,26 @@ export interface VersionManagerConfig {
     fileReader?: ProjectFileReader;
 }
 
-export interface PackageOutput {
+export interface VersionChange {
     name: string;
     oldVersion: string;
     newVersion: string;
-    dependencies?: PackageOutput[];
+    dependencies?: VersionChange[];
 }
 
 export interface VersionUpdateResult {
     packagesUpdated: number;
-    packages: PackageOutput[];
-    dependencies?: PackageOutput[]; // Top level packages that had dependencies updated
+    packages: VersionChange[];
+    dependencies?: VersionChange[]; // Top level packages that had dependencies updated
 }
 
 export interface UpdateStrategy {
-    getUpdatedPackages(packages: VersionedPackage[]): Promise<VersionedPackage[]>;
+    getUpdatedPackages(packages: VersionTracker[]): Promise<VersionTracker[]>;
 }
 
 export class VersionManager {
-    private projectPackages!: Map<string, VersionedPackage>;
+    private graph?: ProjectGraph;
+    private trackers: Map<string, VersionTracker> = new Map();
     private projectConfig?: ProjectDefinition;
     private fileReader?: ProjectFileReader;
 
@@ -62,33 +64,33 @@ export class VersionManager {
 
     private loadPackages() {
         if (!this.projectConfig) return;
-        this.projectPackages = new Map(
-            this.projectConfig.packageDirectories.map((pkg) => [
-                pkg.package,
-                new VersionedPackage(pkg),
-            ])
-        );
+        this.graph = new ProjectGraph(this.projectConfig);
+        this.trackers.clear();
+
+        this.graph.getAllNodes().forEach(node => {
+            this.trackers.set(node.name, new VersionTracker(node));
+        });
     }
 
     /**
      * compute updated versions based on the strategy
-     * does NOT apply changes to the source config object yet, but updates the internal VersionedPackage state
+     * does NOT apply changes to the source config object yet, but updates the internal VersionTracker state
      */
     async checkUpdates(
         strategy: UpdateStrategy,
         bumpType: VersionBumpType,
         customVersion?: string
     ): Promise<VersionUpdateResult> {
-        if (!this.projectPackages) {
+        if (this.trackers.size === 0) {
             throw new Error('Project not loaded. Call load() or provide projectConfig in constructor.');
         }
 
         // Reset state
-        this.projectPackages.forEach(p => p.reset());
+        this.trackers.forEach(p => p.reset());
 
         // 1. Identify packages to update
         const packagesToUpdate = await strategy.getUpdatedPackages(
-            Array.from(this.projectPackages.values())
+            Array.from(this.trackers.values())
         );
 
         // 2. Apply bumps to those packages
@@ -118,28 +120,32 @@ export class VersionManager {
         }
         const newConfig = { ...this.projectConfig };
         newConfig.packageDirectories = newConfig.packageDirectories.map(pkgDef => {
-            const versionedPkg = this.projectPackages.get(pkgDef.package);
-            if (versionedPkg && versionedPkg.isUpdated) {
-                return versionedPkg.writeToDefinition(pkgDef);
+            const tracker = this.trackers.get(pkgDef.package);
+            if (tracker && tracker.isUpdated) {
+                return tracker.writeToDefinition(pkgDef);
             }
             return pkgDef;
         });
         return newConfig;
     }
 
-    private updateDependencies(updatedPackages: VersionedPackage[]): VersionedPackage[] {
-        const affectedParentPackages = new Set<VersionedPackage>();
+    private updateDependencies(updatedPackages: VersionTracker[]): VersionTracker[] {
+        const affectedParentPackages = new Set<VersionTracker>();
 
         // For every updated package, check if any other package has it as dependency
         for (const updatedPkg of updatedPackages) {
-            this.projectPackages.forEach((potentialParent) => {
-                // Check if potentialParent depends on updatedPkg
-                const dependencyRef = potentialParent.getDependency(updatedPkg.packageName);
-                if (dependencyRef) {
-                    // Update the dependency version in the parent
-                    const newDepVersion = updatedPkg.cleanedVersion(updatedPkg.newVersion);
-                    potentialParent.updateDependencyVersion(updatedPkg.packageName, newDepVersion);
-                    affectedParentPackages.add(potentialParent);
+            // Use the graph to find dependents efficiently
+            updatedPkg.node.dependents.forEach(dependentNode => {
+                const potentialParent = this.trackers.get(dependentNode.name);
+                if (potentialParent) {
+                    // Check if potentialParent depends on updatedPkg (it should, based on graph)
+                    const dependencyRef = potentialParent.getDependency(updatedPkg.packageName);
+                    if (dependencyRef) {
+                        // Update the dependency version in the parent
+                        const newDepVersion = updatedPkg.cleanedVersion(updatedPkg.newVersion ?? undefined);
+                        potentialParent.updateDependencyVersion(updatedPkg.packageName, newDepVersion);
+                        affectedParentPackages.add(potentialParent);
+                    }
                 }
             });
         }
@@ -153,7 +159,7 @@ export class VersionManager {
 // -------------------------------------------------------------------------------- //
 
 export class AllPackagesStrategy implements UpdateStrategy {
-    async getUpdatedPackages(packages: VersionedPackage[]): Promise<VersionedPackage[]> {
+    async getUpdatedPackages(packages: VersionTracker[]): Promise<VersionTracker[]> {
         return packages;
     }
 }
@@ -161,7 +167,7 @@ export class AllPackagesStrategy implements UpdateStrategy {
 export class SinglePackageStrategy implements UpdateStrategy {
     constructor(private packageName: string) { }
 
-    async getUpdatedPackages(packages: VersionedPackage[]): Promise<VersionedPackage[]> {
+    async getUpdatedPackages(packages: VersionTracker[]): Promise<VersionTracker[]> {
         const pkg = packages.find(p => p.packageName === this.packageName);
         if (!pkg) {
             throw new Error(`Package ${this.packageName} not found in project`);
@@ -173,21 +179,21 @@ export class SinglePackageStrategy implements UpdateStrategy {
 export class GitDiffStrategy implements UpdateStrategy {
     constructor(private baseRef: string, private gitCwd: string = '.') { }
 
-    async getUpdatedPackages(packages: VersionedPackage[]): Promise<VersionedPackage[]> {
-        const git = simplegit(this.gitCwd);
+    async getUpdatedPackages(packages: VersionTracker[]): Promise<VersionTracker[]> {
+        const git = simpleGit(this.gitCwd);
         const changedFiles = await git.diff([
             '--name-only',
             this.baseRef
         ]);
 
-        const changedFilesList = changedFiles.split('\n').filter(f => f);
+        const changedFilesList = changedFiles.split('\n').filter((f: string) => f);
 
         // Naive implementation: check if file path is within package path
         // This assumes package path is relative to git root or project root
         return packages.filter(pkg => {
             if (!pkg.path) return false;
             // Normalize paths to be sure
-            return changedFilesList.some(file => file.startsWith(pkg.path));
+            return changedFilesList.some((file: string) => file.startsWith(pkg.path));
         });
     }
 }
@@ -200,18 +206,17 @@ export interface OrgPackageVersionFetcher {
 export class OrgDiffStrategy implements UpdateStrategy {
     constructor(private orgFetcher: OrgPackageVersionFetcher) { }
 
-    async getUpdatedPackages(packages: VersionedPackage[]): Promise<VersionedPackage[]> {
-        const updates: VersionedPackage[] = [];
+    async getUpdatedPackages(packages: VersionTracker[]): Promise<VersionTracker[]> {
+        const updates: VersionTracker[] = [];
 
         for (const pkg of packages) {
             if (!pkg.currentVersion) continue;
 
             const installedVersion = await this.orgFetcher.getInstalledVersion(pkg.packageName);
             if (installedVersion) {
-                // If local version <= installed version, we need a bump
-                // Actually, the original logic was:
-                // if local (cleaned) <= installed, then BUMP
-                if (semver.lte(semver.coerce(pkg.currentVersion), semver.coerce(installedVersion))) {
+                const currentV = semver.coerce(pkg.currentVersion);
+                const installedV = semver.coerce(installedVersion);
+                if (currentV && installedV && semver.lte(currentV, installedV)) {
                     // We will attach the override base version to the package temporarily for this flow
                     pkg.setBaseVersionForBump(installedVersion);
                     updates.push(pkg);
@@ -227,36 +232,44 @@ export class OrgDiffStrategy implements UpdateStrategy {
 // Models
 // -------------------------------------------------------------------------------- //
 
-export class VersionedPackage {
-    public readonly packageName: string;
-    public readonly path: string;
-    public readonly currentVersion?: string;
+export class VersionTracker {
+    public readonly node: PackageNode;
 
     // State
     public newVersion: string | null = null;
-    private dependencies: Map<string, string>; // package -> version
-    private updatedDependencies: Set<string>; // names of dependencies that were updated
-
+    private dependencies: Map<string, string>; // package -> mutable version
+    private updatedDependencies: Set<string>;
     private baseVersionOverride: string | null = null;
 
-    constructor(def: PackageDefinition) {
-        this.packageName = def.package;
-        this.path = def.path;
-        this.currentVersion = def.versionNumber;
-        this.dependencies = new Map();
-        this.updatedDependencies = new Set();
+    constructor(node: PackageNode) {
+        this.node = node;
 
-        if (def.dependencies) {
-            def.dependencies.forEach(d => {
+        // Initialize mutable state from node original definition
+        this.dependencies = new Map();
+        if (node.originalDefinition.dependencies) {
+            node.originalDefinition.dependencies.forEach(d => {
                 this.dependencies.set(d.package, d.versionNumber);
             });
         }
+        this.updatedDependencies = new Set();
     }
+
+    // Proxy properties for backward compatibility and convenience
+    get packageName(): string { return this.node.name; }
+    get path(): string { return this.node.path; }
+    get currentVersion(): string | undefined { return this.node.version; }
 
     reset() {
         this.newVersion = null;
         this.updatedDependencies.clear();
         this.baseVersionOverride = null;
+        // Revert dependencies to original
+        this.dependencies.clear();
+        if (this.node.originalDefinition.dependencies) {
+            this.node.originalDefinition.dependencies.forEach(d => {
+                this.dependencies.set(d.package, d.versionNumber);
+            });
+        }
     }
 
     get isUpdated() {
@@ -282,7 +295,10 @@ export class VersionedPackage {
         const next = semver.inc(cleaned, type as ReleaseType);
         if (!next) throw new Error(`Failed to increment version ${cleaned} with type ${type}`);
 
-        this.setNewVersion(next + this.getSuffix(base));
+        // Prefer the suffix from the current configuration (e.g. .NEXT), 
+        // falling back to the base version's suffix (e.g. .0)
+        const suffixSource = this.currentVersion || base;
+        this.setNewVersion(next + this.getSuffix(suffixSource));
     }
 
     private setNewVersion(version: string) {
@@ -306,12 +322,17 @@ export class VersionedPackage {
         return this.dependencies.get(pkgName);
     }
 
-    cleanedVersion(version: string = this.currentVersion): string {
-        if (!version) return '0.0.0';
-        // Remove suffixes like .NEXT, .LATEST
-        let v = version;
-        if (v.endsWith(NEXT_SUFFIX)) v = v.substring(0, v.length - NEXT_SUFFIX.length);
-        if (v.endsWith(LATEST_SUFFIX)) v = v.substring(0, v.length - LATEST_SUFFIX.length);
+    cleanedVersion(version?: string): string {
+        const vToClean = version || this.currentVersion;
+        if (!vToClean) return '0.0.0';
+
+        let v = vToClean;
+        if (v.endsWith(NEXT_SUFFIX)) {
+            v = v.substring(0, v.length - NEXT_SUFFIX.length);
+        }
+        if (v.endsWith(LATEST_SUFFIX)) {
+            v = v.substring(0, v.length - LATEST_SUFFIX.length);
+        }
         return v;
     }
 
@@ -325,7 +346,7 @@ export class VersionedPackage {
     private getSuffix(version: string): string {
         if (version.includes(NEXT_SUFFIX)) return NEXT_SUFFIX;
         if (version.includes(LATEST_SUFFIX)) return LATEST_SUFFIX;
-        return '.0'; // Default suffix from original code
+        return '.0';
     }
 
     writeToDefinition(original: PackageDefinition): PackageDefinition {
@@ -337,7 +358,7 @@ export class VersionedPackage {
         if (this.updatedDependencies.size > 0 && copy.dependencies) {
             copy.dependencies = copy.dependencies.map(d => {
                 if (this.updatedDependencies.has(d.package)) {
-                    return { ...d, versionNumber: this.dependencies.get(d.package) };
+                    return { ...d, versionNumber: this.dependencies.get(d.package)! };
                 }
                 return d;
             });
@@ -346,18 +367,18 @@ export class VersionedPackage {
         return copy;
     }
 
-    toOutput(includeDependencies = false): PackageOutput {
-        const out: PackageOutput = {
+    toOutput(includeDependencies = false): VersionChange {
+        const out: VersionChange = {
             name: this.packageName,
-            oldVersion: this.currentVersion,
-            newVersion: this.newVersion || this.currentVersion
+            oldVersion: this.currentVersion || '0.0.0',
+            newVersion: this.newVersion || this.currentVersion || '0.0.0'
         };
 
         if (includeDependencies && this.updatedDependencies.size > 0) {
             out.dependencies = Array.from(this.updatedDependencies).map(depName => ({
                 name: depName,
-                oldVersion: '?', // We don't track old version of deps in memory easily this way, could improve
-                newVersion: this.dependencies.get(depName)
+                oldVersion: '?',
+                newVersion: this.dependencies.get(depName) || '0.0.0'
             }));
         }
 

@@ -1,4 +1,4 @@
-
+import { describe, test, expect, jest, beforeEach } from '@jest/globals';
 import { VersionManager, SinglePackageStrategy, AllPackagesStrategy, OrgDiffStrategy, OrgPackageVersionFetcher } from '../../src/project/version-manager.js';
 import { ProjectDefinition } from '../../src/project/types.js';
 import { ProjectFileReader } from '../../src/project/project-file-reader.js';
@@ -10,7 +10,7 @@ describe('VersionManager', () => {
         mockProject = {
             packageDirectories: [
                 { package: 'pkg-a', path: 'packages/pkg-a', versionNumber: '1.0.0.NEXT', default: true },
-                { package: 'pkg-b', path: 'packages/pkg-b', versionNumber: '1.0.0.LATEST', dependencies: [{ package: 'pkg-a', versionNumber: '1.0.0.NEXT' }] },
+                { package: 'pkg-b', path: 'packages/pkg-b', versionNumber: '1.0.0.NEXT', dependencies: [{ package: 'pkg-a', versionNumber: '1.0.0.LATEST' }] },
                 { package: 'pkg-c', path: 'packages/pkg-c', versionNumber: '2.0.0.0', dependencies: [{ package: 'pkg-b', versionNumber: '1.0.0.LATEST' }] }
             ],
             packageAliases: {} // Add other required fields if any, checking types.ts
