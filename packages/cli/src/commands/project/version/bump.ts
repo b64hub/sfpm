@@ -83,32 +83,32 @@ export default class ProjectVersionBump extends SfpmCommand {
             verbose: false
         });
 
-        const vm = core.project.getVersionManager();
+        const versionManager = core.project.getVersionManager();
         const spinner = ora('Initializing...').start();
 
         // 2. Setup Events
-        vm.on('loading', () => {
+        versionManager.on('loading', () => {
             spinner.text = 'Loading project configuration...';
         });
 
-        vm.on('loaded', () => {
+        versionManager.on('loaded', () => {
             spinner.succeed('Project loaded.');
             spinner.start('Analyzing packages...');
         });
 
-        vm.on('checking', () => {
+        versionManager.on('checking', () => {
             spinner.text = 'Checking for updates...';
         });
 
-        vm.on('checked', (result: VersionUpdateResult) => {
+        versionManager.on('checked', (result: VersionUpdateResult) => {
             spinner.succeed(`Analysis complete. Found ${result.packagesUpdated} packages to update.`);
         });
 
-        vm.on('saving', () => {
+        versionManager.on('saving', () => {
             spinner.start('Saving changes...');
         });
 
-        vm.on('saved', () => {
+        versionManager.on('saved', () => {
             spinner.succeed('Changes saved to project file.');
         });
 
@@ -116,7 +116,7 @@ export default class ProjectVersionBump extends SfpmCommand {
             // 3. Load Project
             // We'll trust the core service initializes with default config or implemented logic
             // If specific file path needed, core service needs update or config passed
-            await vm.load();
+            await versionManager.load();
 
             // 4. Determine Strategy
             let strategy;
@@ -142,7 +142,7 @@ export default class ProjectVersionBump extends SfpmCommand {
             if (flags.versionnumber) bumpType = 'custom';
 
             // 6. Check Updates
-            const result = await vm.checkUpdates(strategy, bumpType, flags.versionnumber);
+            const result = await versionManager.checkUpdates(strategy, bumpType, flags.versionnumber);
 
             // 7. Visualize Output
             if (result.packagesUpdated === 0) {
@@ -176,7 +176,7 @@ export default class ProjectVersionBump extends SfpmCommand {
 
             // 8. Save
             if (!flags.dryrun) {
-                await vm.save();
+                await versionManager.save();
             } else {
                 this.log(boxen(chalk.yellow('DRY RUN: No changes were written to disk.'), { padding: 1, borderStyle: 'double' }));
             }
