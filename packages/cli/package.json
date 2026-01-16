@@ -1,15 +1,15 @@
 {
-  "name": "@b64/sfp-cli",
-  "description": "sfp is the devops tool Salesforce engineers have been waiting for",
+  "name": "@b64/sfpm-cli",
+  "description": "Salesforce package manager - CLI",
   "release": "Seedling",
   "version": "0.1.0",
   "author": "b64",
   "bin": {
-    "sfp": "./bin/run.js"
+    "sfpm": "./bin/run.js"
   },
   "bugs": "https://github.com/b64hub/sfp/issues",
   "dependencies": {
-    "@b64/sfp-core": "workspace:^0.1.0",
+    "@b64/sfpm-core": "workspace:^0.1.0",
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-plugins": "^5",
@@ -46,8 +46,8 @@
   "main": "dist/index.js",
   "type": "module",
   "oclif": {
-    "bin": "sfp",
-    "dirname": "sfp",
+    "bin": "sfpm",
+    "dirname": "sfpm",
     "commands": "./dist/commands",
     "plugins": [
       "@oclif/plugin-help",

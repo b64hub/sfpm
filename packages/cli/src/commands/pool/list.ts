@@ -1,9 +1,9 @@
-import SfpCommand from '../../SfpCommand.js';
+import SfpmCommand from '../../sfpm-command.js';
 import { printTable } from '@oclif/table';
 import ora from 'ora';
 import chalk from 'chalk';
 
-export default class PoolList extends SfpCommand {
+export default class PoolList extends SfpmCommand {
     static description = 'List all pools';
 
     async execute(): Promise<any> {
