@@ -1,6 +1,6 @@
 import { ApexClasses, ApexSortedByType } from "./apex.js";
 
-export type PackageType = 'unlocked' | 'source' | 'data' | 'diff';
+export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff' }
 
 export interface PackageInfo {
     id?: string;
@@ -42,8 +42,8 @@ export interface PackageInfo {
     triggers?: ApexClasses;
     configFilePath?: string;
     packageDescriptor?: any;
-    commitSHAFrom?:string;
-    commitSHATo?:string;
+    commitSHAFrom?: string;
+    commitSHATo?: string;
     packageDirectory?: string;
     apexClassesSortedByTypes?: ApexSortedByType;
     projectConfig?: any;

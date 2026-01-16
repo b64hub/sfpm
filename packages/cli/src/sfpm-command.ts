@@ -29,7 +29,7 @@ export default abstract class SfpmCommand extends Command {
         const theme = this.config.theme!;
 
         const header = boxen(
-            chalk.hex(theme.bin!).bold('sfp') +
+            chalk.hex(theme.bin!).bold('sfpm') +
             chalk.gray(' • by ') +
             chalk.hex(theme.bin!)('b64') +
             chalk.gray(' • ') +
