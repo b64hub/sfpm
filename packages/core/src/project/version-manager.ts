@@ -1,560 +1,366 @@
-import fs from 'fs-extra';
 import semver, { ReleaseType } from 'semver';
+import { ProjectDefinition, PackageDefinition } from './types.js';
+import { ProjectFileReader } from './project-file-reader.js';
+import { simpleGit } from 'simple-git';
 
 const NEXT_SUFFIX = '.NEXT';
 const LATEST_SUFFIX = '.LATEST';
 
-type CustomReleaseType = semver.ReleaseType | 'custom';
+export type VersionBumpType = 'patch' | 'minor' | 'major' | 'custom';
 
-export default class VersionManager  {
+export interface VersionManagerConfig {
+    projectConfig?: ProjectDefinition;
+    fileReader?: ProjectFileReader;
+}
 
-    constructor(project: ProjectDefinition) {
+export interface PackageOutput {
+    name: string;
+    oldVersion: string;
+    newVersion: string;
+    dependencies?: PackageOutput[];
+}
 
-    }
-    
-    projectData: {
-        packageDirectories: PackageOutput[];
-        [key: string]: unknown;
-    };
+export interface VersionUpdateResult {
+    packagesUpdated: number;
+    packages: PackageOutput[];
+    dependencies?: PackageOutput[]; // Top level packages that had dependencies updated
+}
 
-    projectPackages: Map<string, VersionedPackage>;
+export interface UpdateStrategy {
+    getUpdatedPackages(packages: VersionedPackage[]): Promise<VersionedPackage[]>;
+}
 
-    diffChecker: PackageUpdater;
+export class VersionManager {
+    private projectPackages!: Map<string, VersionedPackage>;
+    private projectConfig?: ProjectDefinition;
+    private fileReader?: ProjectFileReader;
 
-    async execute(): Promise<VersionBumpResult> {
-
-        const tags: Record<string, string> = {
-            versionType: this.getVersionType(),
-            dryRun: String(this.flags.dryrun),
-        };
-
-        try {
-            this.validateFlags();
-
-            spinner?.start('Loading project configuration...');
-            this.loadProjectData();
-            spinner?.succeed('Project configuration loaded');
-
-            spinner?.start('Analyzing packages...');
-            const { updatedPackages, updatedDependencies } = await this.updateVersions();
-            spinner?.stop();
-
-            // Display results
-            if (!this.flags.json) {
-                this.displayResults(updatedPackages, updatedDependencies);
-            }
-
-            if (!this.flags.dryrun && updatedPackages.length > 0) {
-                if (!this.flags.json) {
-                    logger.log(''); // Add blank line before success message
-                    spinner.start('Saving changes to sfdx-project.json...');
-                }
-                await this.save();
-                spinner?.succeed(colorSuccess('sfdx-project.json updated successfully!\n'));
-            } else if (this.flags.dryrun && updatedPackages.length > 0) {
-                logger.info(colorKeyMessage('\n[Dry Run] Changes previewed but not saved.'));
-            }
-
-            // Track metrics
-            const elapsedTime = Date.now() - startTime;
-            const packagesUpdatedCounter = telemetry.createCounter(
-                'project.version.bump.packages',
-                'Number of packages updated'
-            );
-            packagesUpdatedCounter.add(updatedPackages.length, tags);
-
-            const durationHistogram = telemetry.createHistogram(
-                'project.version.bump.duration',
-                'Duration of version bump operation'
-            );
-            durationHistogram.record(elapsedTime / 1000, tags);
-
-            logger.debug(`Version bump completed in ${elapsedTime}ms`);
-
-            // Return structured data for --json flag
-            const result: VersionBumpResult = {
-                packagesUpdated: updatedPackages.length,
-                packages: updatedPackages.map((pkg) => ({
-                    name: pkg.packageName,
-                    oldVersion: pkg.currentVersion,
-                    newVersion: pkg.newVersion,
-                })),
-            };
-
-            if (updatedDependencies.length > 0) {
-                result.dependencies = updatedDependencies.map((pkg) => ({
-                    name: pkg.packageName,
-                    oldVersion: pkg.currentVersion,
-                    newVersion: pkg.newVersion,
-                    dependencies: pkg.dependencies
-                        .filter((dep) => dep.isUpdated)
-                        .map((dep) => ({
-                            name: dep.packageName,
-                            oldVersion: dep.currentVersion,
-                            newVersion: dep.newVersion,
-                        })),
-                }));
-            }
-
-            return result;
-        } catch (error) {
-            spinner?.fail((error as Error).message);
-
-            const errorCounter = telemetry.createCounter('project.version.bump.error', 'Version bump errors');
-            errorCounter.add(1, { ...tags, error: (error as Error).message });
-
-            logger.error(`Version bump failed: ${(error as Error).message}`);
-            throw error;
+    constructor(config: VersionManagerConfig) {
+        this.projectConfig = config.projectConfig;
+        this.fileReader = config.fileReader;
+        if (this.projectConfig) {
+            this.loadPackages();
         }
     }
 
-    private displayResults(updatedPackages: VersionedPackage[], updatedDependencies: VersionedPackage[]): void {
-        if (updatedPackages.length === 0) {
-            logger.info(colorKeyMessage('\nNo package versions to update.'));
-            return;
+    public async load(): Promise<void> {
+        if (!this.fileReader) {
+            throw new Error('ProjectFileReader not provided');
         }
-
-        logger.log('\n' + colorKeyMessage('Package versions updated:'));
-
-        updatedPackages.forEach((pkg) => {
-            logger.log(`  ${pkg.print({ includeName: true, nameWidth: 30 })}`);
-        });
-
-        if (updatedDependencies.length > 0) {
-            logger.log('\n' + colorKeyMessage('Dependencies updated:'));
-
-            updatedDependencies.forEach((pkg) => {
-                // Only show the package if it or its dependencies were actually updated
-                if (!pkg.isUpdated && !pkg.dependencies.some((dep) => dep.isUpdated)) {
-                    return;
-                }
-
-                if (pkg.isUpdated) {
-                    logger.log(`\n${chalk.bold(pkg.packageName)}: ${pkg.print()}`);
-                } else {
-                    logger.log(`\n${chalk.bold(pkg.packageName)}`);
-                }
-
-                const updatedDeps = pkg.dependencies.filter((dep) => dep.isUpdated);
-                if (updatedDeps.length > 0) {
-                    updatedDeps.forEach((dep, index, array) => {
-                        const isLast = index === array.length - 1;
-                        const prefix = isLast ? '└─' : '├─';
-                        logger.log(`  ${chalk.dim(prefix)} ${dep.packageName}: ${dep.print()}`);
-                    });
-                }
-            });
-        }
+        this.projectConfig = await this.fileReader.read();
+        this.loadPackages();
     }
 
-    protected validateFlags(): void {
-        // Ensure only one update strategy is specified
-        const strategies = [this.flags.package, this.flags.all, this.flags.targetref, this.flags.targetorg].filter(
-            Boolean
-        );
-        if (strategies.length === 0) {
-            throw new Error('Please specify one of: --package, --all, --targetref, or --targetorg');
+    public async save(): Promise<void> {
+        if (!this.fileReader) {
+            throw new Error('ProjectFileReader not provided');
         }
-        if (strategies.length > 1) {
-            throw new Error('Please specify only one of: --package, --all, --targetref, or --targetorg');
-        }
-
-        // Ensure only one version type is specified
-        const versionTypes = [this.flags.patch, this.flags.minor, this.flags.major, this.flags.versionnumber].filter(
-            Boolean
-        );
-        if (versionTypes.length > 1) {
-            throw new Error('Please specify only one version type: --patch, --minor, --major, or --versionnumber');
-        }
+        const updatedConfig = this.getUpdatedProjectConfig();
+        await this.fileReader.write(updatedConfig);
+        this.projectConfig = updatedConfig;
     }
 
-    getVersionType(): CustomReleaseType {
-        if (this.flags.minor) {
-            return 'minor';
-        }
-
-        if (this.flags.major) {
-            return 'major';
-        }
-
-        if (this.flags.versionnumber) {
-            return 'custom';
-        }
-
-        return 'patch';
-    }
-
-    loadProjectData() {
-        const projectPath = this.flags.projectfile === 'sfdx-project.json' ? null : this.flags.projectfile;
-        this.projectData = ProjectConfig.getSFDXProjectConfig(projectPath);
-
+    private loadPackages() {
+        if (!this.projectConfig) return;
         this.projectPackages = new Map(
-            this.projectData.packageDirectories.map(
-                (pkg: {
-                    package: string;
-                    versionNumber: string;
-                    dependencies?: { package: string; versionNumber: string }[];
-                    path?: string;
-                }) => [pkg.package, new VersionedPackage(pkg)]
-            )
+            this.projectConfig.packageDirectories.map((pkg) => [
+                pkg.package,
+                new VersionedPackage(pkg),
+            ])
         );
-    }
-
-    private async updateVersions(): Promise<{
-        updatedPackages: VersionedPackage[];
-        updatedDependencies: VersionedPackage[];
-    }> {
-        const updatedPackages = await this.getDiffChecker().getUpdatedPackages(
-            this.getVersionType(),
-            this.flags.versionnumber
-        );
-
-        const updatedDependencies = this.updateDependencies(updatedPackages);
-
-        return { updatedPackages, updatedDependencies };
-    }
-
-    public getDiffChecker(): PackageUpdater {
-        let diffChecker: PackageUpdater = null;
-
-        if (this.flags.targetref) {
-            diffChecker = new GitDiff(this.flags.targetref, Array.from(this.projectPackages.values()));
-        } else if (this.flags.targetorg) {
-            diffChecker = new OrgDiff(this.flags.targetorg, Array.from(this.projectPackages.values()));
-        } else if (this.flags.package) {
-            diffChecker = new SinglePackageUpdate(this.flags.package, Array.from(this.projectPackages.values()));
-        } else if (this.flags.all) {
-            diffChecker = new AllPackageUpdate(Array.from(this.projectPackages.values()));
-        }
-
-        if (!diffChecker) {
-            throw new Error('Please specify --package, --all, --targetref, or --targetorg.');
-        }
-
-        return diffChecker;
-    }
-
-    // Get package by name
-    public getPackage(packageName: string): VersionedPackage {
-        return this.projectPackages.get(packageName);
     }
 
     /**
-     * Update dependencies based on updated packages
-     *
-     * @param updatedPackages List of updated packages
+     * compute updated versions based on the strategy
+     * does NOT apply changes to the source config object yet, but updates the internal VersionedPackage state
      */
-    public updateDependencies(updatedPackages: VersionedPackage[]): VersionedPackage[] {
-        const updatedDependencies: VersionedPackage[] = [];
+    async checkUpdates(
+        strategy: UpdateStrategy,
+        bumpType: VersionBumpType,
+        customVersion?: string
+    ): Promise<VersionUpdateResult> {
+        if (!this.projectPackages) {
+            throw new Error('Project not loaded. Call load() or provide projectConfig in constructor.');
+        }
 
-        for (const updatedPackage of updatedPackages) {
-            this.projectPackages.forEach((projectPackage) => {
-                const dependency = projectPackage.updateDependency(updatedPackage);
+        // Reset state
+        this.projectPackages.forEach(p => p.reset());
 
-                if (dependency === null) {
-                    return;
+        // 1. Identify packages to update
+        const packagesToUpdate = await strategy.getUpdatedPackages(
+            Array.from(this.projectPackages.values())
+        );
+
+        // 2. Apply bumps to those packages
+        for (const pkg of packagesToUpdate) {
+            pkg.bump(bumpType, customVersion);
+        }
+
+        // 3. Propagate updates to dependencies
+        const updatedDependencies = this.updateDependencies(packagesToUpdate);
+
+        // 4. Construct result
+        const result: VersionUpdateResult = {
+            packagesUpdated: packagesToUpdate.length,
+            packages: packagesToUpdate.map(p => p.toOutput()),
+            dependencies: updatedDependencies.map(p => p.toOutput(true))
+        };
+
+        return result;
+    }
+
+    /**
+     * Returns the modified ProjectDefinition
+     */
+    getUpdatedProjectConfig(): ProjectDefinition {
+        if (!this.projectConfig) {
+            throw new Error('Project not loaded');
+        }
+        const newConfig = { ...this.projectConfig };
+        newConfig.packageDirectories = newConfig.packageDirectories.map(pkgDef => {
+            const versionedPkg = this.projectPackages.get(pkgDef.package);
+            if (versionedPkg && versionedPkg.isUpdated) {
+                return versionedPkg.writeToDefinition(pkgDef);
+            }
+            return pkgDef;
+        });
+        return newConfig;
+    }
+
+    private updateDependencies(updatedPackages: VersionedPackage[]): VersionedPackage[] {
+        const affectedParentPackages = new Set<VersionedPackage>();
+
+        // For every updated package, check if any other package has it as dependency
+        for (const updatedPkg of updatedPackages) {
+            this.projectPackages.forEach((potentialParent) => {
+                // Check if potentialParent depends on updatedPkg
+                const dependencyRef = potentialParent.getDependency(updatedPkg.packageName);
+                if (dependencyRef) {
+                    // Update the dependency version in the parent
+                    const newDepVersion = updatedPkg.cleanedVersion(updatedPkg.newVersion);
+                    potentialParent.updateDependencyVersion(updatedPkg.packageName, newDepVersion);
+                    affectedParentPackages.add(potentialParent);
                 }
-
-                updatedDependencies.push(projectPackage);
             });
         }
 
-        return updatedDependencies;
-    }
-
-    public async save() {
-        const projectPackages = Array.from(this.projectPackages.values());
-
-        this.projectData.packageDirectories = this.projectData.packageDirectories.map((pkg) => {
-            const updatedPkg = projectPackages.find((projectPackage) => projectPackage.packageName === pkg.package);
-            return updatedPkg ? { ...pkg, ...updatedPkg.write() } : pkg;
-        });
-
-        fs.writeFileSync(this.flags.projectfile, JSON.stringify(this.projectData, null, 2));
+        return Array.from(affectedParentPackages);
     }
 }
 
-class VersionedPackage {
-    packageName: string;
-    packageId: string;
-    path: string;
+// -------------------------------------------------------------------------------- //
+// Strategies
+// -------------------------------------------------------------------------------- //
 
-    currentVersion: string;
-    newVersion: string = null;
+export class AllPackagesStrategy implements UpdateStrategy {
+    async getUpdatedPackages(packages: VersionedPackage[]): Promise<VersionedPackage[]> {
+        return packages;
+    }
+}
 
-    dependencies: VersionedPackage[] = [];
+export class SinglePackageStrategy implements UpdateStrategy {
+    constructor(private packageName: string) { }
 
-    constructor({
-        package: packageName,
-        versionNumber,
-        dependencies,
-        path,
-    }: {
-        package: string;
-        versionNumber?: string;
-        dependencies?: { package: string; versionNumber: string }[];
-        path?: string;
-    }) {
-        this.packageName = packageName;
-        this.currentVersion = versionNumber;
-        this.path = path;
+    async getUpdatedPackages(packages: VersionedPackage[]): Promise<VersionedPackage[]> {
+        const pkg = packages.find(p => p.packageName === this.packageName);
+        if (!pkg) {
+            throw new Error(`Package ${this.packageName} not found in project`);
+        }
+        return [pkg];
+    }
+}
 
-        if (dependencies) {
-            this.setDependencies(dependencies);
+export class GitDiffStrategy implements UpdateStrategy {
+    constructor(private baseRef: string, private gitCwd: string = '.') { }
+
+    async getUpdatedPackages(packages: VersionedPackage[]): Promise<VersionedPackage[]> {
+        const git = simplegit(this.gitCwd);
+        const changedFiles = await git.diff([
+            '--name-only',
+            this.baseRef
+        ]);
+
+        const changedFilesList = changedFiles.split('\n').filter(f => f);
+
+        // Naive implementation: check if file path is within package path
+        // This assumes package path is relative to git root or project root
+        return packages.filter(pkg => {
+            if (!pkg.path) return false;
+            // Normalize paths to be sure
+            return changedFilesList.some(file => file.startsWith(pkg.path));
+        });
+    }
+}
+
+// Interface for Org interaction to decouple SFPOrg
+export interface OrgPackageVersionFetcher {
+    getInstalledVersion(packageName: string): Promise<string | null>;
+}
+
+export class OrgDiffStrategy implements UpdateStrategy {
+    constructor(private orgFetcher: OrgPackageVersionFetcher) { }
+
+    async getUpdatedPackages(packages: VersionedPackage[]): Promise<VersionedPackage[]> {
+        const updates: VersionedPackage[] = [];
+
+        for (const pkg of packages) {
+            if (!pkg.currentVersion) continue;
+
+            const installedVersion = await this.orgFetcher.getInstalledVersion(pkg.packageName);
+            if (installedVersion) {
+                // If local version <= installed version, we need a bump
+                // Actually, the original logic was:
+                // if local (cleaned) <= installed, then BUMP
+                if (semver.lte(semver.coerce(pkg.currentVersion), semver.coerce(installedVersion))) {
+                    // We will attach the override base version to the package temporarily for this flow
+                    pkg.setBaseVersionForBump(installedVersion);
+                    updates.push(pkg);
+                }
+            }
+        }
+        return updates;
+    }
+}
+
+
+// -------------------------------------------------------------------------------- //
+// Models
+// -------------------------------------------------------------------------------- //
+
+export class VersionedPackage {
+    public readonly packageName: string;
+    public readonly path: string;
+    public readonly currentVersion?: string;
+
+    // State
+    public newVersion: string | null = null;
+    private dependencies: Map<string, string>; // package -> version
+    private updatedDependencies: Set<string>; // names of dependencies that were updated
+
+    private baseVersionOverride: string | null = null;
+
+    constructor(def: PackageDefinition) {
+        this.packageName = def.package;
+        this.path = def.path;
+        this.currentVersion = def.versionNumber;
+        this.dependencies = new Map();
+        this.updatedDependencies = new Set();
+
+        if (def.dependencies) {
+            def.dependencies.forEach(d => {
+                this.dependencies.set(d.package, d.versionNumber);
+            });
         }
     }
 
-    public increment(versionType: CustomReleaseType = 'patch', customVersion: string = null): void {
-        // Skip if this package doesn't have a version (e.g., using alias)
-        if (!this.currentVersion) {
-            return;
-        }
-
-        if (versionType === 'custom') {
-            this.updateVersion(customVersion);
-            return;
-        }
-
-        this.updateVersion(semver.inc(this.cleanedVersion(), versionType as ReleaseType));
-    }
-
-    public updateVersion(version: string): void {
-        // Skip if this package doesn't have a version (e.g., using alias)
-        if (!this.currentVersion) {
-            return;
-        }
-
-        // semver.coerce() throw an error if the version is invalid
-        try {
-            semver.coerce(version);
-        } catch {
-            throw new Error(`Cannot update with invalid version number: ${version}`);
-        }
-
-        if (this.isUpdated) {
-            return;
-        }
-
-        this.newVersion = version + this.getSuffix();
+    reset() {
+        this.newVersion = null;
+        this.updatedDependencies.clear();
+        this.baseVersionOverride = null;
     }
 
     get isUpdated() {
         return this.newVersion !== null;
     }
 
-    getSuffix(): string {
-        if (!this.currentVersion) {
-            return '.0';
-        }
-
-        if (this.currentVersion.includes(NEXT_SUFFIX)) {
-            return NEXT_SUFFIX;
-        }
-
-        if (this.currentVersion.includes(LATEST_SUFFIX)) {
-            return LATEST_SUFFIX;
-        }
-
-        return '.0';
+    setBaseVersionForBump(version: string) {
+        this.baseVersionOverride = version;
     }
 
-    /**
-     * Remove any suffixes and build numbers from the version number
-     * @returns cleaned version number without suffixes
-     */
-    public versionByParts(rawVersion: string = this.currentVersion): string[] {
-        return rawVersion.split('.').slice(0, 3);
-    }
+    bump(type: VersionBumpType, customVersion?: string) {
+        if (!this.currentVersion) return; // Can't bump if no version
 
-    public cleanedVersion(version: string = this.currentVersion): string {
-        if (!version) {
-            return '0.0.0';
-        }
-        return this.versionByParts(version).join('.');
-    }
-
-    public setDependencies(dependencies: { package: string; versionNumber?: string }[]): void {
-        dependencies.forEach((dep) => {
-            this.setDependency(dep);
-        });
-    }
-
-    public setDependency(dependency: { package: string; versionNumber?: string }): void {
-        this.dependencies.push(
-            new VersionedPackage({
-                package: dependency.package,
-                versionNumber: dependency.versionNumber,
-            })
-        );
-    }
-
-    public hasDependency(pkg: VersionedPackage): boolean {
-        return this.getDependency(pkg) !== null;
-    }
-
-    public getDependency(pkg: VersionedPackage): VersionedPackage | null {
-        if (!this.dependencies || this.dependencies.length === 0) {
-            return null;
+        if (type === 'custom') {
+            if (!customVersion) throw new Error('Custom version required for custom bump type');
+            this.setNewVersion(customVersion);
+            return;
         }
 
-        const dependency = this.dependencies.find((dep) => dep.packageName === pkg.packageName);
+        const base = this.baseVersionOverride || this.currentVersion;
+        const cleaned = this.cleanVersion(base);
 
-        return dependency ? dependency : null;
+        const next = semver.inc(cleaned, type as ReleaseType);
+        if (!next) throw new Error(`Failed to increment version ${cleaned} with type ${type}`);
+
+        this.setNewVersion(next + this.getSuffix(base));
     }
 
-    public updateDependency(parentPackage: VersionedPackage): VersionedPackage | null {
-        const dependency = this.getDependency(parentPackage);
-
-        if (dependency === null || dependency.isUpdated) {
-            return null;
-        }
-
-        dependency.updateVersion(this.cleanedVersion(parentPackage.newVersion));
-        return dependency;
-    }
-
-    public print(options: { includeName?: boolean; nameWidth?: number; highlightFn?: typeof chalk.yellow.bold } = {}): string {
-        const { includeName = false, nameWidth = 30, highlightFn = chalk.yellow.bold } = options;
-        
-        let output = '';
-        
-        if (includeName) {
-            output = this.packageName.padEnd(nameWidth) + ' ';
-        }
-
-        if (!this.isUpdated) {
-            const currentVersion = this.formatVersion(this.currentVersion);
-            return output + currentVersion;
-        }
-
-        const oldParts = this.versionByParts();
-        const newParts = this.versionByParts(this.newVersion);
-
-        const formattedOld: string = oldParts
-            .map((part, index) => {
-                return part !== newParts[index] ? highlightFn(part) : part;
-            })
-            .join('.');
-        const formattedNew: string = this.versionByParts(this.newVersion)
-            .map((part, index) => {
-                return part === oldParts[index] ? part : highlightFn(part);
-            })
-            .join('.');
-
-        const versionWidth = includeName ? 12 : 0;
-        return output + formattedOld.padEnd(versionWidth) + ' → ' + formattedNew;
-    }
-
-    private formatVersion(version: string): string {
-        if (!version) {
-            return 'N/A';
-        }
-        return version.split('.').slice(0, 3).join('.');
-    }
-
-    public write(): PackageOutput {
-        const output: PackageOutput = { package: this.packageName };
-
-        // If no current version, this is likely an alias reference - don't include versionNumber
-        if (this.currentVersion === null || this.currentVersion === undefined) {
-            if (this.dependencies.length > 0) {
-                output.dependencies = this.dependencies.map((dep) => dep.write());
-            }
-            return output;
-        }
-
-        output.versionNumber = this.currentVersion;
-
-        if (this.isUpdated) {
-            output.versionNumber = this.newVersion;
-        }
-
-        if (this.dependencies.length > 0) {
-            output.dependencies = this.dependencies.map((dep) => dep.write());
-        }
-
-        return output;
-    }
-}
-
-
-interface PackageUpdater {
-    getUpdatedPackages(versionType: CustomReleaseType, versionNumber?: string): Promise<VersionedPackage[]>;
-}
-
-class OrgDiff implements PackageUpdater {
-    targetOrg: string;
-    projectPackages: VersionedPackage[];
-
-    constructor(targetOrg: string, projectPackages: VersionedPackage[]) {
-        this.targetOrg = targetOrg;
-        this.projectPackages = projectPackages;
-    }
-
-    /**
-     * Check
-     */
-    async getUpdatedPackages(versionType: CustomReleaseType, _versionNumber?: string): Promise<VersionedPackage[]> {
+    private setNewVersion(version: string) {
         try {
-            const org = await SFPOrg.create({ aliasOrUsername: this.targetOrg });
-            const installedPackages = await org.getAllInstalledArtifacts();
-
-            const updatedPackages = this.projectPackages
-                .map((pkg) => {
-                    const installedPkg = installedPackages.find(
-                        (installedPkg) =>
-                            installedPkg.name === pkg.packageName &&
-                            semver.lte(semver.coerce(pkg.currentVersion), semver.coerce(installedPkg.version))
-                    );
-
-                    if (installedPkg) {
-                        pkg.updateVersion(
-                            semver.inc(pkg.cleanedVersion(installedPkg.version), versionType as ReleaseType)
-                        );
-                    }
-
-                    return pkg;
-                })
-                .filter((pkg) => pkg.isUpdated);
-
-            return updatedPackages;
-        } catch (error) {
-            throw new Error(`Error running org diff: ${error.message}`);
+            semver.coerce(version);
+            this.newVersion = version;
+        } catch {
+            throw new Error(`Invalid version: ${version}`);
         }
     }
-}
 
-class SinglePackageUpdate implements PackageUpdater {
-    packageName: string;
-    projectPackages: VersionedPackage[];
-
-    constructor(packageName: string, projectPackages: VersionedPackage[]) {
-        this.packageName = packageName;
-        this.projectPackages = projectPackages;
+    updateDependencyVersion(pkgName: string, newVersion: string) {
+        if (this.dependencies.has(pkgName)) {
+            // Check if it's already updated to this?
+            this.dependencies.set(pkgName, newVersion);
+            this.updatedDependencies.add(pkgName);
+        }
     }
 
-    async getUpdatedPackages(versionType: CustomReleaseType, versionNumber?: string): Promise<VersionedPackage[]> {
-        const pkg = this.projectPackages.find((pkg) => pkg.packageName === this.packageName);
-        if (!pkg) {
-            throw new Error(`Package ${this.packageName} not found in sfdx-project.json`);
+    getDependency(pkgName: string): string | undefined {
+        return this.dependencies.get(pkgName);
+    }
+
+    cleanedVersion(version: string = this.currentVersion): string {
+        if (!version) return '0.0.0';
+        // Remove suffixes like .NEXT, .LATEST
+        let v = version;
+        if (v.endsWith(NEXT_SUFFIX)) v = v.substring(0, v.length - NEXT_SUFFIX.length);
+        if (v.endsWith(LATEST_SUFFIX)) v = v.substring(0, v.length - LATEST_SUFFIX.length);
+        return v;
+    }
+
+    // For internal structure matching original cleaner
+    private cleanVersion(version: string): string {
+        const parts = version.split('.');
+        // Take first 3 parts
+        return parts.slice(0, 3).join('.');
+    }
+
+    private getSuffix(version: string): string {
+        if (version.includes(NEXT_SUFFIX)) return NEXT_SUFFIX;
+        if (version.includes(LATEST_SUFFIX)) return LATEST_SUFFIX;
+        return '.0'; // Default suffix from original code
+    }
+
+    writeToDefinition(original: PackageDefinition): PackageDefinition {
+        const copy = { ...original };
+        if (this.newVersion) {
+            copy.versionNumber = this.newVersion;
         }
 
-        pkg.increment(versionType, versionNumber);
-        return [pkg];
+        if (this.updatedDependencies.size > 0 && copy.dependencies) {
+            copy.dependencies = copy.dependencies.map(d => {
+                if (this.updatedDependencies.has(d.package)) {
+                    return { ...d, versionNumber: this.dependencies.get(d.package) };
+                }
+                return d;
+            });
+        }
+
+        return copy;
     }
-}
 
-class AllPackageUpdate implements PackageUpdater {
-    projectPackages: VersionedPackage[];
+    toOutput(includeDependencies = false): PackageOutput {
+        const out: PackageOutput = {
+            name: this.packageName,
+            oldVersion: this.currentVersion,
+            newVersion: this.newVersion || this.currentVersion
+        };
 
-    constructor(projectPackages: VersionedPackage[]) {
-        this.projectPackages = projectPackages;
-    }
+        if (includeDependencies && this.updatedDependencies.size > 0) {
+            out.dependencies = Array.from(this.updatedDependencies).map(depName => ({
+                name: depName,
+                oldVersion: '?', // We don't track old version of deps in memory easily this way, could improve
+                newVersion: this.dependencies.get(depName)
+            }));
+        }
 
-    async getUpdatedPackages(versionType: CustomReleaseType, versionNumber?: string): Promise<VersionedPackage[]> {
-        return this.projectPackages.map((pkg) => {
-            pkg.increment(versionType, versionNumber);
-            return pkg;
-        });
+        return out;
     }
 }

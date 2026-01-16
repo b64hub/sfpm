@@ -89,28 +89,65 @@ export default class ProjectVersionBump extends SfpmCommand {
   }
 }
 
-interface PackageOutput {
-    package: string;
-    versionNumber?: string;
-    dependencies?: PackageOutput[];
-}
-
-interface PackageVersion {
-    name: string;
-    oldVersion: string;
-    newVersion: string;
-}
-
-interface PackageWithDependencies extends PackageVersion {
-    dependencies: PackageVersion[];
-}
-
-interface VersionBumpResult {
-    packagesUpdated: number;
-    packages: PackageVersion[];
-    dependencies?: PackageWithDependencies[];
-}
 
 
 
 
+
+
+
+    // public write(): PackageOutput {
+    //     const output: PackageOutput = { package: this.packageName };
+
+    //     // If no current version, this is likely an alias reference - don't include versionNumber
+    //     if (this.currentVersion === null || this.currentVersion === undefined) {
+    //         if (this.dependencies.length > 0) {
+    //             output.dependencies = this.dependencies.map((dep) => dep.write());
+    //         }
+    //         return output;
+    //     }
+
+    //     output.versionNumber = this.currentVersion;
+
+    //     if (this.isUpdated) {
+    //         output.versionNumber = this.newVersion;
+    //     }
+
+    //     if (this.dependencies.length > 0) {
+    //         output.dependencies = this.dependencies.map((dep) => dep.write());
+    //     }
+
+    //     return output;
+    // }
+
+    // public print(options: { includeName?: boolean; nameWidth?: number; highlightFn?: typeof chalk.yellow.bold } = {}): string {
+    //     const { includeName = false, nameWidth = 30, highlightFn = chalk.yellow.bold } = options;
+        
+    //     let output = '';
+        
+    //     if (includeName) {
+    //         output = this.packageName.padEnd(nameWidth) + ' ';
+    //     }
+
+    //     if (!this.isUpdated) {
+    //         const currentVersion = this.formatVersion(this.currentVersion);
+    //         return output + currentVersion;
+    //     }
+
+    //     const oldParts = this.versionByParts();
+    //     const newParts = this.versionByParts(this.newVersion);
+
+    //     const formattedOld: string = oldParts
+    //         .map((part, index) => {
+    //             return part !== newParts[index] ? highlightFn(part) : part;
+    //         })
+    //         .join('.');
+    //     const formattedNew: string = this.versionByParts(this.newVersion)
+    //         .map((part, index) => {
+    //             return part === oldParts[index] ? part : highlightFn(part);
+    //         })
+    //         .join('.');
+
+    //     const versionWidth = includeName ? 12 : 0;
+    //     return output + formattedOld.padEnd(versionWidth) + ' → ' + formattedNew;
+    // }
