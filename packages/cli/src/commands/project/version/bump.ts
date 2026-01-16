@@ -1,5 +1,5 @@
 import { Args, Command, Flags } from '@oclif/core'
-import { SfpmCore, AllPackagesStrategy, SinglePackageStrategy, GitDiffStrategy, VersionBumpType, VersionUpdateResult } from '@b64/sfpm-core';
+import { SfpmCore, AllPackagesStrategy, SinglePackageStrategy, GitDiffStrategy, VersionBumpType, VersionUpdateResult, VersionManager, UpdateStrategy } from '@b64/sfpm-core';
 import SfpmCommand from '../../../sfpm-command.js';
 import ora from 'ora';
 import treeify from 'object-treeify';
@@ -104,85 +104,89 @@ export default class ProjectVersionBump extends SfpmCommand {
             spinner.succeed(`Analysis complete. Found ${result.packagesUpdated} packages to update.`);
         });
 
-        versionManager.on('saving', () => {
-            spinner.start('Saving changes...');
-        });
-
-        versionManager.on('saved', () => {
-            spinner.succeed('Changes saved to project file.');
-        });
-
         try {
-            // 3. Load Project
-            // We'll trust the core service initializes with default config or implemented logic
-            // If specific file path needed, core service needs update or config passed
             await versionManager.load();
+            const strategy = this.getStrategy(flags);
+            const bumpType = this.getBumpType(flags);
 
-            // 4. Determine Strategy
-            let strategy;
-            if (flags.package) {
-                strategy = new SinglePackageStrategy(flags.package);
-            } else if (flags.targetref) {
-                strategy = new GitDiffStrategy(flags.targetref);
-            } else if (flags.targetorg) {
-                this.warn('OrgDiffStrategy not fully implemented with real org connection yet.');
-                // strategy = new OrgDiffStrategy(...);
-                return;
-            } else if (flags.all) {
-                strategy = new AllPackagesStrategy();
-            } else {
-                // Default if nothing specified? Maybe warning or All
-                strategy = new AllPackagesStrategy();
-            }
-
-            // 5. Determine Bump Type
-            let bumpType: VersionBumpType = 'patch';
-            if (flags.major) bumpType = 'major';
-            if (flags.minor) bumpType = 'minor';
-            if (flags.versionnumber) bumpType = 'custom';
-
-            // 6. Check Updates
             const result = await versionManager.checkUpdates(strategy, bumpType, flags.versionnumber);
-
-            // 7. Visualize Output
             if (result.packagesUpdated === 0) {
                 this.log(boxen(chalk.green('No packages need updating.'), { padding: 1 }));
                 return;
             }
 
-            this.log(chalk.bold.cyan('\nUpdated Packages:'));
-
-            // Custom format: <package-name> <old> -> <new>
-            result.packages.forEach((pkg: any) => {
-                this.log(`${chalk.blue(pkg.name)}  ${chalk.red(pkg.oldVersion)} -> ${chalk.green(pkg.newVersion)}`);
-            });
-
-            if (result.dependencies && result.dependencies.length > 0) {
-                this.log(chalk.bold.yellow('\nDependent Package Updates:'));
-
-                // Format: <parent> - <dep> <old> -> <new>
-                const treeData: Record<string, any> = {};
-                result.dependencies.forEach((p: any) => {
-                    const depNodes: Record<string, string> = {};
-                    p.dependencies?.forEach((d: any) => {
-                        // We don't have old version for deps easily available effectively in current output structure
-                        // Assuming d.oldVersion might be '?' or we just show new
-                        depNodes[d.name] = `${chalk.green(d.newVersion)}`;
-                    });
-                    treeData[chalk.blue(p.name)] = depNodes;
-                });
-                this.log(treeify(treeData));
-            }
-
-            // 8. Save
-            if (!flags.dryrun) {
-                await versionManager.save();
-            } else {
-                this.log(boxen(chalk.yellow('DRY RUN: No changes were written to disk.'), { padding: 1, borderStyle: 'double' }));
-            }
+            this.outputResult(result);
+            this.save(versionManager, flags.dryrun);
 
         } catch (error: any) {
-            spinner.fail('Operation failed.');
+            spinner.fail(chalk.red('Operation failed.'));
+            this.error(error.message);
+        }
+    }
+
+    private getBumpType(flags: any): VersionBumpType {
+        if (flags.major) return 'major';
+        if (flags.minor) return 'minor';
+        if (flags.versionnumber) return 'custom';
+        return 'patch';
+    }
+
+    private getStrategy(flags: any): UpdateStrategy {
+        if (flags.package) {
+            return new SinglePackageStrategy(flags.package);
+        } else if (flags.targetref) {
+            return new GitDiffStrategy(flags.targetref);
+        } else if (flags.targetorg) {
+            this.warn('OrgDiffStrategy not fully implemented with real org connection yet.');
+            // strategy = new OrgDiffStrategy(...);
+            return new AllPackagesStrategy();
+        } else if (flags.all) {
+            return new AllPackagesStrategy();
+        } else {
+            // Default if nothing specified? Maybe warning or All
+            return new AllPackagesStrategy();
+        }
+    }
+
+    private outputResult(result: VersionUpdateResult) {
+        this.log(chalk.bold.cyan('\nUpdated Packages:'));
+
+        // Custom format: <package-name> <old> -> <new>
+        result.packages.forEach((pkg: any) => {
+            this.log(`${chalk.blue(pkg.name)}  ${chalk.red(pkg.oldVersion)} -> ${chalk.green(pkg.newVersion)}`);
+        });
+
+        if (result.dependencies && result.dependencies.length > 0) {
+            this.log(chalk.bold.yellow('\nDependent Package Updates:'));
+
+            // Format: <parent> - <dep> <old> -> <new>
+            const treeData: Record<string, any> = {};
+            result.dependencies.forEach((p: any) => {
+                const depNodes: Record<string, string> = {};
+                p.dependencies?.forEach((d: any) => {
+                    // We don't have old version for deps easily available effectively in current output structure
+                    // Assuming d.oldVersion might be '?' or we just show new
+                    depNodes[d.name] = `${chalk.green(d.newVersion)}`;
+                });
+                treeData[chalk.blue(p.name)] = depNodes;
+            });
+            this.log(treeify(treeData));
+        }
+    }
+
+    private async save(versionManager: VersionManager, dryrun: boolean) {
+        this.log('\n');
+        if (dryrun) {
+            this.log(boxen(chalk.yellow('DRY RUN: No changes were written to disk.'), { padding: 1, borderColor: 'yellow', borderStyle: 'round' }));
+            return;
+        }
+
+        const spinner = ora('Saving...').start();
+        try {
+            await versionManager.save();
+            spinner.succeed(chalk.green('Project saved successfully.'));
+        } catch (error: any) {
+            spinner.fail(chalk.red('Failed to save project.'));
             this.error(error.message);
         }
     }

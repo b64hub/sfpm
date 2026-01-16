@@ -16,7 +16,7 @@ export default abstract class SfpmCommand extends Command {
      * Entry point of all commands
      */
     async run(): Promise<any> {
-        const { flags } = await this.parse(SfpmCommand);
+        const { flags } = await this.parse(this.constructor as any);
 
         if (!this.jsonEnabled()) {
             this.logHeader();
@@ -30,10 +30,10 @@ export default abstract class SfpmCommand extends Command {
 
         const header = boxen(
             chalk.hex(theme.bin!).bold('sfp') +
-                chalk.gray(' • by ') +
-                chalk.hex(theme.bin!)('b64') +
-                chalk.gray(' • ') +
-                chalk.gray(`v${this.config.version} • ${this.config.pjson.release}`),
+            chalk.gray(' • by ') +
+            chalk.hex(theme.bin!)('b64') +
+            chalk.gray(' • ') +
+            chalk.gray(`v${this.config.version} • ${this.config.pjson.release}`),
             {
                 padding: { left: 2, right: 2, top: 0, bottom: 0 },
                 margin: { left: 0, right: 0, top: 0, bottom: 1 },
