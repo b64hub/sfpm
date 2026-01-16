@@ -33,8 +33,8 @@ export default class Project extends SfpmCommand {
       const node = graph.getNode(pkg.package);
       if (!node) continue;
 
-      const label = this.formatLabel(node);
-      treeData[label] = this.buildDependencyTree(node, flags.path);
+      const label = this.formatLabel(node, flags.path);
+      treeData[label] = this.buildDependencyTree(node);
     }
 
     this.log(chalk.bold('Project Overview'));
@@ -57,27 +57,23 @@ export default class Project extends SfpmCommand {
     let label = `${chalk.bold(colorFn(node.name))} \t@ ${chalk.blue(node.version ?? '0.0.0')}`;
 
     if (showPath && node.path) {
-      label += chalk.gray(` - ${node.path}`);
+      label += chalk.gray(`\t- ${node.path}`);
     }
     return label;
   }
 
-  private formatDependency(node: PackageNode, showPath: boolean = false): string {
-    let label = `${chalk.grey(node.name)} \t@ ${chalk.grey(node.version ?? '0.0.0')}`;
-    if (showPath && node.path) {
-      label += chalk.gray(` - ${node.path}`);
-    }
-    return label;
+  private formatDependency(node: PackageNode): string {
+    return `${chalk.grey(node.name)} \t@ ${chalk.grey(node.version ?? '0.0.0')}`;
   }
 
-  private buildDependencyTree(node: PackageNode, showPath: boolean = false): Record<string, any> | null {
+  private buildDependencyTree(node: PackageNode): Record<string, any> | null {
     if (node.dependencies.size === 0) {
       return null;
     }
 
     const deps: Record<string, any> = {};
     for (const dep of node.dependencies) {
-      const label = this.formatDependency(dep, showPath);
+      const label = this.formatDependency(dep);
       deps[label] = null; // We only show one level deep to avoid infinite recursion/clutter
     }
     return deps;
