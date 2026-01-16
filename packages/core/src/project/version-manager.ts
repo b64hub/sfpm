@@ -1,9 +1,9 @@
 import semver, { ReleaseType } from 'semver';
 import { EventEmitter } from 'events';
-import { ProjectDefinition, PackageDefinition } from './types.js';
-import { ProjectFileReader } from './project-file-reader.js';
+import { ProjectDefinition, PackageDefinition, ProjectFileReader } from './types.js';
 import { simpleGit } from 'simple-git';
 import { ProjectGraph, PackageNode } from './project-graph.js';
+import { OrgPackageVersionFetcher } from '../types/org.js';
 
 const NEXT_SUFFIX = '.NEXT';
 const LATEST_SUFFIX = '.LATEST';
@@ -224,10 +224,7 @@ export class GitDiffStrategy implements UpdateStrategy {
     }
 }
 
-// Interface for Org interaction to decouple SFPOrg
-export interface OrgPackageVersionFetcher {
-    getInstalledVersion(packageName: string): Promise<string | null>;
-}
+
 
 export class OrgDiffStrategy implements UpdateStrategy {
     constructor(private orgFetcher: OrgPackageVersionFetcher) { }

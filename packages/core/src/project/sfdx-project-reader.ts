@@ -1,5 +1,4 @@
-import { ProjectFileReader } from './project-file-reader.js';
-import { ProjectDefinition } from './types.js';
+import { ProjectDefinition, ProjectFileReader } from './types.js';
 import fs from 'fs-extra';
 
 export class SfdxProjectReader implements ProjectFileReader {

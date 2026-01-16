@@ -6,21 +6,25 @@ import GitIdentity from './git-identity.js';
 import tmp from 'tmp';
 
 import { Logger } from '../types/logger.js';
-import { LoggerLevel } from '@salesforce/core/logger';
 
 export default class Git {
     private _git: SimpleGit;
     private repositoryLocation: string;
     private tempRepoLocation: any;
     private _isATemporaryRepo: boolean = false;
+    private logger?: Logger;
 
-    private constructor(private projectDir?: string, private logger?: Logger) {
+    private constructor(private projectDir?: string, logger?: Logger) {
         if (this.projectDir) {
             this._git = simpleGit(this.projectDir);
             this.repositoryLocation = this.projectDir;
         } else {
             this._git = simpleGit();
             this.repositoryLocation = process.cwd();
+        }
+
+        if (logger) {
+            this.logger = logger;
         }
     }
 
@@ -32,7 +36,7 @@ export default class Git {
         return this._git.revparse(['HEAD']);
     }
 
-    async getBaseBranchCommit(baseBranch:string): Promise<string> {
+    async getBaseBranchCommit(baseBranch: string): Promise<string> {
         return this._git.revparse([baseBranch]);
     }
 
@@ -173,7 +177,7 @@ export default class Git {
             await git.checkout(commitRef, true);
         }
 
-        this.logger?.info(
+        logger.info(
             `Successfully created temporary repository at ${repoDir} with commit ${commitRef ? commitRef : 'HEAD'}`
         );
         return git;
@@ -202,12 +206,10 @@ export default class Git {
     }
 
     async addSafeConfig(repoDir: string) {
-        try
-        {
+        try {
             //add workaround for safe directory (https://github.com/actions/runner/issues/2033)
             await this._git.addConfig('safe.directory', repoDir, false, 'global');
-        }catch(error)
-        {
+        } catch (error) {
             //ignore error
             this.logger?.trace(`Unable to set safe.directory`)
         }

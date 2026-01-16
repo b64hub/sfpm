@@ -1,6 +1,5 @@
 import { VersionManager, VersionManagerConfig } from './version-manager.js';
 import { ProjectGraph } from './project-graph.js';
-import { ProjectFileReader } from './project-file-reader.js';
 import { SfdxProjectReader } from './sfdx-project-reader.js';
 
 export default class ProjectService {

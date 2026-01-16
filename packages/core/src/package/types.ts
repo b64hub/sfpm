@@ -1,3 +1,4 @@
+import { ApexClasses } from "../types/apex.js";
 
 export interface DiffPackageMetadata {
     sourceVersionFrom?: string;

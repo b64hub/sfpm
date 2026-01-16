@@ -18,3 +18,8 @@ export interface PackageDefinition {
     dependencies?: { package: string; versionNumber: string }[];
     ignoreOnStages?: string[];
 }
+
+export interface ProjectFileReader {
+    read(): Promise<ProjectDefinition>;
+    write(project: ProjectDefinition): Promise<void>;
+}

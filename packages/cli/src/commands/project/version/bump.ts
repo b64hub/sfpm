@@ -9,9 +9,6 @@ import chalk from 'chalk';
 export default class ProjectVersionBump extends SfpmCommand {
     public static description = 'Bump package versions in sfdx-project.json';
 
-    static override args = {
-        file: Args.string({ description: 'file to read' }),
-    }
     public static examples = [
         '$ sfp project version bump --package mypackage --minor',
         '$ sfp project version bump --all --patch',
@@ -77,10 +74,13 @@ export default class ProjectVersionBump extends SfpmCommand {
     public async execute(): Promise<void> {
         const { args, flags } = await this.parse(ProjectVersionBump)
 
+        const projectFile = flags.projectfile;
+
         // 1. Initialize Core
         const core = new SfpmCore({
             apiKey: 'unused',
-            verbose: false
+            verbose: false,
+            projectPath: projectFile
         });
 
         const versionManager = core.project.getVersionManager();
