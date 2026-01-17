@@ -15,8 +15,13 @@ export interface PackageDefinition {
     versionNumber?: string;
     type?: Omit<PackageType, 'Managed'>;
     versionDescription?: string;
-    dependencies?: { package: string; versionNumber: string }[];
+    dependencies?: PackageDependency[];
     ignoreOnStages?: string[];
+}
+
+export interface PackageDependency {
+    package: string;
+    versionNumber: string;
 }
 
 export interface ProjectFileReader {
