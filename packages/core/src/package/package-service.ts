@@ -1,7 +1,32 @@
 import { Org } from "@salesforce/core";
 import { Logger } from "../types/logger.js";
-import { SubscriberPackage, Package2 } from "./types.js";
 import { PackageType } from "../types/package.js";
+
+/**
+ * Represents Package2 metadata from DevHub
+ */
+export interface Package2 {
+    Id: string;
+    Name: string;
+    Description: string;
+    NamespacePrefix: string;
+    ContainerOptions: string;
+    IsOrgDependent: boolean | string;
+}
+
+/**
+ * Represents installed subscriber package data from InstalledSubscriberPackage
+ */
+export interface SubscriberPackage {
+    name: string;
+    package2Id?: string;
+    namespacePrefix?: string;
+    subscriberPackageVersionId?: string;
+    versionNumber?: string;
+    type?: Extract<PackageType, 'Unlocked' | 'Managed'>;
+    isOrgDependent?: boolean;
+    key?: string;
+}
 
 export class PackageService {
     private org: Org;

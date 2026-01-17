@@ -49,3 +49,17 @@ export interface PackageInfo {
     projectConfig?: any;
     changelogFilePath?: string;
 }
+
+/**
+ * Represents merged view of sfpm artifacts + subscriber packages
+ */
+export interface InstalledArtifact {
+    name: string;
+    version: string;
+    tag?: string;
+    commitId?: string;
+    isInstalledBySfpm?: boolean;
+    sourceVersion?: string;
+    isOrgDependent?: boolean;
+    type?: PackageType
+}

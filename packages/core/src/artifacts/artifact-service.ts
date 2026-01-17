@@ -1,8 +1,15 @@
 import { Org, Connection } from "@salesforce/core";
 import SfpmPackage from "../package/sfpm-package.js";
 import { Logger } from "../types/logger.js";
-import { SfpmArtifact__c } from "./types.js";
-import { PackageType } from "../types/package.js";
+import { InstalledArtifact, PackageType } from "../types/package.js";
+
+export interface SfpmArtifact__c {
+    Id?: string;
+    Name: string;
+    Tag__c: string;
+    Version__c: string;
+    CommitId__c: string;
+}
 
 export class ArtifactService {
     private org: Org;
@@ -13,7 +20,7 @@ export class ArtifactService {
         this.logger = logger;
     }
 
-    public async getInstalledPackages(orderBy: string = 'Name'): Promise<SfpmPackage[]> {
+    public async getInstalledPackages(orderBy: string = 'Name'): Promise<InstalledArtifact[]> {
         try {
             const records = await this.query<SfpmArtifact__c>(
                 `SELECT Id, Name, CommitId__c, Version__c, Tag__c FROM SfpmArtifact__c ORDER BY ${orderBy} ASC`,
@@ -22,13 +29,15 @@ export class ArtifactService {
             );
 
             // Map SfpmArtifact__c records to SfpmPackage instances
-            return records.map(record => new SfpmPackage(
-                record.Name,
-                record.Version__c,
-                record.Tag__c,
-                undefined, // TODO: Add support for other package types
-                record.CommitId__c
-            ));
+            return records.map(record => {
+                return {
+                    name: record.Name,
+                    version: record.Version__c,
+                    tag: record.Tag__c,
+                    commitId: record.CommitId__c,
+                    type: undefined,
+                }
+            });
         } catch (error) {
             this.logger.warn(
                 'Unable to fetch any sfp artifacts in the org\n' +
@@ -88,7 +97,7 @@ export class ArtifactService {
      * @param sfpmPackage - Package to create/update artifact for
      * @returns Artifact record ID
      */
-    public async createOrUpdateArtifact(sfpmPackage: SfpmPackage): Promise<string | undefined> {
+    public async upsertArtifact(sfpmPackage: SfpmPackage): Promise<string | undefined> {
         try {
             const artifactId = await this.getArtifactRecordId(sfpmPackage.name);
 

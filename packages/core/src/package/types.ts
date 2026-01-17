@@ -31,40 +31,4 @@ export interface SfpmPackageParams {
     revisionTo?: string;
 }
 
-/**
- * Represents Package2 metadata from DevHub
- */
-export interface Package2 {
-    Id: string;
-    Name: string;
-    Description: string;
-    NamespacePrefix: string;
-    ContainerOptions: string;
-    IsOrgDependent: boolean | string;
-}
 
-/**
- * Represents installed subscriber package data from InstalledSubscriberPackage
- */
-export interface SubscriberPackage {
-    name: string;
-    package2Id?: string;
-    namespacePrefix?: string;
-    subscriberPackageVersionId?: string;
-    versionNumber?: string;
-    type?: Extract<PackageType, 'Unlocked' | 'Managed'>;
-    isOrgDependent?: boolean;
-    key?: string;
-}
-
-/**
- * Represents merged view of sfpm artifacts + subscriber packages
- */
-export interface InstalledArtifact {
-    name: string;
-    version: string;
-    commitId: string;
-    isInstalledBySfpm?: boolean;
-    subscriberVersion?: string;
-    type?: PackageType
-}

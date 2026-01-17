@@ -1,7 +1,7 @@
 import SfpmPackage from "./sfpm-package.js";
 import { ArtifactService } from "../artifacts/artifact-service.js";
-import { PackageService } from "./package-service.js";
-import { SubscriberPackage, InstalledArtifact, Package2 } from './types.js';
+import { PackageService, SubscriberPackage, Package2 } from "./package-service.js";
+import { InstalledArtifact } from '../types/package.js';
 import { Logger } from "../types/logger.js";
 
 export default class PackageManager {
@@ -34,11 +34,11 @@ export default class PackageManager {
 
     /**
      * Updates or creates information about an artifact in the org
-     * @param sfpmPackage - Package to create/update artifact for
+     * @param sfpmPackage - Package to upsert artifact for
      * @returns Artifact record ID or undefined if failed
      */
-    public async updateArtifactInOrg(sfpmPackage: SfpmPackage): Promise<string | undefined> {
-        return await this.artifactService.createOrUpdateArtifact(sfpmPackage);
+    public async upsertArtifactInOrg(sfpmPackage: SfpmPackage): Promise<string | undefined> {
+        return await this.artifactService.upsertArtifact(sfpmPackage);
     }
 
     /**
@@ -72,7 +72,6 @@ export default class PackageManager {
             const installedArtifacts: InstalledArtifact[] = [];
             const installed2GPPackages = await this.packageService.getAllInstalled2GPPackages();
 
-            // Map sfpm artifacts
             artifacts.forEach((artifact) => {
                 const installedArtifact: InstalledArtifact = {
                     name: artifact.name,
@@ -81,15 +80,17 @@ export default class PackageManager {
                     isInstalledBySfpm: true,
                 };
 
-                // Check if this artifact has a corresponding 2GP package
                 const packageFound = installed2GPPackages.find((elem) => elem.name === artifact.name);
                 if (packageFound) {
+
                     installedArtifact.subscriberVersion = packageFound.subscriberPackageVersionId;
+
                     if (packageFound.isOrgDependent) {
                         installedArtifact.type = 'OrgDependent';
                     } else {
                         installedArtifact.type = 'Unlocked';
                     }
+
                 } else {
                     installedArtifact.subscriberVersion = 'N/A';
                     installedArtifact.type = 'Source/Data';
@@ -100,25 +101,28 @@ export default class PackageManager {
             // Add 2GP packages that don't have sfpm artifacts
             installed2GPPackages.forEach((installed2GPPackage) => {
                 const packageFound = installedArtifacts.find((elem) => elem.name === installed2GPPackage.name);
-                if (!packageFound) {
-                    const installedArtifact: InstalledArtifact = {
-                        name: installed2GPPackage.name,
-                        version: installed2GPPackage.versionNumber || 'N/A',
-                        commitId: 'N/A',
-                    };
 
-                    if (installed2GPPackage.isOrgDependent) {
-                        installedArtifact.type = 'OrgDependent';
-                    } else if (installed2GPPackage.type?.toString() === 'managed') {
-                        installedArtifact.type = 'Managed';
-                    } else {
-                        installedArtifact.type = 'Unlocked';
-                    }
-
-                    installedArtifact.subscriberVersion = installed2GPPackage.subscriberPackageVersionId;
-                    installedArtifact.isInstalledBySfpm = false;
-                    installedArtifacts.push(installedArtifact);
+                if (packageFound) {
+                    return;
                 }
+
+                const installedArtifact: InstalledArtifact = {
+                    name: installed2GPPackage.name,
+                    version: installed2GPPackage.versionNumber || 'N/A',
+                    commitId: 'N/A',
+                };
+
+                if (installed2GPPackage.isOrgDependent) {
+                    installedArtifact.type = 'OrgDependent';
+                } else if (installed2GPPackage.type?.toString() === 'managed') {
+                    installedArtifact.type = 'Managed';
+                } else {
+                    installedArtifact.type = 'Unlocked';
+                }
+
+                installedArtifact.subscriberVersion = installed2GPPackage.subscriberPackageVersionId;
+                installedArtifact.isInstalledBySfpm = false;
+                installedArtifacts.push(installedArtifact);
             });
 
             return installedArtifacts;
@@ -127,4 +131,5 @@ export default class PackageManager {
             return [];
         }
     }
+
 }
