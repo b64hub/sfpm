@@ -1,6 +1,22 @@
 import { PackageInfo } from "../types/package.js";
+import { PackageType } from "../types/package.js";
 
 export default class SfpmPackage {
+
+    public name: string;
+    public version: string;
+    public tag: string;
+    public type: PackageType | undefined;
+    public sourceVersion: string;
+
+    public constructor(name: string, version: string, tag: string, type: PackageType | undefined, sourceVersion: string) {
+        this.name = name;
+        this.version = version;
+        this.tag = tag;
+        this.type = type;
+        this.sourceVersion = sourceVersion;
+    }
+
     // public projectDirectory: string;
     // public workingDirectory: string = '';
     // public mdapiDir: string;

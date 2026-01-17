@@ -1,4 +1,5 @@
 import { ApexClasses } from "../types/apex.js";
+import { PackageType } from "../types/package.js";
 
 export interface DiffPackageMetadata {
     sourceVersionFrom?: string;
@@ -15,10 +16,10 @@ export interface DiffPackageMetadata {
     destructiveChanges?: any;
     sourceDir?: string;
     invalidatedTestClasses?: ApexClasses;
-    isPayLoadContainTypesSupportedByProfiles?:boolean;
+    isPayLoadContainTypesSupportedByProfiles?: boolean;
 }
 
-export interface SfpPackageParams {
+export interface SfpmPackageParams {
     overridePackageTypeWith?: string;
     branch?: string;
     packageVersionNumber?: string;
@@ -29,3 +30,5 @@ export interface SfpPackageParams {
     revisionFrom?: string;
     revisionTo?: string;
 }
+
+

@@ -2,7 +2,7 @@ import type { PackageType } from "../types/package.js";
 
 export interface ProjectDefinition {
     packageDirectories: PackageDefinition[];
-    packageAliases?: { [key: string]: string };     
+    packageAliases?: { [key: string]: string };
     namespace?: string;
     sfdcLoginUrl?: string;
     sourceApiVersion?: string;
@@ -13,7 +13,7 @@ export interface PackageDefinition {
     path: string;
     default: boolean;
     versionNumber?: string;
-    type?: PackageType;
+    type?: Omit<PackageType, 'Managed'>;
     versionDescription?: string;
     dependencies?: { package: string; versionNumber: string }[];
     ignoreOnStages?: string[];

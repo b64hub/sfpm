@@ -1,6 +1,6 @@
 import { ApexClasses, ApexSortedByType } from "./apex.js";
 
-export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff' }
+export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff', Managed = 'managed' }
 
 export interface PackageInfo {
     id?: string;
@@ -48,4 +48,18 @@ export interface PackageInfo {
     apexClassesSortedByTypes?: ApexSortedByType;
     projectConfig?: any;
     changelogFilePath?: string;
+}
+
+/**
+ * Represents merged view of sfpm artifacts + subscriber packages
+ */
+export interface InstalledArtifact {
+    name: string;
+    version: string;
+    tag?: string;
+    commitId?: string;
+    isInstalledBySfpm?: boolean;
+    sourceVersion?: string;
+    isOrgDependent?: boolean;
+    type?: PackageType
 }
