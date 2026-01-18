@@ -15,7 +15,7 @@ export default class PackageManager {
         this.packageService = packageService;
     }
 
-    public async getInstalledPackages(): Promise<SfpmPackage[]> {
+    public async getInstalledPackages(): Promise<InstalledArtifact[]> {
         // ArtifactService already handles errors and returns empty array on failure
         return await this.artifactService.getInstalledPackages("Name");
     }

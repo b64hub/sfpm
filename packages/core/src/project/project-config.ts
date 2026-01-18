@@ -107,7 +107,7 @@ export default class ProjectConfig {
      * @param name Package name
      */
     public async getPackageType(name: string): Promise<PackageType> {
-        const descriptor = await this.getPackageDescriptor(name);
+        const descriptor = await this.getPackageDefinition(name);
         await this.load();
 
         // If it's in aliases, it's Unlocked
@@ -124,10 +124,10 @@ export default class ProjectConfig {
     }
 
     /**
-     * Returns the package descriptor (definition) for a given package name
+     * Returns the package definition for a given package name
      * @param name Package name
      */
-    public async getPackageDescriptor(name: string): Promise<PackageDefinition> {
+    public async getPackageDefinition(name: string): Promise<PackageDefinition> {
         await this.load();
 
         const descriptor = this.project?.packageDirectories.find(
@@ -142,9 +142,9 @@ export default class ProjectConfig {
     }
 
     /**
-     * Returns the default package descriptor
+     * Returns the default package definition
      */
-    public async getDefaultPackageDescriptor(): Promise<PackageDefinition> {
+    public async getDefaultPackageDefinition(): Promise<PackageDefinition> {
         await this.load();
 
         const descriptor = this.project?.packageDirectories.find(
