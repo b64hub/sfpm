@@ -2,6 +2,76 @@ import { ApexClasses, ApexSortedByType } from "./apex.js";
 
 export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff', Managed = 'managed' }
 
+
+export interface PackageIdentity {
+    id?: string;
+    packageName: string;
+    packageVersionNumber?: string;
+    packageVersionId?: string;
+    packageType: PackageType;
+    apiVersion?: string;
+}
+
+export interface SourceContext {
+    repositoryUrl?: string;
+    branch?: string;
+    sourceVersion?: string;
+    commitSHAFrom?: string;
+    commitSHATo?: string;
+    tag?: string;
+}
+
+export interface ApexInfo {
+    isApexFound?: boolean;
+    apexTestClasses?: string[];
+    apexClassWithOutTestClasses?: ApexClasses;
+    triggers?: ApexClasses;
+    apexClassesSortedByTypes?: ApexSortedByType;
+    testCoverage?: number;
+    hasPassedCoverageCheck?: boolean;
+    isTriggerAllTests?: boolean;
+    apextestsuite?: string;
+}
+
+export interface ManifestInfo {
+    payload?: any;
+    metadataCount?: number;
+    isPickListsFound?: boolean;
+    isProfilesFound?: boolean;
+    isPermissionSetGroupFound?: boolean;
+    isPayLoadContainTypesSupportedByProfiles?: boolean;
+    reconcileProfiles?: boolean;
+    destructiveChanges?: any;
+}
+
+export interface DeploymentSteps {
+    preDeploymentScript?: string;
+    postDeploymentScript?: string;
+    assignPermSetsPreDeployment?: string[];
+    assignPermSetsPostDeployment?: string[];
+}
+
+/**
+ * The "Source of Truth" for the JSON Artifact.
+ * This represents the metadata file stored in the artifact.
+ */
+export interface SfpmPackageMetadata extends 
+    PackageIdentity, 
+    SourceContext, 
+    ApexInfo, 
+    ManifestInfo, 
+    DeploymentSteps 
+{
+    creationDetails?: { creationTime?: number; timestamp?: number };
+    deployments?: { 
+        targetOrg: string; 
+        subDirectory?: string; 
+        installationTime?: number; 
+        timestamp?: number 
+    }[];
+    [key: string]: any; 
+}
+
 export interface PackageInfo {
     id?: string;
     package_name: string;

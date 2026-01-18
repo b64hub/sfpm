@@ -1,77 +1,48 @@
-import { PackageInfo } from "../types/package.js";
+import { ProjectDefinition } from "../project/types.js";
 import { PackageType } from "../types/package.js";
+import { SfpPackageMetadata } from "../types/package.js";
+import * as _ from "lodash";
+
 
 export default class SfpmPackage {
+    // The Data
+    private _metadata: SfpPackageMetadata;
 
-    public name: string;
-    public version: string;
-    public tag: string;
-    public type: PackageType | undefined;
-    public sourceVersion: string;
+    // Runtime-only properties (Excluded from JSON)
+    public projectDirectory: string;
+    public workingDirectory: string = '';
+    public mdapiDir?: string;
+    public resolvedPackageDirectory?: string;
+    public projectDefinition?: ProjectDefinition;
+    public packageDefinition?: PackageDefinition;
+    public orgDefinitionFilePath?: string;
+    public changelogFilePath?: string;
 
-    public constructor(name: string, version: string, tag: string, type: PackageType | undefined, sourceVersion: string) {
-        this.name = name;
-        this.version = version;
-        this.tag = tag;
-        this.type = type;
-        this.sourceVersion = sourceVersion;
+    constructor(projectDirectory: string, metadata?: Partial<SfpPackageMetadata>) {
+        this.projectDirectory = projectDirectory;
+        this._metadata = {
+            packageName: '',
+            packageType: PackageType.Source,
+            ...metadata
+        };
     }
 
-    // public projectDirectory: string;
-    // public workingDirectory: string = '';
-    // public mdapiDir: string;
-    // public destructiveChangesPath: string;
-    // public resolvedPackageDirectory: string;
+    // Accessors to maintain compatibility with existing code
+    get metadata() { return this._metadata; }
+    
+    get packageName() { return this._metadata.packageName; }
+    set packageName(val: string) { this._metadata.packageName = val; }
 
-    // public version: string = '5';
+    /**
+     * Replaces the complex toJSON logic. 
+     * Only returns the metadata interface.
+     */
+    public toPackageMetadata(): SfpPackageMetadata {
+        return _.cloneDeep(this._metadata);
+    }
 
-    // //Just a few helpers to resolve api differene
-    // public get packageName(): string {
-    //     return this.package_name;
-    // }
-
-    // public get versionNumber(): string {
-    //     return this.package_version_number;
-    // }
-
-    // public set versionNumber(versionNumber:string)
-    // {
-    //     this.package_version_number = versionNumber;
-    // }
-
-    // public get packageType(): string {
-    //     return this.package_type.toLocaleLowerCase();
-    // }
-
-    // public set packageType(packageType: string) {
-    //     this.package_type = packageType;
-    //     this.tag = packageType;
-    // }
-
-    // public constructor() {
-    // }
-
-    // toJSON(): PackageInfo {
-
-    //     const data: PackageInfo = {
-    //         package_name: this.package_name,
-    //         package_version_number: this.package_version_number,
-    //         package_type: this.packageType, // Uses your getter!
-    //         tag: this.tag,
-    //         // ... 
-    //     };
-    //     return data;
-
-
-    //     // let castToPackageMetadata = _.cloneDeep(this);
-    //     // delete castToPackageMetadata.workingDirectory;
-    //     // delete castToPackageMetadata.mdapiDir;
-    //     // delete castToPackageMetadata.projectConfig;
-    //     // delete castToPackageMetadata.packageDescriptor;
-    //     // delete castToPackageMetadata.projectDirectory;
-    //     // delete castToPackageMetadata.resolvedPackageDirectory;
-    //     // delete castToPackageMetadata.isTriggerAllTests;
-    //     // return castToPackageMetadata;
-
-    // }
+    // You can still implement toJSON for JSON.stringify()
+    public toJSON(): SfpPackageMetadata {
+        return this.toPackageMetadata();
+    }
 }

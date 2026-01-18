@@ -1,11 +1,8 @@
 import type { PackageType } from "../types/package.js";
+import { ProjectJsonSchema, ProjectJson } from '@salesforce/core';
 
-export interface ProjectDefinition {
+export interface ProjectDefinition extends ProjectJson {
     packageDirectories: PackageDefinition[];
-    packageAliases?: { [key: string]: string };
-    namespace?: string;
-    sfdcLoginUrl?: string;
-    sourceApiVersion?: string;
 }
 
 export interface PackageDefinition {
