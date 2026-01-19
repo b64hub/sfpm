@@ -1,231 +1,122 @@
+import { SfProject, SfProjectJson } from '@salesforce/core';
+import { ProjectDefinition, PackageDefinition, ProjectDefinitionSchema } from './types.js';
 import { PackageType } from '../types/package.js';
-import { ProjectDefinition, ProjectFileReader, PackageDefinition, PackageDependency } from './types.js';
-
-export interface ExternalPackage {
-    alias: string;
-    packageId: string;
-}
 
 /**
- * Helper functions for retrieving info from project config
+ * Configuration manager for sfdx-project.json
  */
 export default class ProjectConfig {
-    private fileReader: ProjectFileReader;
-    private project: ProjectDefinition | undefined;
+    private project: SfProject | undefined;
+    private projectJson: SfProjectJson | undefined;
+    private definition: ProjectDefinition | undefined;
 
-    constructor(fileReader: ProjectFileReader) {
-        this.fileReader = fileReader;
+    constructor(private projectOrDirectory?: SfProject | string) {
+        if (projectOrDirectory instanceof SfProject) {
+            this.project = projectOrDirectory;
+            this.projectJson = this.project.getSfProjectJson();
+        }
     }
 
     /**
-     * Loads the project configuration if not already loaded
+     * Loads the project definition from the filesystem
      */
-    public async load(): Promise<void> {
-        if (this.project) {
-            return;
+    public async load(): Promise<ProjectDefinition> {
+        if (!this.project) {
+            const workingDirectory = typeof this.projectOrDirectory === 'string' ? this.projectOrDirectory : undefined;
+            this.project = await SfProject.resolve(workingDirectory);
+            this.projectJson = this.project.getSfProjectJson();
         }
-        this.project = await this.fileReader.read();
+
+        const rawContents = this.projectJson!.getContents();
+
+        // Validate with Zod
+        const result = ProjectDefinitionSchema.safeParse(rawContents);
+        if (!result.success) {
+            throw new Error(`Invalid sfdx-project.json: ${result.error.message}`);
+        }
+
+        this.definition = result.data as ProjectDefinition;
+        return this.definition;
     }
 
     /**
-     * Returns 0H Id of package from project config
-     * @param name Package name
+     * Returns the validated project definition
      */
-    public async getPackageId(name: string): Promise<string> {
-        await this.load();
-
-        const packageId = this.project?.packageAliases?.[name];
-        if (packageId) {
-            return packageId;
+    public getProjectDefinition(): ProjectDefinition {
+        if (!this.definition) {
+            throw new Error('ProjectConfig not loaded. Call load() first.');
         }
-
-        throw new Error(
-            `No Package Id found for '${name}' in sfdx-project.json. Please ensure package alias is added.`
-        );
+        return this.definition;
     }
 
     /**
-     * Returns all package names defined in the project
+     * Finds a package definition by name
      */
-    public async getAllPackages(): Promise<string[]> {
-        await this.load();
-
-        if (!this.project?.packageDirectories) {
-            return [];
+    public getPackageDefinition(packageName: string): PackageDefinition {
+        const def = this.getProjectDefinition();
+        const pkg = def.packageDirectories.find(p => p.package === packageName);
+        if (!pkg) {
+            throw new Error(`Package ${packageName} not found in project definition`);
         }
-
-        return this.project.packageDirectories
-            .filter((pkg) => pkg.package && pkg.versionNumber)
-            .map((pkg) => pkg.package);
+        return pkg;
     }
 
     /**
-     * Returns all external packages (defined in aliases but not in packageDirectories)
+     * Returns the source API version of the project
      */
-    public async getExternalPackages(): Promise<ExternalPackage[]> {
-        await this.load();
-
-        if (!this.project?.packageAliases) {
-            return [];
-        }
-
-        const internalPackageNames = new Set(
-            this.project.packageDirectories.map((pkg) => pkg.package)
-        );
-
-        return Object.entries(this.project.packageAliases)
-            .filter(([alias]) => !internalPackageNames.has(alias))
-            .map(([alias, packageId]) => ({
-                alias,
-                packageId,
-            }));
+    public get sourceApiVersion(): string | undefined {
+        return this.getProjectDefinition().sourceApiVersion;
     }
 
     /**
-     * Returns a map of package names to their dependencies
+     * Returns the project directory (root path)
      */
-    public async getDependencyMap(): Promise<Map<string, PackageDependency[]>> {
-        await this.load();
-
-        const dependencyMap = new Map<string, PackageDependency[]>();
-
-        if (!this.project?.packageDirectories) {
-            return dependencyMap;
+    public get projectDirectory(): string {
+        if (!this.project) {
+            throw new Error('ProjectConfig not loaded. Call load() first.');
         }
-
-        for (const pkg of this.project.packageDirectories) {
-            if (pkg.dependencies) {
-                dependencyMap.set(pkg.package, pkg.dependencies);
-            }
-        }
-
-        return dependencyMap;
+        return this.project.getPath();
     }
 
     /**
-     * Returns the type of a package
-     * @param name Package name
+     * Helper to get package type
      */
-    public async getPackageType(name: string): Promise<PackageType> {
-        const descriptor = await this.getPackageDefinition(name);
-        await this.load();
-
-        // If it's in aliases, it's Unlocked
-        if (this.project?.packageAliases?.[name]) {
-            return PackageType.Unlocked;
+    public getPackageType(packageName: string): PackageType {
+        const pkg = this.getPackageDefinition(packageName);
+        if (pkg.type) {
+            return pkg.type as PackageType;
         }
-
-        // Check explicit type or default to Source
-        const type = descriptor.type?.toString().toLowerCase();
-        if (type === PackageType.Data) return PackageType.Data;
-        if (type === PackageType.Diff) return PackageType.Diff;
-
         return PackageType.Source;
     }
 
     /**
-     * Returns the package definition for a given package name
-     * @param name Package name
+     * Returns all package names
      */
-    public async getPackageDefinition(name: string): Promise<PackageDefinition> {
-        await this.load();
-
-        const descriptor = this.project?.packageDirectories.find(
-            (pkg) => pkg.package === name
-        );
-
-        if (!descriptor) {
-            throw new Error(`Package '${name}' does not exist in sfdx-project.json`);
-        }
-
-        return descriptor;
+    public getAllPackageNames(): string[] {
+        return this.getProjectDefinition().packageDirectories.map(p => p.package);
     }
 
     /**
-     * Returns the default package definition
+     * Saves the project definition back to the file
      */
-    public async getDefaultPackageDefinition(): Promise<PackageDefinition> {
-        await this.load();
-
-        const descriptor = this.project?.packageDirectories.find(
-            (pkg) => pkg.default === true
-        );
-
-        if (!descriptor) {
-            throw new Error('No default package found in sfdx-project.json');
+    public async save(updatedDefinition?: ProjectDefinition): Promise<void> {
+        if (!this.projectJson) {
+            throw new Error('ProjectConfig not loaded. Call load() first.');
         }
 
-        return descriptor;
-    }
+        const dataToSave = updatedDefinition || this.definition;
+        if (!dataToSave) return;
 
-    /**
-     * Returns a pruned ProjectDefinition containing only the specified packages
-     * @param packageNames Names of packages to keep
-     */
-    public async filterPackages(packageNames: string[]): Promise<ProjectDefinition> {
-        await this.load();
-
-        if (!this.project) {
-            throw new Error('Project configuration not loaded');
+        // Use individual set calls to avoid protected setContents
+        this.projectJson.set('packageDirectories', dataToSave.packageDirectories);
+        if (dataToSave.packageAliases) {
+            this.projectJson.set('packageAliases', dataToSave.packageAliases);
+        }
+        if (dataToSave.sourceApiVersion) {
+            this.projectJson.set('sourceApiVersion', dataToSave.sourceApiVersion);
         }
 
-        const filteredDirectories = this.project.packageDirectories.filter((pkg) =>
-            packageNames.includes(pkg.package)
-        );
-
-        if (filteredDirectories.length > 0) {
-            filteredDirectories[0].default = true;
-        }
-
-        return {
-            ...this.project,
-            packageDirectories: filteredDirectories,
-        };
-    }
-
-    /**
-     * Updates dependencies for packages in the project config
-     * @param dependencyMap Map of package names to dependencies
-     */
-    public async updateDependencies(
-        dependencyMap: Map<string, PackageDependency[]>
-    ): Promise<ProjectDefinition> {
-        await this.load();
-
-        if (!this.project) {
-            throw new Error('Project configuration not loaded');
-        }
-
-        const updatedDirectories = this.project.packageDirectories.map((pkg) => ({
-            ...pkg,
-            dependencies: dependencyMap.get(pkg.package) || pkg.dependencies,
-        }));
-
-        // Sort based on dependency map order if provided
-        const sortedPackageNames = Array.from(dependencyMap.keys());
-        if (sortedPackageNames.length > 0) {
-            updatedDirectories.sort((a, b) => {
-                const indexA = sortedPackageNames.indexOf(a.package);
-                const indexB = sortedPackageNames.indexOf(b.package);
-                if (indexA === -1 || indexB === -1) return 0;
-                return indexA - indexB;
-            });
-        }
-
-        return {
-            ...this.project,
-            packageDirectories: updatedDirectories,
-        };
-    }
-
-    /**
-     * Get the current project definition
-     */
-    public async getProjectDefinition(): Promise<ProjectDefinition> {
-        await this.load();
-        if (!this.project) {
-            throw new Error('Project configuration not loaded');
-        }
-        return this.project;
+        await this.projectJson.write();
+        this.definition = dataToSave;
     }
 }

@@ -1,27 +1,47 @@
 import type { PackageType } from "../types/package.js";
 import { ProjectJsonSchema, ProjectJson } from '@salesforce/core';
+import { z } from 'zod';
 
+/**
+ * Extension of the standard Salesforce Package Directory (packageDirectories entry).
+ */
+export type PackageDir = ProjectJson['packageDirectories'][number];
+
+// Our Orchestration tool expects packages to have a name (package) and we add custom metadata.
+// We explicitly include 'package', 'versionNumber', 'path' and 'dependencies' here because 
+// PackageDir is a union in @salesforce/core, and not all members of that union have these properties.
+export type PackageDefinition = PackageDir & {
+    package: string;
+    versionNumber: string;
+    path: string;
+    dependencies?: { package: string; versionNumber: string }[];
+    type?: PackageType;
+    ignoreOnStage?: string[];
+    preDeploymentScript?: string;
+    postDeploymentScript?: string;
+};
+
+/**
+ * Extension of the standard sfdx-project.json structure.
+ */
 export interface ProjectDefinition extends ProjectJson {
+    // Override standard array to use our PackageDefinition
     packageDirectories: PackageDefinition[];
 }
 
-export interface PackageDefinition {
-    package: string;
-    path: string;
-    default: boolean;
-    versionNumber?: string;
-    type?: Omit<PackageType, 'Managed'>;
-    versionDescription?: string;
-    dependencies?: PackageDependency[];
-    ignoreOnStages?: string[];
-}
+// Extend the core PackageDir schema with our custom fields
+export const PackageDefinitionSchema = z.intersection(
+    ProjectJsonSchema.shape.packageDirectories.element,
+    z.object({
+        type: z.string().optional(),
+        ignoreOnStage: z.array(z.string()).optional(),
+        preDeploymentScript: z.string().optional(),
+        postDeploymentScript: z.string().optional(),
+        dependencies: z.array(z.object({ package: z.string(), versionNumber: z.string() })).optional(),
+    })
+);
 
-export interface PackageDependency {
-    package: string;
-    versionNumber: string;
-}
-
-export interface ProjectFileReader {
-    read(): Promise<ProjectDefinition>;
-    write(project: ProjectDefinition): Promise<void>;
-}
+// Extend the core ProjectJson schema
+export const ProjectDefinitionSchema = ProjectJsonSchema.extend({
+    packageDirectories: z.array(PackageDefinitionSchema),
+});

@@ -1,9 +1,10 @@
 import semver, { ReleaseType } from 'semver';
 import { EventEmitter } from 'events';
-import { ProjectDefinition, PackageDefinition, ProjectFileReader } from './types.js';
+import { ProjectDefinition, PackageDefinition } from './types.js';
 import { simpleGit } from 'simple-git';
 import { ProjectGraph, PackageNode } from './project-graph.js';
 import { OrgPackageVersionFetcher } from '../types/org.js';
+import ProjectConfig from './project-config.js';
 
 const NEXT_SUFFIX = '.NEXT';
 const LATEST_SUFFIX = '.LATEST';
@@ -11,8 +12,7 @@ const LATEST_SUFFIX = '.LATEST';
 export type VersionBumpType = 'patch' | 'minor' | 'major' | 'custom';
 
 export interface VersionManagerConfig {
-    projectConfig?: ProjectDefinition;
-    fileReader?: ProjectFileReader;
+    projectConfig: ProjectConfig;
 }
 
 export interface VersionChange {
@@ -32,10 +32,6 @@ export interface UpdateStrategy {
     getUpdatedPackages(packages: VersionTracker[]): Promise<VersionTracker[]>;
 }
 
-export interface UpdateStrategy {
-    getUpdatedPackages(packages: VersionTracker[]): Promise<VersionTracker[]>;
-}
-
 export declare interface VersionManager {
     on(event: 'loading', listener: () => void): this;
     on(event: 'loaded', listener: (graph: ProjectGraph) => void): this;
@@ -48,36 +44,29 @@ export declare interface VersionManager {
 export class VersionManager extends EventEmitter {
     private graph?: ProjectGraph;
     private trackers: Map<string, VersionTracker> = new Map();
-    private projectConfig?: ProjectDefinition;
-    private fileReader?: ProjectFileReader;
+    private projectConfig: ProjectConfig;
 
     constructor(config: VersionManagerConfig) {
         super();
         this.projectConfig = config.projectConfig;
-        this.fileReader = config.fileReader;
-        if (this.projectConfig) {
+        try {
             this.loadPackages();
+        } catch (e) {
+            // Might not be loaded yet
         }
     }
 
     public async load(): Promise<void> {
-        if (!this.fileReader) {
-            throw new Error('ProjectFileReader not provided');
-        }
         this.emit('loading');
-        this.projectConfig = await this.fileReader.read();
+        await this.projectConfig.load();
         this.loadPackages();
-        this.emit('loaded', this.graph);
+        this.emit('loaded', this.graph!);
     }
 
     public async save(): Promise<void> {
-        if (!this.fileReader) {
-            throw new Error('ProjectFileReader not provided');
-        }
         this.emit('saving');
-        const updatedConfig = this.getUpdatedProjectConfig();
-        await this.fileReader.write(updatedConfig);
-        this.projectConfig = updatedConfig;
+        const updatedDefinition = this.getUpdatedProjectConfig();
+        await this.projectConfig.save(updatedDefinition);
         this.emit('saved');
     }
 
@@ -87,7 +76,8 @@ export class VersionManager extends EventEmitter {
 
     private loadPackages() {
         if (!this.projectConfig) return;
-        this.graph = new ProjectGraph(this.projectConfig);
+        const definition = this.projectConfig.getProjectDefinition();
+        this.graph = new ProjectGraph(definition);
         this.trackers.clear();
 
         this.graph.getAllNodes().forEach(node => {
@@ -99,38 +89,30 @@ export class VersionManager extends EventEmitter {
      * compute updated versions based on the strategy
      * does NOT apply changes to the source config object yet, but updates the internal VersionTracker state
      */
-    async checkUpdates(
-        strategy: UpdateStrategy,
-        bumpType: VersionBumpType,
-        customVersion?: string
-    ): Promise<VersionUpdateResult> {
-        if (this.trackers.size === 0) {
-            throw new Error('Project not loaded. Call load() or provide projectConfig in constructor.');
-        }
-
+    public async bump(bumpType: VersionBumpType, options?: { strategy?: UpdateStrategy, version?: string }): Promise<VersionUpdateResult> {
         this.emit('checking');
 
-        // Reset state
-        this.trackers.forEach(p => p.reset());
+        const trackers = Array.from(this.trackers.values());
 
-        // 1. Identify packages to update
-        const packagesToUpdate = await strategy.getUpdatedPackages(
-            Array.from(this.trackers.values())
-        );
-
-        // 2. Apply bumps to those packages
-        for (const pkg of packagesToUpdate) {
-            pkg.bump(bumpType, customVersion);
+        // apply strategy
+        let updatedTrackers: VersionTracker[] = [];
+        if (options?.strategy) {
+            updatedTrackers = await options.strategy.getUpdatedPackages(trackers);
+        } else {
+            // Default strategy: bump all packages
+            updatedTrackers = trackers.map(t => {
+                t.bump(bumpType, options?.version);
+                return t;
+            });
         }
 
-        // 3. Propagate updates to dependencies
-        const updatedDependencies = this.updateDependencies(packagesToUpdate);
-
-        // 4. Construct result
         const result: VersionUpdateResult = {
-            packagesUpdated: packagesToUpdate.length,
-            packages: packagesToUpdate.map(p => p.toOutput()),
-            dependencies: updatedDependencies.map(p => p.toOutput(true))
+            packagesUpdated: updatedTrackers.length,
+            packages: updatedTrackers.map(t => ({
+                name: t.packageName,
+                oldVersion: t.currentVersion!,
+                newVersion: t.newVersion!
+            }))
         };
 
         this.emit('checked', result);
@@ -144,14 +126,16 @@ export class VersionManager extends EventEmitter {
         if (!this.projectConfig) {
             throw new Error('Project not loaded');
         }
-        const newConfig = { ...this.projectConfig };
-        newConfig.packageDirectories = newConfig.packageDirectories.map(pkgDef => {
+        const definition = this.projectConfig.getProjectDefinition();
+        const newConfig = { ...definition };
+        newConfig.packageDirectories = newConfig.packageDirectories.map((pkgDef: PackageDefinition) => {
             const tracker = this.trackers.get(pkgDef.package);
             if (tracker && tracker.isUpdated) {
                 return tracker.writeToDefinition(pkgDef);
             }
             return pkgDef;
         });
+
         return newConfig;
     }
 
@@ -269,8 +253,8 @@ export class VersionTracker {
 
         // Initialize mutable state from node original definition
         this.dependencies = new Map();
-        if (node.originalDefinition.dependencies) {
-            node.originalDefinition.dependencies.forEach(d => {
+        if (node.definition.dependencies) {
+            node.definition.dependencies.forEach((d: any) => {
                 this.dependencies.set(d.package, d.versionNumber);
             });
         }
@@ -288,8 +272,8 @@ export class VersionTracker {
         this.baseVersionOverride = null;
         // Revert dependencies to original
         this.dependencies.clear();
-        if (this.node.originalDefinition.dependencies) {
-            this.node.originalDefinition.dependencies.forEach(d => {
+        if (this.node.definition.dependencies) {
+            this.node.definition.dependencies.forEach((d: any) => {
                 this.dependencies.set(d.package, d.versionNumber);
             });
         }

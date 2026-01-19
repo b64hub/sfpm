@@ -109,7 +109,10 @@ export default class ProjectVersionBump extends SfpmCommand {
             const strategy = this.getStrategy(flags);
             const bumpType = this.getBumpType(flags);
 
-            const result = await versionManager.checkUpdates(strategy, bumpType, flags.versionnumber);
+            const result = await versionManager.bump(bumpType, {
+                strategy: strategy,
+                version: flags.versionnumber
+            });
             if (result.packagesUpdated === 0) {
                 this.log(boxen(chalk.green('No packages need updating.'), { padding: 1 }));
                 return;
