@@ -14,8 +14,7 @@ export default class SfpmPackage {
     public resolvedPackageDirectory?: string;
     public projectDefinition?: ProjectDefinition;
     public packageDefinition?: PackageDefinition;
-    public orgDefinitionFilePath?: string = 'config/project-scratch-def.json';
-    public changelogFilePath?: string;
+    public orgDefinitionPath?: string = 'config/project-scratch-def.json';
 
     constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadata>) {
         this.projectDirectory = projectDirectory;
@@ -60,39 +59,48 @@ export default class SfpmPackage {
     }
 
     get triggers(): string[] {
-        const payload = this._metadata.content?.payload;
-        if (!payload || !payload.Package || !payload.Package.types) {
+        if (this._metadata.content?.apex?.triggers && this._metadata.content.apex.triggers.length > 0) {
+            return this._metadata.content.apex.triggers;
+        }
+
+        if (!this._metadata.content?.payload) {
             return this._metadata.content?.apex?.triggers || [];
         }
 
-        const types = _.castArray(payload.Package.types);
+        const types = _.castArray(this._metadata.content.payload.Package.types);
         const triggerType = types.find((type: any) => type.name === 'ApexTrigger');
-        return triggerType ? _.castArray(triggerType.members) : (this._metadata.content?.apex?.triggers || []);
+        const triggers = triggerType ? _.castArray(triggerType.members) : [];
+
+        if (triggers.length > 0) {
+            if (!this._metadata.content.apex) {
+                this._metadata.content.apex = {};
+            }
+            this._metadata.content.apex.triggers = triggers;
+        }
+
+        return triggers;
     }
 
     get hasProfiles(): boolean {
-        const payload = this._metadata.content?.payload;
-        if (!payload || !payload.Package || !payload.Package.types) {
+        if (!this._metadata.content?.payload) {
             return false;
         }
 
-        const types = _.castArray(payload.Package.types);
+        const types = _.castArray(this._metadata.content.payload.Package.types);
         return types.some((type: any) => type.name === 'Profile');
     }
 
     get hasPermissionSetGroups(): boolean {
-        const payload = this._metadata.content?.payload;
-        if (!payload || !payload.Package || !payload.Package.types) {
+        if (!this._metadata.content?.payload) {
             return false;
         }
 
-        const types = _.castArray(payload.Package.types);
+        const types = _.castArray(this._metadata.content.payload.Package.types);
         return types.some((type: any) => type.name === 'PermissionSetGroup');
     }
 
     get isPayloadContainTypesSupportedByProfiles(): boolean {
-        const payload = this._metadata.content?.payload;
-        if (!payload || !payload.Package || !payload.Package.types) {
+        if (!this._metadata.content?.payload) {
             return false;
         }
 
@@ -108,7 +116,7 @@ export default class SfpmPackage {
             'SystemPermissions',
         ];
 
-        const types = _.castArray(payload.Package.types);
+        const types = _.castArray(this._metadata.content.payload.Package.types);
         return types.some((t: any) => profileSupportedMetadataTypes.includes(t.name));
     }
 

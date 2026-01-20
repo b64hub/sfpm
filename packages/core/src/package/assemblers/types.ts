@@ -1,4 +1,5 @@
 import { ConvertResult } from '@salesforce/source-deploy-retrieve';
+import { SfpmPackageManifest } from "../../types/package.js";
 
 export interface AssemblyOptions {
     versionNumber?: string;
@@ -7,17 +8,13 @@ export interface AssemblyOptions {
     replacementForceignorePath?: string;
 }
 
-import { SfpmPackageManifest } from "../../types/package.js";
-
-export interface ManifestAnalysis {
-    payload: SfpmPackageManifest;
-}
-
 export interface AssemblyOutput {
     stagingDirectory: string;
-    manifestPath: string; // Path to the final sfdx-project.json
-    metadataApiResult?: ConvertResult; // Populated by the MDAPI Conversion Step
-    manifestAnalysis?: ManifestAnalysis; // Populated by the MDAPI Conversion Step
+    projectDefinitionPath?: string;
+    mdapiConversion?: {
+        payload: SfpmPackageManifest;
+        result: ConvertResult;
+    }; // Populated by the MDAPI Conversion Step
     scripts?: {
         preDeployment?: string;
         postDeployment?: string;

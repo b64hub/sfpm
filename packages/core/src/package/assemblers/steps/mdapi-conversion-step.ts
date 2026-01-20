@@ -29,7 +29,6 @@ export class MDAPIConversionStep implements AssemblyStep {
         try {
             const converter = new MDAPIConverter(this.projectConfig.sourceApiVersion, this.logger);
             const result = await converter.convert(sourceDir, mdapiDir);
-            output.metadataApiResult = result;
 
             if (!result.packagePath) {
                 throw new Error('[MDAPIConversionStep] MDAPI Conversion result is missing packagePath');
@@ -41,8 +40,9 @@ export class MDAPIConversionStep implements AssemblyStep {
                 manifestJson.Package.version = this.projectConfig.sourceApiVersion;
             }
 
-            output.manifestAnalysis = {
-                payload: manifestJson
+            output.mdapiConversion = {
+                payload: manifestJson,
+                result: result,
             };
         } catch (error: any) {
             throw new Error(`[MDAPIConversionStep] MDAPI Conversion failed: ${error.message}`);

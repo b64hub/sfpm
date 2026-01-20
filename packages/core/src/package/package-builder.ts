@@ -81,7 +81,7 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         sfpmPackage.packageDefinition = this.projectConfig.getPackageDefinition(packageName);
 
         if (this.options.orgDefinitionPath) {
-            sfpmPackage.orgDefinitionFilePath = this.options.orgDefinitionPath;
+            sfpmPackage.orgDefinitionPath = this.options.orgDefinitionPath;
         }
 
         if (this.sourceContext) {
@@ -140,17 +140,10 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         ).assemble();
 
         sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
-        sfpmPackage.mdapiDir = assemblyOutput.metadataApiResult?.packagePath;
 
-        if (assemblyOutput.manifestAnalysis) {
-            const analysis = assemblyOutput.manifestAnalysis;
-            sfpmPackage.metadata.content.payload = analysis.payload;
-            sfpmPackage.metadata.content.apex = {
-                ...sfpmPackage.metadata.content.apex,
-                triggers: analysis.triggers
-            };
-            // Note: SfpmPackage has getters/setters that map some of these to metadata
-            // we should ensure the metadata is correctly updated here.
+        if (assemblyOutput.mdapiConversion) {
+            sfpmPackage.mdapiDir = assemblyOutput.mdapiConversion.result.packagePath;
+            sfpmPackage.metadata.content.payload = assemblyOutput.mdapiConversion.payload;
         }
 
         return;

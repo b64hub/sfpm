@@ -142,7 +142,7 @@ export default class PackageAssembler {
 
         const output: AssemblyOutput = {
             stagingDirectory: this.stagingDirectory,
-            manifestPath: path.join(this.stagingDirectory, 'sfdx-project.json')
+            projectDefinitionPath: path.join(this.stagingDirectory, 'sfdx-project.json')
         };
 
         const steps: AssemblyStep[] = [
