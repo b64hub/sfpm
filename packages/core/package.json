@@ -16,7 +16,8 @@
     "lodash": "^4.17.21",
     "semver": "^7.7.3",
     "simple-git": "^3.30.0",
-    "tmp": "^0.2.5"
+    "tmp": "^0.2.5",
+    "zod": "^4.3.5"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
