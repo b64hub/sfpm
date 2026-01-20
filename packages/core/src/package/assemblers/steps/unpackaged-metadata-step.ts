@@ -1,4 +1,4 @@
-import { AssemblyStep, AssemblyOptions } from "../types.js";
+import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 
@@ -6,7 +6,13 @@ import path from 'path';
  * @description Copies supplemental metadata defined in `unpackagedMetadata` to staging.
  */
 export class UnpackagedMetadataStep implements AssemblyStep {
-    public async execute(options: AssemblyOptions, stagingDirectory: string): Promise<void> {
+    /**
+     * @description Executes the unpackaged metadata copy operation if a path is defined in the package definition.
+     * @param options Shared assembly configuration.
+     * @param output Shared assembly output.
+     * @throws {Error} If the specified path does not exist or the copy operation fails.
+     */
+    public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
         const packageDefinition = options.projectConfig.getPackageDefinition(options.packageName);
 
         if (!packageDefinition.unpackagedMetadata?.path) {
@@ -17,7 +23,7 @@ export class UnpackagedMetadataStep implements AssemblyStep {
 
         try {
             if (await fs.pathExists(sourcePath)) {
-                const destPath = path.join(stagingDirectory, 'unpackagedMetadata');
+                const destPath = path.join(output.stagingDirectory, 'unpackagedMetadata');
                 await fs.ensureDir(destPath);
                 await fs.copy(sourcePath, destPath);
             } else {

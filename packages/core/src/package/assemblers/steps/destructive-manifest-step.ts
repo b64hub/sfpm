@@ -1,4 +1,4 @@
-import { AssemblyStep, AssemblyOptions } from "../types.js";
+import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 
@@ -10,10 +10,10 @@ export class DestructiveManifestStep implements AssemblyStep {
     /**
      * @description Executes the destructive manifest assembly.
      * @param options Shared assembly configuration.
-     * @param stagingDirectory The target directory for assembly.
+     * @param output Shared assembly output.
      * @throws {Error} If the copy operation fails.
      */
-    public async execute(options: AssemblyOptions, stagingDirectory: string): Promise<void> {
+    public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
         if (!options.destructiveManifestPath) {
             return;
         }
@@ -28,7 +28,7 @@ export class DestructiveManifestStep implements AssemblyStep {
                 return;
             }
 
-            const destDir = path.join(stagingDirectory, 'destructive');
+            const destDir = path.join(output.stagingDirectory, 'destructive');
             await fs.ensureDir(destDir);
             await fs.copy(sourcePath, path.join(destDir, 'destructiveChanges.xml'));
         } catch (error: any) {

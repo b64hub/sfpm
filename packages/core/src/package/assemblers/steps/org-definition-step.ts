@@ -1,4 +1,4 @@
-import { AssemblyStep, AssemblyOptions } from "../types.js";
+import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 
@@ -10,10 +10,10 @@ export class OrgDefinitionStep implements AssemblyStep {
     /**
      * @description Executes the organization definition assembly.
      * @param options Shared assembly configuration.
-     * @param stagingDirectory The target directory for assembly.
+     * @param output Shared assembly output.
      * @throws {Error} If the copy operation fails.
      */
-    public async execute(options: AssemblyOptions, stagingDirectory: string): Promise<void> {
+    public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
         if (!options.orgDefinitionPath) {
             return;
         }
@@ -28,7 +28,7 @@ export class OrgDefinitionStep implements AssemblyStep {
                 return;
             }
 
-            const destDir = path.join(stagingDirectory, 'config');
+            const destDir = path.join(output.stagingDirectory, 'config');
             await fs.ensureDir(destDir);
             await fs.copy(sourcePath, path.join(destDir, 'project-scratch-def.json'));
         } catch (error: any) {

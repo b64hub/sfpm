@@ -1,5 +1,6 @@
 import ProjectConfig from "../../project/project-config.js";
 import { Logger } from "../../types/logger.js";
+import { ConvertResult } from '@salesforce/source-deploy-retrieve';
 
 export interface AssemblyOptions {
     packageName: string;
@@ -8,13 +9,22 @@ export interface AssemblyOptions {
     orgDefinitionPath?: string;
     destructiveManifestPath?: string;
     replacementForceignorePath?: string;
-    logger?: Logger;
+}
+
+export interface AssemblyOutput {
+    stagingDirectory: string;
+    manifestPath: string; // Path to the final sfdx-project.json
+    metadataApiResult?: ConvertResult; // Populated by the MDAPI Conversion Step
+    scripts?: {
+        preDeployment?: string;
+        postDeployment?: string;
+    };
 }
 
 export interface AssemblyStep {
     /**
      * @param options Shared state and configuration for the build
-     * @param stagingDirectory The path where files are being assembled
+     * @param output The output object to be populated
      */
-    execute(options: AssemblyOptions, stagingDirectory: string): Promise<void>;
+    execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void>;
 }

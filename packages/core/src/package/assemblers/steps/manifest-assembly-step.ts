@@ -1,4 +1,4 @@
-import { AssemblyStep, AssemblyOptions } from "../types.js";
+import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 import { PackageDefinition } from "../../../project/types.js";
@@ -17,10 +17,10 @@ export class ManifestAssemblyStep implements AssemblyStep {
     /**
      * @description Executes the manifest finalization.
      * @param options Shared assembly configuration.
-     * @param stagingDirectory The target directory for assembly.
+     * @param output Shared assembly output.
      * @throws {Error} If generating or writing the manifest fails.
      */
-    public async execute(options: AssemblyOptions, stagingDirectory: string): Promise<void> {
+    public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
         try {
             const prunedManifest = options.projectConfig.getPrunedDefinition(options.packageName);
 
@@ -30,7 +30,7 @@ export class ManifestAssemblyStep implements AssemblyStep {
             }
 
             // Update paths to be relative to the artifact root
-            if (await fs.pathExists(path.join(stagingDirectory, 'unpackagedMetadata'))) {
+            if (await fs.pathExists(path.join(output.stagingDirectory, 'unpackagedMetadata'))) {
                 (prunedManifest.packageDirectories[0] as PackageDefinition).unpackagedMetadata = { path: 'unpackagedMetadata' };
                 prunedManifest.packageDirectories.push({
                     path: 'unpackagedMetadata',
@@ -41,17 +41,19 @@ export class ManifestAssemblyStep implements AssemblyStep {
                 });
             }
 
-            if (await fs.pathExists(path.join(stagingDirectory, 'scripts', 'preDeployment'))) {
+            if (await fs.pathExists(path.join(output.stagingDirectory, 'scripts', 'preDeployment'))) {
                 (prunedManifest.packageDirectories[0] as PackageDefinition).preDeploymentScript = path.join('scripts', 'preDeployment');
             }
 
-            if (await fs.pathExists(path.join(stagingDirectory, 'scripts', 'postDeployment'))) {
+            if (await fs.pathExists(path.join(output.stagingDirectory, 'scripts', 'postDeployment'))) {
                 (prunedManifest.packageDirectories[0] as PackageDefinition).postDeploymentScript = path.join('scripts', 'postDeployment');
             }
 
-            await fs.writeJSON(path.join(stagingDirectory, 'sfdx-project.json'), prunedManifest, { spaces: 4 });
+            const manifestPath = path.join(output.stagingDirectory, 'sfdx-project.json');
+            await fs.writeJSON(manifestPath, prunedManifest, { spaces: 4 });
+            output.manifestPath = manifestPath;
 
-            const manifestsDir = path.join(stagingDirectory, 'manifests');
+            const manifestsDir = path.join(output.stagingDirectory, 'manifests');
             await fs.ensureDir(manifestsDir);
             await fs.copy(
                 path.join(options.projectConfig.projectDirectory, 'sfdx-project.json'),

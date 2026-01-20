@@ -2,15 +2,18 @@ import EventEmitter from "node:events";
 import { PackageType } from "../types/package.js";
 import ProjectConfig from "../project/project-config.js";
 import { Builder, BuilderRegistry } from "./builders/builder-registry.js";
+import { AnalyzerRegistry } from "./analyzers/analyzer-registry.js";
 import SfpmPackage from "./sfpm-package.js";
 import PackageAssembler from "./assemblers/package-assembler.js";
+import { AssemblyOutput } from "./assemblers/types.js";
 import { SfpmPackageMetadata, SfpmPackageSource } from "../types/package.js";
 
 import { Logger } from "../types/logger.js";
 
 export interface BuildOptions {
-    orgDefinitionFilePath?: string;
     buildNumber?: string;
+    orgDefinitionPath?: string;
+    destructiveManifestPath?: string;
 }
 
 export interface BuildEvents { }
@@ -20,7 +23,7 @@ export interface PreBuildTask { }
 export interface PostBuildTask { }
 
 export interface PropertyFetcher {
-    getProperties(sfpmPackage: SfpmPackage): Promise<void>;
+    getProperties(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageMetadata>>;
 }
 
 /**
@@ -71,8 +74,8 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();
         sfpmPackage.packageDefinition = this.projectConfig.getPackageDefinition(packageName);
 
-        if (this.options.orgDefinitionFilePath) {
-            sfpmPackage.orgDefinitionFilePath = this.options.orgDefinitionFilePath;
+        if (this.options.orgDefinitionPath) {
+            sfpmPackage.orgDefinitionFilePath = this.options.orgDefinitionPath;
         }
 
         if (this.sourceContext) {
@@ -80,8 +83,10 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         }
 
         await this.fetchProperties(sfpmPackage);
-        await this.stagePackage(sfpmPackage);
-        await this.convertToMetadataApiFormat(sfpmPackage);
+        const assemblyOutput = await this.stagePackage(sfpmPackage);
+        sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
+        sfpmPackage.mdapiDir = assemblyOutput.metadataApiResult?.packagePath;
+
         await this.fetchApexTypes(sfpmPackage);
         await this.runAnalyzers(sfpmPackage);
 
@@ -113,36 +118,17 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         }
     }
 
-    private async stagePackage(sfpmPackage: SfpmPackage): Promise<string> {
-        const stagingDirectory = await new PackageAssembler(this.projectConfig, sfpmPackage.packageName)
+    private async stagePackage(sfpmPackage: SfpmPackage): Promise<AssemblyOutput> {
+        const assemblyOutput = await new PackageAssembler({
+            projectConfig: this.projectConfig,
+            packageName: sfpmPackage.packageName,
+        })
             .withVersion(sfpmPackage.version)
-            .withOrgDefinition(sfpmPackage.orgDefinitionFilePath)
-            .withDestructiveManifest(sfpmPackage.metadata.content?.destructiveChangesPath)
+            .withOrgDefinition(this.options.orgDefinitionPath)
+            .withDestructiveManifest(this.options.destructiveManifestPath)
             .assemble();
 
-        return stagingDirectory;
-    }
-
-
-
-    private async convertToMetadataApiFormat(sfpmPackage: SfpmPackage): Promise<void> {
-        if (sfpmPackage.type === PackageType.Data) {
-            return;
-        }
-
-        let sourceToMdapiConvertor = new SourceToMDAPIConvertor(
-            sfpmPackage.workingDirectory,
-            sfpmPackage.packageDefinition.path,
-            ProjectConfig.getSFDXProjectConfig(sfpmPackage.workingDirectory).sourceApiVersion,
-            this.logger
-        );
-        sfpmPackage.metadata.content.payload = (await sourceToMdapiConvertor.convert()).packagePath;
-        const packageManifest: PackageManifest = await PackageManifest.create(sfpmPackage.metadata.content.payload);
-
-        sfpmPackage.metadata.content.payload = packageManifest.manifestJson;
-        sfpmPackage.metadata.content.apex.triggers = packageManifest.fetchTriggers();
-        // and so on... need to check actual properties on sfpmPackage
-
+        return assemblyOutput;
     }
 
     private async fetchApexTypes(sfpmPackage: SfpmPackage): Promise<void> {
@@ -157,10 +143,10 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
 
     }
 
-    private async getComponentSet(sfpmPackage: SfpmPackage): Promise<ComponentSet> {
-        return ComponentSet.fromSource({
+    private async getComponentSet(sfpmPackage: SfpmPackage): Promise<any> {
+        return (global as any).ComponentSet?.fromSource({
             sourceDirectory: sfpmPackage.workingDirectory,
-            ignore: sfpmPackage.packageDescriptor.ignore
+            ignore: sfpmPackage.packageDefinition?.ignore
         });
     }
 
@@ -169,11 +155,14 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
             return;
         }
 
-        let analyzers = AnalyzerRegistry.getAnalyzers();
-        for (const analyzer of analyzers) {
-            if (analyzer.isEnabled(sfpmPackage, this.logger)) sfpmPackage = await analyzer.analyze(sfpmPackage, componentSet, this.logger);
-        }
+        const componentSet = await this.getComponentSet(sfpmPackage);
 
+        let analyzers = AnalyzerRegistry.getAnalyzers(this.logger);
+        for (const analyzer of analyzers) {
+            if (analyzer.isEnabled(sfpmPackage)) {
+                sfpmPackage = await analyzer.analyze(sfpmPackage, componentSet);
+            }
+        }
     }
 
 

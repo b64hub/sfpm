@@ -1,17 +1,11 @@
-import ProjectConfig from '../../project/project-config.js';
 import * as fs from 'fs-extra';
 import path from 'path';
 import crypto from 'crypto';
 
-import { Logger } from '../../types/logger.js';
-import { PackageDefinition } from '../../project/types.js';
 import { PackageType } from '../../types/package.js';
-import MDAPIConverter from './mdapi-converter.js';
+import { Logger } from '../../types/logger.js';
 
-const DOT_FOLDER = ".sfpm";
-
-
-import { AssemblyOptions, AssemblyStep } from './types.js';
+import { AssemblyOptions, AssemblyStep, AssemblyOutput } from './types.js';
 import { SourceCopyStep } from './steps/source-copy-step.js';
 import { UnpackagedMetadataStep } from './steps/unpackaged-metadata-step.js';
 import { ScriptAssemblyStep } from './steps/script-assembly-step.js';
@@ -19,7 +13,9 @@ import { ForceIgnoreStep } from './steps/force-ignore-step.js';
 import { DestructiveManifestStep } from './steps/destructive-manifest-step.js';
 import { OrgDefinitionStep } from './steps/org-definition-step.js';
 import { ManifestAssemblyStep } from './steps/manifest-assembly-step.js';
+import { MDAPIConversionStep } from './steps/mdapi-conversion-step.js';
 
+const DOT_FOLDER = ".sfpm";
 /**
  * @description Assembles package contents from a project configuration in a fluent, instance-based manner.
  * 
@@ -47,26 +43,15 @@ import { ManifestAssemblyStep } from './steps/manifest-assembly-step.js';
  * ```
  */
 export default class PackageAssembler {
-    private projectConfig: ProjectConfig;
-    private packageName: string;
+    private options: AssemblyOptions;
+    private stagingDirectory: string;
     private logger?: Logger;
 
-    private stagingDirectory: string;
-    private versionNumber?: string;
-    private orgDefinitionFilePath?: string;
-    private destructiveManifestFilePath?: string;
-    private pathToReplacementForceIgnore?: string;
-
     constructor(
-        options: AssemblyOptions
+        options: AssemblyOptions,
+        logger?: Logger
     ) {
-        this.projectConfig = options.projectConfig;
-        this.packageName = options.packageName;
-        this.logger = options.logger;
-        this.versionNumber = options.versionNumber;
-        this.orgDefinitionFilePath = options.orgDefinitionPath;
-        this.destructiveManifestFilePath = options.destructiveManifestPath;
-        this.pathToReplacementForceIgnore = options.replacementForceignorePath;
+        this.options = options;
         this.stagingDirectory = this.initializeStagingArea();
     }
 
@@ -82,7 +67,7 @@ export default class PackageAssembler {
      * ```
      */
     public withVersion(version: string | undefined): this {
-        this.versionNumber = version;
+        this.options.versionNumber = version;
         return this;
     }
 
@@ -99,7 +84,7 @@ export default class PackageAssembler {
      * ```
      */
     public withOrgDefinition(path: string | undefined): this {
-        this.orgDefinitionFilePath = path;
+        this.options.orgDefinitionPath = path;
         return this;
     }
 
@@ -116,7 +101,7 @@ export default class PackageAssembler {
      * ```
      */
     public withDestructiveManifest(path: string | undefined): this {
-        this.destructiveManifestFilePath = path;
+        this.options.destructiveManifestPath = path;
         return this;
     }
 
@@ -132,7 +117,7 @@ export default class PackageAssembler {
      * ```
      */
     public withReplacementForceIgnore(path: string | undefined): this {
-        this.pathToReplacementForceIgnore = path;
+        this.options.replacementForceignorePath = path;
         return this;
     }
 
@@ -150,28 +135,44 @@ export default class PackageAssembler {
      * console.log(`Package assembled at: ${stagingPath}`);
      * ```
      */
-    public async assemble(): Promise<string> {
+    public async assemble(): Promise<AssemblyOutput> {
+        await this.ensureStagingDirectoryExists();
+
+        const packageDefinition = this.options.projectConfig.getPackageDefinition(this.options.packageName);
+
+        const output: AssemblyOutput = {
+            stagingDirectory: this.stagingDirectory,
+            manifestPath: path.join(this.stagingDirectory, 'sfdx-project.json')
+        };
+
+        const steps: AssemblyStep[] = [];
+
+        steps.push(new SourceCopyStep());
+        steps.push(new OrgDefinitionStep());
+        steps.push(new ScriptAssemblyStep());
+        steps.push(new UnpackagedMetadataStep());
+        steps.push(new ForceIgnoreStep());
+
+        if (packageDefinition.type !== PackageType.Data && packageDefinition.type !== PackageType.Managed) {
+            steps.push(new MDAPIConversionStep());
+        }
+
+        if (this.options.destructiveManifestPath) {
+            steps.push(new DestructiveManifestStep());
+        }
+
+        steps.push(new ManifestAssemblyStep());
+
+
         try {
-            await this.ensureStagingDirectoryExists();
 
-            const steps: AssemblyStep[] = [
-                new SourceCopyStep(),
-                new UnpackagedMetadataStep(),
-                new ScriptAssemblyStep(),
-                new ForceIgnoreStep(),
-                new DestructiveManifestStep(),
-                new OrgDefinitionStep(),
-                new ManifestAssemblyStep()
-            ];
-
-            const options = this.getAssemblyOptions();
 
             for (const step of steps) {
                 this.logger?.debug(`Executing step: ${step.constructor.name}`);
-                await step.execute(options, this.stagingDirectory);
+                await step.execute(this.options, output);
             }
 
-            return this.stagingDirectory;
+            return output;
         } catch (error) {
             // Error Handling: attempt to delete the stagingDirectory before re-throwing
             if (process.env.DEBUG !== 'true' && this.stagingDirectory) {

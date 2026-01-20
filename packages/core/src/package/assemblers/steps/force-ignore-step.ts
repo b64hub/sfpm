@@ -1,4 +1,4 @@
-import { AssemblyStep, AssemblyOptions } from "../types.js";
+import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 
@@ -10,11 +10,11 @@ export class ForceIgnoreStep implements AssemblyStep {
     /**
      * @description Orchestrates the gathering and copying of all necessary ignore files.
      * @param options Shared assembly configuration.
-     * @param stagingDirectory The target directory for assembly.
+     * @param output Shared assembly output.
      * @throws {Error} If any part of the ignore file assembly fails.
      */
-    public async execute(options: AssemblyOptions, stagingDirectory: string): Promise<void> {
-        const forceIgnoresDir = path.join(stagingDirectory, 'forceignores');
+    public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
+        const forceIgnoresDir = path.join(output.stagingDirectory, 'forceignores');
         await fs.ensureDir(forceIgnoresDir);
 
         const projectDef = options.projectConfig.getProjectDefinition();
@@ -23,7 +23,7 @@ export class ForceIgnoreStep implements AssemblyStep {
 
         try {
             await this.assembleStageIgnoreFiles(options, forceIgnoresDir, ignoreFilesConfig, rootForceIgnore);
-            await this.assembleRootForceIgnore(options, stagingDirectory, rootForceIgnore);
+            await this.assembleRootForceIgnore(options, output.stagingDirectory, rootForceIgnore);
         } catch (error: any) {
             throw new Error(`[ForceIgnoreStep] ${error.message}`);
         }

@@ -1,4 +1,4 @@
-import { AssemblyStep, AssemblyOptions } from "../types.js";
+import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 
@@ -10,16 +10,16 @@ export class SourceCopyStep implements AssemblyStep {
     /**
      * @description Executes the source copy operation.
      * @param options Shared assembly configuration.
-     * @param stagingDirectory The target directory for assembly.
+     * @param output Shared assembly output.
      * @throws {Error} If the copy operation fails.
      */
-    public async execute(options: AssemblyOptions, stagingDirectory: string): Promise<void> {
+    public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
         const projectDirectory = options.projectConfig.projectDirectory;
         const packageDefinition = options.projectConfig.getPackageDefinition(options.packageName);
         const packagePath = packageDefinition.path;
 
         const sourcePath = path.join(projectDirectory, packagePath);
-        const destPath = path.join(stagingDirectory, packagePath);
+        const destPath = path.join(output.stagingDirectory, packagePath);
 
         options.logger?.debug(`[SourceCopyStep] Copying ${sourcePath} to ${destPath}`);
 
