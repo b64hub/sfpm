@@ -1,4 +1,6 @@
 import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
+import { Logger } from "../../../types/logger.js";
+import ProjectConfig from "../../../project/project-config.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 
@@ -7,18 +9,18 @@ import path from 'path';
  * It handles both stage-specific ignore files (prepare, validate, etc.) and the root .forceignore.
  */
 export class ForceIgnoreStep implements AssemblyStep {
-    /**
-     * @description Orchestrates the gathering and copying of all necessary ignore files.
-     * @param options Shared assembly configuration.
-     * @param output Shared assembly output.
-     * @throws {Error} If any part of the ignore file assembly fails.
-     */
+    constructor(
+        private packageName: string,
+        private projectConfig: ProjectConfig,
+        private logger?: Logger
+    ) { }
+
     public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
         const forceIgnoresDir = path.join(output.stagingDirectory, 'forceignores');
         await fs.ensureDir(forceIgnoresDir);
 
-        const projectDef = options.projectConfig.getProjectDefinition();
-        const rootForceIgnore = path.join(options.projectConfig.projectDirectory, '.forceignore');
+        const projectDef = this.projectConfig.getProjectDefinition();
+        const rootForceIgnore = path.join(this.projectConfig.projectDirectory, '.forceignore');
         const ignoreFilesConfig = projectDef.plugins?.sfpm?.ignoreFiles;
 
         try {
@@ -51,12 +53,12 @@ export class ForceIgnoreStep implements AssemblyStep {
         const destIgnorePath = path.join(forceIgnoresDir, `.${stage}ignore`);
 
         if (stageSpecificIgnorePath) {
-            const resolvedStageIgnorePath = path.join(options.projectConfig.projectDirectory, stageSpecificIgnorePath);
+            const resolvedStageIgnorePath = path.join(this.projectConfig.projectDirectory, stageSpecificIgnorePath);
 
             if (await fs.pathExists(resolvedStageIgnorePath)) {
                 await fs.copy(resolvedStageIgnorePath, destIgnorePath);
-            } else if (await fs.pathExists(path.join(options.projectConfig.projectDirectory, 'forceignores', `.${stage}ignore`))) {
-                await fs.copy(path.join(options.projectConfig.projectDirectory, 'forceignores', `.${stage}ignore`), destIgnorePath);
+            } else if (await fs.pathExists(path.join(this.projectConfig.projectDirectory, 'forceignores', `.${stage}ignore`))) {
+                await fs.copy(path.join(this.projectConfig.projectDirectory, 'forceignores', `.${stage}ignore`), destIgnorePath);
             } else {
                 throw new Error(`${resolvedStageIgnorePath} does not exist`);
             }
@@ -77,7 +79,7 @@ export class ForceIgnoreStep implements AssemblyStep {
                 await fs.copy(options.replacementForceignorePath, destPath);
                 return;
             }
-            options.logger?.info(`${options.replacementForceignorePath} does not exist. Using root .forceignore.`);
+            this.logger?.info(`${options.replacementForceignorePath} does not exist. Using root .forceignore.`);
         }
 
         if (await fs.pathExists(rootForceIgnore)) {

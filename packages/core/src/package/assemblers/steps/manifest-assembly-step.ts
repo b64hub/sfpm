@@ -1,4 +1,6 @@
 import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
+import { Logger } from "../../../types/logger.js";
+import ProjectConfig from "../../../project/project-config.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 import { PackageDefinition } from "../../../project/types.js";
@@ -14,15 +16,15 @@ import { PackageType } from "../../../types/package.js";
  * 3. Archives the original project manifest for reference.
  */
 export class ManifestAssemblyStep implements AssemblyStep {
-    /**
-     * @description Executes the manifest finalization.
-     * @param options Shared assembly configuration.
-     * @param output Shared assembly output.
-     * @throws {Error} If generating or writing the manifest fails.
-     */
+    constructor(
+        private packageName: string,
+        private projectConfig: ProjectConfig,
+        private logger?: Logger
+    ) { }
+
     public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
         try {
-            const prunedManifest = options.projectConfig.getPrunedDefinition(options.packageName);
+            const prunedManifest = this.projectConfig.getPrunedDefinition(this.packageName);
 
             // Inject the versionNumber if provided
             if (options.versionNumber) {
@@ -56,7 +58,7 @@ export class ManifestAssemblyStep implements AssemblyStep {
             const manifestsDir = path.join(output.stagingDirectory, 'manifests');
             await fs.ensureDir(manifestsDir);
             await fs.copy(
-                path.join(options.projectConfig.projectDirectory, 'sfdx-project.json'),
+                path.join(this.projectConfig.projectDirectory, 'sfdx-project.json'),
                 path.join(manifestsDir, 'sfdx-project.json.original')
             );
         } catch (error: any) {

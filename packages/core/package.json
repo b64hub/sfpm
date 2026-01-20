@@ -12,6 +12,7 @@
   "dependencies": {
     "@salesforce/core": "^8.24.2",
     "@salesforce/source-deploy-retrieve": "^12.31.7",
+    "fast-xml-parser": "^5.3.3",
     "fs-extra": "^11.3.3",
     "ignore": "^7.0.5",
     "lodash": "^4.17.21",

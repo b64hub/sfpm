@@ -2,6 +2,7 @@ import * as fs from 'fs-extra';
 import path from 'path';
 import crypto from 'crypto';
 
+import ProjectConfig from "../../project/project-config.js";
 import { PackageType } from '../../types/package.js';
 import { Logger } from '../../types/logger.js';
 
@@ -43,15 +44,14 @@ const DOT_FOLDER = ".sfpm";
  * ```
  */
 export default class PackageAssembler {
-    private options: AssemblyOptions;
     private stagingDirectory: string;
-    private logger?: Logger;
 
     constructor(
-        options: AssemblyOptions,
-        logger?: Logger
+        private packageName: string,
+        private projectConfig: ProjectConfig,
+        private options: AssemblyOptions = {},
+        private logger?: Logger
     ) {
-        this.options = options;
         this.stagingDirectory = this.initializeStagingArea();
     }
 
@@ -138,31 +138,30 @@ export default class PackageAssembler {
     public async assemble(): Promise<AssemblyOutput> {
         await this.ensureStagingDirectoryExists();
 
-        const packageDefinition = this.options.projectConfig.getPackageDefinition(this.options.packageName);
+        const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
 
         const output: AssemblyOutput = {
             stagingDirectory: this.stagingDirectory,
             manifestPath: path.join(this.stagingDirectory, 'sfdx-project.json')
         };
 
-        const steps: AssemblyStep[] = [];
-
-        steps.push(new SourceCopyStep());
-        steps.push(new OrgDefinitionStep());
-        steps.push(new ScriptAssemblyStep());
-        steps.push(new UnpackagedMetadataStep());
-        steps.push(new ForceIgnoreStep());
+        const steps: AssemblyStep[] = [
+            new SourceCopyStep(this.packageName, this.projectConfig, this.logger),
+            new OrgDefinitionStep(this.packageName, this.projectConfig, this.logger),
+            new ScriptAssemblyStep(this.packageName, this.projectConfig, this.logger),
+            new UnpackagedMetadataStep(this.packageName, this.projectConfig, this.logger),
+            new ForceIgnoreStep(this.packageName, this.projectConfig, this.logger)
+        ];
 
         if (packageDefinition.type !== PackageType.Data && packageDefinition.type !== PackageType.Managed) {
-            steps.push(new MDAPIConversionStep());
+            steps.push(new MDAPIConversionStep(this.packageName, this.projectConfig, this.logger));
         }
 
         if (this.options.destructiveManifestPath) {
-            steps.push(new DestructiveManifestStep());
+            steps.push(new DestructiveManifestStep(this.packageName, this.projectConfig, this.logger));
         }
 
-        steps.push(new ManifestAssemblyStep());
-
+        steps.push(new ManifestAssemblyStep(this.packageName, this.projectConfig, this.logger));
 
         try {
 
@@ -180,18 +179,6 @@ export default class PackageAssembler {
             }
             throw error;
         }
-    }
-
-    private getAssemblyOptions(): AssemblyOptions {
-        return {
-            projectConfig: this.projectConfig,
-            packageName: this.packageName,
-            logger: this.logger,
-            versionNumber: this.versionNumber,
-            orgDefinitionPath: this.orgDefinitionFilePath,
-            destructiveManifestPath: this.destructiveManifestFilePath,
-            replacementForceignorePath: this.pathToReplacementForceIgnore
-        };
     }
 
     /**

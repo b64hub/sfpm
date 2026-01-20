@@ -1,4 +1,6 @@
 import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
+import { Logger } from "../../../types/logger.js";
+import ProjectConfig from "../../../project/project-config.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 
@@ -7,6 +9,12 @@ import path from 'path';
  * This step ensures that the core source code of the package is present in the artifact.
  */
 export class SourceCopyStep implements AssemblyStep {
+    constructor(
+        private packageName: string,
+        private projectConfig: ProjectConfig,
+        private logger?: Logger
+    ) { }
+
     /**
      * @description Executes the source copy operation.
      * @param options Shared assembly configuration.
@@ -14,17 +22,14 @@ export class SourceCopyStep implements AssemblyStep {
      * @throws {Error} If the copy operation fails.
      */
     public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
-        const projectDirectory = options.projectConfig.projectDirectory;
-        const packageDefinition = options.projectConfig.getPackageDefinition(options.packageName);
-        const packagePath = packageDefinition.path;
+        const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
+        const sourceDir = path.join(this.projectConfig.projectDirectory, packageDefinition.path);
+        const destinationDir = path.join(output.stagingDirectory, packageDefinition.path);
 
-        const sourcePath = path.join(projectDirectory, packagePath);
-        const destPath = path.join(output.stagingDirectory, packagePath);
-
-        options.logger?.debug(`[SourceCopyStep] Copying ${sourcePath} to ${destPath}`);
+        this.logger?.debug(`[SourceCopyStep] Copying main context from ${sourceDir} to ${destinationDir}`);
 
         try {
-            await fs.copy(sourcePath, destPath);
+            await fs.copy(sourceDir, destinationDir);
         } catch (error: any) {
             throw new Error(`[SourceCopyStep] Failed to copy source: ${error.message}`);
         }

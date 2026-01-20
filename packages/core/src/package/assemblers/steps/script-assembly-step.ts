@@ -1,4 +1,6 @@
 import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
+import { Logger } from "../../../types/logger.js";
+import ProjectConfig from "../../../project/project-config.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 
@@ -7,13 +9,19 @@ import path from 'path';
  * It renames the scripts to 'preDeployment' and 'postDeployment' for standardized discovery by installers.
  */
 export class ScriptAssemblyStep implements AssemblyStep {
+    constructor(
+        private packageName: string,
+        private projectConfig: ProjectConfig,
+        private logger?: Logger
+    ) { }
+
     /**
      * @description Executes the script assembly operation.
      * @param options Shared assembly configuration.
      * @param output Shared assembly output.
      */
     public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
-        const packageDefinition = options.projectConfig.getPackageDefinition(options.packageName);
+        const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
         const preDeploymentScript = packageDefinition.preDeploymentScript;
         const postDeploymentScript = packageDefinition.postDeploymentScript;
 
@@ -38,7 +46,7 @@ export class ScriptAssemblyStep implements AssemblyStep {
     private async copyScript(options: AssemblyOptions, scriptsDir: string, scriptPath: string, scriptLabel: string): Promise<void> {
         const resolvedPath = path.isAbsolute(scriptPath)
             ? scriptPath
-            : path.join(options.projectConfig.projectDirectory, scriptPath);
+            : path.join(this.projectConfig.projectDirectory, scriptPath);
 
         try {
             if (!(await fs.pathExists(resolvedPath))) {

@@ -1,4 +1,6 @@
 import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
+import { Logger } from "../../../types/logger.js";
+import ProjectConfig from "../../../project/project-config.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 
@@ -7,6 +9,12 @@ import path from 'path';
  * If a path is provided, it's copied to the `/config` folder in the staging area.
  */
 export class OrgDefinitionStep implements AssemblyStep {
+    constructor(
+        private packageName: string,
+        private projectConfig: ProjectConfig,
+        private logger?: Logger
+    ) { }
+
     /**
      * @description Executes the organization definition assembly.
      * @param options Shared assembly configuration.
@@ -20,11 +28,11 @@ export class OrgDefinitionStep implements AssemblyStep {
 
         const sourcePath = path.isAbsolute(options.orgDefinitionPath)
             ? options.orgDefinitionPath
-            : path.join(options.projectConfig.projectDirectory, options.orgDefinitionPath);
+            : path.join(this.projectConfig.projectDirectory, options.orgDefinitionPath);
 
         try {
             if (!(await fs.pathExists(sourcePath))) {
-                options.logger?.warn(`Config file ${sourcePath} not found.`);
+                this.logger?.warn(`Config file ${sourcePath} not found.`);
                 return;
             }
 
