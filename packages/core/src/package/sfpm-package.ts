@@ -56,8 +56,18 @@ export default class SfpmPackage {
 
     // Inferred Getters
     get hasApex(): boolean {
-        const apex = this._metadata.content?.apex;
-        return (apex?.classes?.length || 0) > 0 || (apex?.triggers?.length || 0) > 0;
+        return (this.metadata.content?.apex?.classes?.length || 0) > 0 || this.triggers.length > 0;
+    }
+
+    get triggers(): string[] {
+        const payload = this._metadata.content?.payload;
+        if (!payload || !payload.Package || !payload.Package.types) {
+            return this._metadata.content?.apex?.triggers || [];
+        }
+
+        const types = _.castArray(payload.Package.types);
+        const triggerType = types.find((type: any) => type.name === 'ApexTrigger');
+        return triggerType ? _.castArray(triggerType.members) : (this._metadata.content?.apex?.triggers || []);
     }
 
     get hasProfiles(): boolean {
@@ -68,6 +78,38 @@ export default class SfpmPackage {
 
         const types = _.castArray(payload.Package.types);
         return types.some((type: any) => type.name === 'Profile');
+    }
+
+    get hasPermissionSetGroups(): boolean {
+        const payload = this._metadata.content?.payload;
+        if (!payload || !payload.Package || !payload.Package.types) {
+            return false;
+        }
+
+        const types = _.castArray(payload.Package.types);
+        return types.some((type: any) => type.name === 'PermissionSetGroup');
+    }
+
+    get isPayloadContainTypesSupportedByProfiles(): boolean {
+        const payload = this._metadata.content?.payload;
+        if (!payload || !payload.Package || !payload.Package.types) {
+            return false;
+        }
+
+        const profileSupportedMetadataTypes = [
+            'ApexClass',
+            'CustomApplication',
+            'CustomObject',
+            'CustomField',
+            'Layout',
+            'ApexPage',
+            'CustomTab',
+            'RecordType',
+            'SystemPermissions',
+        ];
+
+        const types = _.castArray(payload.Package.types);
+        return types.some((t: any) => profileSupportedMetadataTypes.includes(t.name));
     }
 
     get hasDestructiveChanges(): boolean {

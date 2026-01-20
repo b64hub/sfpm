@@ -22,6 +22,11 @@ export type PackageDefinition = PackageDir & {
     postDeploymentScript?: string;
     unpackagedMetadata?: { path: string };
     enableFHT?: boolean;
+    assignPermSetsPreDeployment?: string[];
+    assignPermSetsPostDeployment?: string[];
+    destructiveChangesPath?: string;
+    reconcileProfiles?: boolean;
+    ignore?: string[];
 };
 
 /**
@@ -53,6 +58,11 @@ export const PackageDefinitionSchema = z.intersection(
         postDeploymentScript: z.string().optional(),
         dependencies: z.array(z.object({ package: z.string(), versionNumber: z.string() })).optional(),
         unpackagedMetadata: z.object({ path: z.string() }).optional(),
+        assignPermSetsPreDeployment: z.array(z.string()).optional(),
+        assignPermSetsPostDeployment: z.array(z.string()).optional(),
+        destructiveChangesPath: z.string().optional(),
+        reconcileProfiles: z.boolean().optional(),
+        ignore: z.array(z.string()).optional(),
     })
 );
 

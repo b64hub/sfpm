@@ -1,6 +1,8 @@
 import EventEmitter from "node:events";
 import { PackageType } from "../types/package.js";
 import ProjectConfig from "../project/project-config.js";
+// @ts-ignore
+import * as _ from "lodash";
 import { Builder, BuilderRegistry } from "./builders/builder-registry.js";
 import { AnalyzerRegistry } from "./analyzers/analyzer-registry.js";
 import SfpmPackage from "./sfpm-package.js";
@@ -9,6 +11,10 @@ import { AssemblyOutput } from "./assemblers/types.js";
 import { SfpmPackageMetadata, SfpmPackageSource } from "../types/package.js";
 
 import { Logger } from "../types/logger.js";
+import ApexTypeFetcher from "./utils/apex-type-fetcher.js";
+import { AssignPermissionSetProvider } from "./providers/assign-permission-set-provider.js";
+import { DestructiveManifestPathProvider } from "./providers/destructive-manifest-path-provider.js";
+import { ReconcilePropertyProvider } from "./providers/reconcile-property-provider.js";
 
 export interface BuildOptions {
     buildNumber?: string;
@@ -22,8 +28,8 @@ export interface PreBuildTask { }
 
 export interface PostBuildTask { }
 
-export interface PropertyFetcher {
-    getProperties(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageMetadata>>;
+export interface MetadataProvider {
+    provide(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageMetadata>>;
 }
 
 /**
@@ -39,10 +45,10 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
     private preBuildTasks: PreBuildTask[] = [];
     private postBuildTasks: PostBuildTask[] = [];
 
-    private propertyFetchers: PropertyFetcher[] = [
-        new AssignPermissionSetFetcher(),
-        new DestructiveManifestPathFetcher(),
-        new ReconcilePropertyFetcher(),
+    private metadataProviders: MetadataProvider[] = [
+        new AssignPermissionSetProvider(),
+        new DestructiveManifestPathProvider(),
+        new ReconcilePropertyProvider(),
     ];
 
     constructor(projectConfig: ProjectConfig, options?: BuildOptions, logger?: Logger) {
@@ -82,11 +88,8 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
             sfpmPackage.metadata.source = this.sourceContext;
         }
 
-        await this.fetchProperties(sfpmPackage);
-        const assemblyOutput = await this.stagePackage(sfpmPackage);
-        sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
-        sfpmPackage.mdapiDir = assemblyOutput.metadataApiResult?.packagePath;
-
+        await this.enrichMetadata(sfpmPackage);
+        await this.stagePackage(sfpmPackage);
         await this.fetchApexTypes(sfpmPackage);
         await this.runAnalyzers(sfpmPackage);
 
@@ -112,23 +115,45 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         sfpmPackage.metadata.identity.versionNumber = sfpmPackage.version;
     }
 
-    private async fetchProperties(sfpmPackage: SfpmPackage): Promise<void> {
-        for (const propertyFetcher of this.propertyFetchers) {
-            await propertyFetcher.getProperties(sfpmPackage);
+    private async enrichMetadata(sfpmPackage: SfpmPackage): Promise<void> {
+        for (const provider of this.metadataProviders) {
+            try {
+                const contribution = await provider.provide(sfpmPackage);
+                _.merge(sfpmPackage.metadata, contribution);
+            } catch (error: any) {
+                this.logger?.error(`Error in metadata provider ${provider.constructor.name}: ${error.message}`);
+                // Continue with other providers even if one fails
+            }
         }
     }
 
-    private async stagePackage(sfpmPackage: SfpmPackage): Promise<AssemblyOutput> {
-        const assemblyOutput = await new PackageAssembler({
-            projectConfig: this.projectConfig,
-            packageName: sfpmPackage.packageName,
-        })
-            .withVersion(sfpmPackage.version)
-            .withOrgDefinition(this.options.orgDefinitionPath)
-            .withDestructiveManifest(this.options.destructiveManifestPath)
-            .assemble();
+    private async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
+        const assemblyOutput = await new PackageAssembler(
+            sfpmPackage.packageName,
+            this.projectConfig,
+            {
+                versionNumber: sfpmPackage.version,
+                orgDefinitionPath: this.options.orgDefinitionPath,
+                destructiveManifestPath: this.options.destructiveManifestPath,
+            },
+            this.logger
+        ).assemble();
 
-        return assemblyOutput;
+        sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
+        sfpmPackage.mdapiDir = assemblyOutput.metadataApiResult?.packagePath;
+
+        if (assemblyOutput.manifestAnalysis) {
+            const analysis = assemblyOutput.manifestAnalysis;
+            sfpmPackage.metadata.content.payload = analysis.payload;
+            sfpmPackage.metadata.content.apex = {
+                ...sfpmPackage.metadata.content.apex,
+                triggers: analysis.triggers
+            };
+            // Note: SfpmPackage has getters/setters that map some of these to metadata
+            // we should ensure the metadata is correctly updated here.
+        }
+
+        return;
     }
 
     private async fetchApexTypes(sfpmPackage: SfpmPackage): Promise<void> {
@@ -136,11 +161,18 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
             return;
         }
 
-        let apexFetcher: ApexTypeFetcher = new ApexTypeFetcher(sfpmPackage.workingDirectory);
-        sfpmPackage.metadata.content.apex.classes = apexFetcher.getClassesClassifiedByType();
-        // ...
-        sfpmPackage.metadata.validation.isTriggerAllTests = this.isAllTestsToBeTriggered(sfpmPackage, this.logger);
+        let apexFetcher = new ApexTypeFetcher(sfpmPackage.workingDirectory);
+        const classification = apexFetcher.getClassesClassifiedByType();
 
+        if (!sfpmPackage.metadata.content.apex) {
+            sfpmPackage.metadata.content.apex = {};
+        }
+
+        sfpmPackage.metadata.content.apex.classes = classification.classes;
+        sfpmPackage.metadata.content.apex.triggers = classification.triggers;
+        sfpmPackage.metadata.content.apex.testClasses = classification.testClasses;
+
+        sfpmPackage.metadata.validation.isTriggerAllTests = this.isAllTestsToBeTriggered(sfpmPackage, this.logger);
     }
 
     private async getComponentSet(sfpmPackage: SfpmPackage): Promise<any> {
@@ -164,7 +196,6 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
             }
         }
     }
-
 
     /*
      *  Handle version Numbers of package

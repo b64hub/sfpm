@@ -12,6 +12,17 @@ export interface SfpmPackageIdentity {
     apiVersion?: string;
 }
 
+export interface SfpmPackageManifest {
+    Package: {
+        xmlns: string;
+        types: Array<{
+            name: string;
+            members: string[];
+        }>;
+        version: string;
+    };
+}
+
 export interface SfpmPackageSource {
     repositoryUrl?: string;
     branch?: string;
@@ -23,7 +34,7 @@ export interface SfpmPackageSource {
 
 export interface SfpmPackageContent {
     metadataCount?: number;
-    payload?: any;
+    payload?: SfpmPackageManifest;
     destructiveChangesPath?: string;
     apex?: {
         classes?: string[];
