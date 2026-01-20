@@ -11,6 +11,21 @@ const DOT_FOLDER = ".sfpm";
 /**
  * Assembles package contents from a project configuration in a fluent, instance-based manner.
  * 
+ * ### Staging Area ("The Why")
+ * The `PackageAssembler` creates a temporary, isolated "staging area" for each build. This isolation:
+ * 1. **Prevents Interference**: Multiple concurrent builds won't corrupt each other's files.
+ * 2. **Ensures Determinism**: The resulting artifact contains exactly what is specified, with no leftover files from previous runs.
+ * 3. **Simplifies Packaging**: Tools can simply zip or upload the entire contents of the staging directory.
+ * 
+ * ### Staging Structure ("The How")
+ * The staging area follows a standardized layout:
+ * - `/[packagePath]`: Primary source metadata.
+ * - `/unpackagedMetadata`: Supplemental metadata not part of the main package.
+ * - `/scripts`: Pre and post-deployment scripts.
+ * - `/forceignores`: Stage-specific ignore files (e.g., `.prepareignore`).
+ * - `.forceignore`: The root ignore file used for the final artifact.
+ * - `sfdx-project.json`: A pruned version of the original manifest, specifically for this package.
+ * 
  * @example
  * ```typescript
  * const stagingPath = await new PackageAssembler(projectConfig, 'my-package', logger)
@@ -151,16 +166,34 @@ export default class PackageAssembler {
         }
     }
 
+    /**
+     * @description Resolves the path for the temporary assembly area.
+     * The path is constructed as: `.sfpm/tmp/builds/[timestamp]-[packageName]-[hash]`
+     * 
+     * @returns {string} The absolute path to the staging directory.
+     */
     private initializeStagingArea(): string {
         const buildName = this.createBuildName();
         return path.join(process.cwd(), DOT_FOLDER, 'tmp', 'builds', buildName);
     }
 
+    /**
+     * @description Ensures the parent directories for the staging area exist and that the 
+     * specific staging folder is completely empty and ready for a fresh build.
+     * 
+     * @returns {Promise<void>}
+     */
     private async ensureStagingDirectoryExists(): Promise<void> {
         await fs.ensureDir(path.dirname(this.stagingDirectory));
         await fs.emptyDir(this.stagingDirectory);
     }
 
+    /**
+     * @description Generates a unique name for the build to avoid collisions.
+     * Format: YYYYMMDDHHMMSS-[packageName]-[randomHash]
+     * 
+     * @returns {string} A unique build identifier.
+     */
     private createBuildName(): string {
         const now = new Date();
         const timestamp = now.toISOString()
@@ -173,6 +206,13 @@ export default class PackageAssembler {
         return `${timestamp}-${this.packageName}-${hash}`;
     }
 
+    /**
+     * @description Copies supplemental metadata defined in `unpackagedMetadata` to a dedicated
+     * folder in the staging area. This metadata is often used for pre/post-requisites
+     * that shouldn't be part of the main package installation.
+     * 
+     * @returns {Promise<void>}
+     */
     private async assembleUnpackagedMetadata() {
         const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
 
@@ -190,6 +230,14 @@ export default class PackageAssembler {
         }
     }
 
+    /**
+     * @description Copies pre and post-deployment scripts to the `/scripts` subdirectory in the staging area.
+     * Labels them as 'preDeployment' and 'postDeployment' for standardized discovery.
+     * 
+     * @param {string} [preDeploymentScript] Path to the pre-deployment script.
+     * @param {string} [postDeploymentScript] Path to the post-deployment script.
+     * @returns {Promise<void>}
+     */
     private async assembleScripts(preDeploymentScript?: string, postDeploymentScript?: string) {
         const scriptsDir = path.join(this.stagingDirectory, 'scripts');
         await fs.ensureDir(scriptsDir);
@@ -203,6 +251,15 @@ export default class PackageAssembler {
         }
     }
 
+    /**
+     * @description Internal helper to copy a single script file to the staging scripts directory.
+     * Resolves path relative to project root if not absolute.
+     * 
+     * @param {string} scriptsDir The target scripts directory in staging.
+     * @param {string} scriptPath The source path of the script.
+     * @param {string} scriptLabel The label (e.g., 'preDeployment') to use in the destination.
+     * @returns {Promise<void>}
+     */
     private async copyScript(scriptsDir: string, scriptPath: string, scriptLabel: string): Promise<void> {
         const resolvedPath = path.isAbsolute(scriptPath)
             ? scriptPath
@@ -215,6 +272,13 @@ export default class PackageAssembler {
         await fs.copy(resolvedPath, path.join(scriptsDir, scriptLabel));
     }
 
+    /**
+     * @description Manages the assembly of ignore files. This includes:
+     * 1. Setting up stage-specific ignore files (prepare, validate, etc.) in the `/forceignores` directory.
+     * 2. Setting up the root `.forceignore` file for the staging area.
+     * 
+     * @returns {Promise<void>}
+     */
     private async assembleForceIgnores() {
         const forceIgnoresDir = path.join(this.stagingDirectory, 'forceignores');
         await fs.ensureDir(forceIgnoresDir);
@@ -228,6 +292,16 @@ export default class PackageAssembler {
         await this.assembleRootForceIgnore(rootForceIgnore);
     }
 
+    /**
+     * @description Iterates through standardized deployment stages and prepares unique ignore files 
+     * for each. These allow fine-grained control over what is filtered during 
+     * different parts of the CI/CD pipeline.
+     * 
+     * @param {string} forceIgnoresDir The directory where stage-specific ignore files are stored.
+     * @param {any} ignoreFiles Configuration object containing stage-to-path mappings.
+     * @param {string} rootForceIgnore The path to the root .forceignore file.
+     * @returns {Promise<void>}
+     */
     private async assembleStageIgnoreFiles(
         forceIgnoresDir: string,
         ignoreFiles: any,
@@ -239,6 +313,22 @@ export default class PackageAssembler {
         }
     }
 
+    /**
+     * @description Logic for selecting and preparing a specific stage's ignore file.
+     * Hierarchy of selection:
+     * 1. Path explicitly defined in `plugins.sfpm.ignoreFiles[stage]`
+     * 2. Fallback to `forceignores/.[stage]ignore` in the project root.
+     * 3. Fallback to the root `.forceignore` if neither of the above exist.
+     * 
+     * All resulting stage ignore files are appended with `postDeploy` to ensure 
+     * deployment-only metadata is ignored during validation stages if desired.
+     * 
+     * @param {string} forceIgnoresDir The destination directory.
+     * @param {string} stage The deployment stage (e.g., 'prepare').
+     * @param {string | undefined} stageSpecificIgnorePath Explicitly configured path for the stage.
+     * @param {string} rootForceIgnore Path to the root .forceignore file.
+     * @returns {Promise<void>}
+     */
     private async copyIgnoreFileForStage(
         forceIgnoresDir: string,
         stage: string,
@@ -269,6 +359,14 @@ export default class PackageAssembler {
         }
     }
 
+    /**
+     * @description Sets up the root `.forceignore` for the staging area.
+     * If a replacement path was provided via `withReplacementForceIgnore`, it is used;
+     * otherwise, it falls back to the project's root `.forceignore`.
+     * 
+     * @param {string} rootForceIgnore Path to the project's root .forceignore file.
+     * @returns {Promise<void>}
+     */
     private async assembleRootForceIgnore(rootForceIgnore: string) {
         const destPath = path.join(this.stagingDirectory, '.forceignore');
 
@@ -285,6 +383,13 @@ export default class PackageAssembler {
         }
     }
 
+    /**
+     * @description If a destructive manifest was provided, copies it to the `/destructive` 
+     * directory in the staging area, renaming it to `destructiveChanges.xml` for 
+     * standardized metadata API deployments.
+     * 
+     * @returns {Promise<void>}
+     */
     private async assembleDestructiveManifest() {
         if (!this.destructiveManifestFilePath) {
             return;
@@ -304,6 +409,12 @@ export default class PackageAssembler {
         await fs.copy(sourcePath, path.join(destDir, 'destructiveChanges.xml'));
     }
 
+    /**
+     * @description If an organization definition (e.g., scratch org config) was provided, 
+     * copies it to the `/config` directory in the staging area as `project-scratch-def.json`.
+     * 
+     * @returns {Promise<void>}
+     */
     private async assembleOrgDefinition() {
         if (!this.orgDefinitionFilePath) {
             return;
@@ -323,6 +434,15 @@ export default class PackageAssembler {
         await fs.copy(sourcePath, path.join(destDir, 'project-scratch-def.json'));
     }
 
+    /**
+     * @description Finalizes the assembly by:
+     * 1. Generating a pruned `sfdx-project.json` containing only this package.
+     * 2. Updating paths within that manifest to be relative to the staging root.
+     * 3. Injecting the specified version number.
+     * 4. Archiving the original `sfdx-project.json` for reference.
+     * 
+     * @returns {Promise<void>}
+     */
     private async assembleProjectJson() {
         const prunedManifest = this.projectConfig.getPrunedDefinition(this.packageName);
 
