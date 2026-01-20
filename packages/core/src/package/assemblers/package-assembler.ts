@@ -5,11 +5,12 @@ import crypto from 'crypto';
 
 import { Logger } from '../../types/logger.js';
 import { PackageDefinition } from '../../project/types.js';
+import { PackageType } from '../../types/package.js';
 
 const DOT_FOLDER = ".sfpm";
 
 /**
- * Assembles package contents from a project configuration in a fluent, instance-based manner.
+ * @description Assembles package contents from a project configuration in a fluent, instance-based manner.
  * 
  * ### Staging Area ("The Why")
  * The `PackageAssembler` creates a temporary, isolated "staging area" for each build. This isolation:
@@ -57,10 +58,10 @@ export default class PackageAssembler {
     }
 
     /**
-     * Sets the package version number to be injected into the assembly's sfdx-project.json.
+     * @description Sets the package version number to be injected into the assembly's sfdx-project.json.
      * 
-     * @param version The version string (e.g., "1.2.0.1" or "1.2.0.NEXT").
-     * @returns The PackageAssembler instance for chaining.
+     * @param {string | undefined} version The version string (e.g., "1.2.0.1" or "1.2.0.NEXT").
+     * @returns {this} The PackageAssembler instance for chaining.
      * 
      * @example
      * ```typescript
@@ -73,11 +74,11 @@ export default class PackageAssembler {
     }
 
     /**
-     * Specifies the path to an organization definition file (e.g., scratch org definition)
+     * @description Specifies the path to an organization definition file (e.g., scratch org definition)
      * to be included in the package assembly.
      * 
-     * @param path Relative or absolute path to the org definition JSON.
-     * @returns The PackageAssembler instance for chaining.
+     * @param {string | undefined} path Relative or absolute path to the org definition JSON.
+     * @returns {this} The PackageAssembler instance for chaining.
      * 
      * @example
      * ```typescript
@@ -90,11 +91,11 @@ export default class PackageAssembler {
     }
 
     /**
-     * Specifies the path to a destructive changes manifest (e.g., destructiveChanges.xml)
+     * @description Specifies the path to a destructive changes manifest (e.g., destructiveChanges.xml)
      * to be included in the package assembly.
      * 
-     * @param path Relative or absolute path to the destructive changes manifest.
-     * @returns The PackageAssembler instance for chaining.
+     * @param {string | undefined} path Relative or absolute path to the destructive changes manifest.
+     * @returns {this} The PackageAssembler instance for chaining.
      * 
      * @example
      * ```typescript
@@ -107,10 +108,10 @@ export default class PackageAssembler {
     }
 
     /**
-     * Overrides the default .forceignore file with a specific replacement file.
+     * @description Overrides the default .forceignore file with a specific replacement file.
      * 
-     * @param path Relative or absolute path to the replacement .forceignore file.
-     * @returns The PackageAssembler instance for chaining.
+     * @param {string | undefined} path Relative or absolute path to the replacement .forceignore file.
+     * @returns {this} The PackageAssembler instance for chaining.
      * 
      * @example
      * ```typescript
@@ -123,12 +124,12 @@ export default class PackageAssembler {
     }
 
     /**
-     * Orchestrates the package assembly process. This method executes all necessary file I/O operations,
+     * @description Orchestrates the package assembly process. This method executes all necessary file I/O operations,
      * including copying source code, handling scripts, generating manifests, and managing
      * the staging area lifecycle.
      * 
-     * @returns A promise that resolves to the absolute path of the created staging directory.
-     * @throws Error if any step of the assembly process fails.
+     * @returns {Promise<string>} A promise that resolves to the absolute path of the created staging directory.
+     * @throws {Error} if any step of the assembly process fails.
      * 
      * @example
      * ```typescript
@@ -453,13 +454,15 @@ export default class PackageAssembler {
 
         // Update paths to be relative to the artifact root
         if (await fs.pathExists(path.join(this.stagingDirectory, 'unpackagedMetadata'))) {
+
             (prunedManifest.packageDirectories[0] as PackageDefinition).unpackagedMetadata = { path: 'unpackagedMetadata' };
             prunedManifest.packageDirectories.push({
                 path: 'unpackagedMetadata',
-                package: 'unpackagedMetadata', // Required by our type
-                versionNumber: '0.1.0.NEXT', // Required by our type
+                package: 'unpackagedMetadata',
+                versionNumber: '0.0.0.0',
+                type: PackageType.Source,
                 default: false
-            } as PackageDefinition);
+            });
         }
 
         if (await fs.pathExists(path.join(this.stagingDirectory, 'scripts', 'preDeployment'))) {
