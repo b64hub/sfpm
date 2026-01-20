@@ -97,6 +97,36 @@ export default class ProjectConfig {
     }
 
     /**
+     * Returns a deep copy of the project definition, pruned to contain only the specified package
+     * directory. This is useful for creating artifact-specific manifests (sfdx-project.json)
+     * where only the metadata related to one package should be visible.
+     * 
+     * @param packageName The name of the package to keep in the definition.
+     * @returns A new ProjectDefinition containing only the requested package.
+     * @throws Error if the package name is not found in the project.
+     * 
+     * @example
+     * ```typescript
+     * const pruned = projectConfig.getPrunedDefinition('core-library');
+     * console.log(pruned.packageDirectories.length); // 1
+     * ```
+     */
+    public getPrunedDefinition(packageName: string): ProjectDefinition {
+        const definition = this.getProjectDefinition();
+        const pruned = structuredClone(definition) as ProjectDefinition;
+
+        pruned.packageDirectories = pruned.packageDirectories.filter(
+            pkg => pkg.package === packageName
+        );
+
+        if (pruned.packageDirectories.length === 0) {
+            throw new Error(`Package ${packageName} not found in project definition`);
+        }
+
+        return pruned;
+    }
+
+    /**
      * Saves the project definition back to the file
      */
     public async save(updatedDefinition?: ProjectDefinition): Promise<void> {

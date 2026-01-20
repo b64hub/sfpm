@@ -16,9 +16,12 @@ export type PackageDefinition = PackageDir & {
     path: string;
     dependencies?: { package: string; versionNumber: string }[];
     type?: PackageType;
+    envAlias?: string;
     ignoreOnStage?: string[];
     preDeploymentScript?: string;
     postDeploymentScript?: string;
+    unpackagedMetadata?: { path: string };
+    enableFHT?: boolean;
 };
 
 /**
@@ -27,6 +30,16 @@ export type PackageDefinition = PackageDir & {
 export interface ProjectDefinition extends ProjectJson {
     // Override standard array to use our PackageDefinition
     packageDirectories: PackageDefinition[];
+    plugins?: {
+        sfpm?: {
+            ignoreFiles?: {
+                prepare?: string;
+                validate?: string;
+                quickbuild?: string;
+                build?: string;
+            };
+        };
+    };
 }
 
 // Extend the core PackageDir schema with our custom fields
@@ -34,14 +47,26 @@ export const PackageDefinitionSchema = z.intersection(
     ProjectJsonSchema.shape.packageDirectories.element,
     z.object({
         type: z.string().optional(),
+        envAlias: z.string().optional(),
         ignoreOnStage: z.array(z.string()).optional(),
         preDeploymentScript: z.string().optional(),
         postDeploymentScript: z.string().optional(),
         dependencies: z.array(z.object({ package: z.string(), versionNumber: z.string() })).optional(),
+        unpackagedMetadata: z.object({ path: z.string() }).optional(),
     })
 );
 
 // Extend the core ProjectJson schema
 export const ProjectDefinitionSchema = ProjectJsonSchema.extend({
     packageDirectories: z.array(PackageDefinitionSchema),
+    plugins: z.object({
+        sfpm: z.object({
+            ignoreFiles: z.object({
+                prepare: z.string().optional(),
+                validate: z.string().optional(),
+                quickbuild: z.string().optional(),
+                build: z.string().optional(),
+            }).optional(),
+        }).optional(),
+    }).optional(),
 });

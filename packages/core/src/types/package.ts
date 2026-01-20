@@ -1,18 +1,18 @@
-import { ApexClasses, ApexSortedByType } from "./apex.js";
+import { deprecate } from "node:util";
+import { ApexClasses } from "./apex.js";
 
 export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff', Managed = 'managed' }
 
-
-export interface PackageIdentity {
+export interface SfpmPackageIdentity {
     id?: string;
     packageName: string;
-    packageVersionNumber?: string;
+    versionNumber?: string;
     packageVersionId?: string;
-    packageType: PackageType;
+    packageType: Omit<PackageType, 'managed'>;
     apiVersion?: string;
 }
 
-export interface SourceContext {
+export interface SfpmPackageSource {
     repositoryUrl?: string;
     branch?: string;
     sourceVersion?: string;
@@ -21,57 +21,71 @@ export interface SourceContext {
     tag?: string;
 }
 
-export interface ApexInfo {
-    isApexFound?: boolean;
-    apexTestClasses?: string[];
-    apexClassWithOutTestClasses?: ApexClasses;
-    triggers?: ApexClasses;
-    apexClassesSortedByTypes?: ApexSortedByType;
+export interface SfpmPackageContent {
+    metadataCount?: number;
+    payload?: any;
+    destructiveChangesPath?: string;
+    apex?: {
+        classes?: string[];
+        triggers?: string[];
+        testClasses?: string[];
+        sortedByType?: ApexSortedByType;
+    };
+}
+
+export interface SfpmPackageValidation {
     testCoverage?: number;
     hasPassedCoverageCheck?: boolean;
     isTriggerAllTests?: boolean;
-    apextestsuite?: string;
 }
 
-export interface ManifestInfo {
-    payload?: any;
-    metadataCount?: number;
-    isPickListsFound?: boolean;
-    isProfilesFound?: boolean;
-    isPermissionSetGroupFound?: boolean;
-    isPayLoadContainTypesSupportedByProfiles?: boolean;
-    reconcileProfiles?: boolean;
-    destructiveChanges?: any;
-}
-
-export interface DeploymentSteps {
+export interface SfpmPackageOrchestration {
     preDeploymentScript?: string;
     postDeploymentScript?: string;
     assignPermSetsPreDeployment?: string[];
     assignPermSetsPostDeployment?: string[];
+    reconcileProfiles?: boolean;
+    creationDetails?: { creationTime?: number; timestamp?: number };
+    deployments?: {
+        targetOrg: string;
+        subDirectory?: string;
+        installationTime?: number;
+        timestamp?: number
+    }[];
 }
+
+import { ApexSortedByType } from "./apex.js";
 
 /**
  * The "Source of Truth" for the JSON Artifact.
  * This represents the metadata file stored in the artifact.
  */
-export interface SfpmPackageMetadata extends 
-    PackageIdentity, 
-    SourceContext, 
-    ApexInfo, 
-    ManifestInfo, 
-    DeploymentSteps 
-{
-    creationDetails?: { creationTime?: number; timestamp?: number };
-    deployments?: { 
-        targetOrg: string; 
-        subDirectory?: string; 
-        installationTime?: number; 
-        timestamp?: number 
-    }[];
-    [key: string]: any; 
+export interface SfpmPackageMetadata {
+    identity: SfpmPackageIdentity;
+    source: SfpmPackageSource;
+    content: SfpmPackageContent;
+    validation: SfpmPackageValidation;
+    orchestration: SfpmPackageOrchestration;
+    [key: string]: any;
 }
 
+/**
+ * Represents merged view of sfpm artifacts + subscriber packages
+ */
+export interface InstalledArtifact {
+    name: string;
+    version: string;
+    tag?: string;
+    commitId?: string;
+    isInstalledBySfpm?: boolean;
+    sourceVersion?: string;
+    isOrgDependent?: boolean;
+    type?: PackageType
+}
+
+/**
+ * @deprecated
+ */
 export interface PackageInfo {
     id?: string;
     package_name: string;
@@ -120,16 +134,3 @@ export interface PackageInfo {
     changelogFilePath?: string;
 }
 
-/**
- * Represents merged view of sfpm artifacts + subscriber packages
- */
-export interface InstalledArtifact {
-    name: string;
-    version: string;
-    tag?: string;
-    commitId?: string;
-    isInstalledBySfpm?: boolean;
-    sourceVersion?: string;
-    isOrgDependent?: boolean;
-    type?: PackageType
-}
