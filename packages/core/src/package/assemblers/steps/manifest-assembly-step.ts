@@ -1,0 +1,64 @@
+import { AssemblyStep, AssemblyOptions } from "../types.js";
+import * as fs from 'fs-extra';
+import path from 'path';
+import { PackageDefinition } from "../../../project/types.js";
+import { PackageType } from "../../../types/package.js";
+
+/**
+ * @description Finalizes the assembly process by generating a pruned `sfdx-project.json`
+ * specifically tailored for the Current Package.
+ * 
+ * It also:
+ * 1. Injects the provided version number.
+ * 2. Updates paths to reference the staging area structure.
+ * 3. Archives the original project manifest for reference.
+ */
+export class ManifestAssemblyStep implements AssemblyStep {
+    /**
+     * @description Executes the manifest finalization.
+     * @param options Shared assembly configuration.
+     * @param stagingDirectory The target directory for assembly.
+     * @throws {Error} If generating or writing the manifest fails.
+     */
+    public async execute(options: AssemblyOptions, stagingDirectory: string): Promise<void> {
+        try {
+            const prunedManifest = options.projectConfig.getPrunedDefinition(options.packageName);
+
+            // Inject the versionNumber if provided
+            if (options.versionNumber) {
+                prunedManifest.packageDirectories[0].versionNumber = options.versionNumber;
+            }
+
+            // Update paths to be relative to the artifact root
+            if (await fs.pathExists(path.join(stagingDirectory, 'unpackagedMetadata'))) {
+                (prunedManifest.packageDirectories[0] as PackageDefinition).unpackagedMetadata = { path: 'unpackagedMetadata' };
+                prunedManifest.packageDirectories.push({
+                    path: 'unpackagedMetadata',
+                    package: 'unpackagedMetadata',
+                    versionNumber: '0.0.0.0',
+                    type: PackageType.Source,
+                    default: false
+                });
+            }
+
+            if (await fs.pathExists(path.join(stagingDirectory, 'scripts', 'preDeployment'))) {
+                (prunedManifest.packageDirectories[0] as PackageDefinition).preDeploymentScript = path.join('scripts', 'preDeployment');
+            }
+
+            if (await fs.pathExists(path.join(stagingDirectory, 'scripts', 'postDeployment'))) {
+                (prunedManifest.packageDirectories[0] as PackageDefinition).postDeploymentScript = path.join('scripts', 'postDeployment');
+            }
+
+            await fs.writeJSON(path.join(stagingDirectory, 'sfdx-project.json'), prunedManifest, { spaces: 4 });
+
+            const manifestsDir = path.join(stagingDirectory, 'manifests');
+            await fs.ensureDir(manifestsDir);
+            await fs.copy(
+                path.join(options.projectConfig.projectDirectory, 'sfdx-project.json'),
+                path.join(manifestsDir, 'sfdx-project.json.original')
+            );
+        } catch (error: any) {
+            throw new Error(`[ManifestAssemblyStep] ${error.message}`);
+        }
+    }
+}
