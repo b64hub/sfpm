@@ -15,6 +15,7 @@ import ApexTypeFetcher from "./utils/apex-type-fetcher.js";
 import { AssignPermissionSetProvider } from "./providers/assign-permission-set-provider.js";
 import { DestructiveManifestPathProvider } from "./providers/destructive-manifest-path-provider.js";
 import { ReconcilePropertyProvider } from "./providers/reconcile-property-provider.js";
+import { ApexTypeProvider } from "./providers/apex-type-provider.js";
 
 export interface BuildOptions {
     buildNumber?: string;
@@ -49,6 +50,7 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         new AssignPermissionSetProvider(),
         new DestructiveManifestPathProvider(),
         new ReconcilePropertyProvider(),
+        new ApexTypeProvider(),
     ];
 
     constructor(projectConfig: ProjectConfig, options?: BuildOptions, logger?: Logger) {
@@ -90,7 +92,6 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
 
         await this.enrichMetadata(sfpmPackage);
         await this.stagePackage(sfpmPackage);
-        await this.fetchApexTypes(sfpmPackage);
         await this.runAnalyzers(sfpmPackage);
 
         const BuilderClass = BuilderRegistry.getBuilder(sfpmPackage.type);
@@ -147,25 +148,6 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         }
 
         return;
-    }
-
-    private async fetchApexTypes(sfpmPackage: SfpmPackage): Promise<void> {
-        if (sfpmPackage.type === PackageType.Data) {
-            return;
-        }
-
-        let apexFetcher = new ApexTypeFetcher(sfpmPackage.workingDirectory);
-        const classification = apexFetcher.getClassesClassifiedByType();
-
-        if (!sfpmPackage.metadata.content.apex) {
-            sfpmPackage.metadata.content.apex = {};
-        }
-
-        sfpmPackage.metadata.content.apex.classes = classification.classes;
-        sfpmPackage.metadata.content.apex.triggers = classification.triggers;
-        sfpmPackage.metadata.content.apex.testClasses = classification.testClasses;
-
-        sfpmPackage.metadata.validation.isTriggerAllTests = this.isAllTestsToBeTriggered(sfpmPackage, this.logger);
     }
 
     private async getComponentSet(sfpmPackage: SfpmPackage): Promise<any> {

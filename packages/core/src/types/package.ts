@@ -37,10 +37,10 @@ export interface SfpmPackageContent {
     payload?: SfpmPackageManifest;
     destructiveChangesPath?: string;
     apex?: {
-        classes?: string[];
-        triggers?: string[];
-        testClasses?: string[];
-        sortedByType?: ApexSortedByType;
+        classes?: { name: string; path?: string; }[];
+        triggers?: { name: string; path?: string; }[];
+        testClasses?: { name: string; path?: string; }[];
+        testSuites?: { name: string; path?: string; }[];
     };
 }
 

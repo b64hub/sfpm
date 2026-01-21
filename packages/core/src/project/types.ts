@@ -27,6 +27,7 @@ export type PackageDefinition = PackageDir & {
     destructiveChangesPath?: string;
     reconcileProfiles?: boolean;
     ignore?: string[];
+    isOptimizedDeployment?: boolean;
 };
 
 /**
@@ -62,6 +63,7 @@ export const PackageDefinitionSchema = z.intersection(
         assignPermSetsPostDeployment: z.array(z.string()).optional(),
         destructiveChangesPath: z.string().optional(),
         reconcileProfiles: z.boolean().optional(),
+        isOptimizedDeployment: z.boolean().optional(),
         ignore: z.array(z.string()).optional(),
     })
 );

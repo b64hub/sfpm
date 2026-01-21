@@ -12,6 +12,7 @@
   "dependencies": {
     "@salesforce/core": "^8.24.2",
     "@salesforce/source-deploy-retrieve": "^12.31.7",
+    "fast-glob": "^3.3.3",
     "fast-xml-parser": "^5.3.3",
     "fs-extra": "^11.3.3",
     "ignore": "^7.0.5",
@@ -40,7 +41,12 @@
     "@types/semver": "^7.7.1",
     "@types/tmp": "^0.2.6",
     "jest": "^30.2.0",
+    "prettier-plugin-apex": "^2.2.6",
     "ts-jest": "^29.4.6",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "vitest": "^4.0.17"
+  },
+  "optionalDependencies": {
+    "@prettier-apex/apex-ast-serializer-linux-x64": "^2.2.6"
   }
 }

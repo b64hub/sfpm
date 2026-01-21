@@ -58,13 +58,17 @@ export default class SfpmPackage {
         return (this.metadata.content?.apex?.classes?.length || 0) > 0 || this.triggers.length > 0;
     }
 
+    get apexTestClasses(): string[] {
+        return this.metadata.content?.apex?.testClasses?.map((testClass: any) => testClass.name) || [];
+    }
+
     get triggers(): string[] {
         if (this._metadata.content?.apex?.triggers && this._metadata.content.apex.triggers.length > 0) {
-            return this._metadata.content.apex.triggers;
+            return this._metadata.content.apex.triggers.map((trigger: any) => trigger.name);
         }
 
         if (!this._metadata.content?.payload) {
-            return this._metadata.content?.apex?.triggers || [];
+            return [];
         }
 
         const types = _.castArray(this._metadata.content.payload.Package.types);
@@ -75,7 +79,7 @@ export default class SfpmPackage {
             if (!this._metadata.content.apex) {
                 this._metadata.content.apex = {};
             }
-            this._metadata.content.apex.triggers = triggers;
+            this._metadata.content.apex.triggers = triggers.map((trigger: any) => { name: trigger });
         }
 
         return triggers;
