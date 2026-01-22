@@ -1,26 +1,31 @@
+import { ComponentSet } from "@salesforce/source-deploy-retrieve";
 import { ProjectDefinition, PackageDefinition } from "../project/types.js";
-import { PackageType, SfpmPackageMetadata } from "../types/package.js";
+import { PackageType, SfpmPackageContent, SfpmPackageMetadata } from "../types/package.js";
 import * as _ from "lodash";
+import path from "path";
 
 
 export default class SfpmPackage {
-    // The Data
+
     private _metadata: SfpmPackageMetadata;
 
     // Runtime-only properties (Excluded from JSON)
     public projectDirectory: string;
-    public workingDirectory: string = '';
-    public mdapiDir?: string;
-    public resolvedPackageDirectory?: string;
+    public stagingDirectory: string = '';
+    public mdapiDir?: string = path.join(this.stagingDirectory, 'metadata');
+
     public projectDefinition?: ProjectDefinition;
     public packageDefinition?: PackageDefinition;
-    public orgDefinitionPath?: string = 'config/project-scratch-def.json';
+
+    private orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
+
+    private _componentSet?: ComponentSet;
 
     constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadata>) {
         this.projectDirectory = projectDirectory;
         this._metadata = {
             identity: {
-                packageName: '',
+                packageName: packageName,
                 packageType: '',
                 ...metadata?.identity
             },
@@ -53,101 +58,160 @@ export default class SfpmPackage {
     get tag() { return this._metadata.source.tag; }
     set tag(val: string | undefined) { this._metadata.source.tag = val; }
 
-    // Inferred Getters
-    get hasApex(): boolean {
-        return (this.metadata.content?.apex?.classes?.length || 0) > 0 || this.triggers.length > 0;
+    get packageDirectory(): string | undefined {
+        if (!this.packageDefinition?.path) {
+            return undefined;
+        }
+
+        return path.join(this.stagingDirectory, this.packageDefinition?.path);
     }
 
-    get apexTestClasses(): string[] {
-        return this.metadata.content?.apex?.testClasses?.map((testClass: any) => testClass.name) || [];
+    public getComponentSet(): ComponentSet {
+        if (!this.packageDirectory) {
+            throw new Error('Package must be staged for build and have a defined path');
+        }
+
+        if (!this._componentSet) {
+            this._componentSet = ComponentSet.fromSource(path.join(this.stagingDirectory, this.packageDirectory));
+        }
+
+        return this._componentSet;
+    }
+
+    /**
+     * Returns the logical manifest of the package as a JSON-compatible object.
+     */
+    public async getManifestObject() {
+        return await this.getComponentSet().getObject();
+    }
+
+    public setApexClassification(classes: string[], tests: string[]) {
+        const componentSet = this.getComponentSet();
+
+        const filterExistingApex = (names: string[]) => 
+            names.filter(name => componentSet.has({ fullName: name, type: 'ApexClass' }));
+
+        this._metadata.content.apex = {
+            classes: filterExistingApex(classes),
+            tests: filterExistingApex(tests)
+        };
+    }
+
+    get apexClasses(): string[] {
+
+        if (this._metadata.content?.apex?.classes?.length) {
+            return this._metadata.content.apex.classes;
+        }
+
+        // fallback: Query the ComponentSet for everything identified as Apex
+        return this.getComponentSet()
+            .getSourceComponents().toArray()
+            .filter(c => c.type.id === 'apexclass')
+            .map(c => c.fullName);
+    }
+
+    get hasApex(): boolean {
+        const apexTypes = ['apexclass', 'apextrigger'];
+        return this.getComponentSet()
+            .getSourceComponents().toArray()
+            .some(c => apexTypes.includes(c.type.id));
+    }
+
+    get testClasses(): string[] {
+        return this._metadata.content?.apex?.tests || [];
     }
 
     get triggers(): string[] {
-        if (this._metadata.content?.apex?.triggers && this._metadata.content.apex.triggers.length > 0) {
-            return this._metadata.content.apex.triggers.map((trigger: any) => trigger.name);
-        }
+        return this.getComponentSet().getSourceComponents().toArray()
+            .filter(c => c.type.id === 'apextrigger')
+            .map(c => c.fullName);
+    }
 
-        if (!this._metadata.content?.payload) {
-            return [];
-        }
-
-        const types = _.castArray(this._metadata.content.payload.Package.types);
-        const triggerType = types.find((type: any) => type.name === 'ApexTrigger');
-        const triggers = triggerType ? _.castArray(triggerType.members) : [];
-
-        if (triggers.length > 0) {
-            if (!this._metadata.content.apex) {
-                this._metadata.content.apex = {};
-            }
-            this._metadata.content.apex.triggers = triggers.map((trigger: any) => { name: trigger });
-        }
-
-        return triggers;
+    get testSuites(): string[] {
+        return this.getComponentSet().getSourceComponents().toArray()
+            .filter(c => c.type.id === 'testsuite')
+            .map(c => c.fullName);
     }
 
     get hasProfiles(): boolean {
-        if (!this._metadata.content?.payload) {
-            return false;
-        }
-
-        const types = _.castArray(this._metadata.content.payload.Package.types);
-        return types.some((type: any) => type.name === 'Profile');
+        return this.getComponentSet().getSourceComponents().toArray()
+            .some(c => c.type.id === 'profile');
     }
 
     get hasPermissionSetGroups(): boolean {
-        if (!this._metadata.content?.payload) {
-            return false;
-        }
-
-        const types = _.castArray(this._metadata.content.payload.Package.types);
-        return types.some((type: any) => type.name === 'PermissionSetGroup');
+        return this.getComponentSet().getSourceComponents().toArray()
+            .some(c => c.type.id === 'permissionsetgroup');
     }
 
-    get isPayloadContainTypesSupportedByProfiles(): boolean {
-        if (!this._metadata.content?.payload) {
-            return false;
-        }
-
+    get includesProfileSupportedTypes(): boolean {
         const profileSupportedMetadataTypes = [
-            'ApexClass',
-            'CustomApplication',
-            'CustomObject',
-            'CustomField',
-            'Layout',
-            'ApexPage',
-            'CustomTab',
-            'RecordType',
-            'SystemPermissions',
+            'apexclass',
+            'customapplication',
+            'customobject',
+            'customfield',
+            'layout',
+            'apexpage',
+            'customtab',
+            'recordtype',
+            'systempermissions',
         ];
 
-        const types = _.castArray(this._metadata.content.payload.Package.types);
-        return types.some((t: any) => profileSupportedMetadataTypes.includes(t.name));
+        return this.getComponentSet().getSourceComponents().toArray()
+            .some(c => profileSupportedMetadataTypes.includes(c.type.id));
     }
 
     get hasDestructiveChanges(): boolean {
         return !!this._metadata.content?.destructiveChangesPath;
     }
 
-    get shouldTriggerAllTests(): boolean {
+    get isTriggerAllTests(): boolean {
         if (this._metadata.validation?.isTriggerAllTests) {
             return true;
         }
 
         const apex = this._metadata.content?.apex;
-        const hasTestClasses = (apex?.testClasses?.length || 0) > 0;
+        const hasTestClasses = (apex?.tests?.length || 0) > 0;
 
         return this.hasApex && !hasTestClasses;
     }
 
     /**
-     * Replaces the complex toJSON logic. 
-     * Only returns the metadata interface.
+     * @description: Resolves the content of the package from the component set.
+     * @returns: A promise that resolves to the content of the package.
      */
-    public toPackageMetadata(): SfpmPackageMetadata {
-        return _.cloneDeep(this._metadata);
+    private async resolveContentMetadata(): Promise<SfpmPackageContent> {
+        const cs = this.getComponentSet();
+        const components = cs.getSourceComponents();
+
+        return {
+            metadataCount: components.toArray().length,
+            payload: await cs.getObject(),
+            apex: {
+                classes: this.apexClasses,
+                tests: this.testClasses
+            },
+            triggers: this.triggers,
+            testSuites: this.testSuites,
+        };
     }
 
-    public toJSON(): SfpmPackageMetadata {
-        return this.toPackageMetadata();
+    /**
+     * @description: Converts the package to a package metadata object.
+     * @returns: A promise that resolves to the package metadata object.
+     */
+    public async toPackageMetadata(): Promise<SfpmPackageMetadata> {
+        const content = await this.resolveContentMetadata();
+
+        return _.merge({}, this._metadata, {
+            content,
+            identity: {
+                packageName: this.name || content.payload?.Package?.fullName
+            }
+        });
+    }
+
+    // Override toJSON to ensure serialization is always reconciled
+    public async toJSON() {
+        return await this.toPackageMetadata();
     }
 }
