@@ -72,14 +72,14 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
 
     private async buildPackage(
         packageName: string,
-        workingDirectory?: string
+        projectDirectory: string = process.cwd()
     ) {
 
         await this.projectConfig.load();
 
         let sfpmPackage: SfpmPackage = new SfpmPackage(
             packageName,
-            workingDirectory || process.cwd(),
+            projectDirectory,
         );
         this.setPackageIdentity(sfpmPackage);
 
@@ -97,6 +97,10 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         await this.enrichMetadata(sfpmPackage);
         await this.stagePackage(sfpmPackage);
         await this.runAnalyzers(sfpmPackage);
+
+        if (!sfpmPackage.stagingDirectory) {
+            throw new Error('Package must be staged for build');
+        }
 
         const BuilderClass = BuilderRegistry.getBuilder(sfpmPackage.type);
 
@@ -148,39 +152,20 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         ).assemble();
 
         sfpmPackage.stagingDirectory = assemblyOutput.stagingDirectory;
-
-        if (assemblyOutput.mdapiConversion) {
-            sfpmPackage.mdapiDir = assemblyOutput.mdapiConversion.result.packagePath;
-            sfpmPackage.metadata.content.payload = assemblyOutput.mdapiConversion.payload;
-        }
-
         return;
     }
 
-    private async getComponentSet(sfpmPackage: SfpmPackage): Promise<any> {
-        if (sfpmPackage.packageDirectory) {
-            throw new Error('Package must be staged for build and have a defined path');
-        }
-        const components = ComponentSet.fromSource(
-            sfpmPackage.packageDirectory
-        );
-
-        sfpmPackage.componentSet = components;
-
-        return components;
-    }
 
     public async runAnalyzers(sfpmPackage: SfpmPackage): Promise<void> {
         if (sfpmPackage.type === PackageType.Data) {
             return;
         }
 
-        const componentSet = await this.getComponentSet(sfpmPackage);
-
         let analyzers = AnalyzerRegistry.getAnalyzers(this.logger);
         for (const analyzer of analyzers) {
             if (analyzer.isEnabled(sfpmPackage)) {
-                sfpmPackage = await analyzer.analyze(sfpmPackage, componentSet);
+                const metadataContribution = await analyzer.analyze(sfpmPackage);
+                _.merge(sfpmPackage.metadata, metadataContribution);
             }
         }
     }
@@ -191,24 +176,33 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
      *  else allow autosubstitute using buildNumber for Source and Data if available
      */
     private setPackageVersion(sfpmPackage: SfpmPackage, buildNumber?: string): void {
-        if (sfpmPackage.version && buildNumber && sfpmPackage.type !== PackageType.Unlocked) {
-            const segments = sfpmPackage.version.split('.');
-            const numberToBeAppended = parseInt(buildNumber);
-
-            if (isNaN(numberToBeAppended)) {
-                throw new Error('BuildNumber should be a number');
-            }
-
-            segments[3] = buildNumber;
-            sfpmPackage.version = segments.join('.');
+        if (!buildNumber) {
             return;
         }
 
-        if (sfpmPackage.packageDefinition?.versionNumber) {
-            sfpmPackage.version = sfpmPackage.packageDefinition.versionNumber;
+        if (sfpmPackage.type === PackageType.Unlocked) {
             return;
         }
 
-        throw new Error('The package doesnt have a version attribute, Please check your definition');
+        let version = sfpmPackage.version;
+
+        if (!version) {
+            version = sfpmPackage.packageDefinition?.versionNumber;
+        }
+
+        if (!version) {
+            throw new Error('The package doesnt have a version attribute, Please check your definition');
+        }
+
+        const segments = version.split('.');
+        const numberToBeAppended = parseInt(buildNumber);
+
+        if (isNaN(numberToBeAppended)) {
+            throw new Error('BuildNumber should be a number');
+        }
+
+        segments[3] = buildNumber;
+        sfpmPackage.version = segments.join('.');
+        return;
     }
 }

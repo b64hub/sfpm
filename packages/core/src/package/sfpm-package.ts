@@ -1,6 +1,6 @@
 import { ComponentSet } from "@salesforce/source-deploy-retrieve";
 import { ProjectDefinition, PackageDefinition } from "../project/types.js";
-import { PackageType, SfpmPackageContent, SfpmPackageMetadata } from "../types/package.js";
+import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration } from "../types/package.js";
 import * as _ from "lodash";
 import path from "path";
 
@@ -13,9 +13,9 @@ export default class SfpmPackage {
     public stagingDirectory: string | undefined;
 
     public projectDefinition?: ProjectDefinition;
-    private packageDefinition?: PackageDefinition;
+    private _packageDefinition?: PackageDefinition;
 
-    private orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
+    public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
 
     private _componentSet?: ComponentSet;
 
@@ -49,12 +49,20 @@ export default class SfpmPackage {
     get type() { return this._metadata.identity.packageType; }
     set type(val: Omit<PackageType, 'managed'>) { this._metadata.identity.packageType = val; }
 
-    public setPackageDefinition(packageDefinition: PackageDefinition) {
-        if (this.packageDefinition) {
+    set packageDefinition(packageDefinition: PackageDefinition) {
+        if (this._packageDefinition) {
             throw new Error('Package definition already set');
         }
 
-        this.packageDefinition = packageDefinition;
+        if (packageDefinition.package !== this.name) {
+            throw new Error(`Package definition name ${packageDefinition.package} does not match package name ${this.name}`);
+        }
+
+        this._packageDefinition = packageDefinition;
+    }
+
+    get packageDefinition(): PackageDefinition | undefined {
+        return this._packageDefinition;
     }
 
     get packageDirectory(): string | undefined {
@@ -194,12 +202,24 @@ export default class SfpmPackage {
         };
     }
 
+    private async resolveOrchestrationMetadata(): Promise<SfpmPackageOrchestration> {
+        return {
+            destructiveChangesPath: this.packageDefinition?.destructiveChangesPath,
+            assignPermSetsPreDeployment: this.packageDefinition?.assignPermSetsPreDeployment,
+            assignPermSetsPostDeployment: this.packageDefinition?.assignPermSetsPostDeployment,
+            reconcileProfiles: this.packageDefinition?.reconcileProfiles,
+            preDeploymentScript: this.packageDefinition?.preDeploymentScript,
+            postDeploymentScript: this.packageDefinition?.postDeploymentScript,
+        };
+    }
+
     /**
      * @description: Converts the package to a package metadata object.
      * @returns: A promise that resolves to the package metadata object.
      */
     public async toPackageMetadata(): Promise<SfpmPackageMetadata> {
         const content = await this.resolveContentMetadata();
+        const orchestration = await this.resolveOrchestrationMetadata();
 
         return _.merge({}, this._metadata, {
             content,
@@ -207,7 +227,8 @@ export default class SfpmPackage {
                 packageName: this.name || content.payload?.Package?.fullName,
                 packageType: this.type || this.packageDefinition?.type,
                 versionNumber: this.version || this.packageDefinition?.versionNumber
-            }
+            },
+            orchestration
         });
     }
 
