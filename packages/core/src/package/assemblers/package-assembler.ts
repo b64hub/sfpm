@@ -13,7 +13,7 @@ import { ScriptAssemblyStep } from './steps/script-assembly-step.js';
 import { ForceIgnoreStep } from './steps/force-ignore-step.js';
 import { DestructiveManifestStep } from './steps/destructive-manifest-step.js';
 import { OrgDefinitionStep } from './steps/org-definition-step.js';
-import { ManifestAssemblyStep } from './steps/manifest-assembly-step.js';
+import { ProjectJsonAssemblyStep } from './steps/project-json-assembly-step.js';
 import { MDAPIConversionStep } from './steps/mdapi-conversion-step.js';
 
 const DOT_FOLDER = ".sfpm";
@@ -161,10 +161,9 @@ export default class PackageAssembler {
             steps.push(new DestructiveManifestStep(this.packageName, this.projectConfig, this.logger));
         }
 
-        steps.push(new ManifestAssemblyStep(this.packageName, this.projectConfig, this.logger));
+        steps.push(new ProjectJsonAssemblyStep(this.packageName, this.projectConfig, this.logger));
 
         try {
-
 
             for (const step of steps) {
                 this.logger?.debug(`Executing step: ${step.constructor.name}`);

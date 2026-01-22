@@ -15,7 +15,7 @@ import { PackageType } from "../../../types/package.js";
  * 2. Updates paths to reference the staging area structure.
  * 3. Archives the original project manifest for reference.
  */
-export class ManifestAssemblyStep implements AssemblyStep {
+export class ProjectJsonAssemblyStep implements AssemblyStep {
     constructor(
         private packageName: string,
         private projectConfig: ProjectConfig,
