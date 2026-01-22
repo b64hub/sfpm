@@ -8,6 +8,9 @@ import * as yaml from 'js-yaml';
 import { Logger } from "../../types/logger.js";
 import { MetadataComponent } from "@salesforce/source-deploy-retrieve";
 
+
+const FHT_FILE_NAME = 'history-tracking.yml';
+
 @RegisterAnalyzer()
 export default class FHTAnalyzer implements PackageAnalyzer {
     private logger?: Logger;
@@ -28,7 +31,7 @@ export default class FHTAnalyzer implements PackageAnalyzer {
         try {
             const fhtConfig = await this.readYaml(path.join(
                 sfpmPackage.packageDirectory,
-                'postDeploy', 'history-tracking.yml'
+                'postDeploy', FHT_FILE_NAME
             ));
 
             const enabledFields = await this.fhtEnabledFields(sfpmPackage);

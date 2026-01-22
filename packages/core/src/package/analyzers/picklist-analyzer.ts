@@ -1,53 +1,46 @@
-import { ComponentSet, registry } from '@salesforce/source-deploy-retrieve';
-import SfpPackage, { PackageType } from '../SfpPackage';
-import { PackageAnalyzer } from './PackageAnalyzer';
-import SFPLogger, { Logger, LoggerLevel } from '@flxbl-io/sfp-logger';
+import { ComponentSet, MetadataComponent, registry } from '@salesforce/source-deploy-retrieve';
+import SfpmPackage from '../sfpm-package.js';
+import { PackageType, SfpmPackageContent } from '../../types/package.js';
+import { PackageAnalyzer } from './analyzer-registry.js';
+
+import { Logger } from '../../types/logger.js';
+
+const PICKLIST_TYPES = ['Picklist', 'MultiselectPicklist'];
 
 export default class PicklistAnalyzer implements PackageAnalyzer {
+    private logger?: Logger;
 
-    public getName() {
-        return "Picklist Analyzer"
-     }
+    constructor(logger?: Logger) {
+        this.logger = logger;
+    }
 
-     
-     
-    public async analyze(sfpPackage: SfpPackage, componentSet:ComponentSet, logger:Logger): Promise<SfpPackage> {
+    public isEnabled(sfpmPackage: SfpmPackage): boolean {
+        return sfpmPackage.type != PackageType.Data;
+    }
+          
+    public async analyze(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageContent>> {
+
+        if (!sfpmPackage.customFields) {
+            return {};
+        }
+
+        const picklists: MetadataComponent[] = [];
+        
         try {
-            let sourceComponents = componentSet.getSourceComponents().toArray();
-            let components = [];
+            
+            for (const field of sfpmPackage.customFields) {
+                let customField = (await field.parseXml()).CustomField as any;
 
-            for (const sourceComponent of sourceComponents) {
-                if (sourceComponent.type.name == registry.types.customobject.name) {
-                    //issues/1367
-                    //this can add child elements that are not custom fields..
-                    components.push(...sourceComponent.getChildren());
-                }
-
-                if (sourceComponent.type.name == registry.types.customobject.children.types.customfield.name) {
-                    components.push(sourceComponent);
-                }
-            }
-
-            if (components && components.length > 0) {
-                const picklistTypes = ['Picklist', 'MultiselectPicklist'];
-                for (const fieldComponent of components) {
-                    let customField = fieldComponent.parseXmlSync().CustomField;
-                    //issues/1367
-                    //if the component isn't a field customField will be undefined..so check
-                    if (customField && picklistTypes.includes(customField.type)) {
-                        sfpPackage.isPickListsFound= true;
-                        break;
-                    }
+                if (customField && PICKLIST_TYPES.includes(customField.type)) {
+                    picklists.push(field);
                 }
             }
         } catch (error) {
-            SFPLogger.log(`Unable to process Picklist update due to ${error.message}`,LoggerLevel.TRACE,logger);
+            this.logger?.trace(`Unable to process Picklist update due to ${error}`);
         }
-        return sfpPackage;
-    }
 
-    public async isEnabled(sfpPackage: SfpPackage,logger:Logger): Promise<boolean> {
-        if (sfpPackage.packageType != PackageType.Data) return true;
-        else return false;
+        sfpmPackage.setPicklists(picklists.map(p => p.fullName));
+
+        return {};
     }
 }

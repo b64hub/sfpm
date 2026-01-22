@@ -8,6 +8,8 @@ import * as yaml from 'js-yaml';
 import { Logger } from "../../types/logger.js";
 import { MetadataComponent } from "@salesforce/source-deploy-retrieve";
 
+const FT_FILE_NAME = 'feed-tracking.yml';
+
 @RegisterAnalyzer()
 export default class FTAnalyzer implements PackageAnalyzer {
     private logger?: Logger;
@@ -28,7 +30,7 @@ export default class FTAnalyzer implements PackageAnalyzer {
         try {
             const ftConfig = await this.readYaml(path.join(
                 sfpmPackage.packageDirectory,
-                'postDeploy', 'feed-tracking.yml'
+                'postDeploy', FT_FILE_NAME
             ));
 
             const enabledFields = await this.ftEnabledFields(sfpmPackage);
@@ -53,7 +55,7 @@ export default class FTAnalyzer implements PackageAnalyzer {
 
     private async ftEnabledFields(sfpmPackage: SfpmPackage): Promise<MetadataComponent[]> {
         const ftFields: MetadataComponent[] = [];
-        
+
         for (const customField of sfpmPackage.customFields) {
             const customFieldXml = (await customField.parseXml() as any).CustomField;
             if (customFieldXml.trackFeedHistory) {

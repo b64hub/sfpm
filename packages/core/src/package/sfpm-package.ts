@@ -188,6 +188,11 @@ export default class SfpmPackage {
             .filter(c => c.type.id === 'customfield');
     }
 
+    get customObjects() {
+        return this.getComponentSet().getSourceComponents().toArray()
+            .filter(c => c.type.id === 'customobject');
+    }
+
     /**
      * @description: Gets the list of fields configured for Field Tracking History in the package
      */
@@ -220,6 +225,18 @@ export default class SfpmPackage {
         const cs = this.getComponentSet();
         // Validate names against actual set for integrity
         this._metadata.content.ftFields = names.filter(n => 
+            cs.has({ fullName: n, type: 'CustomField' })
+        );
+    }
+
+    get picklists() {
+        return this._metadata.content?.picklists || [];
+    }
+
+    public setPicklists(picklists: string[]) {
+        const cs = this.getComponentSet();
+        // Validate names against actual set for integrity
+        this._metadata.content.picklists = picklists.filter(n => 
             cs.has({ fullName: n, type: 'CustomField' })
         );
     }
