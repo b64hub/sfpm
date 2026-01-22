@@ -1,21 +1,25 @@
 import EventEmitter from "node:events";
+import { ComponentSet } from "@salesforce/source-deploy-retrieve";
+import path from "path";
+import * as fs from "fs-extra"
+import * as _ from "lodash";
+
 import { PackageType } from "../types/package.js";
 import ProjectConfig from "../project/project-config.js";
 // @ts-ignore
-import * as _ from "lodash";
 import { Builder, BuilderRegistry } from "./builders/builder-registry.js";
 import { AnalyzerRegistry } from "./analyzers/analyzer-registry.js";
 import SfpmPackage from "./sfpm-package.js";
 import PackageAssembler from "./assemblers/package-assembler.js";
-import { AssemblyOutput } from "./assemblers/types.js";
 import { SfpmPackageMetadata, SfpmPackageSource } from "../types/package.js";
 
-import { Logger } from "../types/logger.js";
-import ApexTypeFetcher from "./utils/apex-type-fetcher.js";
 import { AssignPermissionSetProvider } from "./providers/assign-permission-set-provider.js";
 import { DestructiveManifestPathProvider } from "./providers/destructive-manifest-path-provider.js";
 import { ReconcilePropertyProvider } from "./providers/reconcile-property-provider.js";
 import { ApexTypeProvider } from "./providers/apex-type-provider.js";
+
+import { Logger } from "../types/logger.js";
+
 
 export interface BuildOptions {
     buildNumber?: string;
@@ -113,7 +117,10 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
 
         sfpmPackage.metadata.identity.packageType = this.projectConfig.getPackageType(sfpmPackage.packageName);
         sfpmPackage.metadata.identity.apiVersion = this.projectConfig.sourceApiVersion;
-        sfpmPackage.metadata.identity.versionNumber = sfpmPackage.version;
+
+        if (sfpmPackage.type === PackageType.Unlocked) {
+            sfpmPackage.metadata.identity.id = this.projectConfig.getPackageId(sfpmPackage.packageName);
+        }
     }
 
     private async enrichMetadata(sfpmPackage: SfpmPackage): Promise<void> {
@@ -123,12 +130,12 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
                 _.merge(sfpmPackage.metadata, contribution);
             } catch (error: any) {
                 this.logger?.error(`Error in metadata provider ${provider.constructor.name}: ${error.message}`);
-                // Continue with other providers even if one fails
+                continue;
             }
         }
     }
 
-    private async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
+    public async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
         const assemblyOutput = await new PackageAssembler(
             sfpmPackage.packageName,
             this.projectConfig,
@@ -151,13 +158,12 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
     }
 
     private async getComponentSet(sfpmPackage: SfpmPackage): Promise<any> {
-        return (global as any).ComponentSet?.fromSource({
-            sourceDirectory: sfpmPackage.workingDirectory,
-            ignore: sfpmPackage.packageDefinition?.ignore
-        });
+        return ComponentSet.fromSource(
+            sfpmPackage.workingDirectory,
+        );
     }
 
-    private async runAnalyzers(sfpmPackage: SfpmPackage): Promise<void> {
+    public async runAnalyzers(sfpmPackage: SfpmPackage): Promise<void> {
         if (sfpmPackage.type === PackageType.Data) {
             return;
         }
