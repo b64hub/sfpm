@@ -10,10 +10,6 @@ export type PackageDir = ProjectJson['packageDirectories'][number];
 export interface DeploymentOptions {
     optimize?: boolean;
     pre: {
-        settings?: {
-            FHT?: boolean;
-            FT?: boolean;
-        };
         reconcileProfiles?: boolean;
         script?: string;
         assignPermSets?: string[];
@@ -21,6 +17,10 @@ export interface DeploymentOptions {
         unpackagedMetadata?: { path: string };
     },
     post: {
+        settings?: {
+            FHT?: boolean;
+            FT?: boolean;
+        };
         script?: string;
         assignPermSets?: string[];
         destructiveChanges?: string;

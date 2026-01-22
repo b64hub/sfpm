@@ -1,74 +1,66 @@
-import path from 'path';
+import { PackageAnalyzer, RegisterAnalyzer } from "./analyzer-registry.js";
+import { PackageType, SfpmPackageContent } from "../../types/package.js";
+import SfpmPackage from "../sfpm-package.js";
+import * as path from 'path';
 import * as fs from 'fs-extra';
 import * as yaml from 'js-yaml';
-import { ComponentSet, registry } from '@salesforce/source-deploy-retrieve';
-import SfpPackage, { PackageType } from '../SfpPackage';
-import { PackageAnalyzer } from './PackageAnalyzer';
-import SFPLogger, { Logger, LoggerLevel } from '@flxbl-io/sfp-logger';
 
-export default class FTAnalyser implements PackageAnalyzer {
+import { Logger } from "../../types/logger.js";
+import { MetadataComponent } from "@salesforce/source-deploy-retrieve";
 
-    public getName(): string {
-        return "Feed Tracking Analyzer";
+@RegisterAnalyzer()
+export default class FTAnalyzer implements PackageAnalyzer {
+    private logger?: Logger;
+
+    constructor(logger?: Logger) {
+        this.logger = logger;
     }
 
-    public async analyze(sfpPackage: SfpPackage, componentSet:ComponentSet, logger:Logger): Promise<SfpPackage> {
+    public isEnabled(sfpmPackage: SfpmPackage): boolean {
+        return (sfpmPackage.type !== PackageType.Data);
+    }
+
+    public async analyze(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageContent>> {
+        if (!sfpmPackage.packageDirectory) {
+            return {};
+        }
+
         try {
+            const ftConfig = await this.readYaml(path.join(
+                sfpmPackage.packageDirectory,
+                'postDeploy', 'feed-tracking.yml'
+            ));
 
-            let ftFields: { [key: string]: Array<string> } = {};
+            const enabledFields = await this.ftEnabledFields(sfpmPackage);
+            const ftFields = enabledFields.filter(f => ftConfig.includes(f.fullName));
 
-            //read the yaml
-            let ftYamlPath = path.join(
-                sfpPackage.workingDirectory,
-                sfpPackage.projectDirectory,
-                sfpPackage.packageDirectory,
-                '/postDeploy/feed-tracking.yml'
-            );
+            sfpmPackage.setFtFields(ftFields.map(f => f.fullName));
 
-            //read components mentioned in yaml
-            if (fs.existsSync(ftYamlPath)) {
-                //convert yaml to json
-                ftFields = yaml.load(fs.readFileSync(ftYamlPath, { encoding: 'utf-8' })) as {[key: string]: string[]};
-            }
-
-
-            //filter the components in the package
-            ftFields = await this.addFieldsFromComponentSet(ftFields, componentSet);
-
-            if (Object.keys(ftFields).length>0) {
-                sfpPackage['isFTFieldFound'] = true;
-                sfpPackage['ftFields'] = ftFields;
-            }
         } catch (error) {
-            //Ignore error for now
-            SFPLogger.log(`Unable to process Feed Tracking due to ${error.message}`,LoggerLevel.TRACE,logger);
+            this.logger?.trace(`Unable to process Feed Tracking due to ${error}`);
         }
-        return sfpPackage;
+
+        return {};
     }
 
-    private async addFieldsFromComponentSet(
-        ftFields: { [key: string]: Array<string> },
-        componentSet: ComponentSet
-    ): Promise<Record<string, Array<string>>> {
-        let sourceComponents = componentSet.getSourceComponents().toArray();
+    private async readYaml(path: string): Promise<string[]> {
+        if (!(await fs.exists(path))) {
+            throw new Error(`No file found at ${path}`);
+        }
+        const config = yaml.load((await fs.readFile(path, 'utf-8'))) as { [key: string]: string[] };
+        return Object.values(config).flat();
+    }
 
-        for (const sourceComponent of sourceComponents) {
-            if (sourceComponent.type.name !== registry.types.customobject.children.types.customfield.name) {
-                continue;
-            }
-
-            let customField = sourceComponent.parseXmlSync().CustomField;
-            if (customField['trackFeedHistory'] == 'true') {
-                let objName = sourceComponent.parent.fullName;
-                if (!ftFields[objName]) ftFields[objName] = [];
-                ftFields[objName].push(sourceComponent.name);
+    private async ftEnabledFields(sfpmPackage: SfpmPackage): Promise<MetadataComponent[]> {
+        const ftFields: MetadataComponent[] = [];
+        
+        for (const customField of sfpmPackage.customFields) {
+            const customFieldXml = (await customField.parseXml() as any).CustomField;
+            if (customFieldXml.trackFeedHistory) {
+                ftFields.push(customField);
             }
         }
+
         return ftFields;
-    }
-
-    public async isEnabled(sfpPackage: SfpPackage,logger:Logger): Promise<boolean> {
-        if (sfpPackage.packageType != PackageType.Data) return true;
-        else return false;
     }
 }

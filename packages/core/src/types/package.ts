@@ -36,6 +36,9 @@ export interface SfpmPackageContent {
     };
     triggers?: string[];
     testSuites?: string[];
+    fhtFields?: string[];
+    ftFields?: string[];
+    picklists?: string[];
     standardValueSets?: string[];
     [key: string]: any;
 }
@@ -56,7 +59,7 @@ export interface SfpmPackageOrchestration {
     }[];
     deploymentOptions?: DeploymentOptions;
     buildOptions?: {
-    }
+    },
 }
 
 /**

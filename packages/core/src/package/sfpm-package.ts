@@ -183,6 +183,47 @@ export default class SfpmPackage {
             .some(c => c.type.id === 'permissionsetgroup');
     }
 
+    get customFields() {
+        return this.getComponentSet().getSourceComponents().toArray()
+            .filter(c => c.type.id === 'customfield');
+    }
+
+    /**
+     * @description: Gets the list of fields configured for Field Tracking History in the package
+     */
+    get fhtFields(): string[] {
+        return this._metadata.content?.fhtFields || [];
+    }
+
+    /**
+     * @description: Sets the list of fields configured for Field Tracking History in the package
+     */
+    public setFhtFields(names: string[]) {
+        const cs = this.getComponentSet();
+        // Validate names against actual set for integrity
+        this._metadata.content.fhtFields = names.filter(n => 
+            cs.has({ fullName: n, type: 'CustomField' })
+        );
+    }
+
+    /**
+     * @description: Gets the list of fields configured for Feed Tracking in the package
+     */
+    get ftFields(): string[] {
+        return this._metadata.content?.ftFields || [];
+    }
+
+    /**
+     * @description: Sets the list of fields configured for Feed Tracking in the package
+     */
+    public setFtFields(names: string[]) {
+        const cs = this.getComponentSet();
+        // Validate names against actual set for integrity
+        this._metadata.content.ftFields = names.filter(n => 
+            cs.has({ fullName: n, type: 'CustomField' })
+        );
+    }
+
     get includesProfileSupportedTypes(): boolean {
         const profileSupportedMetadataTypes = [
             'apexclass',
