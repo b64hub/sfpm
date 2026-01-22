@@ -87,6 +87,10 @@ export default class ProjectConfig {
             return pkg.type as PackageType;
         }
         return PackageType.Source;
+    } 
+
+    public getPackageId(packageAlias: string): string | undefined {
+        return this.definition?.packageAliases?.[packageAlias];
     }
 
     /**

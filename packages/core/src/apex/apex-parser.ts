@@ -4,8 +4,8 @@ import * as path from "path";
 import type * as jorje from "../types/jorje.js";
 
 export type ApexClassInfo = {
-    name?: string;
-    path?: string;
+    name: string;
+    path: string;
     type: "Class" | "Interface" | "Trigger" | "Enum";
     isTest: boolean;
 };
@@ -17,14 +17,14 @@ export class ApexParser {
         this.serializer = serializer || new ApexAstSerializer();
     }
 
-    public async getInfoFromFile(filePath: string): Promise<ApexClassInfo> {
+    public async classify(filePath: string): Promise<ApexClassInfo> {
         const sourceCode = await fs.readFile(filePath, { encoding: "utf-8" });
         const info = await this.getInfo(sourceCode);
         info.path = path.basename(filePath);
         return info;
     }
 
-    public async getInfo(sourceCode: string): Promise<ApexClassInfo> {
+    private async getInfo(sourceCode: string): Promise<ApexClassInfo> {
         try {
             const ast = await this.serializer.serialize(sourceCode);
             return this.mapAstToInfo(ast);
@@ -33,7 +33,7 @@ export class ApexParser {
         }
     }
 
-    public async getInfoFromFiles(filePaths: string[]): Promise<ApexClassInfo[]> {
+    public async classifyBulk(filePaths: string[]): Promise<ApexClassInfo[]> {
         const sourceCodes = await Promise.all(filePaths.map(filePath => fs.readFile(filePath, { encoding: "utf-8" })));
         const infos = await this.getInfoBulk(sourceCodes);
         infos.forEach((info, index) => {
@@ -45,11 +45,11 @@ export class ApexParser {
     /**
      * Bulkified API for high-volume processing.
      */
-    public async getInfoBulk(contents: string[]): Promise<ApexClassInfo[]> {
+    private async getInfoBulk(contents: string[]): Promise<ApexClassInfo[]> {
         return Promise.all(contents.map(c => this.getInfo(c)));
     }
 
-    private mapAstToInfo(ast: jorje.ParserOutput): ApexClassInfo {
+    private mapAstToInfo(ast: jorje.ParserOutput): Partial<ApexClassInfo> {
         const unit = ast.unit;
 
         // Initialize defaults

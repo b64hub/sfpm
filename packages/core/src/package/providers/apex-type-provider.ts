@@ -13,9 +13,9 @@ export class ApexTypeProvider implements MetadataProvider {
         const files = await glob(["**/*.cls", "**/*.trigger"], { cwd: sfpmPackage.workingDirectory });
 
         const parser = new ApexParser();
-        const classification = await parser.getInfoFromFiles(files);
+        const classification = await parser.classifyBulk(files);
 
-        sfpmPackage.metadata.content.apex.classes = classification.map((info) => {
+        const classes = classification.map((info) => {
             if (info.type === "Class" && !info.isTest) {
                 return {
                     name: info.name,
@@ -23,7 +23,7 @@ export class ApexTypeProvider implements MetadataProvider {
                 };
             }
         }) || [];
-        sfpmPackage.metadata.content.apex.triggers = classification.map((info) => {
+        const triggers = classification.map((info) => {
             if (info.type === "Trigger") {
                 return {
                     name: info.name,
@@ -31,7 +31,7 @@ export class ApexTypeProvider implements MetadataProvider {
                 };
             }
         }) || [];
-        sfpmPackage.metadata.content.apex.testClasses = classification.map((info) => {
+        const testClasses = classification.map((info) => {
             if (info.type === "Class" && info.isTest) {
                 return {
                     name: info.name,
@@ -40,9 +40,18 @@ export class ApexTypeProvider implements MetadataProvider {
             }
         }) || [];
 
-        sfpmPackage.metadata.validation.isTriggerAllTests = this.isTriggerAllTests(sfpmPackage);
-
-        return {};
+        return {
+            content: {
+                apex: {
+                    classes: classes,
+                    tests: testClasses,
+                },
+                triggers: triggers,
+            },
+            validation: {
+                isTriggerAllTests: this.isTriggerAllTests(sfpmPackage),
+            }
+        };
     }
 
     private isTriggerAllTests(sfpmPackage: SfpmPackage): boolean {
