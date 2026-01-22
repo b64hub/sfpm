@@ -105,7 +105,7 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         }
 
         const builderInstance: Builder = new BuilderClass(
-            sfpmPackage.workingDirectory,
+            sfpmPackage.stagingDirectory,
             sfpmPackage.metadata
         );
 
@@ -147,7 +147,7 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
             this.logger
         ).assemble();
 
-        sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
+        sfpmPackage.stagingDirectory = assemblyOutput.stagingDirectory;
 
         if (assemblyOutput.mdapiConversion) {
             sfpmPackage.mdapiDir = assemblyOutput.mdapiConversion.result.packagePath;
@@ -158,9 +158,16 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
     }
 
     private async getComponentSet(sfpmPackage: SfpmPackage): Promise<any> {
-        return ComponentSet.fromSource(
-            sfpmPackage.workingDirectory,
+        if (sfpmPackage.packageDirectory) {
+            throw new Error('Package must be staged for build and have a defined path');
+        }
+        const components = ComponentSet.fromSource(
+            sfpmPackage.packageDirectory
         );
+
+        sfpmPackage.componentSet = components;
+
+        return components;
     }
 
     public async runAnalyzers(sfpmPackage: SfpmPackage): Promise<void> {

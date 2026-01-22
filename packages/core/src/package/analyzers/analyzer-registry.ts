@@ -1,12 +1,13 @@
 import { Logger } from "../../types/logger.js";
+import { SfpmPackageMetadata } from "../../types/package.js";
 import SfpmPackage from "../sfpm-package.js";
 
 /**
  * Interface for package analyzers
  */
 export interface PackageAnalyzer {
-    analyze(sfpmPackage: SfpmPackage, componentSet: any): Promise<SfpmPackage>;
     isEnabled(sfpmPackage: SfpmPackage): boolean;
+    analyze(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageMetadata>>;
 }
 
 /**

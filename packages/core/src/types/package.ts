@@ -1,7 +1,12 @@
-import { deprecate } from "node:util";
+import { PackageManifestObject } from "@salesforce/source-deploy-retrieve";
 import { ApexClasses } from "./apex.js";
 
 export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff', Managed = 'managed' }
+
+export type MetadataFile = string | {
+    name: string;
+    path?: string;
+}
 
 export interface SfpmPackageIdentity {
     id?: string;
@@ -10,17 +15,6 @@ export interface SfpmPackageIdentity {
     packageVersionId?: string;
     packageType: Omit<PackageType, 'managed'>;
     apiVersion?: string;
-}
-
-export interface SfpmPackageManifest {
-    Package: {
-        xmlns: string;
-        types: Array<{
-            name: string;
-            members: string[];
-        }>;
-        version: string;
-    };
 }
 
 export interface SfpmPackageSource {
@@ -33,15 +27,16 @@ export interface SfpmPackageSource {
 }
 
 export interface SfpmPackageContent {
-    metadataCount?: number;
-    payload?: SfpmPackageManifest;
-    destructiveChangesPath?: string;
+    metadataCount: number;
+    payload?: PackageManifestObject;
     apex?: {
-        classes?: { name: string; path?: string; }[];
-        triggers?: { name: string; path?: string; }[];
-        testClasses?: { name: string; path?: string; }[];
-        testSuites?: { name: string; path?: string; }[];
+        classes?: string[];
+        tests?: string[];
     };
+    triggers?: string[];
+    testSuites?: string[];
+    standardValueSets?: string[];
+    [key: string]: any;
 }
 
 export interface SfpmPackageValidation {
@@ -56,7 +51,8 @@ export interface SfpmPackageOrchestration {
     assignPermSetsPreDeployment?: string[];
     assignPermSetsPostDeployment?: string[];
     reconcileProfiles?: boolean;
-    creationDetails?: { creationTime?: number; timestamp?: number };
+    destructiveChangesPath?: string;
+    creationDetails?: { duration?: number; timestamp?: number };
     deployments?: {
         targetOrg: string;
         subDirectory?: string;
@@ -64,8 +60,6 @@ export interface SfpmPackageOrchestration {
         timestamp?: number
     }[];
 }
-
-import { ApexSortedByType } from "./apex.js";
 
 /**
  * The "Source of Truth" for the JSON Artifact.

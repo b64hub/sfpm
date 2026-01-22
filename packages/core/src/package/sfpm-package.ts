@@ -9,13 +9,11 @@ export default class SfpmPackage {
 
     private _metadata: SfpmPackageMetadata;
 
-    // Runtime-only properties (Excluded from JSON)
     public projectDirectory: string;
-    public stagingDirectory: string = '';
-    public mdapiDir?: string = path.join(this.stagingDirectory, 'metadata');
+    public stagingDirectory: string | undefined;
 
     public projectDefinition?: ProjectDefinition;
-    public packageDefinition?: PackageDefinition;
+    private packageDefinition?: PackageDefinition;
 
     private orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
 
@@ -37,7 +35,6 @@ export default class SfpmPackage {
         } as SfpmPackageMetadata;
     }
 
-    // Accessors to maintain compatibility with existing code
     get metadata() { return this._metadata; }
 
     get name() { return this._metadata.identity.packageName; }
@@ -52,14 +49,16 @@ export default class SfpmPackage {
     get type() { return this._metadata.identity.packageType; }
     set type(val: Omit<PackageType, 'managed'>) { this._metadata.identity.packageType = val; }
 
-    get sourceVersion() { return this._metadata.source.sourceVersion; }
-    set sourceVersion(val: string | undefined) { this._metadata.source.sourceVersion = val; }
+    public setPackageDefinition(packageDefinition: PackageDefinition) {
+        if (this.packageDefinition) {
+            throw new Error('Package definition already set');
+        }
 
-    get tag() { return this._metadata.source.tag; }
-    set tag(val: string | undefined) { this._metadata.source.tag = val; }
+        this.packageDefinition = packageDefinition;
+    }
 
     get packageDirectory(): string | undefined {
-        if (!this.packageDefinition?.path) {
+        if (!this.packageDefinition?.path || !this.stagingDirectory) {
             return undefined;
         }
 
@@ -67,7 +66,7 @@ export default class SfpmPackage {
     }
 
     public getComponentSet(): ComponentSet {
-        if (!this.packageDirectory) {
+        if (!this.packageDirectory || !this.stagingDirectory) {
             throw new Error('Package must be staged for build and have a defined path');
         }
 
@@ -205,7 +204,9 @@ export default class SfpmPackage {
         return _.merge({}, this._metadata, {
             content,
             identity: {
-                packageName: this.name || content.payload?.Package?.fullName
+                packageName: this.name || content.payload?.Package?.fullName,
+                packageType: this.type || this.packageDefinition?.type,
+                versionNumber: this.version || this.packageDefinition?.versionNumber
             }
         });
     }

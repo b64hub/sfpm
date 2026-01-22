@@ -10,7 +10,7 @@ import { glob } from "fast-glob";
 export class ApexTypeProvider implements MetadataProvider {
     public async provide(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageMetadata>> {
 
-        const files = await glob(["**/*.cls", "**/*.trigger"], { cwd: sfpmPackage.workingDirectory });
+        const files = await glob(["**/*.cls", "**/*.trigger"], { cwd: sfpmPackage.stagingDirectory });
 
         const parser = new ApexParser();
         const classification = await parser.classifyBulk(files);
