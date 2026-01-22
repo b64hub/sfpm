@@ -37,8 +37,8 @@ export default class SfpmPackage {
 
     get metadata() { return this._metadata; }
 
-    get id() { return this._metadata.identity.id; }
     set id(val: string) { this._metadata.identity.id = val; }
+    get id() { return this._metadata.identity.id; }
 
     get name() { return this._metadata.identity.packageName; }
     set name(val: string) { this._metadata.identity.packageName = val; }
@@ -51,6 +51,10 @@ export default class SfpmPackage {
 
     get type() { return this._metadata.identity.packageType; }
     set type(val: Omit<PackageType, 'managed'>) { this._metadata.identity.packageType = val; }
+
+    get apiVersion() { return this._metadata.identity.apiVersion; }
+    set apiVersion(val: string) { this._metadata.identity.apiVersion = val; }
+
 
     set packageDefinition(packageDefinition: PackageDefinition) {
         if (this._packageDefinition) {
@@ -74,6 +78,32 @@ export default class SfpmPackage {
         }
 
         return path.join(this.stagingDirectory, this.packageDefinition?.path);
+    }
+
+    public setBuildNumber(buildNumber: string): void {
+        if (!buildNumber) {
+            return;
+        }
+
+        if (this.type === PackageType.Unlocked) {
+            return;
+        }
+
+        let version = this.version || this.packageDefinition?.versionNumber;
+
+        if (!version) {
+            throw new Error('The package doesnt have a version attribute, Please check your definition');
+        }
+
+        const segments = version.split('.');
+        const numberToBeAppended = parseInt(buildNumber);
+
+        if (isNaN(numberToBeAppended)) {
+            throw new Error('BuildNumber should be a number');
+        }
+
+        segments[3] = buildNumber;
+        this.version = segments.join('.');
     }
 
     public getComponentSet(): ComponentSet {
