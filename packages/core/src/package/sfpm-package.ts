@@ -1,5 +1,5 @@
 import { ComponentSet } from "@salesforce/source-deploy-retrieve";
-import { ProjectDefinition, PackageDefinition } from "../project/types.js";
+import { ProjectDefinition, PackageDefinition } from "../types/project.js";
 import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration } from "../types/package.js";
 import * as _ from "lodash";
 import path from "path";
@@ -36,6 +36,9 @@ export default class SfpmPackage {
     }
 
     get metadata() { return this._metadata; }
+
+    get id() { return this._metadata.identity.id; }
+    set id(val: string) { this._metadata.identity.id = val; }
 
     get name() { return this._metadata.identity.packageName; }
     set name(val: string) { this._metadata.identity.packageName = val; }
@@ -95,7 +98,7 @@ export default class SfpmPackage {
     public setApexClassification(classes: string[], tests: string[]) {
         const componentSet = this.getComponentSet();
 
-        const filterExistingApex = (names: string[]) => 
+        const filterExistingApex = (names: string[]) =>
             names.filter(name => componentSet.has({ fullName: name, type: 'ApexClass' }));
 
         this._metadata.content.apex = {
@@ -202,14 +205,10 @@ export default class SfpmPackage {
         };
     }
 
-    private async resolveOrchestrationMetadata(): Promise<SfpmPackageOrchestration> {
+    private async resolveOrchestrationMetadata(): Promise<Partial<SfpmPackageOrchestration>> {
         return {
-            destructiveChangesPath: this.packageDefinition?.destructiveChangesPath,
-            assignPermSetsPreDeployment: this.packageDefinition?.assignPermSetsPreDeployment,
-            assignPermSetsPostDeployment: this.packageDefinition?.assignPermSetsPostDeployment,
-            reconcileProfiles: this.packageDefinition?.reconcileProfiles,
-            preDeploymentScript: this.packageDefinition?.preDeploymentScript,
-            postDeploymentScript: this.packageDefinition?.postDeploymentScript,
+            deploymentOptions: this.packageDefinition?.deploymentOptions,
+            buildOptions: this.packageDefinition?.buildOptions
         };
     }
 

@@ -1,5 +1,5 @@
 import { SfProject, SfProjectJson } from '@salesforce/core';
-import { ProjectDefinition, PackageDefinition, ProjectDefinitionSchema } from './types.js';
+import { ProjectDefinition, PackageDefinition, ProjectDefinitionSchema } from '../types/project.js';
 import { PackageType } from '../types/package.js';
 
 /**
@@ -87,7 +87,7 @@ export default class ProjectConfig {
             return pkg.type as PackageType;
         }
         return PackageType.Source;
-    } 
+    }
 
     public getPackageId(packageAlias: string): string | undefined {
         return this.definition?.packageAliases?.[packageAlias];

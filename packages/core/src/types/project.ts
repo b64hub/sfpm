@@ -1,4 +1,4 @@
-import type { PackageType } from "../types/package.js";
+import type { PackageType } from "./package.js";
 import { ProjectJsonSchema, ProjectJson } from '@salesforce/core';
 import { z } from 'zod';
 
@@ -6,6 +6,27 @@ import { z } from 'zod';
  * Extension of the standard Salesforce Package Directory (packageDirectories entry).
  */
 export type PackageDir = ProjectJson['packageDirectories'][number];
+
+export interface DeploymentOptions {
+    optimize?: boolean;
+    pre: {
+        settings?: {
+            FHT?: boolean;
+            FT?: boolean;
+        };
+        reconcileProfiles?: boolean;
+        script?: string;
+        assignPermSets?: string[];
+        destructiveChanges?: string;
+        unpackagedMetadata?: { path: string };
+    },
+    post: {
+        script?: string;
+        assignPermSets?: string[];
+        destructiveChanges?: string;
+        unpackagedMetadata?: { path: string };
+    }
+}
 
 // Our Orchestration tool expects packages to have a name (package) and we add custom metadata.
 // We explicitly include 'package', 'versionNumber', 'path' and 'dependencies' here because 
@@ -16,8 +37,11 @@ export type PackageDefinition = PackageDir & {
     path: string;
     dependencies?: { package: string; versionNumber: string }[];
     type?: PackageType;
-    envAlias?: string;
-    ignoreOnStage?: string[];
+    envAliased?: string;
+    skip?: string[];
+    deploymentOptions?: DeploymentOptions,
+    buildOptions?: {
+    },
     preDeploymentScript?: string;
     postDeploymentScript?: string;
     unpackagedMetadata?: { path: string };
@@ -27,7 +51,6 @@ export type PackageDefinition = PackageDir & {
     destructiveChangesPath?: string;
     reconcileProfiles?: boolean;
     ignore?: string[];
-    isOptimizedDeployment?: boolean;
 };
 
 /**
@@ -53,18 +76,29 @@ export const PackageDefinitionSchema = z.intersection(
     ProjectJsonSchema.shape.packageDirectories.element,
     z.object({
         type: z.string().optional(),
-        envAlias: z.string().optional(),
-        ignoreOnStage: z.array(z.string()).optional(),
-        preDeploymentScript: z.string().optional(),
-        postDeploymentScript: z.string().optional(),
+        envAliased: z.string().optional(),
         dependencies: z.array(z.object({ package: z.string(), versionNumber: z.string() })).optional(),
-        unpackagedMetadata: z.object({ path: z.string() }).optional(),
-        assignPermSetsPreDeployment: z.array(z.string()).optional(),
-        assignPermSetsPostDeployment: z.array(z.string()).optional(),
-        destructiveChangesPath: z.string().optional(),
-        reconcileProfiles: z.boolean().optional(),
-        isOptimizedDeployment: z.boolean().optional(),
-        ignore: z.array(z.string()).optional(),
+        skip: z.array(z.string()).optional(),
+        deploymentOptions: z.object({
+            optimize: z.boolean().optional(),
+            pre: z.object({
+                settings: z.object({
+                    FHT: z.boolean().optional(),
+                }).optional(),
+                reconcileProfiles: z.boolean().optional(),
+                script: z.string().optional(),
+                assignPermSets: z.array(z.string()).optional(),
+                destructiveChanges: z.string().optional(),
+                unpackagedMetadata: z.object({ path: z.string() }).optional(),
+            }).optional(),
+            post: z.object({
+                script: z.string().optional(),
+                assignPermSets: z.array(z.string()).optional(),
+                destructiveChanges: z.string().optional(),
+                unpackagedMetadata: z.object({ path: z.string() }).optional(),
+            }).optional(),
+        }).optional(),
+        buildOptions: z.object({}).optional(),
     })
 );
 

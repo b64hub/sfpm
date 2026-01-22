@@ -1,4 +1,4 @@
-import { ProjectDefinition, PackageDefinition } from './types.js';
+import { ProjectDefinition, PackageDefinition } from '../types/project.js';
 
 export class PackageNode {
     public readonly name: string;

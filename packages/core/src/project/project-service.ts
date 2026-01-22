@@ -2,7 +2,7 @@ import { SfProject } from '@salesforce/core';
 import ProjectConfig from './project-config.js';
 import { ProjectGraph } from './project-graph.js';
 import { VersionManager, VersionManagerConfig } from './version-manager.js';
-import { ProjectDefinition, PackageDefinition } from './types.js';
+import { ProjectDefinition, PackageDefinition } from '../types/project.js';
 import { PackageType } from '../types/package.js';
 
 export default class ProjectService {

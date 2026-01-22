@@ -3,7 +3,7 @@ import { Logger } from "../../../types/logger.js";
 import ProjectConfig from "../../../project/project-config.js";
 import * as fs from 'fs-extra';
 import path from 'path';
-import { PackageDefinition } from "../../../project/types.js";
+import { PackageDefinition } from "../../../types/project.js";
 import { PackageType } from "../../../types/package.js";
 
 /**

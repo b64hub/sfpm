@@ -1,6 +1,6 @@
 import semver, { ReleaseType } from 'semver';
 import { EventEmitter } from 'events';
-import { ProjectDefinition, PackageDefinition } from './types.js';
+import { ProjectDefinition, PackageDefinition } from '../types/project.js';
 import { simpleGit } from 'simple-git';
 import { ProjectGraph, PackageNode } from './project-graph.js';
 import { OrgPackageVersionFetcher } from '../types/org.js';

@@ -1,5 +1,6 @@
 import { PackageManifestObject } from "@salesforce/source-deploy-retrieve";
 import { ApexClasses } from "./apex.js";
+import { DeploymentOptions } from "./project.js";
 
 export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff', Managed = 'managed' }
 
@@ -46,12 +47,6 @@ export interface SfpmPackageValidation {
 }
 
 export interface SfpmPackageOrchestration {
-    preDeploymentScript?: string;
-    postDeploymentScript?: string;
-    assignPermSetsPreDeployment?: string[];
-    assignPermSetsPostDeployment?: string[];
-    reconcileProfiles?: boolean;
-    destructiveChangesPath?: string;
     creationDetails?: { duration?: number; timestamp?: number };
     deployments?: {
         targetOrg: string;
@@ -59,6 +54,9 @@ export interface SfpmPackageOrchestration {
         installationTime?: number;
         timestamp?: number
     }[];
+    deploymentOptions?: DeploymentOptions;
+    buildOptions?: {
+    }
 }
 
 /**

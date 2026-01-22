@@ -94,7 +94,7 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
             sfpmPackage.metadata.source = this.sourceContext;
         }
 
-        await this.enrichMetadata(sfpmPackage);
+        // await this.enrichMetadata(sfpmPackage);
         await this.stagePackage(sfpmPackage);
         await this.runAnalyzers(sfpmPackage);
 
@@ -127,17 +127,17 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         }
     }
 
-    private async enrichMetadata(sfpmPackage: SfpmPackage): Promise<void> {
-        for (const provider of this.metadataProviders) {
-            try {
-                const contribution = await provider.provide(sfpmPackage);
-                _.merge(sfpmPackage.metadata, contribution);
-            } catch (error: any) {
-                this.logger?.error(`Error in metadata provider ${provider.constructor.name}: ${error.message}`);
-                continue;
-            }
-        }
-    }
+    // private async enrichMetadata(sfpmPackage: SfpmPackage): Promise<void> {
+    //     for (const provider of this.metadataProviders) {
+    //         try {
+    //             const contribution = await provider.provide(sfpmPackage);
+    //             _.merge(sfpmPackage.metadata, contribution);
+    //         } catch (error: any) {
+    //             this.logger?.error(`Error in metadata provider ${provider.constructor.name}: ${error.message}`);
+    //             continue;
+    //         }
+    //     }
+    // }
 
     public async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
         const assemblyOutput = await new PackageAssembler(
