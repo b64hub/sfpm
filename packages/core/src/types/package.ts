@@ -12,10 +12,15 @@ export type MetadataFile = string | {
 export interface SfpmPackageIdentity {
     packageName: string;
     versionNumber?: string;
-    packageId?: string;
-    packageVersionId?: string;
     packageType: Omit<PackageType, 'managed'>;
     apiVersion?: string;
+}
+
+export interface SfpmUnlockedPackageIdentity extends SfpmPackageIdentity {
+    isOrgDependent: boolean;
+    packageVersionId?: string;
+    packageId?: string;
+    packageType: PackageType.Unlocked;
 }
 
 export interface SfpmPackageSource {
@@ -77,6 +82,12 @@ export interface SfpmPackageOrchestration {
     },
 }
 
+export interface SfpmDataPackageMetadata {
+    identity: SfpmPackageIdentity;
+    source: SfpmPackageSource;
+    [key: string]: any;
+}
+
 /**
  * The "Source of Truth" for the JSON Artifact.
  * This represents the metadata file stored in the artifact.
@@ -88,6 +99,10 @@ export interface SfpmPackageMetadata {
     validation: SfpmPackageValidation;
     orchestration: SfpmPackageOrchestration;
     [key: string]: any;
+}
+
+export interface SfpmUnlockedPackageMetadata extends SfpmPackageMetadata {
+    identity: SfpmUnlockedPackageIdentity;
 }
 
 /**

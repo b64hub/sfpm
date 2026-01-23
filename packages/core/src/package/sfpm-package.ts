@@ -1,10 +1,11 @@
 import { ComponentSet, SourceComponent } from "@salesforce/source-deploy-retrieve";
 import { ProjectDefinition, PackageDefinition } from "../types/project.js";
-import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration } from "../types/package.js";
+import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata } from "../types/package.js";
 import * as _ from "lodash";
 import path from "path";
 
 const TEST_COVERAGE_THRESHOLD = 75;
+const DEFAULT_API_VERSION = '65.0';
 /**
  * Internal map used by SfpmPackage to validate component identities.
  */
@@ -34,19 +35,17 @@ const PROFILE_SUPPORTED_METADATA_TYPES = [
 ];
 
 
-export default class SfpmPackage {
+export default abstract class SfpmPackage {
 
-    private _metadata: SfpmPackageMetadata;
+    protected _metadata: SfpmPackageMetadata;
 
     public projectDirectory: string;
     public stagingDirectory: string | undefined;
 
     public projectDefinition?: ProjectDefinition;
-    private _packageDefinition?: PackageDefinition;
+    protected _packageDefinition?: PackageDefinition;
 
     public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
-
-    private _componentSet?: ComponentSet;
 
     constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadata>) {
         this.projectDirectory = projectDirectory;
@@ -64,10 +63,7 @@ export default class SfpmPackage {
         } as SfpmPackageMetadata;
     }
 
-    get metadata() { return this._metadata; }
-
-    set id(val: string) { this._metadata.identity.packageId = val; }
-    get id() { return this._metadata.identity.packageId; }
+    get metadata(): SfpmPackageMetadata { return this._metadata; }
 
     get name() { return this._metadata.identity.packageName; }
     set name(val: string) { this._metadata.identity.packageName = val; }
@@ -81,9 +77,13 @@ export default class SfpmPackage {
     get type() { return this._metadata.identity.packageType; }
     set type(val: Omit<PackageType, 'managed'>) { this._metadata.identity.packageType = val; }
 
-    get apiVersion() { return this._metadata.identity.apiVersion; }
+    get apiVersion() { return this._metadata.identity.apiVersion || this.projectDefinition?.sourceApiVersion || process.env.SFPM_API_VERSION || DEFAULT_API_VERSION; }
     set apiVersion(val: string) { this._metadata.identity.apiVersion = val; }
 
+
+    get dependencies(): { package: string; versionNumber?: string }[] | undefined {
+        return this.packageDefinition?.dependencies;
+    }
 
     set packageDefinition(packageDefinition: PackageDefinition) {
         if (this._packageDefinition) {
@@ -134,6 +134,11 @@ export default class SfpmPackage {
         segments[3] = buildNumber;
         this.version = segments.join('.');
     }
+}
+
+export class SfpmMetadataPackage extends SfpmPackage {
+
+    protected _componentSet?: ComponentSet;
 
     public getComponentSet(): ComponentSet {
         if (!this.packageDirectory || !this.stagingDirectory) {
@@ -294,7 +299,7 @@ export default class SfpmPackage {
                 continue;
             }
 
-            const validated = currentList.filter(name => 
+            const validated = currentList.filter(name =>
                 cs.has({ fullName: name, type: metadataType })
             );
 
@@ -327,6 +332,7 @@ export default class SfpmPackage {
     get isCoverageCheckPassed(): boolean {
         return (this._metadata.validation?.testCoverage || 0) > TEST_COVERAGE_THRESHOLD;
     }
+
 
     /**
      * @description: Resolves the content of the package from the component set.
@@ -389,4 +395,41 @@ export default class SfpmPackage {
     public async toJSON() {
         return await this.toPackageMetadata();
     }
+}
+
+export class SfpmDataPackage extends SfpmPackage {
+}
+
+
+export class SfpmUnlockedPackage extends SfpmMetadataPackage {
+
+    constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmUnlockedPackageMetadata>) {
+        super(packageName, projectDirectory, metadata);
+        this._metadata.identity.packageType = PackageType.Unlocked;
+    }
+
+    override get metadata(): SfpmUnlockedPackageMetadata { return this._metadata as SfpmUnlockedPackageMetadata; }
+
+    set packageId(val: string) { this.metadata.identity.packageId = val; }
+    get packageId() { return this.metadata.identity.packageId || ''; }
+
+    get packageVersionId(): string | undefined {
+        return this.metadata.identity.packageVersionId;
+    }
+
+    set packageVersionId(val: string | undefined) {
+        this.metadata.identity.packageVersionId = val;
+    }
+
+    get isOrgDependent(): boolean {
+        return this.metadata.identity.isOrgDependent;
+    }
+
+    set isOrgDependent(val: boolean) {
+        this.metadata.identity.isOrgDependent = val;
+    }
+}
+
+export class SfpmSourcePackage extends SfpmMetadataPackage {
+
 }
