@@ -35,7 +35,7 @@ export type PackageDefinition = PackageDir & {
     package: string;
     versionNumber: string;
     path: string;
-    dependencies?: { package: string; versionNumber: string }[];
+    dependencies?: { package: string; versionNumber?: string }[];
     type?: PackageType;
     envAliased?: string;
     skip?: string[];

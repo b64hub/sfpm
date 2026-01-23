@@ -5,9 +5,9 @@ import { PackageType } from "../types/package.js";
 import ProjectConfig from "../project/project-config.js";
 import { Builder, BuilderRegistry } from "./builders/builder-registry.js";
 import { AnalyzerRegistry } from "./analyzers/analyzer-registry.js";
-import SfpmPackage from "./sfpm-package.js";
+import SfpmPackage, { SfpmMetadataPackage } from "./sfpm-package.js";
 import PackageAssembler from "./assemblers/package-assembler.js";
-import { SfpmPackageMetadata, SfpmPackageSource } from "../types/package.js";
+import { SfpmPackageSource } from "../types/package.js";
 
 import { Logger } from "../types/logger.js";
 
@@ -21,9 +21,7 @@ export interface BuildOptions {
 
 export interface BuildEvents { }
 
-export interface PreBuildTask { }
-
-export interface PostBuildTask { }
+export interface BuildTask { }
 
 /**
  * Orchestrator for package builds
@@ -32,9 +30,6 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
     private options: BuildOptions;
     private logger: Logger | undefined;
     private projectConfig: ProjectConfig;
-
-    private preBuildTasks: PreBuildTask[] = [];
-    private postBuildTasks: PostBuildTask[] = [];
 
     constructor(projectConfig: ProjectConfig, options?: BuildOptions, logger?: Logger) {
         super();
@@ -52,7 +47,7 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
 
         await this.projectConfig.load();
 
-        let sfpmPackage: SfpmPackage = new SfpmPackage(
+        let sfpmPackage: SfpmPackage = new SfpmMetadataPackage(
             packageName,
             projectDirectory,
         );

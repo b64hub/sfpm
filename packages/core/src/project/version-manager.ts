@@ -70,6 +70,10 @@ export class VersionManager extends EventEmitter {
         this.emit('saved');
     }
 
+    public static formatVersion(major: number, minor: number, patch: number, build: number): string {
+        return `${major}.${minor}.${patch}.${build}`;
+    }
+
     public getGraph(): ProjectGraph | undefined {
         return this.graph;
     }
