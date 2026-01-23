@@ -1,16 +1,21 @@
-import { MetadataProvider } from "../package-builder.js";
 import SfpmPackage from "../sfpm-package.js";
-import { PackageType, SfpmPackageMetadata } from "../../types/package.js";
+import { PackageType, SfpmPackageContent } from "../../types/package.js";
 import { ApexParser } from "../../apex/apex-parser.js";
-import { glob } from "fast-glob";
+import { PackageAnalyzer } from "./analyzer-registry.js";
 
 /**
  * To be implemented using Apex Language Server
  */
-export class ApexTypeProvider implements MetadataProvider {
-    public async provide(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageMetadata>> {
+@RegisterAnalyzer()
+export class ApexTypeAnalyzer implements PackageAnalyzer {
 
-        const files = await glob(["**/*.cls", "**/*.trigger"], { cwd: sfpmPackage.stagingDirectory });
+    public isEnabled(sfpmPackage: SfpmPackage): boolean {
+        return sfpmPackage.type !== PackageType.Source && sfpmPackage.hasApex;
+    }
+
+    public async analyze(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageContent>> {
+
+        const files = sfpmPackage.apexClasses;
 
         const parser = new ApexParser();
         const classification = await parser.classifyBulk(files);
@@ -23,6 +28,7 @@ export class ApexTypeProvider implements MetadataProvider {
                 };
             }
         }) || [];
+
         const triggers = classification.map((info) => {
             if (info.type === "Trigger") {
                 return {
@@ -31,6 +37,7 @@ export class ApexTypeProvider implements MetadataProvider {
                 };
             }
         }) || [];
+
         const testClasses = classification.map((info) => {
             if (info.type === "Class" && info.isTest) {
                 return {
@@ -48,21 +55,6 @@ export class ApexTypeProvider implements MetadataProvider {
                 },
                 triggers: triggers,
             },
-            validation: {
-                isTriggerAllTests: this.isTriggerAllTests(sfpmPackage),
-            }
         };
     }
-
-    private isTriggerAllTests(sfpmPackage: SfpmPackage): boolean {
-        return (
-            !this.isOptimizedDeployment(sfpmPackage) ||
-            (sfpmPackage.type === PackageType.Source && sfpmPackage.hasApex && sfpmPackage.apexTestClasses.length === 0)
-        )
-    }
-
-    private isOptimizedDeployment(sfpmPackage: SfpmPackage): boolean {
-        return (sfpmPackage.type === PackageType.Source && sfpmPackage.packageDefinition?.isOptimizedDeployment) || false;
-    }
-
 }

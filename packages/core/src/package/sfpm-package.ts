@@ -1,8 +1,37 @@
-import { ComponentSet } from "@salesforce/source-deploy-retrieve";
+import { ComponentSet, SourceComponent } from "@salesforce/source-deploy-retrieve";
 import { ProjectDefinition, PackageDefinition } from "../types/project.js";
 import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration } from "../types/package.js";
 import * as _ from "lodash";
 import path from "path";
+
+const TEST_COVERAGE_THRESHOLD = 75;
+/**
+ * Internal map used by SfpmPackage to validate component identities.
+ */
+const CONTENT_METADATA_TYPE: Record<string, string> = {
+    'apex.classes': 'ApexClass',
+    'apex.tests': 'ApexClass',
+    'triggers': 'ApexTrigger',
+    'fields.fht': 'CustomField',
+    'fields.ft': 'CustomField',
+    'fields.picklists': 'CustomField',
+    'profiles': 'Profile',
+    'permissionSetGroups': 'PermissionSetGroup',
+    'permissionSets': 'PermissionSet',
+    'standardValueSets': 'StandardValueSet',
+};
+
+const PROFILE_SUPPORTED_METADATA_TYPES = [
+    'apexclass',
+    'customapplication',
+    'customobject',
+    'customfield',
+    'layout',
+    'apexpage',
+    'customtab',
+    'recordtype',
+    'systempermissions',
+];
 
 
 export default class SfpmPackage {
@@ -37,8 +66,8 @@ export default class SfpmPackage {
 
     get metadata() { return this._metadata; }
 
-    set id(val: string) { this._metadata.identity.id = val; }
-    get id() { return this._metadata.identity.id; }
+    set id(val: string) { this._metadata.identity.packageId = val; }
+    get id() { return this._metadata.identity.packageId; }
 
     get name() { return this._metadata.identity.packageName; }
     set name(val: string) { this._metadata.identity.packageName = val; }
@@ -125,29 +154,10 @@ export default class SfpmPackage {
         return await this.getComponentSet().getObject();
     }
 
-    public setApexClassification(classes: string[], tests: string[]) {
-        const componentSet = this.getComponentSet();
-
-        const filterExistingApex = (names: string[]) =>
-            names.filter(name => componentSet.has({ fullName: name, type: 'ApexClass' }));
-
-        this._metadata.content.apex = {
-            classes: filterExistingApex(classes),
-            tests: filterExistingApex(tests)
-        };
-    }
-
-    get apexClasses(): string[] {
-
-        if (this._metadata.content?.apex?.classes?.length) {
-            return this._metadata.content.apex.classes;
-        }
-
-        // fallback: Query the ComponentSet for everything identified as Apex
+    get apexClasses(): SourceComponent[] {
         return this.getComponentSet()
             .getSourceComponents().toArray()
-            .filter(c => c.type.id === 'apexclass')
-            .map(c => c.fullName);
+            .filter(c => c.type.id === 'apexclass');
     }
 
     get hasApex(): boolean {
@@ -161,10 +171,9 @@ export default class SfpmPackage {
         return this._metadata.content?.apex?.tests || [];
     }
 
-    get triggers(): string[] {
+    get triggers(): SourceComponent[] {
         return this.getComponentSet().getSourceComponents().toArray()
-            .filter(c => c.type.id === 'apextrigger')
-            .map(c => c.fullName);
+            .filter(c => c.type.id === 'apextrigger');
     }
 
     get testSuites(): string[] {
@@ -183,14 +192,39 @@ export default class SfpmPackage {
             .some(c => c.type.id === 'permissionsetgroup');
     }
 
-    get customFields() {
+    get customFields(): SourceComponent[] {
         return this.getComponentSet().getSourceComponents().toArray()
             .filter(c => c.type.id === 'customfield');
     }
 
-    get customObjects() {
+    get customObjects(): SourceComponent[] {
         return this.getComponentSet().getSourceComponents().toArray()
             .filter(c => c.type.id === 'customobject');
+    }
+
+    get flows(): SourceComponent[] {
+        return this.getComponentSet().getSourceComponents().toArray()
+            .filter(c => c.type.id === 'flow');
+    }
+
+    get profiles(): SourceComponent[] {
+        return this.getComponentSet().getSourceComponents().toArray()
+            .filter(c => c.type.id === 'profile');
+    }
+
+    get permissionSetGroups(): SourceComponent[] {
+        return this.getComponentSet().getSourceComponents().toArray()
+            .filter(c => c.type.id === 'permissionsetgroup');
+    }
+
+    get permissionSets(): SourceComponent[] {
+        return this.getComponentSet().getSourceComponents().toArray()
+            .filter(c => c.type.id === 'permissionset');
+    }
+
+    get standardValueSets(): SourceComponent[] {
+        return this.getComponentSet().getSourceComponents().toArray()
+            .filter(c => c.type.id === 'standardvalueset');
     }
 
     /**
@@ -204,11 +238,11 @@ export default class SfpmPackage {
      * @description: Sets the list of fields configured for Field Tracking History in the package
      */
     public setFhtFields(names: string[]) {
-        const cs = this.getComponentSet();
-        // Validate names against actual set for integrity
-        this._metadata.content.fhtFields = names.filter(n => 
-            cs.has({ fullName: n, type: 'CustomField' })
-        );
+        this.updateContent({
+            fields: {
+                fht: names
+            }
+        } as Partial<SfpmPackageContent>);
     }
 
     /**
@@ -222,11 +256,11 @@ export default class SfpmPackage {
      * @description: Sets the list of fields configured for Feed Tracking in the package
      */
     public setFtFields(names: string[]) {
-        const cs = this.getComponentSet();
-        // Validate names against actual set for integrity
-        this._metadata.content.ftFields = names.filter(n => 
-            cs.has({ fullName: n, type: 'CustomField' })
-        );
+        this.updateContent({
+            fields: {
+                ft: names
+            }
+        } as Partial<SfpmPackageContent>);
     }
 
     get picklists() {
@@ -234,43 +268,64 @@ export default class SfpmPackage {
     }
 
     public setPicklists(picklists: string[]) {
-        const cs = this.getComponentSet();
-        // Validate names against actual set for integrity
-        this._metadata.content.picklists = picklists.filter(n => 
-            cs.has({ fullName: n, type: 'CustomField' })
-        );
+        this.updateContent({
+            fields: {
+                picklists
+            }
+        } as Partial<SfpmPackageContent>);
+    }
+
+    public updateContent(newContent: Partial<SfpmPackageContent>) {
+        _.merge(this._metadata.content, newContent);
+        this.enforceIntegrity();
+    }
+
+    /**
+     * Ensures every name in our categorized metadata actually 
+     * exists as a physical component in the directory.
+     */
+    private enforceIntegrity() {
+        const cs = this.getComponentSet(); //
+
+        for (const [jsonPath, metadataType] of Object.entries(CONTENT_METADATA_TYPE)) {
+            const currentList = _.get(this._metadata.content, jsonPath);
+
+            if (!Array.isArray(currentList)) {
+                continue;
+            }
+
+            const validated = currentList.filter(name => 
+                cs.has({ fullName: name, type: metadataType })
+            );
+
+            _.set(this._metadata.content, jsonPath, validated);
+        }
     }
 
     get includesProfileSupportedTypes(): boolean {
-        const profileSupportedMetadataTypes = [
-            'apexclass',
-            'customapplication',
-            'customobject',
-            'customfield',
-            'layout',
-            'apexpage',
-            'customtab',
-            'recordtype',
-            'systempermissions',
-        ];
-
         return this.getComponentSet().getSourceComponents().toArray()
-            .some(c => profileSupportedMetadataTypes.includes(c.type.id));
+            .some(c => PROFILE_SUPPORTED_METADATA_TYPES.includes(c.type.id));
     }
 
     get hasDestructiveChanges(): boolean {
         return !!this._metadata.content?.destructiveChangesPath;
     }
 
+
     get isTriggerAllTests(): boolean {
-        if (this._metadata.validation?.isTriggerAllTests) {
-            return true;
-        }
+        return !this.isOptimizedDeployment || this.hasApex // this.testClasses.length > 0
+    }
 
-        const apex = this._metadata.content?.apex;
-        const hasTestClasses = (apex?.tests?.length || 0) > 0;
+    private get isOptimizedDeployment(): boolean {
+        return (this.type === PackageType.Source && this.packageDefinition?.deploymentOptions?.optimize) || false;
+    }
 
-        return this.hasApex && !hasTestClasses;
+    set testCoverage(coverage: number) {
+        this._metadata.validation.testCoverage = coverage;
+    }
+
+    get isCoverageCheckPassed(): boolean {
+        return (this._metadata.validation?.testCoverage || 0) > TEST_COVERAGE_THRESHOLD;
     }
 
     /**
@@ -285,11 +340,18 @@ export default class SfpmPackage {
             metadataCount: components.toArray().length,
             payload: await cs.getObject(),
             apex: {
-                classes: this.apexClasses,
-                tests: this.testClasses
+                all: this.apexClasses.map(f => f.fullName),
             },
-            triggers: this.triggers,
+            fields: {
+                all: this.customFields.map(f => f.fullName),
+            },
+            triggers: this.triggers.map(t => t.fullName),
             testSuites: this.testSuites,
+            standardValueSets: this.standardValueSets.map(s => s.fullName),
+            profiles: this.profiles.map(p => p.fullName),
+            permissionSetGroups: this.permissionSetGroups.map(p => p.fullName),
+            permissionSets: this.permissionSets.map(p => p.fullName),
+            flows: this.flows.map(f => f.fullName)
         };
     }
 
@@ -314,6 +376,10 @@ export default class SfpmPackage {
                 packageName: this.name || content.payload?.Package?.fullName,
                 packageType: this.type || this.packageDefinition?.type,
                 versionNumber: this.version || this.packageDefinition?.versionNumber
+            },
+            validation: {
+                isTriggerAllTests: this.isTriggerAllTests,
+                isCoverageCheckPassed: this.isCoverageCheckPassed,
             },
             orchestration
         });

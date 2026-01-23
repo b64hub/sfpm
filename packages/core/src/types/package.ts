@@ -10,9 +10,9 @@ export type MetadataFile = string | {
 }
 
 export interface SfpmPackageIdentity {
-    id?: string;
     packageName: string;
     versionNumber?: string;
+    packageId?: string;
     packageVersionId?: string;
     packageType: Omit<PackageType, 'managed'>;
     apiVersion?: string;
@@ -27,25 +27,40 @@ export interface SfpmPackageSource {
     tag?: string;
 }
 
+/**
+ * A container for metadata that includes a mandatory baseline of all components
+ * and optional specialized categorizations found by analyzers.
+ */
+export interface CategorizedMetadata {
+    all: string[]; // The physical truth from ComponentSet
+    [category: string]: string[] | undefined;
+}
+
 export interface SfpmPackageContent {
     metadataCount: number;
     payload?: PackageManifestObject;
-    apex?: {
+    apex?: CategorizedMetadata & {
         classes?: string[];
         tests?: string[];
     };
     triggers?: string[];
     testSuites?: string[];
-    fhtFields?: string[];
-    ftFields?: string[];
-    picklists?: string[];
+    fields?: CategorizedMetadata & {
+        fht?: string[];
+        ft?: string[];
+        picklists?: string[];
+    };
+    profiles?: string[];
+    permissionSetGroups?: string[];
+    permissionSets?: string[];
     standardValueSets?: string[];
+    flows?: string[];
     [key: string]: any;
 }
 
 export interface SfpmPackageValidation {
     testCoverage?: number;
-    hasPassedCoverageCheck?: boolean;
+    isCoverageCheckPassed?: boolean;
     isTriggerAllTests?: boolean;
 }
 

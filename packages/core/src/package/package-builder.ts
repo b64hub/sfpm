@@ -25,10 +25,6 @@ export interface PreBuildTask { }
 
 export interface PostBuildTask { }
 
-export interface MetadataProvider {
-    provide(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageMetadata>>;
-}
-
 /**
  * Orchestrator for package builds
  */

@@ -37,7 +37,11 @@ export default class FHTAnalyzer implements PackageAnalyzer {
             const enabledFields = await this.fhtEnabledFields(sfpmPackage);
             const fhtFields = enabledFields.filter(f => fhtConfig.includes(f.fullName));
 
-            sfpmPackage.setFhtFields(fhtFields.map(f => f.fullName));
+            return {
+                fields: {
+                    fht: fhtFields.map(f => f.fullName)
+                }
+            } as Partial<SfpmPackageContent>;
 
         } catch (error) {
             this.logger?.trace(`Unable to process Field History Tracking due to ${error}`);
