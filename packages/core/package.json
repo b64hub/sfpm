@@ -4,13 +4,14 @@
   "description": "sfpm core library",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "b64",
   "license": "MIT",
   "dependencies": {
     "@salesforce/core": "^8.24.2",
+    "@salesforce/packaging": "^4.18.10",
     "@salesforce/source-deploy-retrieve": "^12.31.7",
     "fast-glob": "^3.3.3",
     "fast-xml-parser": "^5.3.3",
