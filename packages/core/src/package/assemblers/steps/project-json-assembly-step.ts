@@ -4,7 +4,7 @@ import ProjectConfig from "../../../project/project-config.js";
 import * as fs from 'fs-extra';
 import path from 'path';
 import { PackageDefinition } from "../../../types/project.js";
-import { PackageType } from "../../../types/package.js";
+
 
 /**
  * @description Finalizes the assembly process by generating a pruned `sfdx-project.json`
@@ -26,34 +26,34 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
         try {
             const prunedManifest = this.projectConfig.getPrunedDefinition(this.packageName);
 
-            // Inject the versionNumber if provided
             if (options.versionNumber) {
-                prunedManifest.packageDirectories[0].versionNumber = options.versionNumber;
+                (prunedManifest.packageDirectories[0] as PackageDefinition).versionNumber = options.versionNumber;
             }
 
-            // Update paths to be relative to the artifact root
-            if (await fs.pathExists(path.join(output.stagingDirectory, 'unpackagedMetadata'))) {
-                (prunedManifest.packageDirectories[0] as PackageDefinition).unpackagedMetadata = { path: 'unpackagedMetadata' };
-                prunedManifest.packageDirectories.push({
-                    path: 'unpackagedMetadata',
-                    package: 'unpackagedMetadata',
-                    versionNumber: '0.0.0.0',
-                    type: PackageType.Source,
-                    default: false
-                });
+            const pkg = prunedManifest.packageDirectories[0] as PackageDefinition;
+            if (!pkg.packageOptions) {
+                pkg.packageOptions = {};
+            }
+
+            // use absolute path for unpackaged metadata
+            const unpackagedMetadataDir = path.join(output.stagingDirectory, 'unpackagedMetadata');
+            if (await fs.pathExists(unpackagedMetadataDir)) {
+                pkg.unpackagedMetadata = { path: unpackagedMetadataDir };
             }
 
             if (await fs.pathExists(path.join(output.stagingDirectory, 'scripts', 'preDeployment'))) {
-                (prunedManifest.packageDirectories[0] as PackageDefinition).preDeploymentScript = path.join('scripts', 'preDeployment');
+                this.initializeDeploymentOptions(pkg, 'pre');
+                pkg.packageOptions!.deploy!.pre!.script = path.join('scripts', 'preDeployment');
             }
 
             if (await fs.pathExists(path.join(output.stagingDirectory, 'scripts', 'postDeployment'))) {
-                (prunedManifest.packageDirectories[0] as PackageDefinition).postDeploymentScript = path.join('scripts', 'postDeployment');
+                this.initializeDeploymentOptions(pkg, 'post');
+                pkg.packageOptions!.deploy!.post!.script = path.join('scripts', 'postDeployment');
             }
 
-            const manifestPath = path.join(output.stagingDirectory, 'sfdx-project.json');
-            await fs.writeJSON(manifestPath, prunedManifest, { spaces: 4 });
-            output.manifestPath = manifestPath;
+            const projectJsonPath = path.join(output.stagingDirectory, 'sfdx-project.json');
+            await fs.writeJSON(projectJsonPath, prunedManifest, { spaces: 4 });
+            output.projectDefinitionPath = projectJsonPath;
 
             const manifestsDir = path.join(output.stagingDirectory, 'manifests');
             await fs.ensureDir(manifestsDir);
@@ -61,8 +61,18 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
                 path.join(this.projectConfig.projectDirectory, 'sfdx-project.json'),
                 path.join(manifestsDir, 'sfdx-project.json.original')
             );
-        } catch (error: any) {
-            throw new Error(`[ManifestAssemblyStep] ${error.message}`);
+
+        } catch (error) {
+            throw new Error(`[ManifestAssemblyStep] ${(error as Error).message}`);
+        }
+    }
+
+    private initializeDeploymentOptions(pkg: PackageDefinition, stage: 'pre' | 'post'): void {
+        if (!pkg.packageOptions!.deploy) {
+            pkg.packageOptions!.deploy = {};
+        }
+        if (!pkg.packageOptions!.deploy[stage]) {
+            pkg.packageOptions!.deploy[stage] = {};
         }
     }
 }

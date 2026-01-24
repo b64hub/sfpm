@@ -6,14 +6,52 @@ import { ProjectDefinition, PackageDefinition } from '../types/project.js';
 import { PackageType } from '../types/package.js';
 
 export default class ProjectService {
-    private versionManager: VersionManager;
-    private projectConfig: ProjectConfig;
+    private static instance: ProjectService | undefined;
+    private initialized = false;
 
-    constructor(projectOrPath?: SfProject | string) {
-        this.projectConfig = new ProjectConfig(projectOrPath);
+    private versionManager!: VersionManager;
+    private projectConfig!: ProjectConfig;
+
+    constructor(private projectOrPath?: SfProject | string) {
+    }
+
+    /**
+     * Gets or creates the singleton ProjectService instance
+     */
+    public static getInstance(projectOrPath?: SfProject | string): ProjectService {
+        if (!ProjectService.instance) {
+            ProjectService.instance = new ProjectService(projectOrPath);
+        }
+        return ProjectService.instance;
+    }
+
+    /**
+     * Resets the singleton instance (useful for testing)
+     */
+    public static resetInstance(): void {
+        ProjectService.instance = undefined;
+    }
+
+    /**
+     * Initializes the service by loading the project configuration and building the graph
+     */
+    public async initialize(): Promise<void> {
+        if (this.initialized) return;
+
+        let sfProject: SfProject;
+        if (this.projectOrPath instanceof SfProject) {
+            sfProject = this.projectOrPath;
+        } else {
+            sfProject = await SfProject.resolve(this.projectOrPath);
+        }
+
+        this.projectConfig = new ProjectConfig(sfProject);
         this.versionManager = new VersionManager({
             projectConfig: this.projectConfig
         });
+
+        await this.versionManager.load();
+        this.initialized = true;
     }
 
     public getVersionManager(): VersionManager {
@@ -35,25 +73,39 @@ export default class ProjectService {
      * Static helper to get the project definition
      */
     public static async getProjectDefinition(workingDirectory?: string): Promise<ProjectDefinition> {
-        const config = new ProjectConfig(workingDirectory);
-        return await config.load();
+        const service = ProjectService.getInstance(workingDirectory);
+        await service.initialize();
+        return service.getProjectConfig().getProjectDefinition();
     }
 
     /**
      * Static helper to get a specific package definition
      */
     public static async getPackageDefinition(packageName: string, workingDirectory?: string): Promise<PackageDefinition> {
-        const config = new ProjectConfig(workingDirectory);
-        await config.load();
-        return config.getPackageDefinition(packageName);
+        const service = ProjectService.getInstance(workingDirectory);
+        await service.initialize();
+        return service.getProjectConfig().getPackageDefinition(packageName);
+    }
+
+    /**
+     * Static helper to get all transitive dependencies of a package
+     */
+    public static async getPackageDependencies(packageName: string, workingDirectory?: string): Promise<PackageDefinition[]> {
+        const service = ProjectService.getInstance(workingDirectory);
+        await service.initialize();
+        const graph = service.getProjectGraph();
+        if (!graph) {
+            throw new Error('Project graph not available');
+        }
+        return graph.getTransitiveDependencies(packageName);
     }
 
     /**
      * Static helper to get package type
      */
     public static async getPackageType(packageName: string, workingDirectory?: string): Promise<PackageType> {
-        const config = new ProjectConfig(workingDirectory);
-        await config.load();
-        return config.getPackageType(packageName);
+        const service = ProjectService.getInstance(workingDirectory);
+        await service.initialize();
+        return service.getProjectConfig().getPackageType(packageName);
     }
 }
