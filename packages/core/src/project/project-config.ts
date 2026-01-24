@@ -1,31 +1,26 @@
-import { SfProject, SfProjectJson } from '@salesforce/core';
+import { SfProject, SfProjectJson, ProjectJsonSchema, ProjectJson } from '@salesforce/core';
 import { ProjectDefinition, PackageDefinition, ProjectDefinitionSchema } from '../types/project.js';
 import { PackageType } from '../types/package.js';
+
+
 
 /**
  * Configuration manager for sfdx-project.json
  */
 export default class ProjectConfig {
-    private project: SfProject | undefined;
-    private projectJson: SfProjectJson | undefined;
-    private definition: ProjectDefinition | undefined;
+    private project: SfProject;
+    private projectJson: SfProjectJson;
+    private definition?: ProjectDefinition;
 
-    constructor(private projectOrDirectory?: SfProject | string) {
-        if (projectOrDirectory instanceof SfProject) {
-            this.project = projectOrDirectory;
-            this.projectJson = this.project.getSfProjectJson();
-        }
+    constructor(project: SfProject) {
+        this.project = project;
+        this.projectJson = this.project.getSfProjectJson();
     }
 
     /**
      * Loads the project definition from the filesystem
      */
     public async load(): Promise<ProjectDefinition> {
-        if (!this.project) {
-            const workingDirectory = typeof this.projectOrDirectory === 'string' ? this.projectOrDirectory : undefined;
-            this.project = await SfProject.resolve(workingDirectory);
-            this.projectJson = this.project.getSfProjectJson();
-        }
 
         const rawContents = this.projectJson!.getContents();
 
@@ -115,9 +110,9 @@ export default class ProjectConfig {
      * console.log(pruned.packageDirectories.length); // 1
      * ```
      */
-    public getPrunedDefinition(packageName: string): ProjectDefinition {
+    public getPrunedDefinition(packageName: string, pruneOptions: { removeCustomProperties: boolean, isOrgDependent: boolean } = { removeCustomProperties: true, isOrgDependent: false }): ProjectDefinition {
         const definition = this.getProjectDefinition();
-        const pruned = structuredClone(definition) as ProjectDefinition;
+        let pruned = structuredClone(definition) as ProjectDefinition;
 
         pruned.packageDirectories = pruned.packageDirectories.filter(
             pkg => pkg.package === packageName
@@ -127,7 +122,26 @@ export default class ProjectConfig {
             throw new Error(`Package ${packageName} not found in project definition`);
         }
 
+        if (pruneOptions.removeCustomProperties) {
+            pruned.packageDirectories[0] = this.pruneForSalesforce(pruned.packageDirectories[0], pruneOptions.isOrgDependent);
+        }
+
         return pruned;
+    }
+
+    /**
+     * Prunes a package definition for Salesforce CLI compatibility
+     */
+    private pruneForSalesforce(pkg: PackageDefinition, isOrgDependent: boolean = false): PackageDefinition {
+
+        const standardPkgSchema = ProjectJsonSchema.shape.packageDirectories.element;
+        const cleanPkg = standardPkgSchema.parse(pkg) as any;
+
+        if (isOrgDependent && cleanPkg.dependencies) {
+            delete cleanPkg.dependencies;
+        }
+
+        return cleanPkg;
     }
 
     /**
