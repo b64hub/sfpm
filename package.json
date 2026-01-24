@@ -1,8 +1,8 @@
 {
-  "name": "sfp",
+  "name": "sfpm",
   "version": "1.0.0",
   "private": true,
-  "description": "Salesforce DevOps tooling - CLI and core library",
+  "description": "Salesforce Package Manager",
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
