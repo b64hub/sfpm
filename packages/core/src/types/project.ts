@@ -7,16 +7,30 @@ import { z } from 'zod';
  */
 export type PackageDir = ProjectJson['packageDirectories'][number];
 
+export interface PackageOptions {
+    envAliased?: boolean;
+    skip?: string[];
+    ignore?: string[];
+    deploy?: DeploymentOptions;
+    build?: BuildOptions;
+    validate?: any;
+    [key: string]: any;
+}
+
+export interface BuildOptions {
+    skipValidation?: boolean;
+}
+
 export interface DeploymentOptions {
     optimize?: boolean;
-    pre: {
+    pre?: {
         reconcileProfiles?: boolean;
         script?: string;
         assignPermSets?: string[];
         destructiveChanges?: string;
-        unpackagedMetadata?: { path: string };
+        // unpackagedMetadata?: { path: string };
     },
-    post: {
+    post?: {
         settings?: {
             FHT?: boolean;
             FT?: boolean;
@@ -24,7 +38,7 @@ export interface DeploymentOptions {
         script?: string;
         assignPermSets?: string[];
         destructiveChanges?: string;
-        unpackagedMetadata?: { path: string };
+        // unpackagedMetadata?: { path: string };
     }
 }
 
@@ -36,21 +50,18 @@ export type PackageDefinition = PackageDir & {
     versionNumber: string;
     path: string;
     dependencies?: { package: string; versionNumber?: string }[];
+    unpackagedMetadata: { path: string };
     type?: PackageType;
-    envAliased?: string;
-    skip?: string[];
-    deploymentOptions?: DeploymentOptions,
-    buildOptions?: {
-    },
-    preDeploymentScript?: string;
-    postDeploymentScript?: string;
-    unpackagedMetadata?: { path: string };
-    enableFHT?: boolean;
-    assignPermSetsPreDeployment?: string[];
-    assignPermSetsPostDeployment?: string[];
-    destructiveChangesPath?: string;
-    reconcileProfiles?: boolean;
-    ignore?: string[];
+    packageOptions?: PackageOptions;
+
+    // preDeploymentScript?: string;
+    // postDeploymentScript?: string;
+    // enableFHT?: boolean;
+    // assignPermSetsPreDeployment?: string[];
+    // assignPermSetsPostDeployment?: string[];
+    // destructiveChangesPath?: string;
+    // reconcileProfiles?: boolean;
+
 };
 
 /**
@@ -58,7 +69,7 @@ export type PackageDefinition = PackageDir & {
  */
 export interface ProjectDefinition extends ProjectJson {
     // Override standard array to use our PackageDefinition
-    packageDirectories: PackageDefinition[];
+    packageDirectories: PackageDefinition[] | PackageDir[];
     plugins?: {
         sfpm?: {
             ignoreFiles?: {
@@ -76,29 +87,31 @@ export const PackageDefinitionSchema = z.intersection(
     ProjectJsonSchema.shape.packageDirectories.element,
     z.object({
         type: z.string().optional(),
-        envAliased: z.string().optional(),
-        dependencies: z.array(z.object({ package: z.string(), versionNumber: z.string() })).optional(),
-        skip: z.array(z.string()).optional(),
-        deploymentOptions: z.object({
-            optimize: z.boolean().optional(),
-            pre: z.object({
-                settings: z.object({
-                    FHT: z.boolean().optional(),
+        packageOptions: z.object({
+            envAliased: z.string().optional(),
+            skip: z.array(z.string()).optional(),
+            ignore: z.array(z.string()).optional(),
+            deploy: z.object({
+                optimize: z.boolean().optional(),
+                pre: z.object({
+                    settings: z.object({
+                        FHT: z.boolean().optional(),
+                    }).optional(),
+                    reconcileProfiles: z.boolean().optional(),
+                    script: z.string().optional(),
+                    assignPermSets: z.array(z.string()).optional(),
+                    destructiveChanges: z.string().optional(),
+                    unpackagedMetadata: z.object({ path: z.string() }).optional(),
                 }).optional(),
-                reconcileProfiles: z.boolean().optional(),
-                script: z.string().optional(),
-                assignPermSets: z.array(z.string()).optional(),
-                destructiveChanges: z.string().optional(),
-                unpackagedMetadata: z.object({ path: z.string() }).optional(),
+                post: z.object({
+                    script: z.string().optional(),
+                    assignPermSets: z.array(z.string()).optional(),
+                    destructiveChanges: z.string().optional(),
+                    unpackagedMetadata: z.object({ path: z.string() }).optional(),
+                }).optional(),
             }).optional(),
-            post: z.object({
-                script: z.string().optional(),
-                assignPermSets: z.array(z.string()).optional(),
-                destructiveChanges: z.string().optional(),
-                unpackagedMetadata: z.object({ path: z.string() }).optional(),
-            }).optional(),
+            build: z.object({}).optional(),
         }).optional(),
-        buildOptions: z.object({}).optional(),
     })
 );
 

@@ -78,8 +78,21 @@ export interface SfpmPackageOrchestration {
         timestamp?: number
     }[];
     deploymentOptions?: DeploymentOptions;
-    buildOptions?: {
-    },
+    buildOptions?: SfpmPackageBuildOptions;
+}
+
+export interface SfpmPackageBuildOptions {
+    isCoverageEnabled?: boolean;
+    waitTime?: number;
+}
+
+export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions {
+    installationkey?: string;
+    installationkeybypass?: boolean;
+    isSkipValidation?: boolean;
+    isAsyncValidation?: boolean;
+    postInstallScript?: string;
+    configFilePath?: string;
 }
 
 export interface SfpmDataPackageMetadata {

@@ -322,7 +322,7 @@ export class SfpmMetadataPackage extends SfpmPackage {
     }
 
     private get isOptimizedDeployment(): boolean {
-        return (this.type === PackageType.Source && this.packageDefinition?.deploymentOptions?.optimize) || false;
+        return (this.type === PackageType.Source && this.packageDefinition?.packageOptions?.deploy?.optimize) || false;
     }
 
     set testCoverage(coverage: number) {
@@ -363,8 +363,8 @@ export class SfpmMetadataPackage extends SfpmPackage {
 
     private async resolveOrchestrationMetadata(): Promise<Partial<SfpmPackageOrchestration>> {
         return {
-            deploymentOptions: this.packageDefinition?.deploymentOptions,
-            buildOptions: this.packageDefinition?.buildOptions
+            deploymentOptions: this.packageDefinition?.packageOptions?.deploy,
+            buildOptions: this.packageDefinition?.packageOptions?.build as any
         };
     }
 
