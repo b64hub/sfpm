@@ -1,10 +1,10 @@
 import { Org } from "@salesforce/core";
 import { Logger } from "../types/logger.js";
 import { PackageType } from "../types/package.js";
+import semver from "semver";
+import { soql } from "../utils/soql.js";
+import { VersionManager } from "../project/version-manager.js";
 
-/**
- * Represents Package2 metadata from DevHub
- */
 export interface Package2 {
     Id: string;
     Name: string;
@@ -14,9 +14,6 @@ export interface Package2 {
     IsOrgDependent: boolean | string;
 }
 
-/**
- * Represents installed subscriber package data from InstalledSubscriberPackage
- */
 export interface SubscriberPackage {
     name: string;
     package2Id?: string;
@@ -28,9 +25,62 @@ export interface SubscriberPackage {
     key?: string;
 }
 
+export interface Package2Version {
+    SubscriberPackageVersionId: string;
+    Package2Id: string;
+    Package2: Package2;
+    IsPasswordProtected: boolean;
+    IsReleased: boolean;
+    MajorVersion: number;
+    MinorVersion: number;
+    PatchVersion: number;
+    BuildNumber: number;
+    CodeCoverage: { apexCodeCoveragePercentage: number };
+    HasPassedCodeCoverageCheck: boolean;
+    Branch: string;
+}
+
 export class PackageService {
     private org: Org;
     private logger: Logger;
+
+    private static readonly PACKAGE2_VERSION_FIELDS = [
+        'SubscriberPackageVersionId',
+        'Package2Id',
+        'Package2.Name',
+        'IsPasswordProtected',
+        'IsReleased',
+        'MajorVersion',
+        'MinorVersion',
+        'PatchVersion',
+        'BuildNumber',
+        'CodeCoverage',
+        'HasPassedCodeCoverageCheck',
+        'Branch',
+    ];
+
+    private static readonly PACKAGE2_FIELDS = [
+        'Id',
+        'Name',
+        'Description',
+        'NamespacePrefix',
+        'ContainerOptions',
+        'IsOrgDependent',
+    ];
+
+    private static readonly INSTALLED_PACKAGE_FIELDS = [
+        'SubscriberPackageId',
+        'SubscriberPackage.Name',
+        'SubscriberPackage.NamespacePrefix',
+        'SubscriberPackageVersion.Id',
+        'SubscriberPackageVersion.Name',
+        'SubscriberPackageVersion.MajorVersion',
+        'SubscriberPackageVersion.MinorVersion',
+        'SubscriberPackageVersion.PatchVersion',
+        'SubscriberPackageVersion.BuildNumber',
+        'SubscriberPackageVersion.Package2ContainerOptions',
+        'SubscriberPackageVersion.IsOrgDependent',
+    ];
 
     constructor(org: Org, logger: Logger) {
         this.org = org;
@@ -60,17 +110,16 @@ export class PackageService {
      */
     public async listAllPackages(): Promise<Package2[]> {
         try {
-            const isDevHub = await this.org.determineIfDevHubOrg(true);
-
-            if (!isDevHub) {
+            if (!await this.org.determineIfDevHubOrg()) {
                 throw new Error('Package Type Information can only be fetched from a DevHub');
             }
 
-            const packageQuery =
-                'SELECT Id, Name, Description, NamespacePrefix, ContainerOptions, IsOrgDependent ' +
-                'FROM Package2 ' +
-                'WHERE IsDeprecated != true ' +
-                'ORDER BY NamespacePrefix, Name';
+            const packageQuery = soql`
+                SELECT ${PackageService.PACKAGE2_FIELDS.join(', ')}
+                FROM Package2
+                WHERE IsDeprecated != true
+                ORDER BY NamespacePrefix, Name
+            `.trim();
 
             const records = await this.query<Package2>(packageQuery, true);
 
@@ -91,6 +140,99 @@ export class PackageService {
     }
 
     /**
+     * Fetch Package2 versions by Package2 Id
+     * Sorts by semantic version, in descending order
+     * @param package2Id
+     * @param versionNumber
+     * @param isValidatedPackages
+     * @returns
+     */
+    async getPackage2VersionById(
+        package2Id: string,
+        versionNumber?: string,
+        isValidatedPackages?: boolean,
+        isReleased?: boolean
+    ): Promise<Package2Version[]> {
+        if (!(await this.org.determineIfDevHubOrg())) {
+            throw new Error('Package2Version Information can only be fetched from a DevHub');
+        }
+
+        const whereClauses = [
+            `Package2Id = '${package2Id}'`,
+            `IsDeprecated = false`
+        ];
+
+        if (versionNumber) {
+            const semverVersion = semver.coerce(versionNumber);
+            if (!semverVersion) {
+                throw new Error(`Invalid version number: ${versionNumber}`);
+            }
+
+            const [major, minor, patch, build] = versionNumber.split('.');
+            if (major) {
+                whereClauses.push(`MajorVersion = ${major}`);
+            }
+            if (minor) {
+                whereClauses.push(`MinorVersion = ${minor}`);
+            }
+            if (patch) {
+                whereClauses.push(`PatchVersion = ${patch}`);
+            }
+            if (build && !isNaN(Number(build))) {
+                whereClauses.push(`BuildNumber = ${build}`);
+            }
+        }
+
+        if (isValidatedPackages) {
+            whereClauses.push('ValidationSkipped = false');
+        }
+        if (isReleased) {
+            whereClauses.push('IsReleased = true');
+        }
+
+        const query = soql`
+            SELECT ${PackageService.PACKAGE2_VERSION_FIELDS.join(', ')}
+            FROM Package2Version
+            WHERE ${whereClauses.join(' AND ')}
+        `.trim();
+
+        try {
+            const records = await this.query<Package2Version>(query, true);
+
+            if (records.length > 1) {
+                return records.sort((a, b) => {
+                    const v1 = VersionManager.formatVersion(a.MajorVersion, a.MinorVersion, a.PatchVersion, a.BuildNumber);
+                    const v2 = VersionManager.formatVersion(b.MajorVersion, b.MinorVersion, b.PatchVersion, b.BuildNumber);
+                    return semver.rcompare(v1, v2);
+                });
+            } else {
+                return records;
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.logger.error(`Unable to fetch package versions for package id: ${package2Id}. Error: ${message}`);
+            throw error;
+        }
+    }
+
+    async getPackageVersionBySubscriberId(subscriberPackageVersionId: string): Promise<Package2Version> {
+        const query = soql`
+            SELECT ${PackageService.PACKAGE2_VERSION_FIELDS.join(', ')}
+            FROM Package2Version
+            WHERE SubscriberPackageVersionId = '${subscriberPackageVersionId}'
+        `.trim();
+
+        try {
+            const records = await this.query<Package2Version>(query, true);
+            return records[0];
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.logger.error(`Unable to fetch package version for subscriber id: ${subscriberPackageVersionId}. Error: ${message}`);
+            throw error;
+        }
+    }
+
+    /**
      * Private helper to query InstalledSubscriberPackage
      * @param whereClause - Optional WHERE clause to filter results
      */
@@ -98,23 +240,23 @@ export class PackageService {
         whereClause?: string
     ): Promise<SubscriberPackage[]> {
         try {
-            const query = `
-                SELECT SubscriberPackageId, SubscriberPackage.Name, SubscriberPackage.NamespacePrefix,
-                       SubscriberPackageVersion.Id, SubscriberPackageVersion.Name,
-                       SubscriberPackageVersion.MajorVersion, SubscriberPackageVersion.MinorVersion,
-                       SubscriberPackageVersion.PatchVersion, SubscriberPackageVersion.BuildNumber,
-                       SubscriberPackageVersion.Package2ContainerOptions,
-                       SubscriberPackageVersion.IsOrgDependent
+            const query = soql`
+                SELECT ${PackageService.INSTALLED_PACKAGE_FIELDS.join(', ')}
                 FROM InstalledSubscriberPackage
                 ${whereClause || ''}
                 ORDER BY SubscriberPackage.Name
-            `;
+            `.trim();
 
             const records = await this.query<any>(query, true);
             const packages: SubscriberPackage[] = [];
 
             records.forEach((record) => {
-                const packageVersionNumber = `${record.SubscriberPackageVersion.MajorVersion}.${record.SubscriberPackageVersion.MinorVersion}.${record.SubscriberPackageVersion.PatchVersion}.${record.SubscriberPackageVersion.BuildNumber}`;
+                const packageVersionNumber = VersionManager.formatVersion(
+                    record.SubscriberPackageVersion.MajorVersion,
+                    record.SubscriberPackageVersion.MinorVersion,
+                    record.SubscriberPackageVersion.PatchVersion,
+                    record.SubscriberPackageVersion.BuildNumber
+                );
 
                 const packageDetails: SubscriberPackage = {
                     name: record.SubscriberPackage.Name,
@@ -154,3 +296,38 @@ export class PackageService {
 }
 
 export default PackageService;
+
+
+
+
+
+
+
+// async fetchByPackageBranchAndName(
+//     packageBranch: string,
+//     packageName: string,
+//     versionNumber?: string,
+//     ): Promise<Package2Version[]> {
+
+//     let query = this.query;
+
+//     let whereClause: string = `where Branch='${packageBranch}' and Package2.Name ='${packageName}' `;
+//     if (versionNumber) {
+//         // TODO: validate version number
+//         const versions = versionNumber.split('.');
+//         if (versions[0]) whereClause += `and MajorVersion=${versions[0]} `;
+//         if (versions[1]) whereClause += `and MinorVersion=${versions[1]} `;
+//         if (versions[2]) whereClause += `and PatchVersion=${versions[2]} `;
+//     }
+//     query += whereClause;
+
+//     let orderByClause: string = `order by CreatedDate desc`;
+//     query += orderByClause;
+
+//     const records = await QueryHelper.query<Package2Version>(query, this.conn, true);
+//     return records;
+
+// }
+
+
+

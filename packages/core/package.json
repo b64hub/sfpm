@@ -4,18 +4,26 @@
   "description": "sfpm core library",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "b64",
   "license": "MIT",
   "dependencies": {
     "@salesforce/core": "^8.24.2",
+    "@salesforce/kit": "^3.0.0",
+    "@salesforce/packaging": "^4.18.10",
+    "@salesforce/source-deploy-retrieve": "^12.31.7",
+    "fast-glob": "^3.3.3",
+    "fast-xml-parser": "^5.3.3",
     "fs-extra": "^11.3.3",
     "ignore": "^7.0.5",
+    "js-yaml": "^4.1.1",
+    "lodash": "^4.17.21",
     "semver": "^7.7.3",
     "simple-git": "^3.30.0",
-    "tmp": "^0.2.5"
+    "tmp": "^0.2.5",
+    "zod": "^4.3.5"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -33,10 +41,17 @@
     "@jest/globals": "^30.2.0",
     "@types/fs-extra": "^11.0.4",
     "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/lodash": "^4.17.23",
     "@types/semver": "^7.7.1",
     "@types/tmp": "^0.2.6",
     "jest": "^30.2.0",
+    "prettier-plugin-apex": "^2.2.6",
     "ts-jest": "^29.4.6",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "vitest": "^4.0.17"
+  },
+  "optionalDependencies": {
+    "@prettier-apex/apex-ast-serializer-linux-x64": "^2.2.6"
   }
 }

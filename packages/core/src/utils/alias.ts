@@ -5,7 +5,7 @@ import { StateAggregator } from '@salesforce/core';
  * @param alias - The alias to convert
  * @returns The username or undefined if not found
  */
-export async function convertAliasToUsername(alias: string): Promise<string | undefined> {
+export async function aliasToUsername(alias: string): Promise<string | undefined> {
     const stateAggregator = await StateAggregator.getInstance();
     await stateAggregator.orgs.readAll();
     return await stateAggregator.aliases.resolveUsername(alias);
@@ -16,7 +16,7 @@ export async function convertAliasToUsername(alias: string): Promise<string | un
  * @param username - The username to convert
  * @returns The alias or undefined if not found
  */
-export async function convertUsernameToAlias(username: string): Promise<string | undefined> {
+export async function usernameToAlias(username: string): Promise<string | undefined> {
     const stateAggregator = await StateAggregator.getInstance();
     await stateAggregator.orgs.readAll();
     return await stateAggregator.aliases.resolveAlias(username);

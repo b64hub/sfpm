@@ -1,4 +1,4 @@
-import { ProjectDefinition, PackageDefinition } from './types.js';
+import { ProjectDefinition, PackageDefinition } from '../types/project.js';
 
 export class PackageNode {
     public readonly name: string;
@@ -23,13 +23,13 @@ export class PackageNode {
 export class ProjectGraph {
     private nodes: Map<string, PackageNode> = new Map();
 
-    constructor(projectConfig: ProjectDefinition) {
-        this.buildGraph(projectConfig);
+    constructor(projectDefinition: ProjectDefinition) {
+        this.buildGraph(projectDefinition);
     }
 
-    private buildGraph(config: ProjectDefinition) {
+    private buildGraph(projectDefinition: ProjectDefinition) {
         // 1. Create all nodes
-        config.packageDirectories.forEach(pkg => {
+        projectDefinition.packageDirectories.forEach(pkg => {
             if (this.nodes.has(pkg.package)) {
                 // Warning? Or overwrite? Assuming unique names for now.
                 return;
@@ -59,5 +59,31 @@ export class ProjectGraph {
         return Array.from(this.nodes.values());
     }
 
-    // Potentially add topological sort or traversal helpers here
+    /**
+     * Returns all transitive dependencies of a package, in topological order (roughly).
+     * Does not include the package itself.
+     */
+    public getTransitiveDependencies(packageName: string): PackageDefinition[] {
+        const startNode = this.nodes.get(packageName);
+        if (!startNode) {
+            throw new Error(`Package ${packageName} not found in project graph`);
+        }
+
+        const visited = new Set<string>();
+        const result: PackageDefinition[] = [];
+
+        const traverse = (node: PackageNode) => {
+            for (const dep of node.dependencies) {
+                if (!visited.has(dep.name)) {
+                    visited.add(dep.name);
+                    // Add dependencies of this dependency first (bottom-up-ish)
+                    traverse(dep);
+                    result.push(dep.definition);
+                }
+            }
+        };
+
+        traverse(startNode);
+        return result;
+    }
 }

@@ -1,5 +1,5 @@
 import SfpmCommand from '../sfpm-command.js'
-import { SfdxProjectReader, ProjectGraph, PackageNode, PackageType } from '@b64/sfpm-core'
+import { ProjectService, ProjectGraph, PackageNode, PackageType } from '@b64/sfpm-core'
 import treeify from 'object-treeify'
 import chalk from 'chalk'
 import { Flags } from '@oclif/core'
@@ -23,8 +23,7 @@ export default class Project extends SfpmCommand {
   public async execute(): Promise<void> {
     const { flags } = await this.parse(Project);
 
-    const reader = new SfdxProjectReader();
-    const config = await reader.read();
+    const config = await ProjectService.getProjectDefinition();
     const graph = new ProjectGraph(config);
 
     const treeData: Record<string, any> = {};
