@@ -93,15 +93,7 @@ export default class UnlockedPackageBuilder implements Builder {
             }
         };
 
-        // There isn't a specific event for 'create' progress in definitions, but we can standard poll using standard logging
-        // However, PackageVersion.create emits 'packageVersionCreate:progress' if we want to hook into it?
-        // Actually, let's stick to the built-in polling which is simpler if we trust it,
-        // BUT the user wanted us to replace "SFPLogger" and legacy loop.
-        // PackageVersion.create with polling option handles the loop internally.
-        // To log progress, we can use the Lifecycle event.
-        // Based on typical Salesforce CLI behavior, 'packageVersionCreate:progress' is the event.
         lifecycle.on('packageVersionCreate:progress', progressListener);
-
 
         try {
             const result = await PackageVersion.create(
@@ -136,12 +128,6 @@ export default class UnlockedPackageBuilder implements Builder {
 
             // Coverage check
             if (buildOptions?.isCoverageEnabled && !this.sfpmPackage.isOrgDependent && !buildOptions?.isAsyncValidation) {
-                // The result object from create() might not have coverage details directly unless we query status again or strictly rely on it.
-                // Legacy code checked 'has_passed_coverage_check'.
-                // Let's assume for now we need to trust the result or if needed, query the report.
-                // For this refactor, we will rely on successful creation implying coverage if enforced,
-                // or we would need to fetch the report.
-                // To match legacy behavior safety:
                 // Cast to any to access CodeCoverage property which might not be in the strict type but returned by API
                 if ((result as any).CodeCoverage !== undefined && (result as any).CodeCoverage < 75) {
                     throw new Error('This package has not meet the minimum coverage requirement of 75%');
