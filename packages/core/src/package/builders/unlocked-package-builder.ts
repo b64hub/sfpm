@@ -7,7 +7,6 @@ import { Org, SfProject, Lifecycle } from '@salesforce/core';
 import { Duration } from '@salesforce/kit';
 import path from 'path';
 import ProjectService from '../../project/project-service.js';
-import ProjectConfig from '../../project/project-config.js';
 import fs from 'fs-extra';
 
 import { PackageVersion, PackageVersionCreateRequestResult } from '@salesforce/packaging';
