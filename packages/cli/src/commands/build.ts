@@ -1,27 +1,49 @@
-import {Args, Command, Flags} from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
+import { PackageBuilder, ProjectService, Logger } from '@b64/sfpm-core'
 
 export default class Build extends Command {
-  static override args = {
-    file: Args.string({description: 'file to read'}),
-  }
-  static override description = 'describe the command here'
+  static override description = 'build a package'
+
   static override examples = [
-    '<%= config.bin %> <%= command.id %>',
+    '<%= config.bin %> <%= command.id %> -p my-package -v my-devhub',
   ]
+
   static override flags = {
-    // flag with no value (-f, --force)
-    force: Flags.boolean({char: 'f'}),
-    // flag with a value (-n, --name=VALUE)
-    name: Flags.string({char: 'n', description: 'name to print'}),
+    package: Flags.string({ char: 'p', description: 'package to build', required: true }),
+    'target-dev-hub': Flags.string({ char: 'v', description: 'target dev hub username' }),
+    'build-number': Flags.string({ char: 'b', description: 'build number' }),
+    'installation-key': Flags.string({ char: 'k', description: 'installation key' }),
+    'installation-key-bypass': Flags.boolean({ description: 'bypass installation key' }),
+    'skip-validation': Flags.boolean({ description: 'skip validation' }),
+    tag: Flags.string({ char: 't', description: 'tag for the build' }),
   }
 
   public async run(): Promise<void> {
-    const {args, flags} = await this.parse(Build)
+    const { flags } = await this.parse(Build)
 
-    const name = flags.name ?? 'world'
-    this.log(`hello ${name} from /workspaces/sfpm/packages/cli/src/commands/build.ts`)
-    if (args.file && flags.force) {
-      this.log(`you input --force and --file: ${args.file}`)
+    const projectService = ProjectService.getInstance(process.cwd());
+    await projectService.initialize();
+
+    const projectConfig = projectService.getProjectConfig();
+
+    const logger: Logger = {
+      log: (msg: string) => this.log(msg),
+      info: (msg: string) => this.log(msg),
+      warn: (msg: string) => this.warn(msg),
+      error: (msg: string) => this.error(msg),
+      debug: (msg: string) => this.debug(msg),
+      trace: (msg: string) => this.debug(msg),
     }
+
+    const builder = new PackageBuilder(projectConfig, {
+      buildNumber: flags['build-number'],
+      devhubUsername: flags['target-dev-hub'],
+      installationKey: flags['installation-key'],
+      installationKeyBypass: flags['installation-key-bypass'],
+      isSkipValidation: flags['skip-validation'],
+      sourceContext: flags.tag ? { tag: flags.tag } : undefined,
+    }, logger);
+
+    await builder.buildPackage(flags.package);
   }
 }

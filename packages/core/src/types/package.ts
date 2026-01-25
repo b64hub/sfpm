@@ -1,5 +1,5 @@
 import { PackageManifestObject } from "@salesforce/source-deploy-retrieve";
-import { ApexClasses } from "./apex.js";
+import { ApexClasses, ApexSortedByType } from "./apex.js";
 import { DeploymentOptions } from "./project.js";
 
 export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff', Managed = 'managed' }

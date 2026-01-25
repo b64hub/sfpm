@@ -17,6 +17,10 @@ export interface BuildOptions {
     orgDefinitionPath?: string;
     destructiveManifestPath?: string;
     sourceContext?: SfpmPackageSource;
+    devhubUsername?: string;
+    installationKey?: string;
+    installationKeyBypass?: boolean;
+    isSkipValidation?: boolean;
 }
 
 export interface BuildEvents { }
@@ -38,9 +42,10 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         this.projectConfig = projectConfig;
     }
 
+
     public async build(): Promise<void> { }
 
-    private async buildPackage(
+    public async buildPackage(
         packageName: string,
         projectDirectory: string = process.cwd()
     ) {
@@ -55,6 +60,13 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();
         sfpmPackage.packageDefinition = this.projectConfig.getPackageDefinition(packageName);
 
+        // Merge build options from package definition
+        if (sfpmPackage.packageDefinition?.packageOptions?.build) {
+            _.merge(sfpmPackage.metadata.orchestration, {
+                buildOptions: sfpmPackage.packageDefinition.packageOptions.build
+            });
+        }
+
         if (this.options.buildNumber) {
             sfpmPackage.setBuildNumber(this.options.buildNumber);
         }
@@ -66,6 +78,18 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         if (this.options.sourceContext) {
             sfpmPackage.metadata.source = this.options.sourceContext;
         }
+
+        // Apply overrides from options
+        if (this.options.installationKey) {
+            _.set(sfpmPackage.metadata, 'orchestration.buildOptions.installationkey', this.options.installationKey);
+        }
+        if (this.options.installationKeyBypass) {
+            _.set(sfpmPackage.metadata, 'orchestration.buildOptions.installationkeybypass', this.options.installationKeyBypass);
+        }
+        if (this.options.isSkipValidation !== undefined) {
+            _.set(sfpmPackage.metadata, 'orchestration.buildOptions.isSkipValidation', this.options.isSkipValidation);
+        }
+
 
         await this.stagePackage(sfpmPackage);
         await this.runAnalyzers(sfpmPackage);
@@ -82,8 +106,13 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
 
         const builderInstance: Builder = new BuilderClass(
             sfpmPackage.stagingDirectory,
-            sfpmPackage.metadata
+            sfpmPackage.metadata,
+            this.logger
         );
+
+        if (this.options.devhubUsername) {
+            await builderInstance.connect(this.options.devhubUsername);
+        }
 
         return builderInstance.exec();
     }
