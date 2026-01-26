@@ -52,7 +52,7 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
 
         await this.projectConfig.load();
         const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
-        const packageType = packageDefinition?.type || PackageType.Source;
+        const packageType = packageDefinition?.type || PackageType.Unlocked;
 
         let sfpmPackage: SfpmPackage;
 
