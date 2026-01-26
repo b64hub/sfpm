@@ -318,7 +318,11 @@ export class SfpmMetadataPackage extends SfpmPackage {
 
 
     get isTriggerAllTests(): boolean {
-        return !this.isOptimizedDeployment || this.hasApex // this.testClasses.length > 0
+        return this._metadata.validation.isTriggerAllTests || (!this.isOptimizedDeployment || this.hasApex)
+    }
+
+    set isTriggerAllTests(val: boolean) {
+        this._metadata.validation.isTriggerAllTests = val;
     }
 
     private get isOptimizedDeployment(): boolean {

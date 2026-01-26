@@ -5,7 +5,7 @@ import { PackageType } from "../types/package.js";
 import ProjectConfig from "../project/project-config.js";
 import { Builder, BuilderRegistry } from "./builders/builder-registry.js";
 import { AnalyzerRegistry } from "./analyzers/analyzer-registry.js";
-import SfpmPackage, { SfpmMetadataPackage } from "./sfpm-package.js";
+import SfpmPackage, { SfpmMetadataPackage, SfpmDataPackage, SfpmSourcePackage, SfpmUnlockedPackage } from "./sfpm-package.js";
 import PackageAssembler from "./assemblers/package-assembler.js";
 import { SfpmPackageSource } from "../types/package.js";
 
@@ -51,14 +51,23 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
     ) {
 
         await this.projectConfig.load();
+        const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+        const packageType = packageDefinition?.type || PackageType.Source;
 
-        let sfpmPackage: SfpmPackage = new SfpmMetadataPackage(
-            packageName,
-            projectDirectory,
-        );
+        let sfpmPackage: SfpmPackage;
+
+        if (packageType === PackageType.Unlocked) {
+            sfpmPackage = new SfpmUnlockedPackage(packageName, projectDirectory);
+        } else if (packageType === PackageType.Source) {
+            sfpmPackage = new SfpmSourcePackage(packageName, projectDirectory);
+        } else if (packageType === PackageType.Data) {
+            sfpmPackage = new SfpmDataPackage(packageName, projectDirectory);
+        } else {
+            sfpmPackage = new SfpmMetadataPackage(packageName, projectDirectory);
+        }
 
         sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();
-        sfpmPackage.packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+        sfpmPackage.packageDefinition = packageDefinition;
 
         // Merge build options from package definition
         if (sfpmPackage.packageDefinition?.packageOptions?.build) {
@@ -106,7 +115,7 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
 
         const builderInstance: Builder = new BuilderClass(
             sfpmPackage.stagingDirectory,
-            sfpmPackage.metadata,
+            sfpmPackage,
             this.logger
         );
 

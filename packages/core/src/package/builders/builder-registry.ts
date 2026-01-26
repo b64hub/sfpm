@@ -1,5 +1,6 @@
 import { Logger } from "../../types/logger.js";
-import { PackageType, SfpmPackageMetadata } from "../../types/package.js";
+import { PackageType } from "../../types/package.js";
+import SfpmPackage from "../sfpm-package.js";
 
 /**
  * Interface for specific package builder implementations (Strategy Pattern)
@@ -14,7 +15,7 @@ export interface Builder {
  */
 export type BuilderConstructor = new (
     workingDirectory: string,
-    sfpmPackage: SfpmPackageMetadata,
+    sfpmPackage: SfpmPackage,
     logger?: Logger
 ) => Builder;
 

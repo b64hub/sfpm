@@ -1,6 +1,6 @@
 import { Builder, RegisterBuilder } from './builder-registry.js';
 import { BuildTask, BuildOptions } from '../package-builder.js';
-import { SfpmUnlockedPackage } from '../sfpm-package.js';
+import SfpmPackage, { SfpmUnlockedPackage } from '../sfpm-package.js';
 import { PackageType, SfpmUnlockedPackageBuildOptions } from '../../types/package.js';
 
 import { Org, SfProject, Lifecycle } from '@salesforce/core';
@@ -30,7 +30,10 @@ export default class UnlockedPackageBuilder implements Builder {
 
     private logger?: Logger;
 
-    constructor(workingDirectory: string, sfpmPackage: SfpmUnlockedPackage, logger?: Logger) {
+    constructor(workingDirectory: string, sfpmPackage: SfpmPackage, logger?: Logger) {
+        if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
+            throw new Error(`UnlockedPackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
+        }
         this.workingDirectory = workingDirectory;
         this.sfpmPackage = sfpmPackage;
         this.logger = logger;
