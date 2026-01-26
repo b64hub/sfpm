@@ -138,7 +138,7 @@ export class ArtifactService {
             }
 
             this.logger.info(
-                `Updated Org with Artifact ${sfpmPackage.name} ${sfpmPackage.sourceVersion} ${sfpmPackage.version} ${resultId}`
+                `Updated Org with Artifact ${sfpmPackage.name} ${sfpmPackage.apiVersion} ${sfpmPackage.version} ${resultId}`
             );
 
             return resultId;

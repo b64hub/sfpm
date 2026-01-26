@@ -74,6 +74,42 @@ export class VersionManager extends EventEmitter {
         return `${major}.${minor}.${patch}.${build}`;
     }
 
+    /**
+     * Normalizes and validates a version string. 
+     * Converts 4-part Salesforce versions (major.minor.patch.build) 
+     * to a semver compatible format (major.minor.patch-build).
+     * @param version 
+     * @returns 
+     * @throws if the version cannot be parsed or coerced into a valid semver string.
+     */
+    public static normalizeVersion(version: string): string {
+        if (!version) return '0.0.0.0';
+
+        // 1. Check if it's already valid semver
+        let valid = semver.valid(version);
+        if (valid) {
+            return valid;
+        }
+
+        // 2. Handle the Salesforce 4-part format strictly
+        const segments = version.split('.');
+        if (segments.length === 4) {
+            const transformed = `${segments[0]}.${segments[1]}.${segments[2]}-${segments[3]}`;
+            valid = semver.valid(transformed);
+            if (valid) {
+                return valid;
+            }
+        }
+
+        // 3. Attempt to coerce it (handles things like 'v1.0' or just '1')
+        const coerced = semver.coerce(version);
+        if (coerced) {
+            return coerced.version;
+        }
+
+        throw new Error(`Invalid version format: ${version}. Expected major.minor.patch.build or valid semver.`);
+    }
+
     public getGraph(): ProjectGraph | undefined {
         return this.graph;
     }
@@ -132,7 +168,7 @@ export class VersionManager extends EventEmitter {
         }
         const definition = this.projectConfig.getProjectDefinition();
         const newConfig = { ...definition };
-        newConfig.packageDirectories = newConfig.packageDirectories.map((pkgDef: PackageDefinition) => {
+        newConfig.packageDirectories = (newConfig.packageDirectories as any[]).map((pkgDef: any) => {
             const tracker = this.trackers.get(pkgDef.package);
             if (tracker && tracker.isUpdated) {
                 return tracker.writeToDefinition(pkgDef);
@@ -313,12 +349,7 @@ export class VersionTracker {
     }
 
     private setNewVersion(version: string) {
-        try {
-            semver.coerce(version);
-            this.newVersion = version;
-        } catch {
-            throw new Error(`Invalid version: ${version}`);
-        }
+        this.newVersion = VersionManager.normalizeVersion(version);
     }
 
     updateDependencyVersion(pkgName: string, newVersion: string) {
