@@ -1,23 +1,12 @@
 # SFPM - Salesforce Package Manager
-<div align="center">
-<svg width="500" height="160" xmlns="http://www.w3.org/2000/svg">
-  <style>
-    /* Using a specific monospace stack for better character alignment */
-    .base { font-family: 'Courier New', Courier, monospace; font-size: 18px; white-space: pre; }
-    .blue { fill: #5B9BD5; }
-    .purple { fill: #8E44AD; }
-  </style>
-  <text x="10" y="20" class="base">
-    <tspan x="10" dy="1.2em" class="blue">███████<tspan class="purple">╗</tspan>███████<tspan class="purple">╗</tspan>██████<tspan class="purple">╗</tspan> ███<tspan class="purple">╗</tspan>   ███<tspan class="purple">╗</tspan></tspan>
-    <tspan x="10" dy="1.2em" class="blue">██<tspan class="purple">╔════╝</tspan>██<tspan class="purple">╔════╝</tspan>██<tspan class="purple">╔══</tspan>██<tspan class="purple">╗</tspan>████<tspan class="purple">╗</tspan> ████<tspan class="purple">║</tspan></tspan>
-    <tspan x="10" dy="1.2em" class="blue">███████<tspan class="purple">╗</tspan>█████<tspan class="purple">╗</tspan>  ██████<tspan class="purple">╔╝</tspan>██<tspan class="purple">╔</tspan>████<tspan class="purple">╔</tspan>██<tspan class="purple">║</tspan></tspan>
-    <tspan x="10" dy="1.2em" class="blue"><tspan class="purple">╚════</tspan>██<tspan class="purple">║</tspan>██<tspan class="purple">╔══╝</tspan>  ██<tspan class="purple">╔═══╝</tspan> ██<tspan class="purple">║╚</tspan>██<tspan class="purple">╔╝</tspan>██<tspan class="purple">║</tspan></tspan>
-    <tspan x="10" dy="1.2em" class="blue">███████<tspan class="purple">║</tspan>██<tspan class="purple">║</tspan>     ██<tspan class="purple">║</tspan>     ██<tspan class="purple">║</tspan> <tspan class="purple">╚═╝</tspan> ██<tspan class="purple">║</tspan></tspan>
-    <tspan x="10" dy="1.2em" class="purple">╚══════╝╚═╝     ╚═╝     ╚═╝     ╚═╝</tspan>
-  </text>
-</svg>
-</div>
-
+```
+  ███████╗███████╗██████╗ ███╗   ███╗ 
+  ██╔════╝██╔════╝██╔══██╗████╗ ████║
+  ███████╗█████╗  ██████╔╝██╔████╔██║
+  ╚════██║██╔══╝  ██╔═══╝ ██║╚██╔╝██║
+  ███████║██║     ██║     ██║ ╚═╝ ██║
+  ╚══════╝╚═╝     ╚═╝     ╚═╝     ╚═╝
+```
 ## Development Context
 
 This project uses **pnpm** for package management. Please do not use `npm` or `yarn`.
