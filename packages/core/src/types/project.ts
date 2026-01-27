@@ -45,31 +45,19 @@ export interface DeploymentOptions {
 // Our Orchestration tool expects packages to have a name (package) and we add custom metadata.
 // We explicitly include 'package', 'versionNumber', 'path' and 'dependencies' here because 
 // PackageDir is a union in @salesforce/core, and not all members of that union have these properties.
-export type PackageDefinition = PackageDir & {
-    package: string;
-    versionNumber: string;
-    path: string;
-    dependencies?: { package: string; versionNumber?: string }[];
-    unpackagedMetadata: { path: string };
+// We define this as an interface that structurally matches the versioned package variant of PackageDir
+// plus our custom extensions, avoiding union distribution issues while maintaining compatibility.
+export interface PackageDefinition extends Extract<PackageDir, { package: string, versionNumber: string, path: string }> {
     type?: PackageType;
     packageOptions?: PackageOptions;
-
-    // preDeploymentScript?: string;
-    // postDeploymentScript?: string;
-    // enableFHT?: boolean;
-    // assignPermSetsPreDeployment?: string[];
-    // assignPermSetsPostDeployment?: string[];
-    // destructiveChangesPath?: string;
-    // reconcileProfiles?: boolean;
-
-};
+}
 
 /**
  * Extension of the standard sfdx-project.json structure.
  */
 export interface ProjectDefinition extends ProjectJson {
-    // Override standard array to use our PackageDefinition
-    packageDirectories: PackageDefinition[] | PackageDir[];
+    // Override standard array to use our PackageDefinition, while also allowing the base PackageDir type
+    packageDirectories: (PackageDefinition | PackageDir)[];
     plugins?: {
         sfpm?: {
             ignoreFiles?: {

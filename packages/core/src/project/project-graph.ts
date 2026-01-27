@@ -39,14 +39,16 @@ export class ProjectGraph {
     }
 
     private buildGraph(projectDefinition: ProjectDefinition) {
-        // 1. Create all nodes
-        projectDefinition.packageDirectories.forEach(pkg => {
+        // 1. Create all nodes - filter out entries without a package property and cast to PackageDefinition
+        const packages = projectDefinition.packageDirectories
+            .filter((pkg): pkg is PackageDefinition => 'package' in pkg && typeof pkg.package === 'string');
+        
+        for (const pkg of packages) {
             if (this.nodes.has(pkg.package)) {
-                // Warning? Or overwrite? Assuming unique names for now.
-                return;
+                continue;
             }
             this.nodes.set(pkg.package, new PackageNode(pkg));
-        });
+        }
 
         // 2. Connect dependencies
         this.nodes.forEach(node => {
