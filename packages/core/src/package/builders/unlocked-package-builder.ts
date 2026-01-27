@@ -169,7 +169,7 @@ export default class UnlockedPackageBuilder implements Builder {
             return;
         }
 
-        const projectConfig = ProjectService.getInstance(this.workingDirectory).getProjectConfig();
+        const projectConfig = (await ProjectService.getInstance(this.workingDirectory)).getProjectConfig();
         const prunedDefinition = projectConfig.getPrunedDefinition(this.sfpmPackage.packageName, {
             removeCustomProperties: true,
             isOrgDependent: this.sfpmPackage.isOrgDependent,

@@ -21,8 +21,7 @@ export default class Build extends Command {
   public async run(): Promise<void> {
     const { flags } = await this.parse(Build)
 
-    const projectService = ProjectService.getInstance(process.cwd());
-    await projectService.initialize();
+    const projectService = await ProjectService.getInstance(process.cwd());
 
     const projectConfig = projectService.getProjectConfig();
 

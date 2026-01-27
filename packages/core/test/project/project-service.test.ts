@@ -24,22 +24,7 @@ describe('ProjectService', () => {
     });
 
     describe('Singleton Pattern', () => {
-        test('should maintain a singleton instance', () => {
-            const instance1 = ProjectService.getInstance();
-            const instance2 = ProjectService.getInstance();
-            expect(instance1).toBe(instance2);
-        });
-
-        test('should reset the singleton instance', () => {
-            const instance1 = ProjectService.getInstance();
-            ProjectService.resetInstance();
-            const instance2 = ProjectService.getInstance();
-            expect(instance1).not.toBe(instance2);
-        });
-    });
-
-    describe('initialize', () => {
-        test('should initialize with directory path', async () => {
+        test('should maintain a singleton instance', async () => {
             const mockDefinition = {
                 packageDirectories: [
                     { package: 'pkg-a', path: 'packages/pkg-a', versionNumber: '1.0.0.NEXT' }
@@ -61,11 +46,68 @@ describe('ProjectService', () => {
 
             vi.spyOn(SfProject, 'resolve').mockResolvedValue(mockSfProject as any);
 
-            const service = new ProjectService('/mock/path');
-            await service.initialize();
+            const instance1 = await ProjectService.getInstance('/mock/path');
+            const instance2 = await ProjectService.getInstance('/mock/path');
+            expect(instance1).toBe(instance2);
+        });
+
+        test('should reset the singleton instance', async () => {
+            const mockDefinition = {
+                packageDirectories: [
+                    { package: 'pkg-a', path: 'packages/pkg-a', versionNumber: '1.0.0.NEXT' }
+                ],
+                sourceApiVersion: '60.0'
+            };
+
+            const mockSfProject = {
+                getPath: () => '/mock/path',
+                getSfProjectJson: () => ({
+                    getContents: () => mockDefinition,
+                    write: vi.fn(),
+                    set: vi.fn()
+                }),
+                getPackage: (name: string) => mockDefinition.packageDirectories.find((p: any) => p.package === name),
+                getUniquePackageNames: () => ['pkg-a'],
+                getPackageDirectories: () => mockDefinition.packageDirectories,
+            };
+
+            vi.spyOn(SfProject, 'resolve').mockResolvedValue(mockSfProject as any);
+
+            const instance1 = await ProjectService.getInstance('/mock/path');
+            ProjectService.resetInstance();
+            const instance2 = await ProjectService.getInstance('/mock/path');
+            expect(instance1).not.toBe(instance2);
+        });
+    });
+
+    describe('create', () => {
+        test('should create and initialize with directory path', async () => {
+            const mockDefinition = {
+                packageDirectories: [
+                    { package: 'pkg-a', path: 'packages/pkg-a', versionNumber: '1.0.0.NEXT' }
+                ],
+                sourceApiVersion: '60.0'
+            };
+
+            const mockSfProject = {
+                getPath: () => '/mock/path',
+                getSfProjectJson: () => ({
+                    getContents: () => mockDefinition,
+                    write: vi.fn(),
+                    set: vi.fn()
+                }),
+                getPackage: (name: string) => mockDefinition.packageDirectories.find((p: any) => p.package === name),
+                getUniquePackageNames: () => ['pkg-a'],
+                getPackageDirectories: () => mockDefinition.packageDirectories,
+            };
+
+            vi.spyOn(SfProject, 'resolve').mockResolvedValue(mockSfProject as any);
+
+            const service = await ProjectService.create('/mock/path');
 
             expect(SfProject.resolve).toHaveBeenCalledWith('/mock/path');
             expect(service.getProjectConfig()).toBeDefined();
+            expect(service.getVersionManager()).toBeDefined();
         });
     });
 

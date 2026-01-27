@@ -3,11 +3,20 @@ import ProjectService from "./project/project-service.js";
 import { CoreEvents } from "./types/events.js";
 
 export class SfpmCore extends EventEmitter<CoreEvents> {
-  project: ProjectService;
+  project!: ProjectService;
 
-  constructor(options: { apiKey: string; verbose?: boolean; projectPath?: string }) {
+  private constructor() {
     super();
-    this.project = new ProjectService(options.projectPath);
+  }
+
+  /**
+   * Creates and initializes a new SfpmCore instance.
+   * This is the recommended way to create an SfpmCore instance.
+   */
+  static async create(options: { apiKey: string; verbose?: boolean; projectPath?: string }): Promise<SfpmCore> {
+    const core = new SfpmCore();
+    core.project = await ProjectService.create(options.projectPath);
+    return core;
   }
 }
 export * from './project/version-manager.js';
