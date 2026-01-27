@@ -49,7 +49,9 @@ export default class ProjectConfig {
      */
     public getPackageDefinition(packageName: string): PackageDefinition {
         const def = this.getProjectDefinition();
-        const pkg = def.packageDirectories.find(p => p.package === packageName);
+        const pkg = def.packageDirectories.find(
+            (p): p is PackageDefinition => 'package' in p && p.package === packageName
+        );
         if (!pkg) {
             throw new Error(`Package ${packageName} not found in project definition`);
         }
@@ -92,7 +94,9 @@ export default class ProjectConfig {
      * Returns all package names
      */
     public getAllPackageNames(): string[] {
-        return this.getProjectDefinition().packageDirectories.map(p => p.package);
+        return this.getProjectDefinition().packageDirectories
+            .filter((p): p is PackageDefinition => 'package' in p)
+            .map(p => p.package);
     }
 
     /**
@@ -114,16 +118,18 @@ export default class ProjectConfig {
         const definition = this.getProjectDefinition();
         let pruned = structuredClone(definition) as ProjectDefinition;
 
-        pruned.packageDirectories = pruned.packageDirectories.filter(
-            pkg => pkg.package === packageName
+        const filteredPackages = pruned.packageDirectories.filter(
+            (pkg): pkg is PackageDefinition => 'package' in pkg && pkg.package === packageName
         );
 
-        if (pruned.packageDirectories.length === 0) {
+        if (filteredPackages.length === 0) {
             throw new Error(`Package ${packageName} not found in project definition`);
         }
 
         if (pruneOptions.removeCustomProperties) {
-            pruned.packageDirectories[0] = this.pruneForSalesforce(pruned.packageDirectories[0], pruneOptions.isOrgDependent);
+            pruned.packageDirectories = [this.pruneForSalesforce(filteredPackages[0], pruneOptions.isOrgDependent)];
+        } else {
+            pruned.packageDirectories = filteredPackages;
         }
 
         return pruned;

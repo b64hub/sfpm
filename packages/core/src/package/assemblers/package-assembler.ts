@@ -14,7 +14,7 @@ import { ForceIgnoreStep } from './steps/force-ignore-step.js';
 import { DestructiveManifestStep } from './steps/destructive-manifest-step.js';
 import { OrgDefinitionStep } from './steps/org-definition-step.js';
 import { ProjectJsonAssemblyStep } from './steps/project-json-assembly-step.js';
-import { MDAPIConversionStep } from './steps/mdapi-conversion-step.js';
+// import { MDAPIConversionStep } from './steps/mdapi-conversion-step.js';
 
 const DOT_FOLDER = ".sfpm";
 /**
@@ -153,10 +153,6 @@ export default class PackageAssembler {
                 new UnpackagedMetadataStep(this.packageName, this.projectConfig, this.logger),
                 new ForceIgnoreStep(this.packageName, this.projectConfig, this.logger)
             ];
-
-            if (packageDefinition.type !== PackageType.Data && packageDefinition.type !== PackageType.Managed) {
-                steps.push(new MDAPIConversionStep(this.packageName, this.projectConfig, this.logger));
-            }
 
             if (this.options.destructiveManifestPath) {
                 steps.push(new DestructiveManifestStep(this.packageName, this.projectConfig, this.logger));

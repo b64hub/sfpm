@@ -26,9 +26,7 @@ export interface SfpmUnlockedPackageIdentity extends SfpmPackageIdentity {
 export interface SfpmPackageSource {
     repositoryUrl?: string;
     branch?: string;
-    sourceVersion?: string;
-    commitSHAFrom?: string;
-    commitSHATo?: string;
+    commitSHA?: string;
     tag?: string;
 }
 
@@ -129,6 +127,7 @@ export interface InstalledArtifact {
     isInstalledBySfpm?: boolean;
     sourceVersion?: string;
     isOrgDependent?: boolean;
+    subscriberVersionId?: string;
     type?: PackageType
 }
 

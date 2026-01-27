@@ -13,11 +13,11 @@ export default class ApexService {
         });
 
         const parser = new ApexParser();
-        const parsedClasses = await parser.classifyBulk(apexClasses.map(c => c.name));
+        const parsedClasses = await parser.classifyBulk(apexClasses.map(c => c.path || ""));
 
         return {
-            classes: parsedClasses.classes,
-            tests: parsedClasses.tests
+            classes: parsedClasses.filter(c => c.type === "Class" && !c.isTest).map(c => c.name),
+            tests: parsedClasses.filter(c => c.type === "Class" && c.isTest).map(c => c.name)
         }
     }
 }

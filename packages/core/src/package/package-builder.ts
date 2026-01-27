@@ -65,7 +65,7 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         } else if (packageType === PackageType.Data) {
             sfpmPackage = new SfpmDataPackage(packageName, projectDirectory);
         } else {
-            sfpmPackage = new SfpmMetadataPackage(packageName, projectDirectory);
+            throw new Error(`Unsupported package type: ${packageType}`);
         }
 
         sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();

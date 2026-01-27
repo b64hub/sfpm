@@ -29,8 +29,14 @@ export default class Project extends SfpmCommand {
     const treeData: Record<string, any> = {};
 
     for (const pkg of config.packageDirectories) {
+      if (!('package' in pkg)) {
+        continue;
+      }
+      
       const node = graph.getNode(pkg.package);
-      if (!node) continue;
+      if (!node) {
+        continue;
+      }
 
       const label = this.formatLabel(node, flags.path);
       treeData[label] = this.buildDependencyTree(node);
