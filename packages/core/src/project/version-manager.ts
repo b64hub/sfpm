@@ -11,10 +11,6 @@ const LATEST_SUFFIX = '.LATEST';
 
 export type VersionBumpType = 'patch' | 'minor' | 'major' | 'custom';
 
-export interface VersionManagerConfig {
-    projectConfig: ProjectConfig;
-}
-
 export interface VersionChange {
     name: string;
     oldVersion: string;
@@ -42,25 +38,31 @@ export declare interface VersionManager {
 }
 
 export class VersionManager extends EventEmitter {
-    private graph?: ProjectGraph;
-    private trackers: Map<string, VersionTracker> = new Map();
-    private projectConfig: ProjectConfig;
+    private readonly graph: ProjectGraph;
+    private readonly trackers: Map<string, VersionTracker> = new Map();
+    private readonly projectConfig: ProjectConfig;
 
-    constructor(config: VersionManagerConfig) {
+    private constructor(projectConfig: ProjectConfig) {
         super();
-        this.projectConfig = config.projectConfig;
-        try {
-            this.loadPackages();
-        } catch (e) {
-            // Might not be loaded yet
-        }
+        this.projectConfig = projectConfig;
+        this.emit('loading');
+        const definition = this.projectConfig.getProjectDefinition();
+        this.graph = new ProjectGraph(definition);
+        this.graph.getAllNodes().forEach(node => {
+            this.trackers.set(node.name, new VersionTracker(node));
+        });
+        this.emit('loaded', this.graph);
     }
 
-    public async load(): Promise<void> {
-        this.emit('loading');
-        // ProjectConfig now uses lazy loading, just load packages
-        this.loadPackages();
-        this.emit('loaded', this.graph!);
+    /**
+     * Creates and initializes a new VersionManager instance.
+     * This is the recommended way to create a VersionManager.
+     * 
+     * @param projectConfig - The ProjectConfig instance to manage versions for
+     * @returns Fully initialized VersionManager instance
+     */
+    public static create(projectConfig: ProjectConfig): VersionManager {
+        return new VersionManager(projectConfig);
     }
 
     public async save(): Promise<void> {
@@ -110,19 +112,8 @@ export class VersionManager extends EventEmitter {
         throw new Error(`Invalid version format: ${version}. Expected major.minor.patch.build or valid semver.`);
     }
 
-    public getGraph(): ProjectGraph | undefined {
+    public getGraph(): ProjectGraph {
         return this.graph;
-    }
-
-    private loadPackages() {
-        if (!this.projectConfig) return;
-        const definition = this.projectConfig.getProjectDefinition();
-        this.graph = new ProjectGraph(definition);
-        this.trackers.clear();
-
-        this.graph.getAllNodes().forEach(node => {
-            this.trackers.set(node.name, new VersionTracker(node));
-        });
     }
 
     /**

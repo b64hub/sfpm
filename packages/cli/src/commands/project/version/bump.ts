@@ -77,25 +77,16 @@ export default class ProjectVersionBump extends SfpmCommand {
         const projectFile = flags.projectfile;
 
         // 1. Initialize Core
-        const core = new SfpmCore({
+        const core = await SfpmCore.create({
             apiKey: 'unused',
             verbose: false,
             projectPath: projectFile
         });
 
         const versionManager = core.project.getVersionManager();
-        const spinner = ora('Initializing...').start();
+        const spinner = ora('Initialized.').start();
 
         // 2. Setup Events
-        versionManager.on('loading', () => {
-            spinner.text = 'Loading project configuration...';
-        });
-
-        versionManager.on('loaded', () => {
-            spinner.succeed('Project loaded.');
-            spinner.start('Analyzing packages...');
-        });
-
         versionManager.on('checking', () => {
             spinner.text = 'Checking for updates...';
         });
@@ -105,7 +96,6 @@ export default class ProjectVersionBump extends SfpmCommand {
         });
 
         try {
-            await versionManager.load();
             const strategy = this.getStrategy(flags);
             const bumpType = this.getBumpType(flags);
 

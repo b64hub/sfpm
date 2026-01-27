@@ -1,7 +1,7 @@
 import { SfProject } from '@salesforce/core';
 import ProjectConfig from './project-config.js';
 import { ProjectGraph } from './project-graph.js';
-import { VersionManager, VersionManagerConfig } from './version-manager.js';
+import { VersionManager } from './version-manager.js';
 import { ProjectDefinition, PackageDefinition } from '../types/project.js';
 import { PackageType } from '../types/package.js';
 import path from 'node:path';
@@ -33,8 +33,7 @@ export default class ProjectService {
         }
 
         const projectConfig = new ProjectConfig(sfProject);
-        const versionManager = new VersionManager({ projectConfig });
-        await versionManager.load();
+        const versionManager = VersionManager.create(projectConfig);
 
         return new ProjectService(projectConfig, versionManager);
     }
@@ -64,7 +63,7 @@ export default class ProjectService {
         return this.versionManager;
     }
 
-    public getProjectGraph(): ProjectGraph | undefined {
+    public getProjectGraph(): ProjectGraph {
         return this.versionManager.getGraph();
     }
 
@@ -96,11 +95,7 @@ export default class ProjectService {
      */
     public static async getPackageDependencies(packageName: string, workingDirectory?: string): Promise<PackageDefinition[]> {
         const service = await ProjectService.getInstance(workingDirectory);
-        const graph = service.getProjectGraph();
-        if (!graph) {
-            throw new Error('Project graph not available');
-        }
-        return graph.getTransitiveDependencies(packageName);
+        return service.getProjectGraph().getTransitiveDependencies(packageName);
     }
 
     /**
