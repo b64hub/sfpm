@@ -20,7 +20,6 @@ describe('VersionManager', () => {
 
         mockProjectConfig = {
             getProjectDefinition: vi.fn().mockReturnValue(mockProject),
-            load: vi.fn().mockResolvedValue(undefined),
             save: vi.fn().mockResolvedValue(undefined),
         };
     });
@@ -83,7 +82,8 @@ describe('VersionManager', () => {
         const vm = new VersionManager({ projectConfig: mockProjectConfig as any });
         await vm.load();
 
-        expect(mockProjectConfig.load).toHaveBeenCalled();
+        // ProjectConfig.load() was removed - validation happens lazily now
+        expect(mockProjectConfig.getProjectDefinition).toHaveBeenCalled();
 
         await vm.bump('minor', { strategy: new SinglePackageStrategy('pkg-a') });
         await vm.save();

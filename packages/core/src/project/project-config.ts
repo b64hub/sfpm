@@ -1,4 +1,4 @@
-import { SfProject, SfProjectJson, ProjectJsonSchema, ProjectJson } from '@salesforce/core';
+import { SfProject, SfProjectJson, ProjectJsonSchema, ProjectJson, Logger } from '@salesforce/core';
 import { ProjectDefinition, PackageDefinition, ProjectDefinitionSchema } from '../types/project.js';
 import { PackageType } from '../types/package.js';
 
@@ -9,53 +9,60 @@ import { PackageType } from '../types/package.js';
  */
 export default class ProjectConfig {
     private project: SfProject;
-    private projectJson: SfProjectJson;
-    private definition?: ProjectDefinition;
+    private logger: Logger;
+    private hasValidated = false;
 
     constructor(project: SfProject) {
         this.project = project;
-        this.projectJson = this.project.getSfProjectJson();
+        this.logger = Logger.childFromRoot('ProjectConfig');
     }
 
     /**
-     * Loads the project definition from the filesystem
+     * Validates custom SFPM properties (runs once, logs warnings only).
+     * This is called automatically by getProjectDefinition().
      */
-    public async load(): Promise<ProjectDefinition> {
-
-        const rawContents = this.projectJson!.getContents();
-
-        // Validate with Zod
+    private validateCustomProperties(): void {
+        if (this.hasValidated) return;
+        
+        const rawContents = this.project.getSfProjectJson().getContents();
         const result = ProjectDefinitionSchema.safeParse(rawContents);
+        
         if (!result.success) {
-            throw new Error(`Invalid sfdx-project.json: ${result.error.message}`);
+            this.logger.warn('SFPM custom properties validation failed:');
+            const zodError = result.error;
+            if (zodError && 'errors' in zodError && Array.isArray(zodError.errors)) {
+                zodError.errors.forEach((err: any) => {
+                    const path = err.path?.join('.') || 'unknown';
+                    this.logger.warn(`  - ${path}: ${err.message}`);
+                });
+            }
+            this.logger.warn('Continuing with potentially invalid custom properties...');
         }
-
-        this.definition = result.data as ProjectDefinition;
-        return this.definition;
+        
+        this.hasValidated = true;
     }
 
     /**
-     * Returns the validated project definition
+     * Returns the project definition with custom SFPM properties.
+     * Always gets fresh data from SfProject and validates on first access.
      */
     public getProjectDefinition(): ProjectDefinition {
-        if (!this.definition) {
-            throw new Error('ProjectConfig not loaded. Call load() first.');
-        }
-        return this.definition;
+        this.validateCustomProperties();
+        return this.project.getSfProjectJson().getContents() as ProjectDefinition;
     }
 
     /**
-     * Finds a package definition by name
+     * Finds a package definition by name.
+     * Uses SfProject's built-in getPackage method for efficient lookup.
      */
     public getPackageDefinition(packageName: string): PackageDefinition {
-        const def = this.getProjectDefinition();
-        const pkg = def.packageDirectories.find(
-            (p): p is PackageDefinition => 'package' in p && p.package === packageName
-        );
+        // Use SfProject's built-in method to find the package
+        const pkg = this.project.getPackage(packageName);
         if (!pkg) {
             throw new Error(`Package ${packageName} not found in project definition`);
         }
-        return pkg;
+        // Cast to our extended type since SfProject preserves custom properties
+        return pkg as PackageDefinition;
     }
 
     /**
@@ -69,9 +76,6 @@ export default class ProjectConfig {
      * Returns the project directory (root path)
      */
     public get projectDirectory(): string {
-        if (!this.project) {
-            throw new Error('ProjectConfig not loaded. Call load() first.');
-        }
         return this.project.getPath();
     }
 
@@ -83,20 +87,28 @@ export default class ProjectConfig {
         if (pkg.type) {
             return pkg.type as PackageType;
         }
-        return PackageType.Source;
+        return PackageType.Unlocked;
     }
 
     public getPackageId(packageAlias: string): string | undefined {
-        return this.definition?.packageAliases?.[packageAlias];
+        const aliases = this.project.getSfProjectJson().getContents().packageAliases;
+        return aliases?.[packageAlias];
     }
 
     /**
-     * Returns all package names
+     * Returns all package directories from the project.
+     * Uses SfProject's built-in method which includes name and fullPath.
+     */
+    public getAllPackageDirectories(): PackageDefinition[] {
+        return this.project.getPackageDirectories() as PackageDefinition[];
+    }
+
+    /**
+     * Returns all unique package names.
+     * Uses SfProject's built-in method for efficient lookup.
      */
     public getAllPackageNames(): string[] {
-        return this.getProjectDefinition().packageDirectories
-            .filter((p): p is PackageDefinition => 'package' in p)
-            .map(p => p.package);
+        return this.project.getUniquePackageNames();
     }
 
     /**
@@ -153,24 +165,26 @@ export default class ProjectConfig {
     /**
      * Saves the project definition back to the file
      */
+    /**
+     * Saves the project definition back to the file.
+     * Note: After saving, validation state is reset since the file has changed.
+     */
     public async save(updatedDefinition?: ProjectDefinition): Promise<void> {
-        if (!this.projectJson) {
-            throw new Error('ProjectConfig not loaded. Call load() first.');
-        }
-
-        const dataToSave = updatedDefinition || this.definition;
-        if (!dataToSave) return;
+        const projectJson = this.project.getSfProjectJson();
+        const dataToSave = updatedDefinition || projectJson.getContents();
 
         // Use individual set calls to avoid protected setContents
-        this.projectJson.set('packageDirectories', dataToSave.packageDirectories);
+        projectJson.set('packageDirectories', dataToSave.packageDirectories);
         if (dataToSave.packageAliases) {
-            this.projectJson.set('packageAliases', dataToSave.packageAliases);
+            projectJson.set('packageAliases', dataToSave.packageAliases);
         }
         if (dataToSave.sourceApiVersion) {
-            this.projectJson.set('sourceApiVersion', dataToSave.sourceApiVersion);
+            projectJson.set('sourceApiVersion', dataToSave.sourceApiVersion);
         }
 
-        await this.projectJson.write();
-        this.definition = dataToSave;
+        await projectJson.write();
+        
+        // Reset validation flag since file has changed
+        this.hasValidated = false;
     }
 }

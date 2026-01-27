@@ -58,7 +58,7 @@ export class VersionManager extends EventEmitter {
 
     public async load(): Promise<void> {
         this.emit('loading');
-        await this.projectConfig.load();
+        // ProjectConfig now uses lazy loading, just load packages
         this.loadPackages();
         this.emit('loaded', this.graph!);
     }

@@ -4,6 +4,7 @@ import { ProjectGraph } from './project-graph.js';
 import { VersionManager, VersionManagerConfig } from './version-manager.js';
 import { ProjectDefinition, PackageDefinition } from '../types/project.js';
 import { PackageType } from '../types/package.js';
+import path from 'node:path';
 
 export default class ProjectService {
     private static instance: ProjectService | undefined;
@@ -18,7 +19,7 @@ export default class ProjectService {
     /**
      * Gets or creates the singleton ProjectService instance
      */
-    public static getInstance(projectOrPath?: SfProject | string): ProjectService {
+    public static getInstance(projectOrPath: SfProject | string = process.cwd()): ProjectService {
         if (!ProjectService.instance) {
             ProjectService.instance = new ProjectService(projectOrPath);
         }
@@ -33,7 +34,8 @@ export default class ProjectService {
     }
 
     /**
-     * Initializes the service by loading the project configuration and building the graph
+     * Initializes the service by resolving the SfProject and setting up managers.
+     * No need to load ProjectConfig as it's now lazy-loaded.
      */
     public async initialize(): Promise<void> {
         if (this.initialized) return;
