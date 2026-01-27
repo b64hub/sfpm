@@ -11,7 +11,9 @@ import fs from 'fs-extra';
 
 import { PackageVersion, PackageVersionCreateRequestResult } from '@salesforce/packaging';
 
+import AssembleArtifactTask from './tasks/assemble-artifact-task.js';
 import { Logger } from '../../types/logger.js';
+import GitTagTask from './tasks/git-tag-task.js';
 
 export interface UnlockedPackageBuilderOptions extends BuildOptions {
     isOrgDependentPackage: boolean;
@@ -26,7 +28,9 @@ export default class UnlockedPackageBuilder implements Builder {
     private devhubOrg?: Org;
 
     private preBuildTasks: BuildTask[] = [];
-    private postBuildTasks: BuildTask[] = [];
+    private postBuildTasks: BuildTask[] = [
+        
+    ];
 
     private logger?: Logger;
 
@@ -37,6 +41,10 @@ export default class UnlockedPackageBuilder implements Builder {
         this.workingDirectory = workingDirectory;
         this.sfpmPackage = sfpmPackage;
         this.logger = logger;
+
+        this.postBuildTasks.push(new AssembleArtifactTask(this.sfpmPackage, this.workingDirectory));
+        this.postBuildTasks.push(new GitTagTask(this.sfpmPackage, this.workingDirectory));
+
     }
 
     public async exec(): Promise<void> {

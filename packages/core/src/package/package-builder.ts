@@ -25,7 +25,9 @@ export interface BuildOptions {
 
 export interface BuildEvents { }
 
-export interface BuildTask { }
+export interface BuildTask { 
+    exec(): Promise<void>;
+}
 
 /**
  * Orchestrator for package builds
