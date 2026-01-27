@@ -134,25 +134,25 @@ export class VersionManager extends EventEmitter {
 
         const trackers = Array.from(this.trackers.values());
 
-        // apply strategy
-        let updatedTrackers: VersionTracker[] = [];
+        // identify trackers via strategy
+        let identifiedTrackers: VersionTracker[] = [];
         if (options?.strategy) {
-            updatedTrackers = await options.strategy.getUpdatedPackages(trackers);
+            identifiedTrackers = await options.strategy.getUpdatedPackages(trackers);
         } else {
             // Default strategy: bump all packages
-            updatedTrackers = trackers.map(t => {
-                t.bump(bumpType, options?.version);
-                return t;
-            });
+            identifiedTrackers = trackers;
         }
 
+        // Apply bump to identified trackers
+        identifiedTrackers.forEach(t => t.bump(bumpType, options?.version));
+
+        // Propagate updates to dependents
+        const affectedDependents = this.updateDependencies(identifiedTrackers);
+
         const result: VersionUpdateResult = {
-            packagesUpdated: updatedTrackers.length,
-            packages: updatedTrackers.map(t => ({
-                name: t.packageName,
-                oldVersion: t.currentVersion!,
-                newVersion: t.newVersion!
-            }))
+            packagesUpdated: identifiedTrackers.length,
+            packages: identifiedTrackers.map(t => t.toOutput()),
+            dependencies: affectedDependents.map(t => t.toOutput(true))
         };
 
         this.emit('checked', result);
@@ -365,29 +365,30 @@ export class VersionTracker {
     }
 
     cleanedVersion(version?: string): string {
-        const vToClean = version || this.currentVersion;
-        if (!vToClean) return '0.0.0';
+        let v = version || this.currentVersion;
+        if (!v) return '0.0.0';
 
-        let v = vToClean;
-        if (v.endsWith(NEXT_SUFFIX)) {
-            v = v.substring(0, v.length - NEXT_SUFFIX.length);
-        }
-        if (v.endsWith(LATEST_SUFFIX)) {
-            v = v.substring(0, v.length - LATEST_SUFFIX.length);
+        // Check for suffixes with both . and -
+        const suffixes = [NEXT_SUFFIX, LATEST_SUFFIX, '-NEXT', '-LATEST'];
+        for (const suffix of suffixes) {
+            if (v.endsWith(suffix)) {
+                v = v.substring(0, v.length - suffix.length);
+                break;
+            }
         }
         return v;
     }
 
     // For internal structure matching original cleaner
     private cleanVersion(version: string): string {
-        const parts = version.split('.');
+        const parts = version.split(/[\.-]/);
         // Take first 3 parts
         return parts.slice(0, 3).join('.');
     }
 
     private getSuffix(version: string): string {
-        if (version.includes(NEXT_SUFFIX)) return NEXT_SUFFIX;
-        if (version.includes(LATEST_SUFFIX)) return LATEST_SUFFIX;
+        if (version.includes(NEXT_SUFFIX) || version.includes('-NEXT')) return NEXT_SUFFIX;
+        if (version.includes(LATEST_SUFFIX) || version.includes('-LATEST')) return LATEST_SUFFIX;
         return '.0';
     }
 

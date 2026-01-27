@@ -13,8 +13,8 @@ export default class SourcePackageBuilder implements Builder {
     private sfpmPackage: SfpmSourcePackage;
     private logger?: Logger;
 
-    private preBuildTasks: BuildTask[] = [];
-    private postBuildTasks: BuildTask[] = [];
+    public preBuildTasks: BuildTask[] = [];
+    public postBuildTasks: BuildTask[] = [];
 
     constructor(
         workingDirectory: string,
@@ -40,11 +40,15 @@ export default class SourcePackageBuilder implements Builder {
     }
 
     public async runPreBuildTasks() {
-        return Promise.resolve();
+        for (const task of this.preBuildTasks) {
+            await task.exec();
+        }
     }
 
     public async runPostBuildTasks() {
-        return Promise.resolve();
+        for (const task of this.postBuildTasks) {
+            await task.exec();
+        }
     }
 
     public async buildPackage() {

@@ -1,7 +1,6 @@
-
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 import { ProjectGraph } from '../../src/project/project-graph.js';
-import { ProjectDefinition } from '../../src/project/types.js';
+import { ProjectDefinition } from '../../src/types/project.js';
 
 describe('ProjectGraph', () => {
     test('should build graph nodes correctly', () => {
