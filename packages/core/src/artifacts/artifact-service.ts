@@ -109,7 +109,7 @@ export class ArtifactService {
                 Name: sfpmPackage.name,
                 Tag__c: sfpmPackage.tag,
                 Version__c: sfpmPackage.version,
-                CommitId__c: sfpmPackage.sourceVersion,
+                CommitId__c: sfpmPackage.commitId || '',
             };
 
             let resultId: string;

@@ -1,23 +1,34 @@
-import { jest, expect, describe, it, beforeEach } from '@jest/globals';
+import { vi, expect, describe, it, beforeEach } from 'vitest';
 import path from 'path';
 
-// Use unstable_mockModule for ESM mocking
-jest.unstable_mockModule('fs-extra', () => ({
-    __esModule: true,
-    pathExists: jest.fn(),
-    copy: jest.fn(),
-    ensureDir: jest.fn(),
-    emptyDir: jest.fn(),
-    writeJSON: jest.fn(),
-    appendFile: jest.fn(),
-    remove: jest.fn(),
-    pathExistsSync: jest.fn(),
-}));
+vi.mock('fs-extra', () => {
+    const mockFs = {
+        pathExists: vi.fn(),
+        copy: vi.fn(),
+        ensureDir: vi.fn(),
+        emptyDir: vi.fn(),
+        writeJSON: vi.fn(),
+        appendFile: vi.fn(),
+        remove: vi.fn().mockResolvedValue(undefined),
+        pathExistsSync: vi.fn(),
+    };
+    return {
+        ...mockFs,
+        default: mockFs
+    };
+});
 
-// Dynamically import dependencies that use the mock
-const fs = await import('fs-extra');
-const { default: PackageAssembler } = await import('../../../src/package/assemblers/package-assembler.js');
-const { default: ProjectConfig } = await import('../../../src/project/project-config.js');
+vi.mock('../../../src/package/assemblers/steps/mdapi-conversion-step.js', () => {
+    return {
+        MDAPIConversionStep: class {
+            execute = vi.fn().mockResolvedValue(undefined);
+        }
+    };
+});
+
+import fs from 'fs-extra';
+import PackageAssembler from '../../../src/package/assemblers/package-assembler.js';
+import ProjectConfig from '../../../src/project/project-config.js';
 
 const mockedFs = fs as any;
 
@@ -26,24 +37,24 @@ describe('PackageAssembler', () => {
     let assembler: any;
 
     beforeEach(() => {
-        jest.clearAllMocks();
+        vi.clearAllMocks();
 
         mockProjectConfig = {
             projectDirectory: '/root',
-            getPackageDefinition: jest.fn().mockReturnValue({
+            getPackageDefinition: vi.fn().mockReturnValue({
                 path: 'force-app',
                 package: 'core',
                 versionNumber: '1.0.0.0'
             }),
-            getProjectDefinition: jest.fn().mockReturnValue({
+            getProjectDefinition: vi.fn().mockReturnValue({
                 packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
             }),
-            getPrunedDefinition: jest.fn().mockReturnValue({
+            getPrunedDefinition: vi.fn().mockReturnValue({
                 packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
             })
         };
 
-        assembler = new PackageAssembler(mockProjectConfig as any, 'core');
+        assembler = new PackageAssembler('core', mockProjectConfig as any);
     });
 
     it('should initialize staging directory in constructor', () => {
@@ -59,10 +70,10 @@ describe('PackageAssembler', () => {
             .withReplacementForceIgnore('.forceignore.prod');
 
         expect(result).toBe(assembler);
-        expect((assembler as any).versionNumber).toBe('1.2.0-5');
-        expect((assembler as any).orgDefinitionFilePath).toBe('config/project-scratch-def.json');
-        expect((assembler as any).destructiveManifestFilePath).toBe('destructive/changes.xml');
-        expect((assembler as any).pathToReplacementForceIgnore).toBe('.forceignore.prod');
+        expect((assembler as any).options.versionNumber).toBe('1.2.0-5');
+        expect((assembler as any).options.orgDefinitionPath).toBe('config/project-scratch-def.json');
+        expect((assembler as any).options.destructiveManifestPath).toBe('destructive/changes.xml');
+        expect((assembler as any).options.replacementForceignorePath).toBe('.forceignore.prod');
     });
 
     it('should assemble package correctly', async () => {
@@ -74,7 +85,8 @@ describe('PackageAssembler', () => {
         mockedFs.writeJSON.mockResolvedValue(undefined);
         mockedFs.appendFile.mockResolvedValue(undefined);
 
-        const stagingPath = await assembler.assemble();
+        const result = await assembler.assemble();
+        const stagingPath = result.stagingDirectory;
 
         expect(stagingPath).toContain('.sfpm/tmp/builds');
 
@@ -113,7 +125,7 @@ describe('PackageAssembler', () => {
     });
 
     it('should create unique build names', () => {
-        const assembler2 = new PackageAssembler(mockProjectConfig as any, 'core');
+        const assembler2 = new PackageAssembler('core', mockProjectConfig as any);
         expect((assembler as any).stagingDirectory).not.toBe((assembler2 as any).stagingDirectory);
     });
 });

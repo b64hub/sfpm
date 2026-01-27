@@ -1,6 +1,6 @@
 import { ComponentSet, MetadataComponent, registry } from '@salesforce/source-deploy-retrieve';
-import SfpmPackage from '../sfpm-package.js';
-import { PackageType, SfpmPackageContent } from '../../types/package.js';
+import SfpmPackage, { SfpmMetadataPackage } from '../sfpm-package.js';
+import { PackageType, SfpmPackageContent, SfpmPackageMetadata } from '../../types/package.js';
 import { PackageAnalyzer } from './analyzer-registry.js';
 
 import { Logger } from '../../types/logger.js';
@@ -14,11 +14,11 @@ export default class PicklistAnalyzer implements PackageAnalyzer {
         this.logger = logger;
     }
 
-    public isEnabled(sfpmPackage: SfpmPackage): boolean {
+    public isEnabled(sfpmPackage: SfpmMetadataPackage): boolean {
         return sfpmPackage.type != PackageType.Data;
     }
           
-    public async analyze(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageContent>> {
+    public async analyze(sfpmPackage: SfpmMetadataPackage): Promise<Partial<SfpmPackageContent>> {
 
         if (!sfpmPackage.customFields) {
             return {};

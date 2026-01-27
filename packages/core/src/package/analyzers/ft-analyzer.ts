@@ -1,6 +1,6 @@
 import { PackageAnalyzer, RegisterAnalyzer } from "./analyzer-registry.js";
 import { PackageType, SfpmPackageContent } from "../../types/package.js";
-import SfpmPackage from "../sfpm-package.js";
+import SfpmPackage, { SfpmMetadataPackage } from "../sfpm-package.js";
 import * as path from 'path';
 import * as fs from 'fs-extra';
 import * as yaml from 'js-yaml';
@@ -18,11 +18,11 @@ export default class FTAnalyzer implements PackageAnalyzer {
         this.logger = logger;
     }
 
-    public isEnabled(sfpmPackage: SfpmPackage): boolean {
+    public isEnabled(sfpmPackage: SfpmMetadataPackage): boolean {
         return (sfpmPackage.type !== PackageType.Data);
     }
 
-    public async analyze(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageContent>> {
+    public async analyze(sfpmPackage: SfpmMetadataPackage): Promise<Partial<SfpmPackageContent>> {
         if (!sfpmPackage.packageDirectory) {
             return {};
         }
@@ -53,7 +53,7 @@ export default class FTAnalyzer implements PackageAnalyzer {
         return Object.values(config).flat();
     }
 
-    private async ftEnabledFields(sfpmPackage: SfpmPackage): Promise<MetadataComponent[]> {
+    private async ftEnabledFields(sfpmPackage: SfpmMetadataPackage): Promise<MetadataComponent[]> {
         const ftFields: MetadataComponent[] = [];
 
         for (const customField of sfpmPackage.customFields) {

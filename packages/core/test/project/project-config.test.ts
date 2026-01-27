@@ -1,11 +1,12 @@
-import { jest, expect } from '@jest/globals';
+import { vi, expect, describe, it, beforeEach } from 'vitest';
 import ProjectConfig from '../../src/project/project-config.js';
-import { ProjectDefinition, ProjectFileReader } from '../../src/project/types.js';
+import { ProjectDefinition } from '../../src/types/project.js';
 import { PackageType } from '../../src/types/package.js';
 
 describe('ProjectConfig', () => {
     let mockProject: ProjectDefinition;
-    let mockFileReader: jest.Mocked<ProjectFileReader>;
+    let mockProjectJson: any;
+    let mockSfProject: any;
     let projectConfig: ProjectConfig;
 
     beforeEach(() => {
@@ -15,13 +16,14 @@ describe('ProjectConfig', () => {
                     path: 'packages/temp',
                     default: true,
                     package: 'temp',
+                    type: PackageType.Unlocked,
                     versionNumber: '1.0.0.0',
-                    ignoreOnStages: ['prepare', 'validate', 'build'],
                 },
                 {
                     path: 'packages/domains/core',
                     package: 'core',
                     default: false,
+                    type: PackageType.Unlocked,
                     versionNumber: '1.0.0.0',
                 },
                 {
@@ -35,14 +37,15 @@ describe('ProjectConfig', () => {
                     path: 'packages/access-mgmt',
                     package: 'access-mgmt',
                     default: false,
+                    type: PackageType.Unlocked,
                     versionNumber: '1.0.0.0',
                 },
                 {
                     path: 'packages/bi',
                     package: 'bi',
                     default: false,
+                    type: PackageType.Unlocked,
                     versionNumber: '1.0.0.0',
-                    ignoreOnStages: ['prepare', 'validate'],
                 },
             ],
             namespace: '',
@@ -52,14 +55,21 @@ describe('ProjectConfig', () => {
                 bi: '0x002232323232',
                 external: '0H43232232'
             },
-        };
-
-        mockFileReader = {
-            read: jest.fn<() => Promise<ProjectDefinition>>().mockResolvedValue(mockProject),
-            write: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
         } as any;
 
-        projectConfig = new ProjectConfig(mockFileReader);
+        mockProjectJson = {
+            getContents: vi.fn().mockReturnValue(mockProject),
+            set: vi.fn(),
+            write: vi.fn().mockResolvedValue(undefined),
+        };
+
+        mockSfProject = {
+            getSfProjectJson: vi.fn().mockReturnValue(mockProjectJson),
+            getPath: vi.fn().mockReturnValue('/root'),
+        };
+
+        projectConfig = new ProjectConfig(mockSfProject as any);
+        (projectConfig as any).definition = mockProject; // bypass load() for simple tests
     });
 
     it('should get the package id of an unlocked package', async () => {
@@ -67,62 +77,31 @@ describe('ProjectConfig', () => {
         expect(id).toBe('0x002232323232');
     });
 
-    it('should throw an error if the package id is missing in aliases', async () => {
-        await expect(projectConfig.getPackageId('nonexistent'))
-            .rejects.toThrow("No Package Id found for 'nonexistent'");
+    it('should return undefined if the package id is missing in aliases', () => {
+        const id = projectConfig.getPackageId('nonexistent');
+        expect(id).toBeUndefined();
     });
 
     it('should fetch all internal packages', async () => {
-        const packages = await projectConfig.getAllPackages();
+        const packages = projectConfig.getAllPackageNames();
         expect(packages).toEqual(['temp', 'core', 'mass-dataload', 'access-mgmt', 'bi']);
     });
 
     it('should get the type of a package', async () => {
         expect(await projectConfig.getPackageType('bi')).toBe(PackageType.Unlocked);
-        expect(await projectConfig.getPackageType('core')).toBe(PackageType.Source);
+        expect(await projectConfig.getPackageType('core')).toBe(PackageType.Unlocked);
         expect(await projectConfig.getPackageType('mass-dataload')).toBe(PackageType.Data);
     });
 
     it('should get the package descriptor of a provided package', async () => {
-        const descriptor = await projectConfig.getPackageDescriptor('core');
+        const descriptor = projectConfig.getPackageDefinition('core');
         expect(descriptor.path).toBe('packages/domains/core');
         expect(descriptor.package).toBe('core');
     });
 
     it('should throw if package descriptor is not found', async () => {
-        await expect(projectConfig.getPackageDescriptor('nonexistent'))
-            .rejects.toThrow("Package 'nonexistent' does not exist");
+        expect(() => projectConfig.getPackageDefinition('nonexistent'))
+            .toThrow("Package nonexistent not found in project definition");
     });
 
-    it('should get the default package descriptor', async () => {
-        const descriptor = await projectConfig.getDefaultPackageDescriptor();
-        expect(descriptor.package).toBe('temp');
-        expect(descriptor.default).toBe(true);
-    });
-
-    it('should get external packages', async () => {
-        const external = await projectConfig.getExternalPackages();
-        expect(external).toEqual([
-            { alias: 'external', packageId: '0H43232232' }
-        ]);
-        // 'bi' is in packageDirectories, so it's not "external" in this context
-    });
-
-    it('should get dependency map', async () => {
-        mockProject.packageDirectories[1].dependencies = [
-            { package: 'temp', versionNumber: '1.0.0.0' }
-        ];
-
-        const map = await projectConfig.getDependencyMap();
-        expect(map.get('core')).toEqual([
-            { package: 'temp', versionNumber: '1.0.0.0' }
-        ]);
-    });
-
-    it('should filter packages', async () => {
-        const filtered = await projectConfig.filterPackages(['core', 'bi']);
-        expect(filtered.packageDirectories.length).toBe(2);
-        expect(filtered.packageDirectories[0].package).toBe('core');
-        expect(filtered.packageDirectories[0].default).toBe(true); // first package becomes default
-    });
 });

@@ -22,8 +22,8 @@ export class ScriptAssemblyStep implements AssemblyStep {
      */
     public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
         const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
-        const preDeploymentScript = packageDefinition.preDeploymentScript;
-        const postDeploymentScript = packageDefinition.postDeploymentScript;
+        const preDeploymentScript = packageDefinition.packageOptions?.deploy?.pre?.script;
+        const postDeploymentScript = packageDefinition.packageOptions?.deploy?.post?.script;
 
         if (!preDeploymentScript && !postDeploymentScript) {
             return;

@@ -15,10 +15,12 @@ vi.mock('@salesforce/core', async (importOriginal) => {
         Org: class {
             static create = vi.fn();
             getConnection = vi.fn();
+            isDevHubOrg = vi.fn().mockReturnValue(true);
         },
         SfProject: class {
             static resolve = vi.fn();
             getSfProjectJson = vi.fn();
+            getPath = vi.fn().mockReturnValue('/tmp/project');
         },
         Lifecycle: class {
             static getInstance = vi.fn();
@@ -34,6 +36,22 @@ vi.mock('@salesforce/packaging', async () => {
     };
 });
 
+
+vi.mock('../../../src/artifacts/artifact-assembler.js', () => {
+    return {
+        default: class {
+            assemble = vi.fn().mockResolvedValue('/tmp/artifact.zip');
+        }
+    };
+});
+
+vi.mock('../../../src/package/builders/tasks/git-tag-task.js', () => {
+    return {
+        default: class {
+            exec = vi.fn().mockResolvedValue(undefined);
+        }
+    };
+});
 
 describe('UnlockedPackageBuilder', () => {
     let builder: UnlockedPackageBuilder;
@@ -81,6 +99,7 @@ describe('UnlockedPackageBuilder', () => {
         mockConnection = { getApiVersion: () => '50.0' };
         mockOrg = {
             getConnection: () => mockConnection,
+            isDevHubOrg: () => true
         };
         (Org.create as any).mockResolvedValue(mockOrg);
 

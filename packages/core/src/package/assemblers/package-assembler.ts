@@ -14,7 +14,7 @@ import { ForceIgnoreStep } from './steps/force-ignore-step.js';
 import { DestructiveManifestStep } from './steps/destructive-manifest-step.js';
 import { OrgDefinitionStep } from './steps/org-definition-step.js';
 import { ProjectJsonAssemblyStep } from './steps/project-json-assembly-step.js';
-import { MDAPIConversionStep } from './steps/mdapi-conversion-step.js';
+// import { MDAPIConversionStep } from './steps/mdapi-conversion-step.js';
 
 const DOT_FOLDER = ".sfpm";
 /**
@@ -136,34 +136,30 @@ export default class PackageAssembler {
      * ```
      */
     public async assemble(): Promise<AssemblyOutput> {
-        await this.ensureStagingDirectoryExists();
-
-        const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
-
-        const output: AssemblyOutput = {
-            stagingDirectory: this.stagingDirectory,
-            projectDefinitionPath: path.join(this.stagingDirectory, 'sfdx-project.json')
-        };
-
-        const steps: AssemblyStep[] = [
-            new SourceCopyStep(this.packageName, this.projectConfig, this.logger),
-            new OrgDefinitionStep(this.packageName, this.projectConfig, this.logger),
-            new ScriptAssemblyStep(this.packageName, this.projectConfig, this.logger),
-            new UnpackagedMetadataStep(this.packageName, this.projectConfig, this.logger),
-            new ForceIgnoreStep(this.packageName, this.projectConfig, this.logger)
-        ];
-
-        if (packageDefinition.type !== PackageType.Data && packageDefinition.type !== PackageType.Managed) {
-            steps.push(new MDAPIConversionStep(this.packageName, this.projectConfig, this.logger));
-        }
-
-        if (this.options.destructiveManifestPath) {
-            steps.push(new DestructiveManifestStep(this.packageName, this.projectConfig, this.logger));
-        }
-
-        steps.push(new ProjectJsonAssemblyStep(this.packageName, this.projectConfig, this.logger));
-
         try {
+            await this.ensureStagingDirectoryExists();
+
+            const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
+
+            const output: AssemblyOutput = {
+                stagingDirectory: this.stagingDirectory,
+                projectDefinitionPath: path.join(this.stagingDirectory, 'sfdx-project.json')
+            };
+
+            const steps: AssemblyStep[] = [
+                new SourceCopyStep(this.packageName, this.projectConfig, this.logger),
+                new OrgDefinitionStep(this.packageName, this.projectConfig, this.logger),
+                new ScriptAssemblyStep(this.packageName, this.projectConfig, this.logger),
+                new UnpackagedMetadataStep(this.packageName, this.projectConfig, this.logger),
+                new ForceIgnoreStep(this.packageName, this.projectConfig, this.logger)
+            ];
+
+            if (this.options.destructiveManifestPath) {
+                steps.push(new DestructiveManifestStep(this.packageName, this.projectConfig, this.logger));
+            }
+
+            steps.push(new ProjectJsonAssemblyStep(this.packageName, this.projectConfig, this.logger));
+
 
             for (const step of steps) {
                 this.logger?.debug(`Executing step: ${step.constructor.name}`);
@@ -171,6 +167,7 @@ export default class PackageAssembler {
             }
 
             return output;
+
         } catch (error) {
             // Error Handling: attempt to delete the stagingDirectory before re-throwing
             if (process.env.DEBUG !== 'true' && this.stagingDirectory) {

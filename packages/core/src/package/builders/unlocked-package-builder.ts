@@ -1,15 +1,18 @@
-import { Builder, RegisterBuilder } from './builder-registry.js';
-import { BuildTask, BuildOptions } from '../package-builder.js';
-import { SfpmUnlockedPackage } from '../sfpm-package.js';
-import { PackageType, SfpmUnlockedPackageBuildOptions } from '../../types/package.js';
+import path from 'path';
+import fs from 'fs-extra';
 
 import { Org, SfProject, Lifecycle } from '@salesforce/core';
 import { Duration } from '@salesforce/kit';
-import path from 'path';
-import ProjectService from '../../project/project-service.js';
-import fs from 'fs-extra';
-
 import { PackageVersion, PackageVersionCreateRequestResult } from '@salesforce/packaging';
+
+import { Builder, RegisterBuilder } from './builder-registry.js';
+import { BuildTask, BuildOptions } from '../package-builder.js';
+import SfpmPackage, { SfpmUnlockedPackage } from '../sfpm-package.js';
+import { PackageType, SfpmUnlockedPackageBuildOptions } from '../../types/package.js';
+import ProjectService from '../../project/project-service.js';
+
+import AssembleArtifactTask from './tasks/assemble-artifact-task.js';
+import GitTagTask from './tasks/git-tag-task.js';
 
 import { Logger } from '../../types/logger.js';
 
@@ -25,15 +28,23 @@ export default class UnlockedPackageBuilder implements Builder {
 
     private devhubOrg?: Org;
 
-    private preBuildTasks: BuildTask[] = [];
-    private postBuildTasks: BuildTask[] = [];
+    public preBuildTasks: BuildTask[] = [];
+    public postBuildTasks: BuildTask[] = [];
 
     private logger?: Logger;
 
-    constructor(workingDirectory: string, sfpmPackage: SfpmUnlockedPackage, logger?: Logger) {
+    constructor(workingDirectory: string, sfpmPackage: SfpmPackage, logger?: Logger) {
+        if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
+            throw new Error(
+                `UnlockedPackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`,
+            );
+        }
         this.workingDirectory = workingDirectory;
         this.sfpmPackage = sfpmPackage;
         this.logger = logger;
+
+        this.postBuildTasks.push(new AssembleArtifactTask(this.sfpmPackage, this.workingDirectory));
+        this.postBuildTasks.push(new GitTagTask(this.sfpmPackage, this.workingDirectory));
     }
 
     public async exec(): Promise<void> {
@@ -66,11 +77,15 @@ export default class UnlockedPackageBuilder implements Builder {
 
         const allDependencies = await ProjectService.getPackageDependencies(this.sfpmPackage.name);
 
-        return Promise.resolve();
+        for (const task of this.preBuildTasks) {
+            await task.exec();
+        }
     }
 
     private async runPostBuildTasks(): Promise<void> {
-        return Promise.resolve();
+        for (const task of this.postBuildTasks) {
+            await task.exec();
+        }
     }
 
     private async buildPackage(): Promise<void> {
@@ -107,7 +122,9 @@ export default class UnlockedPackageBuilder implements Builder {
                     postinstallscript: buildOptions?.postInstallScript,
                     codecoverage: buildOptions?.isCoverageEnabled,
                     versionnumber: this.sfpmPackage.version,
-                    definitionfile: buildOptions?.configFilePath ? path.join(this.workingDirectory, buildOptions.configFilePath) : undefined,
+                    definitionfile: buildOptions?.configFilePath
+                        ? path.join(this.workingDirectory, buildOptions.configFilePath)
+                        : undefined,
                     packageId: this.sfpmPackage.packageId,
                 },
                 { timeout: waitTime, frequency: pollingFrequency },
@@ -126,13 +143,15 @@ export default class UnlockedPackageBuilder implements Builder {
             }
 
             // Coverage check
-            if (buildOptions?.isCoverageEnabled && !this.sfpmPackage.isOrgDependent && !buildOptions?.isAsyncValidation) {
-                // Cast to any to access CodeCoverage property which might not be in the strict type but returned by API
-                if ((result as any).CodeCoverage !== undefined && (result as any).CodeCoverage < 75) {
+            if (
+                buildOptions?.isCoverageEnabled &&
+                !this.sfpmPackage.isOrgDependent &&
+                !buildOptions?.isAsyncValidation
+            ) {
+                if (!result.HasPassedCodeCoverageCheck) {
                     throw new Error('This package has not meet the minimum coverage requirement of 75%');
                 }
             }
-
         } catch (error: any) {
             throw new Error(`Unable to create ${this.sfpmPackage.packageName}: ${error.message}`);
         } finally {

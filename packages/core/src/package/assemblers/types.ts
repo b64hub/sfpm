@@ -1,5 +1,5 @@
 import { ConvertResult } from '@salesforce/source-deploy-retrieve';
-import { SfpmPackageManifest } from "../../types/package.js";
+
 
 export interface AssemblyOptions {
     versionNumber?: string;
@@ -11,10 +11,10 @@ export interface AssemblyOptions {
 export interface AssemblyOutput {
     stagingDirectory: string;
     projectDefinitionPath?: string;
-    mdapiConversion?: {
-        payload: SfpmPackageManifest;
-        result: ConvertResult;
-    }; // Populated by the MDAPI Conversion Step
+    // mdapiConversion?: {
+    //     payload: SfpmPackageManifest;
+    //     result: ConvertResult;
+    // }; // Populated by the MDAPI Conversion Step
     scripts?: {
         preDeployment?: string;
         postDeployment?: string;

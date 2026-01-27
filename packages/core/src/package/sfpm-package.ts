@@ -80,6 +80,8 @@ export default abstract class SfpmPackage {
     get apiVersion() { return this._metadata.identity.apiVersion || this.projectDefinition?.sourceApiVersion || process.env.SFPM_API_VERSION || DEFAULT_API_VERSION; }
     set apiVersion(val: string) { this._metadata.identity.apiVersion = val; }
 
+    get tag() { return this._metadata.source?.tag || `${this.name}@${this.version}`; }
+    get commitId() { return this._metadata.source?.commitSHA; }
 
     get dependencies(): { package: string; versionNumber?: string }[] | undefined {
         return this.packageDefinition?.dependencies;
@@ -136,7 +138,7 @@ export default abstract class SfpmPackage {
     }
 }
 
-export class SfpmMetadataPackage extends SfpmPackage {
+export abstract class SfpmMetadataPackage extends SfpmPackage {
 
     protected _componentSet?: ComponentSet;
 
@@ -318,7 +320,11 @@ export class SfpmMetadataPackage extends SfpmPackage {
 
 
     get isTriggerAllTests(): boolean {
-        return !this.isOptimizedDeployment || this.hasApex // this.testClasses.length > 0
+        return this._metadata.validation.isTriggerAllTests || (!this.isOptimizedDeployment || this.hasApex)
+    }
+
+    set isTriggerAllTests(val: boolean) {
+        this._metadata.validation.isTriggerAllTests = val;
     }
 
     private get isOptimizedDeployment(): boolean {

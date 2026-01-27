@@ -1,7 +1,7 @@
 import SfpmPackage from "./sfpm-package.js";
 import { ArtifactService } from "../artifacts/artifact-service.js";
 import { PackageService, SubscriberPackage, Package2 } from "./package-service.js";
-import { InstalledArtifact } from '../types/package.js';
+import { InstalledArtifact, PackageType } from '../types/package.js';
 import { Logger } from "../types/logger.js";
 
 export default class PackageManager {
@@ -83,17 +83,18 @@ export default class PackageManager {
                 const packageFound = installed2GPPackages.find((elem) => elem.name === artifact.name);
                 if (packageFound) {
 
-                    installedArtifact.subscriberVersion = packageFound.subscriberPackageVersionId;
+                    installedArtifact.subscriberVersionId = packageFound.subscriberPackageVersionId;
 
                     if (packageFound.isOrgDependent) {
-                        installedArtifact.type = 'OrgDependent';
+                        installedArtifact.type = PackageType.Unlocked;
+                        installedArtifact.isOrgDependent = true;
                     } else {
-                        installedArtifact.type = 'Unlocked';
+                        installedArtifact.type = PackageType.Unlocked;
                     }
 
                 } else {
-                    installedArtifact.subscriberVersion = 'N/A';
-                    installedArtifact.type = 'Source/Data';
+                    installedArtifact.subscriberVersionId = 'N/A';
+                    installedArtifact.type = PackageType.Source;
                 }
                 installedArtifacts.push(installedArtifact);
             });
@@ -113,14 +114,15 @@ export default class PackageManager {
                 };
 
                 if (installed2GPPackage.isOrgDependent) {
-                    installedArtifact.type = 'OrgDependent';
-                } else if (installed2GPPackage.type?.toString() === 'managed') {
-                    installedArtifact.type = 'Managed';
+                    installedArtifact.type = PackageType.Unlocked;
+                    installedArtifact.isOrgDependent = true;
+                } else if ((installed2GPPackage as any).type === 'managed') {
+                    installedArtifact.type = PackageType.Managed;
                 } else {
-                    installedArtifact.type = 'Unlocked';
+                    installedArtifact.type = PackageType.Unlocked;
                 }
 
-                installedArtifact.subscriberVersion = installed2GPPackage.subscriberPackageVersionId;
+                installedArtifact.subscriberVersionId = installed2GPPackage.subscriberPackageVersionId;
                 installedArtifact.isInstalledBySfpm = false;
                 installedArtifacts.push(installedArtifact);
             });
