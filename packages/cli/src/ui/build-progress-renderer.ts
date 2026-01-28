@@ -145,9 +145,6 @@ export class BuildProgressRenderer {
             this.logger.log(
                 chalk.green.bold(`\n✓ Build complete!`) + chalk.gray(` (${duration})`)
             );
-            if (event.packageVersionId) {
-                this.logger.log(chalk.gray(`  Package Version ID: ${event.packageVersionId}`));
-            }
         }
     }
 
