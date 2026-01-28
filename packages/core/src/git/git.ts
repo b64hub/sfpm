@@ -214,9 +214,9 @@ export default class Git {
     async pushToRemote(branch: string, isForce: boolean) {
         if (!branch) branch = (await this._git.branch()).current;
         this.logger?.info(`Pushing ${branch}`);
-        if (process.env.SFP_OVERRIDE_ORIGIN_URL) {
+        if (process.env.SFPM_OVERRIDE_ORIGIN_URL) {
             await this._git.removeRemote('origin');
-            await this._git.addRemote('origin', process.env.SFP_OVERRIDE_ORIGIN_URL);
+            await this._git.addRemote('origin', process.env.SFPM_OVERRIDE_ORIGIN_URL);
         }
 
         if (isForce) {
