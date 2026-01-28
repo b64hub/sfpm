@@ -1,5 +1,5 @@
 import path from 'path';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import archiver from 'archiver';
 import { Logger } from '../types/logger.js';
 import SfpmPackage from '../package/sfpm-package.js';
@@ -78,23 +78,27 @@ export default class ArtifactAssembler {
             // 1. Prepare Version Directory
             await fs.ensureDir(this.versionDirectory);
 
-            // 2. Prepare Source (Copy and Clean)
+            // 2. Generate Metadata (before moving staging directory)
+            const metadata = await (this.sfpmPackage as any).toPackageMetadata();
+
+            // 3. Prepare Source (Copy and Clean)
             const stagingSourceDir = await this.prepareSource();
 
-            // 3. Generate Metadata
-            await this.generateMetadata(stagingSourceDir);
+            // 4. Write Metadata to staging source
+            const metadataPath = path.join(stagingSourceDir, `artifact_metadata.json`);
+            await fs.writeJson(metadataPath, metadata, { spaces: 4 });
 
-            // 4. Generate Changelog (using provider)
+            // 5. Generate Changelog (using provider)
             await this.generateChangelog(stagingSourceDir);
 
-            // 5. Create Zip using Archiver
+            // 6. Create Zip using Archiver
             const zipPath = await this.createZip(stagingSourceDir);
 
-            // 6. Update Manifest & Symlink
+            // 7. Update Manifest & Symlink
             await this.updateManifest(zipPath);
             await this.updateLatestSymlink();
 
-            // 7. Cleanup staging source
+            // 8. Cleanup staging source
             await fs.remove(stagingSourceDir);
 
             this.logger?.info(`Artifact successfully stored at ${zipPath}`);
@@ -110,6 +114,9 @@ export default class ArtifactAssembler {
         await fs.ensureDir(stagingSourceDir);
 
         if (this.sfpmPackage.stagingDirectory) {
+            this.logger?.debug(`Preparing source from staging directory: ${this.sfpmPackage.stagingDirectory}`);
+            this.logger?.debug(`Target staging source directory: ${stagingSourceDir}`);
+            
             // Cleanup noise from staging directory if it exists
             const noise = ['.sfpm', '.sfdx'];
             for (const dir of noise) {
@@ -129,16 +136,10 @@ export default class ArtifactAssembler {
         return stagingSourceDir;
     }
 
-    private async generateMetadata(stagingDir: string): Promise<void> {
-        const metadataPath = path.join(stagingDir, `artifact_metadata.json`);
-        const metadata = await (this.sfpmPackage as any).toPackageMetadata();
-        await fs.writeJSON(metadataPath, metadata, { spaces: 4 });
-    }
-
     private async generateChangelog(stagingDir: string): Promise<void> {
         const changelog = await this.changelogProvider.generateChangelog(this.sfpmPackage, this.projectDirectory);
         const changelogPath = path.join(stagingDir, `changelog.json`);
-        await fs.writeJSON(changelogPath, changelog, { spaces: 4 });
+        await fs.writeJson(changelogPath, changelog, { spaces: 4 });
     }
 
     private async createZip(contentDir: string): Promise<string> {
@@ -166,7 +167,7 @@ export default class ArtifactAssembler {
         let manifest: ArtifactManifest;
 
         if (await fs.pathExists(manifestPath)) {
-            manifest = await fs.readJSON(manifestPath);
+            manifest = await fs.readJson(manifestPath);
         } else {
             manifest = {
                 name: this.sfpmPackage.packageName,
@@ -181,7 +182,7 @@ export default class ArtifactAssembler {
             generatedAt: Date.now()
         };
 
-        await fs.writeJSON(manifestPath, manifest, { spaces: 4 });
+        await fs.writeJson(manifestPath, manifest, { spaces: 4 });
     }
 
     private async updateLatestSymlink(): Promise<void> {

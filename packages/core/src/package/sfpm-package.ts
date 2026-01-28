@@ -157,7 +157,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
         }
 
         if (!this._componentSet) {
-            this._componentSet = ComponentSet.fromSource(path.join(this.stagingDirectory, this.packageDirectory));
+            this._componentSet = ComponentSet.fromSource(this.packageDirectory);
         }
 
         return this._componentSet;
