@@ -122,6 +122,14 @@ export interface CreateCompleteEvent extends BaseEvent {
   packageVersionId: string;
   versionNumber: string;
   subscriberPackageVersionId?: string;
+  packageId?: string;
+  status?: string;
+  codeCoverage?: number | null;
+  hasPassedCodeCoverageCheck?: boolean;
+  totalNumberOfMetadataFiles?: number;
+  totalSizeOfMetadataFiles?: number;
+  hasMetadataRemoved?: boolean;
+  createdDate?: string;
 }
 
 export interface ValidationStartEvent extends BaseEvent {

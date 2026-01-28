@@ -46,8 +46,10 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
         this.sfpmPackage = sfpmPackage;
         this.logger = logger;
 
-        this.postBuildTasks.push(new AssembleArtifactTask(this.sfpmPackage, this.workingDirectory));
-        this.postBuildTasks.push(new GitTagTask(this.sfpmPackage, this.workingDirectory));
+        // Use project directory for artifacts, not the staging directory
+        const projectDir = this.sfpmPackage.projectDirectory;
+        this.postBuildTasks.push(new AssembleArtifactTask(this.sfpmPackage, projectDir));
+        this.postBuildTasks.push(new GitTagTask(this.sfpmPackage, projectDir));
     }
 
     public async exec(): Promise<void> {
@@ -149,18 +151,27 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
                 { timeout: waitTime, frequency: pollingFrequency },
             );
 
-            this.logger?.info(`Package Result: ${JSON.stringify(result)}`);
+            // Result details are emitted via events for structured handling
+            this.logger?.debug(`Package Result: ${JSON.stringify(result)}`);
 
             if (result.SubscriberPackageVersionId) {
                 this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
                 
-                // Emit create complete event
+                // Emit create complete event with detailed result information
                 this.emit('unlocked:create:complete', {
                     timestamp: new Date(),
                     packageName: this.sfpmPackage.packageName,
                     packageVersionId: result.SubscriberPackageVersionId,
-                    versionNumber: this.sfpmPackage.version || '',
+                    versionNumber: result.VersionNumber || this.sfpmPackage.version || '',
                     subscriberPackageVersionId: result.SubscriberPackageVersionId,
+                    packageId: result.Package2Id,
+                    status: result.Status,
+                    codeCoverage: result.CodeCoverage ?? undefined,
+                    hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
+                    totalNumberOfMetadataFiles: result.TotalNumberOfMetadataFiles ?? undefined,
+                    totalSizeOfMetadataFiles: result.TotalSizeOfMetadataFiles ?? undefined,
+                    hasMetadataRemoved: result.HasMetadataRemoved ?? undefined,
+                    createdDate: result.CreatedDate,
                 });
                 
                 // Update other metadata if available in result
@@ -184,14 +195,12 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
         } catch (error: any) {
             throw new Error(`Unable to create ${this.sfpmPackage.packageName}: ${error.message}`);
         } finally {
-            // Clean up listener to avoid leaks
             lifecycle.removeAllListeners('packageVersionCreate:progress');
         }
     }
 
     /**
      * @description: cleanup sfpm constructs in working directory
-     * // TODO move to assembly
      */
     private async pruneOrgDependentPackage(): Promise<void> {
         if (!this.sfpmPackage.isOrgDependent) {

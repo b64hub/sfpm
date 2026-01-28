@@ -1,5 +1,7 @@
-import { ux } from '@oclif/core';
 import chalk from 'chalk';
+import ora, { Ora } from 'ora';
+import boxen from 'boxen';
+import { ux } from '@oclif/core';
 import type { PackageBuilder } from '@b64/sfpm-core';
 import type {
     BuildStartEvent,
@@ -62,7 +64,7 @@ interface TimingInfo {
 export class BuildProgressRenderer {
     private mode: OutputMode;
     private logger: OutputLogger;
-    private action: typeof ux.action;
+    private spinner?: Ora;
     private events: EventLog[] = [];
     private timings: TimingInfo = {
         analyzerStarts: new Map(),
@@ -74,9 +76,8 @@ export class BuildProgressRenderer {
     };
     private currentAction?: string;
 
-    constructor(options: { logger: OutputLogger; action: typeof ux.action; mode: OutputMode }) {
+    constructor(options: { logger: OutputLogger; mode: OutputMode }) {
         this.logger = options.logger;
-        this.action = options.action;
         this.mode = options.mode;
     }
 
@@ -127,7 +128,7 @@ export class BuildProgressRenderer {
 
         if (this.mode === 'interactive') {
             this.logger.log(
-                chalk.bold(`\n🔨 Building package: ${chalk.cyan(event.packageName)} (${event.packageType})\n`)
+                chalk.bold(`\nBuilding package: ${chalk.cyan(event.packageName)} (${event.packageType})\n`)
             );
         }
     }
@@ -157,9 +158,10 @@ export class BuildProgressRenderer {
             error: event.error,
         };
 
-        // Stop any active action
-        if (this.currentAction && this.mode === 'interactive') {
-            this.action.stop(chalk.red('failed'));
+        // Stop any active spinner with failure
+        if (this.spinner && this.mode === 'interactive') {
+            this.spinner.fail(chalk.red('failed'));
+            this.spinner = undefined;
             this.currentAction = undefined;
         }
 
@@ -175,18 +177,19 @@ export class BuildProgressRenderer {
 
         if (this.mode === 'interactive') {
             this.currentAction = 'stage';
-            this.action.start('Staging package');
+            this.spinner = ora(`Staging package`).start();
         }
     }
 
     private handleStageComplete(event: StageCompleteEvent): void {
         this.logEvent('stage:complete', event);
 
-        if (this.mode === 'interactive') {
+        if (this.mode === 'interactive' && this.spinner) {
             const duration = this.calculateDuration(this.timings.stageStart, event.timestamp);
-            this.action.stop(
-                chalk.gray(`staged ${event.componentCount} components (${duration})`)
+            this.spinner.succeed(
+                chalk.gray(`Successfully staged ${event.packageName} with ${event.componentCount} component(s) (${duration})`)
             );
+            this.spinner = undefined;
             this.currentAction = undefined;
         }
     }
@@ -205,18 +208,18 @@ export class BuildProgressRenderer {
         this.timings.analyzerStarts.set(event.analyzerName, event.timestamp);
 
         if (this.mode === 'interactive') {
-            this.currentAction = `analyzer:${event.analyzerName}`;
-            this.action.start(`  ${event.analyzerName}`);
+            this.spinner = ora(`  ${event.analyzerName}`).start();
         }
     }
 
     private handleAnalyzerComplete(event: AnalyzerCompleteEvent): void {
         this.logEvent('analyzer:complete', event);
 
-        if (this.mode === 'interactive') {
+        if (this.mode === 'interactive' && this.spinner) {
             const startTime = this.timings.analyzerStarts.get(event.analyzerName);
             const duration = this.calculateDuration(startTime, event.timestamp);
-            this.action.stop(chalk.gray(duration));
+            this.spinner.succeed(chalk.gray(duration));
+            this.spinner = undefined;
             this.currentAction = undefined;
         }
     }
@@ -236,16 +239,17 @@ export class BuildProgressRenderer {
 
         if (this.mode === 'interactive') {
             this.currentAction = 'connection';
-            this.action.start(`Connecting to ${event.orgType}: ${event.username}`);
+            this.spinner = ora(`Connecting to ${event.orgType}: ${event.username}`).start();
         }
     }
 
     private handleConnectionComplete(event: ConnectionCompleteEvent): void {
         this.logEvent('connection:complete', event);
 
-        if (this.mode === 'interactive') {
+        if (this.mode === 'interactive' && this.spinner) {
             const duration = this.calculateDuration(this.timings.connectionStart, event.timestamp);
-            this.action.stop(chalk.gray(duration));
+            this.spinner.succeed(chalk.gray(`Successfully connected to: ${event.username} (${duration})`));
+            this.spinner = undefined;
             this.currentAction = undefined;
         }
     }
@@ -268,24 +272,72 @@ export class BuildProgressRenderer {
 
         if (this.mode === 'interactive') {
             this.currentAction = 'create';
-            this.action.start(`Creating package version ${event.versionNumber}`);
+            this.spinner = ora(`Creating package version ${event.packageName}@${event.versionNumber}`).start();
         }
     }
 
     private handleCreateProgress(event: CreateProgressEvent): void {
         this.logEvent('unlocked:create:progress', event);
 
-        if (this.mode === 'interactive' && event.message) {
-            this.action.status = event.message;
+        if (this.mode === 'interactive' && this.spinner && event.message) {
+            this.spinner.text = `Creating package version ${event.packageName}@${event.message}`;
         }
     }
 
     private handleCreateComplete(event: CreateCompleteEvent): void {
         this.logEvent('unlocked:create:complete', event);
 
-        if (this.mode === 'interactive') {
-            this.action.stop(chalk.green(`created ${event.packageVersionId}`));
+        if (this.mode === 'interactive' && this.spinner) {
+            this.spinner.succeed(chalk.green(`Package ${event.packageName}@${event.versionNumber} successfully created with Id: ${event.packageVersionId}`));
+            this.spinner = undefined;
             this.currentAction = undefined;
+
+            // Build package details entries
+            const entries: Array<[string, string]> = [
+                ['Package Name', event.packageName],
+                ['Version Number', event.versionNumber],
+                ['Version ID', event.packageVersionId],
+            ];
+            
+            if (event.packageId) {
+                entries.push(['Package ID', event.packageId]);
+            }
+            if (event.status) {
+                entries.push(['Status', event.status]);
+            }
+            if (event.totalNumberOfMetadataFiles !== undefined) {
+                entries.push(['Metadata Files', String(event.totalNumberOfMetadataFiles)]);
+            }
+            if (event.codeCoverage !== null && event.codeCoverage !== undefined) {
+                const coverageColor = event.hasPassedCodeCoverageCheck ? chalk.green : chalk.yellow;
+                entries.push(['Code Coverage', coverageColor(`${event.codeCoverage}%`)]);
+            }
+            if (event.createdDate) {
+                entries.push(['Created', event.createdDate]);
+            }
+
+            // Find the longest key for alignment
+            const maxKeyLength = Math.max(...entries.map(([key]) => key.length));
+
+            // Format as aligned key-value pairs
+            const formattedLines = entries.map(([key, value]) => {
+                const paddedKey = key.padEnd(maxKeyLength);
+                return `${chalk.cyan(paddedKey)} │ ${value}`;
+            });
+
+            const tableOutput = boxen(formattedLines.join('\n'), {
+                padding: 1,
+                margin: 0,
+                borderStyle: 'round',
+                borderColor: 'cyan',
+                title: 'Package Version Created',
+                titleAlignment: 'center',
+            });
+
+            // Display the box
+            this.logger.log('');
+            this.logger.log(tableOutput);
+            this.logger.log('');
         }
     }
 
@@ -294,15 +346,20 @@ export class BuildProgressRenderer {
 
         if (this.mode === 'interactive') {
             this.currentAction = `task:${event.taskName}`;
-            this.action.start(`  ${event.taskType}: ${event.taskName}`);
+            this.spinner = ora(`  ${event.taskType}: ${event.taskName}`).start();
         }
     }
 
     private handleTaskComplete(event: TaskCompleteEvent): void {
         this.logEvent('task:complete', event);
 
-        if (this.mode === 'interactive') {
-            this.action.stop(event.success ? chalk.green('✓') : chalk.red('✗'));
+        if (this.mode === 'interactive' && this.spinner) {
+            if (event.success) {
+                this.spinner.succeed();
+            } else {
+                this.spinner.fail();
+            }
+            this.spinner = undefined;
             this.currentAction = undefined;
         }
     }
@@ -345,8 +402,9 @@ export class BuildProgressRenderer {
      * Handle error display
      */
     public handleError(error: Error): void {
-        if (this.currentAction && this.mode === 'interactive') {
-            this.action.stop(chalk.red('failed'));
+        if (this.spinner && this.mode === 'interactive') {
+            this.spinner.fail(chalk.red('failed'));
+            this.spinner = undefined;
         }
 
         if (this.mode !== 'json') {

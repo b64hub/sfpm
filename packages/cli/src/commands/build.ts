@@ -61,7 +61,7 @@ export default class Build extends SfpmCommand {
     // Create logger for audit trail (separate from UI events)
     const logger: Logger = {
       log: (msg: string) => this.log(msg),
-      info: (msg: string) => this.log(msg),
+      info: (msg: string) => this.debug(msg),
       warn: (msg: string) => this.warn(msg),
       error: (msg: string) => this.error(msg),
       debug: (msg: string) => this.debug(msg),
@@ -83,7 +83,6 @@ export default class Build extends SfpmCommand {
         log: (msg: string) => this.log(msg),
         error: (msgOrError: string | Error) => this.error(msgOrError),
       },
-      action: ux.action,
       mode,
     });
     renderer.attachTo(builder);

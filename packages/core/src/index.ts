@@ -2,6 +2,10 @@ import { EventEmitter } from "node:events";
 import ProjectService from "./project/project-service.js";
 import { AllBuildEvents } from "./types/events.js";
 
+// Import builders to trigger decorator registration
+import './package/builders/unlocked-package-builder.js';
+import './package/builders/source-package-builder.js';
+
 export class SfpmCore extends EventEmitter<AllBuildEvents> {
   project!: ProjectService;
 

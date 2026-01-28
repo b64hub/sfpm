@@ -507,6 +507,15 @@ export class PackageFactory {
         sfpmPackage.packageDefinition = packageDefinition;
         sfpmPackage.version = packageDefinition.versionNumber;
 
+        // Resolve package ID from aliases for unlocked packages
+        if (packageType === PackageType.Unlocked && sfpmPackage instanceof SfpmUnlockedPackage) {
+            const projectDef = this.projectConfig.getProjectDefinition();
+            const packageId = projectDef.packageAliases?.[packageName];
+            if (packageId) {
+                sfpmPackage.packageId = packageId;
+            }
+        }
+
         return sfpmPackage;
     }
 

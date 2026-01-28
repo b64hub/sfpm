@@ -1,7 +1,6 @@
 import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
 import { Logger } from "../../../types/logger.js";
 import ProjectConfig from "../../../project/project-config.js";
-import { ComponentSet } from "@salesforce/source-deploy-retrieve";
 import fs from 'fs-extra';
 import path from 'path';
 
@@ -31,10 +30,6 @@ export class SourceCopyStep implements AssemblyStep {
 
         try {
             await fs.copy(sourceDir, destinationDir);
-            
-            // Count components in the copied source
-            const componentSet = ComponentSet.fromSource(destinationDir);
-            output.componentCount = componentSet.size;
         } catch (error: any) {
             throw new Error(`[SourceCopyStep] Failed to copy source: ${error.message}`);
         }
