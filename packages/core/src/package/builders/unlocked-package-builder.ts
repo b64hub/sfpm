@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs-extra';
+import EventEmitter from 'node:events';
 
 import { Org, SfProject, Lifecycle } from '@salesforce/core';
 import { Duration } from '@salesforce/kit';
@@ -10,6 +11,7 @@ import { BuildTask, BuildOptions } from '../package-builder.js';
 import SfpmPackage, { SfpmUnlockedPackage } from '../sfpm-package.js';
 import { PackageType, SfpmUnlockedPackageBuildOptions } from '../../types/package.js';
 import ProjectService from '../../project/project-service.js';
+import { UnlockedBuildEvents } from '../../types/events.js';
 
 import AssembleArtifactTask from './tasks/assemble-artifact-task.js';
 import GitTagTask from './tasks/git-tag-task.js';
@@ -22,7 +24,7 @@ export interface UnlockedPackageBuilderOptions extends BuildOptions {
 }
 
 @RegisterBuilder(PackageType.Unlocked)
-export default class UnlockedPackageBuilder implements Builder {
+export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEvents> implements Builder {
     private workingDirectory: string;
     private sfpmPackage: SfpmUnlockedPackage;
 
@@ -34,6 +36,7 @@ export default class UnlockedPackageBuilder implements Builder {
     private logger?: Logger;
 
     constructor(workingDirectory: string, sfpmPackage: SfpmPackage, logger?: Logger) {
+        super();
         if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
             throw new Error(
                 `UnlockedPackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`,
@@ -96,9 +99,25 @@ export default class UnlockedPackageBuilder implements Builder {
         const waitTime = Duration.minutes(buildOptions?.waitTime || 120);
         const pollingFrequency = Duration.seconds(30);
 
+        // Emit create start event
+        this.emit('unlocked:create:start', {
+            timestamp: new Date(),
+            packageName: this.sfpmPackage.packageName,
+            packageId: this.sfpmPackage.packageId,
+            versionNumber: this.sfpmPackage.version || '',
+        });
+
         // Setup lifecycle listener for progress logging
         const lifecycle = Lifecycle.getInstance();
         const progressListener = async (data: PackageVersionCreateRequestResult) => {
+            // Emit progress event
+            this.emit('unlocked:create:progress', {
+                timestamp: new Date(),
+                packageName: this.sfpmPackage.packageName,
+                status: data.Status,
+                message: data.Status,
+            });
+
             if (this.logger) {
                 this.logger.info(`Status: ${data.Status}, Next Status check in ${pollingFrequency.seconds} seconds`);
                 if (data.Error?.length) {
@@ -134,6 +153,16 @@ export default class UnlockedPackageBuilder implements Builder {
 
             if (result.SubscriberPackageVersionId) {
                 this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
+                
+                // Emit create complete event
+                this.emit('unlocked:create:complete', {
+                    timestamp: new Date(),
+                    packageName: this.sfpmPackage.packageName,
+                    packageVersionId: result.SubscriberPackageVersionId,
+                    versionNumber: this.sfpmPackage.version || '',
+                    subscriberPackageVersionId: result.SubscriberPackageVersionId,
+                });
+                
                 // Update other metadata if available in result
                 if (result.Status === 'Success') {
                     // We could fetch more info here if needed
@@ -169,6 +198,12 @@ export default class UnlockedPackageBuilder implements Builder {
             return;
         }
 
+        this.emit('unlocked:prune:start', {
+            timestamp: new Date(),
+            packageName: this.sfpmPackage.packageName,
+            reason: 'Org-dependent package requires pruning',
+        });
+
         const projectConfig = (await ProjectService.getInstance(this.workingDirectory)).getProjectConfig();
         const prunedDefinition = projectConfig.getPrunedDefinition(this.sfpmPackage.packageName, {
             removeCustomProperties: true,
@@ -176,5 +211,11 @@ export default class UnlockedPackageBuilder implements Builder {
         });
 
         await fs.writeJson(path.join(this.workingDirectory, 'sfdx-project.json'), prunedDefinition, { spaces: 4 });
+
+        this.emit('unlocked:prune:complete', {
+            timestamp: new Date(),
+            packageName: this.sfpmPackage.packageName,
+            prunedFiles: 1,
+        });
     }
 }

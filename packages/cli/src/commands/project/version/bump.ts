@@ -74,13 +74,19 @@ export default class ProjectVersionBump extends SfpmCommand {
     public async execute(): Promise<void> {
         const { args, flags } = await this.parse(ProjectVersionBump)
 
-        const projectFile = flags.projectfile;
+        // If projectfile is default or a file name (not a path), use current directory
+        // Otherwise use the directory containing the projectfile
+        const projectPath = flags.projectfile === 'sfdx-project.json' 
+            ? process.cwd() 
+            : flags.projectfile.includes('/') 
+                ? flags.projectfile.substring(0, flags.projectfile.lastIndexOf('/'))
+                : process.cwd();
 
         // 1. Initialize Core
         const core = await SfpmCore.create({
             apiKey: 'unused',
             verbose: false,
-            projectPath: projectFile
+            projectPath: projectPath
         });
 
         const versionManager = core.project.getVersionManager();

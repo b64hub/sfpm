@@ -11,6 +11,7 @@ export interface AssemblyOptions {
 export interface AssemblyOutput {
     stagingDirectory: string;
     projectDefinitionPath?: string;
+    componentCount?: number;
     // mdapiConversion?: {
     //     payload: SfpmPackageManifest;
     //     result: ConvertResult;

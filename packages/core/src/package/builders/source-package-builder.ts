@@ -1,14 +1,16 @@
+import EventEmitter from 'node:events';
 import { Builder, RegisterBuilder } from "./builder-registry.js";
 import { BuildTask } from "../package-builder.js";
 import { PackageType } from "../../types/package.js";
 import SfpmPackage, { SfpmSourcePackage } from "../sfpm-package.js";
 import { Logger } from "../../types/logger.js";
+import { SourceBuildEvents } from "../../types/events.js";
 
 export interface SourcePackageBuilderOptions {
 }
 
 @RegisterBuilder(PackageType.Source)
-export default class SourcePackageBuilder implements Builder {
+export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents> implements Builder {
     private workingDirectory: string;
     private sfpmPackage: SfpmSourcePackage;
     private logger?: Logger;
@@ -21,6 +23,7 @@ export default class SourcePackageBuilder implements Builder {
         sfpmPackage: SfpmPackage,
         logger?: Logger,
     ) {
+        super();
         if (!(sfpmPackage instanceof SfpmSourcePackage)) {
             throw new Error(`SourcePackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
         }
@@ -52,7 +55,20 @@ export default class SourcePackageBuilder implements Builder {
     }
 
     public async buildPackage() {
+        this.emit('source:assemble:start', {
+            timestamp: new Date(),
+            packageName: this.sfpmPackage.packageName,
+            sourcePath: this.workingDirectory,
+        });
+
         this.handleApexTestClasses(this.sfpmPackage);
+
+        this.emit('source:assemble:complete', {
+            timestamp: new Date(),
+            packageName: this.sfpmPackage.packageName,
+            sourcePath: this.workingDirectory,
+            artifactPath: this.workingDirectory,
+        });
     }
 
 

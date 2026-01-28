@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
 import ProjectService from "./project/project-service.js";
-import { CoreEvents } from "./types/events.js";
+import { AllBuildEvents } from "./types/events.js";
 
-export class SfpmCore extends EventEmitter<CoreEvents> {
+export class SfpmCore extends EventEmitter<AllBuildEvents> {
   project!: ProjectService;
 
   private constructor() {

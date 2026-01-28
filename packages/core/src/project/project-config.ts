@@ -53,30 +53,32 @@ export default class ProjectConfig {
 
     /**
      * Finds a package definition by name.
-     * Uses SfProject's built-in getPackage method for efficient lookup.
+     * Searches through packageDirectories for a matching 'package' field.
      */
     public getPackageDefinition(packageName: string): PackageDefinition {
-        // Use SfProject's built-in method to find the package
-        const pkg = this.project.getPackage(packageName);
+        // Get all package directories and search for matching package name
+        const allPackages = this.getAllPackageDirectories();
+        const pkg = allPackages.find(p => p.package === packageName);
+        
         if (!pkg) {
             throw new Error(`Package ${packageName} not found in project definition`);
         }
-        // Cast to our extended type since SfProject preserves custom properties
-        return pkg as PackageDefinition;
+        
+        return pkg;
     }
 
     /**
      * Finds a package definition by its path.
+     * Uses SfProject's native getPackage() method for efficient lookup.
      */
     public getPackageDefinitionByPath(packagePath: string): PackageDefinition {
-        const allPackages = this.getAllPackageDirectories();
-        const pkg = allPackages.find(p => p.path === packagePath);
+        const pkg = this.project.getPackage(packagePath);
         
         if (!pkg || !pkg.package) {
             throw new Error(`No package found with path: ${packagePath}`);
         }
         
-        return pkg;
+        return pkg as PackageDefinition;
     }
 
     /**
@@ -118,11 +120,14 @@ export default class ProjectConfig {
     }
 
     /**
-     * Returns all unique package names.
-     * Uses SfProject's built-in method for efficient lookup.
+     * Returns all unique package names from the 'package' field.
+     * Filters out entries without a package name.
      */
     public getAllPackageNames(): string[] {
-        return this.project.getUniquePackageNames();
+        const allDirs = this.getAllPackageDirectories();
+        return allDirs
+            .filter(dir => dir.package)
+            .map(dir => dir.package as string);
     }
 
     /**

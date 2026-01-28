@@ -1,0 +1,356 @@
+import { ux } from '@oclif/core';
+import chalk from 'chalk';
+import type { PackageBuilder } from '@b64/sfpm-core';
+import type {
+    BuildStartEvent,
+    BuildCompleteEvent,
+    BuildErrorEvent,
+    StageStartEvent,
+    StageCompleteEvent,
+    AnalyzersStartEvent,
+    AnalyzerStartEvent,
+    AnalyzerCompleteEvent,
+    AnalyzersCompleteEvent,
+    ConnectionStartEvent,
+    ConnectionCompleteEvent,
+    BuilderStartEvent,
+    BuilderCompleteEvent,
+    CreateStartEvent,
+    CreateProgressEvent,
+    CreateCompleteEvent,
+    TaskStartEvent,
+    TaskCompleteEvent,
+} from '@b64/sfpm-core';
+
+/**
+ * Output modes for build progress rendering
+ */
+export type OutputMode = 'interactive' | 'quiet' | 'json';
+
+/**
+ * Logger interface for rendering output
+ */
+interface OutputLogger {
+    log: (message: string) => void;
+    error: (message: string | Error) => void;
+}
+
+/**
+ * Collected event data for JSON output
+ */
+interface EventLog {
+    type: string;
+    timestamp: Date;
+    data: any;
+}
+
+/**
+ * Timing information tracked internally
+ */
+interface TimingInfo {
+    buildStart?: Date;
+    stageStart?: Date;
+    analyzersStart?: Date;
+    analyzerStarts: Map<string, Date>;
+    connectionStart?: Date;
+    builderStart?: Date;
+}
+
+/**
+ * Renders build progress in different output modes
+ */
+export class BuildProgressRenderer {
+    private mode: OutputMode;
+    private logger: OutputLogger;
+    private action: typeof ux.action;
+    private events: EventLog[] = [];
+    private timings: TimingInfo = {
+        analyzerStarts: new Map(),
+    };
+    private buildResult?: {
+        success: boolean;
+        packageVersionId?: string;
+        error?: Error;
+    };
+    private currentAction?: string;
+
+    constructor(options: { logger: OutputLogger; action: typeof ux.action; mode: OutputMode }) {
+        this.logger = options.logger;
+        this.action = options.action;
+        this.mode = options.mode;
+    }
+
+    /**
+     * Attach this renderer to a PackageBuilder instance
+     */
+    public attachTo(builder: PackageBuilder): void {
+        // Core build events
+        builder.on('build:start', this.handleBuildStart.bind(this) as any);
+        builder.on('build:complete', this.handleBuildComplete.bind(this) as any);
+        builder.on('build:error', this.handleBuildError.bind(this) as any);
+
+        // Stage events
+        builder.on('stage:start', this.handleStageStart.bind(this) as any);
+        builder.on('stage:complete', this.handleStageComplete.bind(this) as any);
+
+        // Analyzer events
+        builder.on('analyzers:start', this.handleAnalyzersStart.bind(this) as any);
+        builder.on('analyzer:start', this.handleAnalyzerStart.bind(this) as any);
+        builder.on('analyzer:complete', this.handleAnalyzerComplete.bind(this) as any);
+        builder.on('analyzers:complete', this.handleAnalyzersComplete.bind(this) as any);
+
+        // Connection events
+        builder.on('connection:start', this.handleConnectionStart.bind(this) as any);
+        builder.on('connection:complete', this.handleConnectionComplete.bind(this) as any);
+
+        // Builder events
+        builder.on('builder:start', this.handleBuilderStart.bind(this) as any);
+        builder.on('builder:complete', this.handleBuilderComplete.bind(this) as any);
+
+        // Unlocked package specific events
+        builder.on('unlocked:create:start', this.handleCreateStart.bind(this) as any);
+        builder.on('unlocked:create:progress', this.handleCreateProgress.bind(this) as any);
+        builder.on('unlocked:create:complete', this.handleCreateComplete.bind(this) as any);
+
+        // Task events
+        builder.on('task:start', this.handleTaskStart.bind(this) as any);
+        builder.on('task:complete', this.handleTaskComplete.bind(this) as any);
+    }
+
+    // ========================================================================
+    // Event Handlers
+    // ========================================================================
+
+    private handleBuildStart(event: BuildStartEvent): void {
+        this.logEvent('build:start', event);
+        this.timings.buildStart = event.timestamp;
+
+        if (this.mode === 'interactive') {
+            this.logger.log(
+                chalk.bold(`\n🔨 Building package: ${chalk.cyan(event.packageName)} (${event.packageType})\n`)
+            );
+        }
+    }
+
+    private handleBuildComplete(event: BuildCompleteEvent): void {
+        this.logEvent('build:complete', event);
+        this.buildResult = {
+            success: true,
+            packageVersionId: event.packageVersionId,
+        };
+
+        if (this.mode === 'interactive') {
+            const duration = this.calculateDuration(this.timings.buildStart, event.timestamp);
+            this.logger.log(
+                chalk.green.bold(`\n✓ Build complete!`) + chalk.gray(` (${duration})`)
+            );
+            if (event.packageVersionId) {
+                this.logger.log(chalk.gray(`  Package Version ID: ${event.packageVersionId}`));
+            }
+        }
+    }
+
+    private handleBuildError(event: BuildErrorEvent): void {
+        this.logEvent('build:error', event);
+        this.buildResult = {
+            success: false,
+            error: event.error,
+        };
+
+        // Stop any active action
+        if (this.currentAction && this.mode === 'interactive') {
+            this.action.stop(chalk.red('failed'));
+            this.currentAction = undefined;
+        }
+
+        // Always show errors, even in quiet mode
+        this.logger.error(
+            chalk.red.bold(`✗ Build failed in ${event.phase} phase: `) + event.error.message
+        );
+    }
+
+    private handleStageStart(event: StageStartEvent): void {
+        this.logEvent('stage:start', event);
+        this.timings.stageStart = event.timestamp;
+
+        if (this.mode === 'interactive') {
+            this.currentAction = 'stage';
+            this.action.start('Staging package');
+        }
+    }
+
+    private handleStageComplete(event: StageCompleteEvent): void {
+        this.logEvent('stage:complete', event);
+
+        if (this.mode === 'interactive') {
+            const duration = this.calculateDuration(this.timings.stageStart, event.timestamp);
+            this.action.stop(
+                chalk.gray(`staged ${event.componentCount} components (${duration})`)
+            );
+            this.currentAction = undefined;
+        }
+    }
+
+    private handleAnalyzersStart(event: AnalyzersStartEvent): void {
+        this.logEvent('analyzers:start', event);
+        this.timings.analyzersStart = event.timestamp;
+
+        if (this.mode === 'interactive' && event.analyzerCount > 0) {
+            this.logger.log(chalk.dim(`Running ${event.analyzerCount} analyzers...`));
+        }
+    }
+
+    private handleAnalyzerStart(event: AnalyzerStartEvent): void {
+        this.logEvent('analyzer:start', event);
+        this.timings.analyzerStarts.set(event.analyzerName, event.timestamp);
+
+        if (this.mode === 'interactive') {
+            this.currentAction = `analyzer:${event.analyzerName}`;
+            this.action.start(`  ${event.analyzerName}`);
+        }
+    }
+
+    private handleAnalyzerComplete(event: AnalyzerCompleteEvent): void {
+        this.logEvent('analyzer:complete', event);
+
+        if (this.mode === 'interactive') {
+            const startTime = this.timings.analyzerStarts.get(event.analyzerName);
+            const duration = this.calculateDuration(startTime, event.timestamp);
+            this.action.stop(chalk.gray(duration));
+            this.currentAction = undefined;
+        }
+    }
+
+    private handleAnalyzersComplete(event: AnalyzersCompleteEvent): void {
+        this.logEvent('analyzers:complete', event);
+
+        if (this.mode === 'interactive' && event.completedCount > 0) {
+            const duration = this.calculateDuration(this.timings.analyzersStart, event.timestamp);
+            this.logger.log(chalk.dim(`  Completed ${event.completedCount} analyzers (${duration})\n`));
+        }
+    }
+
+    private handleConnectionStart(event: ConnectionStartEvent): void {
+        this.logEvent('connection:start', event);
+        this.timings.connectionStart = event.timestamp;
+
+        if (this.mode === 'interactive') {
+            this.currentAction = 'connection';
+            this.action.start(`Connecting to ${event.orgType}: ${event.username}`);
+        }
+    }
+
+    private handleConnectionComplete(event: ConnectionCompleteEvent): void {
+        this.logEvent('connection:complete', event);
+
+        if (this.mode === 'interactive') {
+            const duration = this.calculateDuration(this.timings.connectionStart, event.timestamp);
+            this.action.stop(chalk.gray(duration));
+            this.currentAction = undefined;
+        }
+    }
+
+    private handleBuilderStart(event: BuilderStartEvent): void {
+        this.logEvent('builder:start', event);
+        this.timings.builderStart = event.timestamp;
+
+        if (this.mode === 'interactive') {
+            this.logger.log(chalk.dim(`Executing ${event.packageType} package builder...\n`));
+        }
+    }
+
+    private handleBuilderComplete(event: BuilderCompleteEvent): void {
+        this.logEvent('builder:complete', event);
+    }
+
+    private handleCreateStart(event: CreateStartEvent): void {
+        this.logEvent('unlocked:create:start', event);
+
+        if (this.mode === 'interactive') {
+            this.currentAction = 'create';
+            this.action.start(`Creating package version ${event.versionNumber}`);
+        }
+    }
+
+    private handleCreateProgress(event: CreateProgressEvent): void {
+        this.logEvent('unlocked:create:progress', event);
+
+        if (this.mode === 'interactive' && event.message) {
+            this.action.status = event.message;
+        }
+    }
+
+    private handleCreateComplete(event: CreateCompleteEvent): void {
+        this.logEvent('unlocked:create:complete', event);
+
+        if (this.mode === 'interactive') {
+            this.action.stop(chalk.green(`created ${event.packageVersionId}`));
+            this.currentAction = undefined;
+        }
+    }
+
+    private handleTaskStart(event: TaskStartEvent): void {
+        this.logEvent('task:start', event);
+
+        if (this.mode === 'interactive') {
+            this.currentAction = `task:${event.taskName}`;
+            this.action.start(`  ${event.taskType}: ${event.taskName}`);
+        }
+    }
+
+    private handleTaskComplete(event: TaskCompleteEvent): void {
+        this.logEvent('task:complete', event);
+
+        if (this.mode === 'interactive') {
+            this.action.stop(event.success ? chalk.green('✓') : chalk.red('✗'));
+            this.currentAction = undefined;
+        }
+    }
+
+    // ========================================================================
+    // Utility Methods
+    // ========================================================================
+
+    private logEvent(type: string, data: any): void {
+        this.events.push({ type, timestamp: data.timestamp, data });
+    }
+
+    private calculateDuration(start: Date | undefined, end: Date): string {
+        if (!start) return '';
+        const ms = end.getTime() - start.getTime();
+        if (ms < 1000) return `${ms}ms`;
+        if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+        const minutes = Math.floor(ms / 60000);
+        const seconds = Math.floor((ms % 60000) / 1000);
+        return `${minutes}m ${seconds}s`;
+    }
+
+    /**
+     * Get JSON output for --json flag
+     */
+    public getJsonOutput(): any {
+        const duration = this.timings.buildStart && this.events.length > 0
+            ? this.events[this.events.length - 1].timestamp.getTime() - this.timings.buildStart.getTime()
+            : 0;
+
+        return {
+            status: this.buildResult?.success ? 'success' : 'error',
+            duration,
+            events: this.events,
+            result: this.buildResult,
+        };
+    }
+
+    /**
+     * Handle error display
+     */
+    public handleError(error: Error): void {
+        if (this.currentAction && this.mode === 'interactive') {
+            this.action.stop(chalk.red('failed'));
+        }
+
+        if (this.mode !== 'json') {
+            // Error already logged by handleBuildError event
+        }
+    }
+}
