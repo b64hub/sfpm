@@ -1,6 +1,6 @@
 import { ComponentSet, SourceComponent } from "@salesforce/source-deploy-retrieve";
 import { ProjectDefinition, PackageDefinition } from "../types/project.js";
-import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata } from "../types/package.js";
+import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata, SfpmUnlockedPackageBuildOptions } from "../types/package.js";
 import * as _ from "lodash";
 import path from "path";
 
@@ -135,6 +135,14 @@ export default abstract class SfpmPackage {
 
         segments[3] = buildNumber;
         this.version = segments.join('.');
+    }
+
+    /**
+     * Set orchestration options for the package build.
+     * Subclasses can override to handle type-specific options.
+     */
+    public setOrchestrationOptions(options: any): void {
+        // Base implementation does nothing - subclasses override as needed
     }
 }
 
@@ -434,8 +442,40 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
     set isOrgDependent(val: boolean) {
         this.metadata.identity.isOrgDependent = val;
     }
+
+    override setOrchestrationOptions(options: Partial<SfpmUnlockedPackageBuildOptions>): void {
+        if (options.installationkey !== undefined) {
+            _.set(this.metadata, 'orchestration.buildOptions.installationkey', options.installationkey);
+        }
+        if (options.installationkeybypass !== undefined) {
+            _.set(this.metadata, 'orchestration.buildOptions.installationkeybypass', options.installationkeybypass);
+        }
+        if (options.isSkipValidation !== undefined) {
+            _.set(this.metadata, 'orchestration.buildOptions.isSkipValidation', options.isSkipValidation);
+        }
+    }
 }
 
 export class SfpmSourcePackage extends SfpmMetadataPackage {
 
+}
+
+/**
+ * Factory function to create the appropriate SfpmPackage instance based on package type
+ */
+export function createSfpmPackage(
+    packageType: PackageType,
+    packageName: string,
+    projectDirectory: string
+): SfpmPackage {
+    switch (packageType) {
+        case PackageType.Unlocked:
+            return new SfpmUnlockedPackage(packageName, projectDirectory);
+        case PackageType.Source:
+            return new SfpmSourcePackage(packageName, projectDirectory);
+        case PackageType.Data:
+            return new SfpmDataPackage(packageName, projectDirectory);
+        default:
+            throw new Error(`Unsupported package type: ${packageType}`);
+    }
 }

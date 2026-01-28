@@ -5,9 +5,9 @@ import { PackageType } from "../types/package.js";
 import ProjectConfig from "../project/project-config.js";
 import { Builder, BuilderRegistry } from "./builders/builder-registry.js";
 import { AnalyzerRegistry } from "./analyzers/analyzer-registry.js";
-import SfpmPackage, { SfpmMetadataPackage, SfpmDataPackage, SfpmSourcePackage, SfpmUnlockedPackage } from "./sfpm-package.js";
+import SfpmPackage, { createSfpmPackage } from "./sfpm-package.js";
 import PackageAssembler from "./assemblers/package-assembler.js";
-import { SfpmPackageSource } from "../types/package.js";
+import { GitService } from "../git/git-service.js";
 
 import { Logger } from "../types/logger.js";
 
@@ -16,7 +16,6 @@ export interface BuildOptions {
     buildNumber?: string;
     orgDefinitionPath?: string;
     destructiveManifestPath?: string;
-    sourceContext?: SfpmPackageSource;
     devhubUsername?: string;
     installationKey?: string;
     installationKeyBypass?: boolean;
@@ -36,37 +35,38 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
     private options: BuildOptions;
     private logger: Logger | undefined;
     private projectConfig: ProjectConfig;
+    private gitService?: GitService;
 
-    constructor(projectConfig: ProjectConfig, options?: BuildOptions, logger?: Logger) {
+    constructor(projectConfig: ProjectConfig, options?: BuildOptions, logger?: Logger, gitService?: GitService) {
         super();
         this.options = options || {};
         this.logger = logger;
         this.projectConfig = projectConfig;
+        this.gitService = gitService;
     }
 
-
+    /**
+     * @description Build a package and its un-built dependencies in the project
+     * 
+     */
     public async build(): Promise<void> { }
 
+
+    /**
+     * @description Build a single package by name
+     * @param packageName 
+     * @param projectDirectory 
+     * @returns 
+     */
     public async buildPackage(
         packageName: string,
         projectDirectory: string = process.cwd()
     ) {
 
-        await this.projectConfig.load();
         const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
         const packageType = packageDefinition?.type || PackageType.Unlocked;
 
-        let sfpmPackage: SfpmPackage;
-
-        if (packageType === PackageType.Unlocked) {
-            sfpmPackage = new SfpmUnlockedPackage(packageName, projectDirectory);
-        } else if (packageType === PackageType.Source) {
-            sfpmPackage = new SfpmSourcePackage(packageName, projectDirectory);
-        } else if (packageType === PackageType.Data) {
-            sfpmPackage = new SfpmDataPackage(packageName, projectDirectory);
-        } else {
-            throw new Error(`Unsupported package type: ${packageType}`);
-        }
+        const sfpmPackage = createSfpmPackage(packageType, packageName, projectDirectory);
 
         sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();
         sfpmPackage.packageDefinition = packageDefinition;
@@ -86,21 +86,18 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
             sfpmPackage.orgDefinitionPath = this.options.orgDefinitionPath;
         }
 
-        if (this.options.sourceContext) {
-            sfpmPackage.metadata.source = this.options.sourceContext;
+        // Set source context from git repository
+        if (!this.gitService) {
+            this.gitService = await GitService.initialize(projectDirectory, this.logger);
         }
+        sfpmPackage.metadata.source = await this.gitService.getPackageSourceContext();
 
-        // Apply overrides from options
-        if (this.options.installationKey) {
-            _.set(sfpmPackage.metadata, 'orchestration.buildOptions.installationkey', this.options.installationKey);
-        }
-        if (this.options.installationKeyBypass) {
-            _.set(sfpmPackage.metadata, 'orchestration.buildOptions.installationkeybypass', this.options.installationKeyBypass);
-        }
-        if (this.options.isSkipValidation !== undefined) {
-            _.set(sfpmPackage.metadata, 'orchestration.buildOptions.isSkipValidation', this.options.isSkipValidation);
-        }
-
+        // Apply orchestration options - each package type handles its own options
+        sfpmPackage.setOrchestrationOptions({
+            installationkey: this.options.installationKey,
+            installationkeybypass: this.options.installationKeyBypass,
+            isSkipValidation: this.options.isSkipValidation,
+        });
 
         await this.stagePackage(sfpmPackage);
         await this.runAnalyzers(sfpmPackage);

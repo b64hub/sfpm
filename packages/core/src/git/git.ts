@@ -197,7 +197,7 @@ export default class Git {
         return this.repositoryLocation;
     }
 
-    async deleteTempoRepoIfAny() {
+    async deleteTempRepoIfAny() {
         if (this.tempRepoLocation) this.tempRepoLocation.removeCallback();
     }
 
@@ -226,7 +226,7 @@ export default class Git {
         }
     }
 
-    isATemporaryRepo(): boolean {
+    isTempRepo(): boolean {
         return this._isATemporaryRepo;
     }
 

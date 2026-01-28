@@ -29,3 +29,5 @@ export * from './project/project-graph.js';
 export * from './types/package.js';
 export { PackageBuilder } from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
 export * from './types/logger.js';
+export { GitService } from './git/git-service.js';
+export { default as Git } from './git/git.js';
