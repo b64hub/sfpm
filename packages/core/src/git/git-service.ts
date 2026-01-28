@@ -1,6 +1,10 @@
 import Git from './git.js';
 import { SfpmPackageSource } from '../types/package.js';
 import { Logger } from '../types/logger.js';
+import fs from 'fs-extra';
+import path from 'path';
+import ignore from 'ignore';
+import tmp from 'tmp';
 
 /**
  * Domain-level service for Git operations in SFPM context.
@@ -25,14 +29,60 @@ export class GitService {
     }
 
     /**
-     * Factory method to create a GitService with a temporary repository
+     * Factory method to create a GitService with a temporary repository.
+     * Orchestrates the complex workflow of creating a temp repo with specific commit/branch.
      */
     static async createTemporaryRepository(
         logger: Logger,
         commitRef?: string,
         branch?: string
     ): Promise<GitService> {
-        const git = await Git.initiateRepoAtTempLocation(logger, commitRef, branch);
+        const locationOfCopiedDirectory = tmp.dirSync({ unsafeCleanup: true });
+
+        logger.info(`Copying the repository to ${locationOfCopiedDirectory.name}`);
+        const repoDir = locationOfCopiedDirectory.name;
+
+        // Copy source directory to temp dir respecting .gitignore
+        const gitignore = ignore();
+        const gitignorePath = path.join(process.cwd(), '.gitignore');
+        if (fs.existsSync(gitignorePath)) {
+            const gitignoreContent = fs.readFileSync(gitignorePath).toString();
+            gitignore.add(gitignoreContent);
+        }
+
+        fs.copySync(process.cwd(), repoDir, {
+            filter: (src) => {
+                const relativePath = path.relative(process.cwd(), src);
+
+                // Always include root directory
+                if (!relativePath) {
+                    return true;
+                }
+
+                // Check if file should be ignored
+                return !gitignore.ignores(relativePath);
+            },
+        });
+
+        // Initialize git on new repo
+        const git = new Git(repoDir, logger);
+        (git as any)._isATemporaryRepo = true;
+        (git as any).tempRepoLocation = locationOfCopiedDirectory;
+
+        await git.addSafeConfig(repoDir);
+        await git.getRemoteOriginUrl();
+        await git.fetch();
+        if (branch) {
+            await git.createBranch(branch);
+        }
+        if (commitRef) {
+            await git.checkout(commitRef, true);
+        }
+
+        logger.info(
+            `Successfully created temporary repository at ${repoDir} with commit ${commitRef ? commitRef : 'HEAD'}`
+        );
+
         return new GitService(git, logger);
     }
 
