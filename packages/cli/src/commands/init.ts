@@ -154,11 +154,12 @@ export default class Init extends SfpmCommand {
           : 'Add packages with: sf package create',
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       return {
         name: 'Package Directories',
         passed: false,
-        message: 'Could not read project configuration',
-        fix: 'Ensure sfdx-project.json is valid',
+        message: `Could not read project configuration: ${errorMessage}`,
+        fix: 'Ensure sfdx-project.json is valid and accessible',
       }
     }
   }

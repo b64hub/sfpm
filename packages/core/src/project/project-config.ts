@@ -113,10 +113,11 @@ export default class ProjectConfig {
 
     /**
      * Returns all package directories from the project.
-     * Uses SfProject's built-in method which includes name and fullPath.
+     * Uses raw project JSON to include all fields including 'package'.
      */
     public getAllPackageDirectories(): PackageDefinition[] {
-        return this.project.getPackageDirectories() as PackageDefinition[];
+        const projectDef = this.getProjectDefinition();
+        return projectDef.packageDirectories as PackageDefinition[];
     }
 
     /**
@@ -126,7 +127,7 @@ export default class ProjectConfig {
     public getAllPackageNames(): string[] {
         const allDirs = this.getAllPackageDirectories();
         return allDirs
-            .filter(dir => dir.package)
+            .filter(dir => 'package' in dir && dir.package)
             .map(dir => dir.package as string);
     }
 
