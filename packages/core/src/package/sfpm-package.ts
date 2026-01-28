@@ -462,27 +462,6 @@ export class SfpmSourcePackage extends SfpmMetadataPackage {
 }
 
 /**
- * Factory function to create the appropriate SfpmPackage instance based on package type.
- * This is a low-level factory - consider using PackageFactory for higher-level package creation.
- */
-export function createSfpmPackage(
-    packageType: PackageType,
-    packageName: string,
-    projectDirectory: string
-): SfpmPackage {
-    switch (packageType) {
-        case PackageType.Unlocked:
-            return new SfpmUnlockedPackage(packageName, projectDirectory);
-        case PackageType.Source:
-            return new SfpmSourcePackage(packageName, projectDirectory);
-        case PackageType.Data:
-            return new SfpmDataPackage(packageName, projectDirectory);
-        default:
-            throw new Error(`Unsupported package type: ${packageType}`);
-    }
-}
-
-/**
  * Factory for creating fully-configured SfpmPackage instances from ProjectConfig.
  * Bridges ProjectConfig (sfdx-project.json abstraction) with package construction.
  */
@@ -494,6 +473,26 @@ export class PackageFactory {
     }
 
     /**
+     * Low-level factory method to create the appropriate SfpmPackage instance based on package type
+     */
+    private createPackageInstance(
+        packageType: PackageType,
+        packageName: string,
+        projectDirectory: string
+    ): SfpmPackage {
+        switch (packageType) {
+            case PackageType.Unlocked:
+                return new SfpmUnlockedPackage(packageName, projectDirectory);
+            case PackageType.Source:
+                return new SfpmSourcePackage(packageName, projectDirectory);
+            case PackageType.Data:
+                return new SfpmDataPackage(packageName, projectDirectory);
+            default:
+                throw new Error(`Unsupported package type: ${packageType}`);
+        }
+    }
+
+    /**
      * Create a package by name, automatically resolving its definition and type
      */
     createFromName(packageName: string): SfpmPackage {
@@ -501,7 +500,7 @@ export class PackageFactory {
         const packageType = packageDefinition.type || PackageType.Unlocked;
         const projectDirectory = this.projectConfig.projectDirectory;
 
-        const sfpmPackage = createSfpmPackage(packageType, packageName, projectDirectory);
+        const sfpmPackage = this.createPackageInstance(packageType, packageName, projectDirectory);
         
         // Populate from project config
         sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();
