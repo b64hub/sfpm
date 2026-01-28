@@ -4,7 +4,6 @@ import { ProjectGraph } from './project-graph.js';
 import { VersionManager } from './version-manager.js';
 import { ProjectDefinition, PackageDefinition } from '../types/project.js';
 import { PackageType } from '../types/package.js';
-import path from 'node:path';
 
 export default class ProjectService {
     private static instance: ProjectService | undefined;
@@ -18,21 +17,28 @@ export default class ProjectService {
     }
 
     /**
-     * Creates and initializes a new ProjectService instance.
+     * Creates and initializes a new ProjectService instance from a directory path.
      * This is the recommended way to create a ProjectService.
      * 
-     * @param projectOrPath - SfProject instance or path to project directory
+     * @param projectPath - Path to project directory (defaults to current working directory)
      * @returns Fully initialized ProjectService instance
      */
-    public static async create(projectOrPath: SfProject | string = process.cwd()): Promise<ProjectService> {
-        let sfProject: SfProject;
-        if (projectOrPath instanceof SfProject) {
-            sfProject = projectOrPath;
-        } else {
-            sfProject = await SfProject.resolve(projectOrPath);
-        }
-
+    public static async create(projectPath?: string): Promise<ProjectService> {
+        const sfProject = await SfProject.resolve(projectPath);
         const projectConfig = new ProjectConfig(sfProject);
+        const versionManager = VersionManager.create(projectConfig);
+
+        return new ProjectService(projectConfig, versionManager);
+    }
+
+    /**
+     * Creates and initializes a new ProjectService instance from an existing SfProject.
+     * 
+     * @param project - SfProject instance
+     * @returns Fully initialized ProjectService instance
+     */
+    public static createFromProject(project: SfProject): ProjectService {
+        const projectConfig = new ProjectConfig(project);
         const versionManager = VersionManager.create(projectConfig);
 
         return new ProjectService(projectConfig, versionManager);
@@ -42,12 +48,12 @@ export default class ProjectService {
      * Gets or creates the singleton ProjectService instance.
      * Note: First call must be awaited to ensure initialization.
      * 
-     * @param projectOrPath - SfProject instance or path to project directory
+     * @param projectPath - Path to project directory (defaults to current working directory)
      * @returns Promise resolving to the singleton instance
      */
-    public static async getInstance(projectOrPath: SfProject | string = process.cwd()): Promise<ProjectService> {
+    public static async getInstance(projectPath?: string): Promise<ProjectService> {
         if (!ProjectService.instance) {
-            ProjectService.instance = await ProjectService.create(projectOrPath);
+            ProjectService.instance = await ProjectService.create(projectPath);
         }
         return ProjectService.instance;
     }
