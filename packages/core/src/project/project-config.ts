@@ -72,13 +72,13 @@ export default class ProjectConfig {
      * Uses SfProject's native getPackage() method for efficient lookup.
      */
     public getPackageDefinitionByPath(packagePath: string): PackageDefinition {
-        const pkg = this.project.getPackage(packagePath);
+        const pkg = this.project.getPackage(packagePath) as PackageDefinition;
         
         if (!pkg || !pkg.package) {
             throw new Error(`No package found with path: ${packagePath}`);
         }
         
-        return pkg as PackageDefinition;
+        return pkg;
     }
 
     /**
