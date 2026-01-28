@@ -139,8 +139,6 @@ export default class PackageAssembler {
         try {
             await this.ensureStagingDirectoryExists();
 
-            const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
-
             const output: AssemblyOutput = {
                 stagingDirectory: this.stagingDirectory,
                 projectDefinitionPath: path.join(this.stagingDirectory, 'sfdx-project.json')

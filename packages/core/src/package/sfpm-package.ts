@@ -497,7 +497,7 @@ export class PackageFactory {
      */
     createFromName(packageName: string): SfpmPackage {
         const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
-        const packageType = packageDefinition.type || PackageType.Unlocked;
+        const packageType = (packageDefinition.type?.toLowerCase() || 'unlocked') as PackageType;
         const projectDirectory = this.projectConfig.projectDirectory;
 
         const sfpmPackage = this.createPackageInstance(packageType, packageName, projectDirectory);
