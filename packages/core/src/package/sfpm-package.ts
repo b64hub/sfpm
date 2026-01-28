@@ -1,6 +1,7 @@
 import { ComponentSet, SourceComponent } from "@salesforce/source-deploy-retrieve";
 import { ProjectDefinition, PackageDefinition } from "../types/project.js";
 import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata, SfpmUnlockedPackageBuildOptions } from "../types/package.js";
+import ProjectConfig from "../project/project-config.js";
 import * as _ from "lodash";
 import path from "path";
 
@@ -461,7 +462,8 @@ export class SfpmSourcePackage extends SfpmMetadataPackage {
 }
 
 /**
- * Factory function to create the appropriate SfpmPackage instance based on package type
+ * Factory function to create the appropriate SfpmPackage instance based on package type.
+ * This is a low-level factory - consider using PackageFactory for higher-level package creation.
  */
 export function createSfpmPackage(
     packageType: PackageType,
@@ -477,5 +479,58 @@ export function createSfpmPackage(
             return new SfpmDataPackage(packageName, projectDirectory);
         default:
             throw new Error(`Unsupported package type: ${packageType}`);
+    }
+}
+
+/**
+ * Factory for creating fully-configured SfpmPackage instances from ProjectConfig.
+ * Bridges ProjectConfig (sfdx-project.json abstraction) with package construction.
+ */
+export class PackageFactory {
+    private projectConfig: ProjectConfig;
+
+    constructor(projectConfig: ProjectConfig) {
+        this.projectConfig = projectConfig;
+    }
+
+    /**
+     * Create a package by name, automatically resolving its definition and type
+     */
+    createFromName(packageName: string): SfpmPackage {
+        const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+        const packageType = packageDefinition.type || PackageType.Unlocked;
+        const projectDirectory = this.projectConfig.projectDirectory;
+
+        const sfpmPackage = createSfpmPackage(packageType, packageName, projectDirectory);
+        
+        // Populate from project config
+        sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();
+        sfpmPackage.packageDefinition = packageDefinition;
+        sfpmPackage.version = packageDefinition.versionNumber;
+
+        return sfpmPackage;
+    }
+
+    /**
+     * Create a package by path, resolving which package it belongs to
+     */
+    createFromPath(packagePath: string): SfpmPackage {
+        const packageDefinition = this.projectConfig.getPackageDefinitionByPath(packagePath);
+        return this.createFromName(packageDefinition.package);
+    }
+
+    /**
+     * Create packages for all package directories in the project
+     */
+    createAll(): SfpmPackage[] {
+        const packageNames = this.projectConfig.getAllPackageNames();
+        return packageNames.map(name => this.createFromName(name));
+    }
+
+    /**
+     * Get the underlying ProjectConfig
+     */
+    getProjectConfig(): ProjectConfig {
+        return this.projectConfig;
     }
 }

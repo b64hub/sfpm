@@ -66,6 +66,20 @@ export default class ProjectConfig {
     }
 
     /**
+     * Finds a package definition by its path.
+     */
+    public getPackageDefinitionByPath(packagePath: string): PackageDefinition {
+        const allPackages = this.getAllPackageDirectories();
+        const pkg = allPackages.find(p => p.path === packagePath);
+        
+        if (!pkg || !pkg.package) {
+            throw new Error(`No package found with path: ${packagePath}`);
+        }
+        
+        return pkg;
+    }
+
+    /**
      * Returns the source API version of the project
      */
     public get sourceApiVersion(): string | undefined {

@@ -22,7 +22,7 @@ export class SfpmCore extends EventEmitter<CoreEvents> {
 export * from './project/version-manager.js';
 export { default as ProjectService } from './project/project-service.js';
 export { default as ProjectConfig } from './project/project-config.js';
-export { default as SfpmPackage } from './package/sfpm-package.js';
+export { default as SfpmPackage, PackageFactory } from './package/sfpm-package.js';
 export * from './types/events.js';
 export * from './types/project.js';
 export * from './project/project-graph.js';

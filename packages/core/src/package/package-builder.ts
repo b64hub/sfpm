@@ -5,7 +5,7 @@ import { PackageType } from "../types/package.js";
 import ProjectConfig from "../project/project-config.js";
 import { Builder, BuilderRegistry } from "./builders/builder-registry.js";
 import { AnalyzerRegistry } from "./analyzers/analyzer-registry.js";
-import SfpmPackage, { createSfpmPackage } from "./sfpm-package.js";
+import SfpmPackage, { PackageFactory } from "./sfpm-package.js";
 import PackageAssembler from "./assemblers/package-assembler.js";
 import { GitService } from "../git/git-service.js";
 
@@ -62,14 +62,9 @@ export class PackageBuilder extends EventEmitter<BuildEvents> {
         packageName: string,
         projectDirectory: string = process.cwd()
     ) {
-
-        const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
-        const packageType = packageDefinition?.type || PackageType.Unlocked;
-
-        const sfpmPackage = createSfpmPackage(packageType, packageName, projectDirectory);
-
-        sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();
-        sfpmPackage.packageDefinition = packageDefinition;
+        // Use PackageFactory to create a fully-configured package
+        const packageFactory = new PackageFactory(this.projectConfig);
+        const sfpmPackage = packageFactory.createFromName(packageName);
 
         // Merge build options from package definition
         if (sfpmPackage.packageDefinition?.packageOptions?.build) {
