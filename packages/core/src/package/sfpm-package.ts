@@ -2,7 +2,7 @@ import { ComponentSet, SourceComponent } from "@salesforce/source-deploy-retriev
 import { ProjectDefinition, PackageDefinition } from "../types/project.js";
 import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata, SfpmUnlockedPackageBuildOptions } from "../types/package.js";
 import ProjectConfig from "../project/project-config.js";
-import * as _ from "lodash";
+import { omit, merge, get, set } from "lodash-es";
 import path from "path";
 
 const TEST_COVERAGE_THRESHOLD = 75;
@@ -60,7 +60,7 @@ export default abstract class SfpmPackage {
             content: { ...metadata?.content },
             validation: { ...metadata?.validation },
             orchestration: { ...metadata?.orchestration },
-            ..._.omit(metadata, ['identity', 'source', 'content', 'validation', 'orchestration'])
+            ...omit(metadata, ['identity', 'source', 'content', 'validation', 'orchestration'])
         } as SfpmPackageMetadata;
     }
 
@@ -292,7 +292,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
     }
 
     public updateContent(newContent: Partial<SfpmPackageContent>) {
-        _.merge(this._metadata.content, newContent);
+        merge(this._metadata.content, newContent);
         this.enforceIntegrity();
     }
 
@@ -304,7 +304,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
         const cs = this.getComponentSet(); //
 
         for (const [jsonPath, metadataType] of Object.entries(CONTENT_METADATA_TYPE)) {
-            const currentList = _.get(this._metadata.content, jsonPath);
+            const currentList = get(this._metadata.content, jsonPath);
 
             if (!Array.isArray(currentList)) {
                 continue;
@@ -314,7 +314,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
                 cs.has({ fullName: name, type: metadataType })
             );
 
-            _.set(this._metadata.content, jsonPath, validated);
+            set(this._metadata.content, jsonPath, validated);
         }
     }
 
@@ -391,7 +391,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
         const content = await this.resolveContentMetadata();
         const orchestration = await this.resolveOrchestrationMetadata();
 
-        return _.merge({}, this._metadata, {
+        return merge({}, this._metadata, {
             content,
             identity: {
                 packageName: this.name || content.payload?.Package?.fullName,
@@ -446,13 +446,13 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
 
     override setOrchestrationOptions(options: Partial<SfpmUnlockedPackageBuildOptions>): void {
         if (options.installationkey !== undefined) {
-            _.set(this.metadata, 'orchestration.buildOptions.installationkey', options.installationkey);
+            set(this.metadata, 'orchestration.buildOptions.installationkey', options.installationkey);
         }
         if (options.installationkeybypass !== undefined) {
-            _.set(this.metadata, 'orchestration.buildOptions.installationkeybypass', options.installationkeybypass);
+            set(this.metadata, 'orchestration.buildOptions.installationkeybypass', options.installationkeybypass);
         }
         if (options.isSkipValidation !== undefined) {
-            _.set(this.metadata, 'orchestration.buildOptions.isSkipValidation', options.isSkipValidation);
+            set(this.metadata, 'orchestration.buildOptions.isSkipValidation', options.isSkipValidation);
         }
     }
 }

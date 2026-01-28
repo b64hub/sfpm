@@ -1,5 +1,5 @@
 import EventEmitter from "node:events";
-import * as _ from "lodash";
+import { merge } from "lodash-es";
 
 import { PackageType } from "../types/package.js";
 import ProjectConfig from "../project/project-config.js";
@@ -76,7 +76,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
         // Merge build options from package definition
         if (sfpmPackage.packageDefinition?.packageOptions?.build) {
-            _.merge(sfpmPackage.metadata.orchestration, {
+            merge(sfpmPackage.metadata.orchestration, {
                 buildOptions: sfpmPackage.packageDefinition.packageOptions.build
             });
         }
@@ -245,7 +245,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
             });
 
             const metadataContribution = await analyzer.analyze(sfpmPackage);
-            _.merge(sfpmPackage.metadata, metadataContribution);
+            merge(sfpmPackage.metadata, metadataContribution);
 
             this.emit('analyzer:complete', {
                 timestamp: new Date(),

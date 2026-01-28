@@ -1,8 +1,9 @@
 import { Command, Flags, ux, Args } from '@oclif/core'
 import { PackageBuilder, ProjectService, Logger } from '@b64/sfpm-core'
 import { BuildProgressRenderer, OutputMode } from '../ui/build-progress-renderer.js'
+import SfpmCommand from '../sfpm-command.js'
 
-export default class Build extends Command {
+export default class Build extends SfpmCommand {
   static override description = 'build one or more packages'
 
   static override examples = [
@@ -14,7 +15,6 @@ export default class Build extends Command {
 
   static override args = {
     packages: Args.string({
-      name: 'packages',
       required: true,
       description: 'package(s) to build',
     }),
@@ -33,7 +33,7 @@ export default class Build extends Command {
 
   static override strict = false
 
-  public async run(): Promise<void> {
+  public async execute(): Promise<void> {
     const { args, argv, flags } = await this.parse(Build)
 
     // Get package names from arguments - use argv for multiple packages
