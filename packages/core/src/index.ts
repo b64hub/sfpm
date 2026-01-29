@@ -35,6 +35,7 @@ export { default as ProjectService } from './project/project-service.js';
 export { default as ProjectConfig } from './project/project-config.js';
 export { default as SfpmPackage, PackageFactory } from './package/sfpm-package.js';
 export * from './types/events.js';
+export * from './types/errors.js';
 export * from './types/project.js';
 export * from './project/project-graph.js';
 export * from './types/package.js';

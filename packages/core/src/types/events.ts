@@ -30,6 +30,13 @@ export interface BuildCompleteEvent extends BaseEvent {
   reason?: string;
 }
 
+export interface BuildSkippedEvent extends BaseEvent {
+  reason: 'no-changes' | 'already-built';
+  latestVersion: string;
+  sourceHash: string;
+  artifactPath?: string;
+}
+
 export interface BuildErrorEvent extends BaseEvent {
   error: Error;
   phase: 'staging' | 'analysis' | 'connection' | 'build' | 'post-build';
@@ -192,6 +199,7 @@ export interface TaskCompleteEvent extends BaseEvent {
 export interface BuildEvents {
   'build:start': [BuildStartEvent];
   'build:complete': [BuildCompleteEvent];
+  'build:skipped': [BuildSkippedEvent];
   'build:error': [BuildErrorEvent];
   
   'stage:start': [StageStartEvent];

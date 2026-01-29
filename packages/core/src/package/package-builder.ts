@@ -11,6 +11,7 @@ import { GitService } from "../git/git-service.js";
 
 import { Logger } from "../types/logger.js";
 import { AllBuildEvents } from "../types/events.js";
+import { NoSourceChangesError } from "../types/errors.js";
 
 
 export interface BuildOptions {
@@ -318,6 +319,20 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
             return result;
         } catch (error: any) {
+            // Handle no source changes as a successful skip
+            if (error instanceof NoSourceChangesError) {
+                this.emit('build:skipped', {
+                    timestamp: new Date(),
+                    packageName: sfpmPackage.packageName,
+                    reason: 'no-changes',
+                    latestVersion: error.latestVersion,
+                    sourceHash: error.sourceHash,
+                    artifactPath: error.artifactPath,
+                });
+                return; // Exit gracefully without error
+            }
+
+            // Handle actual build errors
             this.emit('build:error', {
                 timestamp: new Date(),
                 packageName: sfpmPackage.packageName,

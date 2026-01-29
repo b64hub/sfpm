@@ -4,7 +4,7 @@
   "description": "sfpm core library",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -b",
     "test": "vitest run"
   },
   "keywords": [],

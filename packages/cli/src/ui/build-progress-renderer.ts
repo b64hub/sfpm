@@ -6,6 +6,7 @@ import type { PackageBuilder } from '@b64/sfpm-core';
 import type {
     BuildStartEvent,
     BuildCompleteEvent,
+    BuildSkippedEvent,
     BuildErrorEvent,
     StageStartEvent,
     StageCompleteEvent,
@@ -77,7 +78,7 @@ interface EventConfig {
 export class BuildProgressRenderer {
     private mode: OutputMode;
     private logger: OutputLogger;
-    private spinners: Map<string, Ora> = new Map();
+    private spinner?: Ora;
     private events: EventLog[] = [];
     private timings: TimingInfo = {
         analyzerStarts: new Map(),
@@ -87,7 +88,8 @@ export class BuildProgressRenderer {
         packageVersionId?: string;
         error?: Error;
     };
-    private currentActions: Set<string> = new Set();
+    private analyzerNames: string[] = [];
+    private maxAnalyzerNameLength: number = 0;
     
     /**
      * Event configuration mapping events to handlers
@@ -95,6 +97,7 @@ export class BuildProgressRenderer {
     private eventConfigs: Record<string, EventConfig> = {
         'build:start': { handler: this.handleBuildStart.bind(this), description: 'Build started' },
         'build:complete': { handler: this.handleBuildComplete.bind(this), description: 'Build completed' },
+        'build:skipped': { handler: this.handleBuildSkipped.bind(this), description: 'Build skipped' },
         'build:error': { handler: this.handleBuildError.bind(this), description: 'Build failed' },
         'stage:start': { handler: this.handleStageStart.bind(this), description: 'Staging package' },
         'stage:complete': { handler: this.handleStageComplete.bind(this), description: 'Staging complete' },
@@ -133,44 +136,27 @@ export class BuildProgressRenderer {
     // ========================================================================
 
     /**
-     * Get or create a spinner for a given key
+     * Start a spinner with the given text
      */
-    private getSpinner(key: string, text: string): Ora {
-        let spinner = this.spinners.get(key);
-        if (!spinner) {
-            spinner = ora(text).start();
-            this.spinners.set(key, spinner);
+    private startSpinner(text: string): void {
+        if (this.spinner) {
+            this.spinner.stop();
         }
-        return spinner;
+        this.spinner = ora(text).start();
     }
 
     /**
-     * Stop and remove a spinner
+     * Stop the active spinner
      */
-    private stopSpinner(key: string, success: boolean, text?: string): void {
-        const spinner = this.spinners.get(key);
-        if (spinner) {
+    private stopSpinner(success: boolean, text?: string): void {
+        if (this.spinner) {
             if (success) {
-                spinner.succeed(text);
+                this.spinner.succeed(text);
             } else {
-                spinner.fail(text);
+                this.spinner.fail(text);
             }
-            this.spinners.delete(key);
+            this.spinner = undefined;
         }
-    }
-
-    /**
-     * Stop all active spinners
-     */
-    private stopAllSpinners(success: boolean = false): void {
-        this.spinners.forEach((spinner, key) => {
-            if (success) {
-                spinner.succeed();
-            } else {
-                spinner.fail();
-            }
-        });
-        this.spinners.clear();
     }
 
     /**
@@ -210,6 +196,48 @@ export class BuildProgressRenderer {
         );
     }
 
+    private handleBuildSkipped(event: BuildSkippedEvent): void {
+        this.logEvent('build:skipped', event);
+        this.buildResult = {
+            success: true,
+        };
+
+        if (!this.isInteractive()) return;
+
+        const duration = this.calculateDuration(this.timings.buildStart, event.timestamp);
+        
+        // Build the info box
+        const entries: Array<[string, string]> = [
+            ['Status', chalk.yellow('No source changes detected')],
+            ['Latest version', event.latestVersion],
+            ['Source hash', event.sourceHash],
+        ];
+
+        if (event.artifactPath) {
+            entries.push(['Artifact', event.artifactPath]);
+        }
+
+        const maxKeyLength = Math.max(...entries.map(([key]) => key.length));
+        const formattedLines = entries.map(([key, value]) => {
+            const paddedKey = key.padEnd(maxKeyLength);
+            return `${chalk.cyan(paddedKey)} │ ${value}`;
+        });
+
+        const boxOutput = boxen(formattedLines.join('\n'), {
+            padding: 1,
+            margin: 0,
+            borderStyle: 'round',
+            borderColor: 'yellow',
+            title: 'Build Skipped',
+            titleAlignment: 'center',
+        });
+
+        this.logger.log('');
+        this.logger.log(boxOutput);
+        this.logger.log('');
+        this.logger.log(chalk.dim(`  Build skipped in ${duration}\n`));
+    }
+
     private handleBuildError(event: BuildErrorEvent): void {
         this.logEvent('build:error', event);
         this.buildResult = {
@@ -217,15 +245,9 @@ export class BuildProgressRenderer {
             error: event.error,
         };
 
-        // Stop all active spinners with failure
+        // Stop any active spinner
         if (this.isInteractive()) {
-            this.stopAllSpinners(false);
-            
-            // Show which actions were in progress
-            if (this.currentActions.size > 0) {
-                const actions = Array.from(this.currentActions).join(', ');
-                this.logger.error(chalk.red(`Failed during: ${actions}`));
-            }
+            this.stopSpinner(false);
         }
 
         // Always show errors, even in quiet mode
@@ -240,8 +262,7 @@ export class BuildProgressRenderer {
 
         if (!this.isInteractive()) return;
 
-        this.currentActions.add('stage');
-        this.getSpinner('stage', `Staging package`);
+        this.startSpinner(`Staging package`);
     }
 
     private handleStageComplete(event: StageCompleteEvent): void {
@@ -251,11 +272,9 @@ export class BuildProgressRenderer {
 
         const duration = this.calculateDuration(this.timings.stageStart, event.timestamp);
         this.stopSpinner(
-            'stage',
             true,
             chalk.gray(`Successfully staged ${event.packageName} with ${event.componentCount} component(s) (${duration})`)
         );
-        this.currentActions.delete('stage');
     }
 
     private handleAnalyzersStart(event: AnalyzersStartEvent): void {
@@ -264,18 +283,23 @@ export class BuildProgressRenderer {
 
         if (!this.isInteractive() || event.analyzerCount === 0) return;
 
-        this.logger.log(chalk.dim(`Running ${event.analyzerCount} analyzers...`));
+        // Log a static message instead of spinner for parallel analyzers
+        const analyzerText = event.analyzerCount === 1 ? 'analyzer' : 'analyzers';
+        this.logger.log(chalk.dim(`Running ${event.analyzerCount} ${analyzerText}...`));
     }
 
     private handleAnalyzerStart(event: AnalyzerStartEvent): void {
         this.logEvent('analyzer:start', event);
         this.timings.analyzerStarts.set(event.analyzerName, event.timestamp);
 
-        if (!this.isInteractive()) return;
-
-        const action = `analyzer:${event.analyzerName}`;
-        this.currentActions.add(action);
-        this.getSpinner(action, `  Analyzing with ${chalk.cyan(event.analyzerName)}`);
+        // Track analyzer names for alignment
+        if (!this.analyzerNames.includes(event.analyzerName)) {
+            this.analyzerNames.push(event.analyzerName);
+            this.maxAnalyzerNameLength = Math.max(
+                this.maxAnalyzerNameLength,
+                event.analyzerName.length
+            );
+        }
     }
 
     private handleAnalyzerComplete(event: AnalyzerCompleteEvent): void {
@@ -283,14 +307,13 @@ export class BuildProgressRenderer {
 
         if (!this.isInteractive()) return;
 
-        const action = `analyzer:${event.analyzerName}`;
         const startTime = this.timings.analyzerStarts.get(event.analyzerName);
         const duration = this.calculateDuration(startTime, event.timestamp);
         
-        // Show what was found if there are findings
-        let message = chalk.gray(duration);
+        // Build findings summary
+        let findingsSummary = '';
         if (event.findings && Object.keys(event.findings).length > 0) {
-            const findingsSummary = Object.entries(event.findings)
+            const findings = Object.entries(event.findings)
                 .filter(([_, value]) => value && (Array.isArray(value) ? value.length > 0 : true))
                 .map(([key, value]) => {
                     if (Array.isArray(value)) {
@@ -300,13 +323,17 @@ export class BuildProgressRenderer {
                 })
                 .join(', ');
             
-            if (findingsSummary) {
-                message = chalk.gray(`${duration} - ${event.analyzerName}: ${findingsSummary}`);
+            if (findings) {
+                findingsSummary = `: ${findings}`;
             }
         }
         
-        this.stopSpinner(action, true, message);
-        this.currentActions.delete(action);
+        // Pad duration and analyzer name for alignment
+        const paddedDuration = duration.padStart(6); // Pad duration to 6 chars (e.g., "  31ms")
+        const paddedName = event.analyzerName.padEnd(this.maxAnalyzerNameLength);
+        
+        // Log completion with aligned duration and analyzer name
+        console.log(`  ${chalk.green('✓')} ${chalk.gray(paddedDuration)} - ${chalk.cyan(paddedName)}${chalk.gray(findingsSummary)}`);
     }
 
     private handleAnalyzersComplete(event: AnalyzersCompleteEvent): void {
@@ -314,8 +341,15 @@ export class BuildProgressRenderer {
 
         if (!this.isInteractive() || event.completedCount === 0) return;
 
+        // Show completion summary
         const duration = this.calculateDuration(this.timings.analyzersStart, event.timestamp);
-        this.logger.log(chalk.dim(`  Completed ${event.completedCount} analyzers (${duration})\n`));
+        const analyzerText = event.completedCount === 1 ? 'analyzer' : 'analyzers';
+        this.logger.log(chalk.green(`✔ Completed ${event.completedCount} ${analyzerText} in ${duration}`));
+        this.logger.log('');
+        
+        // Reset analyzer tracking for next build
+        this.analyzerNames = [];
+        this.maxAnalyzerNameLength = 0;
     }
 
     private handleConnectionStart(event: ConnectionStartEvent): void {
@@ -324,8 +358,7 @@ export class BuildProgressRenderer {
 
         if (!this.isInteractive()) return;
 
-        this.currentActions.add('connection');
-        this.getSpinner('connection', `Connecting to ${event.orgType}: ${event.username}`);
+        this.startSpinner(`Connecting to ${event.orgType}: ${event.username}`);
     }
 
     private handleConnectionComplete(event: ConnectionCompleteEvent): void {
@@ -334,8 +367,7 @@ export class BuildProgressRenderer {
         if (!this.isInteractive()) return;
 
         const duration = this.calculateDuration(this.timings.connectionStart, event.timestamp);
-        this.stopSpinner('connection', true, chalk.gray(`Successfully connected to: ${event.username} (${duration})`));
-        this.currentActions.delete('connection');
+        this.stopSpinner(true, chalk.gray(`Successfully connected to: ${event.username} (${duration})`));
     }
 
     private handleBuilderStart(event: BuilderStartEvent): void {
@@ -356,8 +388,7 @@ export class BuildProgressRenderer {
 
         if (!this.isInteractive()) return;
 
-        this.currentActions.add('create');
-        this.getSpinner('create', `Creating package version ${event.packageName}@${event.versionNumber}`);
+        this.startSpinner(`Creating package version ${event.packageName}@${event.versionNumber}`);
     }
 
     private handleCreateProgress(event: CreateProgressEvent): void {
@@ -365,9 +396,8 @@ export class BuildProgressRenderer {
 
         if (!this.isInteractive() || !event.message) return;
 
-        const spinner = this.spinners.get('create');
-        if (spinner) {
-            spinner.text = `Creating package version ${event.packageName}@${event.message}`;
+        if (this.spinner) {
+            this.spinner.text = `Creating package version ${event.packageName}@${event.message}`;
         }
     }
 
@@ -375,8 +405,7 @@ export class BuildProgressRenderer {
         this.logEvent('unlocked:create:complete', event);
 
         if (this.isInteractive()) {
-            this.stopSpinner('create', true, chalk.green(`Package ${event.packageName}@${event.versionNumber} successfully created with Id: ${event.packageVersionId}`));
-            this.currentActions.delete('create');
+            this.stopSpinner(true, chalk.green(`Package ${event.packageName}@${event.versionNumber} successfully created with Id: ${event.packageVersionId}`));
 
             // Build package details entries
             const entries: Array<[string, string]> = [
@@ -432,9 +461,7 @@ export class BuildProgressRenderer {
 
         if (!this.isInteractive()) return;
 
-        const action = `task:${event.taskName}`;
-        this.currentActions.add(action);
-        this.getSpinner(action, `  ${chalk.cyan(event.taskType)}: ${event.taskName}`);
+        this.startSpinner(`  ${chalk.cyan(event.taskType)}: ${event.taskName}`);
     }
 
     private handleTaskComplete(event: TaskCompleteEvent): void {
@@ -442,13 +469,11 @@ export class BuildProgressRenderer {
 
         if (!this.isInteractive()) return;
 
-        const action = `task:${event.taskName}`;
         if (event.success) {
-            this.stopSpinner(action, true, chalk.gray(event.taskName));
+            this.stopSpinner(true, chalk.gray(event.taskName));
         } else {
-            this.stopSpinner(action, false, chalk.red(`${event.taskName} failed`));
+            this.stopSpinner(false, chalk.red(`${event.taskName} failed`));
         }
-        this.currentActions.delete(action);
     }
 
     // ========================================================================
@@ -491,6 +516,6 @@ export class BuildProgressRenderer {
     public handleError(error: Error): void {
         if (!this.isInteractive()) return;
 
-        this.stopAllSpinners(false);
+        this.stopSpinner(false);
     }
 }

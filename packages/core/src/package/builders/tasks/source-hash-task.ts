@@ -5,6 +5,7 @@ import SfpmPackage, { SfpmMetadataPackage } from "../../sfpm-package.js";
 import { SourceHasher } from "../../../utils/source-hasher.js";
 import { Logger } from "../../../types/logger.js";
 import { ArtifactManifest } from "../../../types/artifact.js";
+import { NoSourceChangesError } from "../../../types/errors.js";
 
 /**
  * Source hash validation task that checks if a build is necessary.
@@ -72,20 +73,18 @@ export default class SourceHashTask implements BuildTask {
 
         // 4. Compare source hashes
         if (latestVersion.sourceHash === currentSourceHash) {
-            const message = 
-                `Build skipped for '${this.sfpmPackage.packageName}': No source changes detected.\n` +
-                `Latest version: ${manifest.latest}\n` +
-                `Source hash: ${currentSourceHash}\n` +
-                `Artifact: ${latestVersion.path}`;
+            this.logger?.info(
+                `Build skipped for '${this.sfpmPackage.packageName}': No source changes detected. ` +
+                `Latest version: ${manifest.latest}, Source hash: ${currentSourceHash}`
+            );
             
-            this.logger?.info(message);
-            
-            // Throw a special error that can be caught and handled gracefully
-            const error = new Error(message) as any;
-            error.code = 'BUILD_NOT_REQUIRED';
-            error.latestVersion = manifest.latest;
-            error.artifactPath = latestVersion.path;
-            throw error;
+            // Throw NoSourceChangesError for graceful handling
+            throw new NoSourceChangesError({
+                latestVersion: manifest.latest,
+                sourceHash: currentSourceHash,
+                artifactPath: latestVersion.path,
+                message: `No source changes detected for package '${this.sfpmPackage.packageName}'`
+            });
         }
 
         this.logger?.info('Source changes detected, proceeding with build');
