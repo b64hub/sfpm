@@ -92,10 +92,12 @@ describe('SourceDeployStrategy', () => {
                         details: {},
                     },
                 }),
+                onUpdate: vi.fn(),
             };
 
             mockComponentSet = {
                 deploy: vi.fn().mockResolvedValue(mockDeploy),
+                size: 10,
             };
 
             vi.mocked(Org.create).mockResolvedValue(mockOrg as any);

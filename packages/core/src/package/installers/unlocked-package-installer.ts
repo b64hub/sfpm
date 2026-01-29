@@ -45,10 +45,10 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
         this.sfpmPackage = sfpmPackage;
         this.logger = logger;
 
-        // Initialize strategies
+        // Initialize strategies (pass this as event emitter)
         this.strategies = [
-            new UnlockedVersionInstallStrategy(logger),
-            new SourceDeployStrategy(logger),
+            new UnlockedVersionInstallStrategy(logger, this),
+            new SourceDeployStrategy(logger, this),
         ];
 
         // Determine source type
@@ -77,11 +77,21 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
     }
 
     public async connect(username: string): Promise<void> {
+        this.emit('connection:start', {
+            timestamp: new Date(),
+            targetOrg: username,
+        });
+
         this.org = await Org.create({ aliasOrUsername: username });
         
         if (!this.org.getConnection()) {
             throw new Error('Unable to connect to org');
         }
+
+        this.emit('connection:complete', {
+            timestamp: new Date(),
+            targetOrg: username,
+        });
     }
 
     public async exec(): Promise<void> {

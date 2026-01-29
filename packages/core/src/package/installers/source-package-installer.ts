@@ -43,9 +43,9 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
         this.sfpmPackage = sfpmPackage;
         this.logger = logger;
 
-        // Initialize strategies - source packages only use source deployment
+        // Initialize strategies - source packages only use source deployment (pass this as event emitter)
         this.strategies = [
-            new SourceDeployStrategy(logger),
+            new SourceDeployStrategy(logger, this),
         ];
 
         // Determine source type
@@ -74,11 +74,21 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
     }
 
     public async connect(username: string): Promise<void> {
+        this.emit('connection:start', {
+            timestamp: new Date(),
+            targetOrg: username,
+        });
+
         this.org = await Org.create({ aliasOrUsername: username });
         
         if (!this.org.getConnection()) {
             throw new Error('Unable to connect to org');
         }
+
+        this.emit('connection:complete', {
+            timestamp: new Date(),
+            targetOrg: username,
+        });
     }
 
     public async exec(): Promise<void> {

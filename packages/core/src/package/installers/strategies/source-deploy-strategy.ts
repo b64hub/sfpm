@@ -1,5 +1,6 @@
 import { Org } from '@salesforce/core';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
+import { EventEmitter } from 'node:events';
 import { InstallationStrategy } from '../installation-strategy.js';
 import { InstallationSourceType, InstallationMode } from '../../../types/package.js';
 import SfpmPackage, { SfpmUnlockedPackage, SfpmSourcePackage } from '../../sfpm-package.js';
@@ -11,9 +12,11 @@ import { Logger } from '../../../types/logger.js';
  */
 export default class SourceDeployStrategy implements InstallationStrategy {
     private logger?: Logger;
+    private eventEmitter?: EventEmitter;
 
-    constructor(logger?: Logger) {
+    constructor(logger?: Logger, eventEmitter?: EventEmitter) {
         this.logger = logger;
+        this.eventEmitter = eventEmitter;
     }
 
     public canHandle(sourceType: InstallationSourceType, sfpmPackage: SfpmPackage): boolean {
@@ -56,10 +59,38 @@ export default class SourceDeployStrategy implements InstallationStrategy {
 
         // Create component set from source path
         const componentSet = ComponentSet.fromSource(sourcePath);
+        const componentCount = componentSet.size;
+
+        // Emit deployment start event
+        this.eventEmitter?.emit('deployment:start', {
+            timestamp: new Date(),
+            packageName: sfpmPackage.packageName,
+            sourcePath,
+            componentCount,
+        });
 
         // Deploy to org
         const deploy = await componentSet.deploy({
             usernameOrConnection: connection,
+        });
+
+        // Track deployment progress
+        deploy.onUpdate((response) => {
+            const status = response.status;
+            const numberComponentsDeployed = response.numberComponentsDeployed || 0;
+            const numberComponentsTotal = response.numberComponentsTotal || componentCount;
+            const percentComplete = numberComponentsTotal > 0 
+                ? Math.round((numberComponentsDeployed / numberComponentsTotal) * 100)
+                : 0;
+
+            this.eventEmitter?.emit('deployment:progress', {
+                timestamp: new Date(),
+                packageName: sfpmPackage.packageName,
+                status,
+                componentsDeployed: numberComponentsDeployed,
+                componentsTotal: numberComponentsTotal,
+                percentComplete,
+            });
         });
 
         // Wait for deployment to complete
@@ -74,6 +105,14 @@ export default class SourceDeployStrategy implements InstallationStrategy {
             
             throw new Error(`Source deployment failed:\n${errorMessages}`);
         }
+
+        // Emit deployment complete event
+        this.eventEmitter?.emit('deployment:complete', {
+            timestamp: new Date(),
+            packageName: sfpmPackage.packageName,
+            success: true,
+            componentsDeployed: result.response.numberComponentsDeployed || 0,
+        });
 
         this.logger?.info(`Source deployment completed successfully`);
     }
