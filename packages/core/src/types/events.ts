@@ -26,6 +26,8 @@ export interface BuildCompleteEvent extends BaseEvent {
   success: boolean;
   packageVersionId?: string;
   artifactPath?: string;
+  skipped?: boolean;
+  reason?: string;
 }
 
 export interface BuildErrorEvent extends BaseEvent {
@@ -221,6 +223,8 @@ export interface UnlockedBuildEvents {
   'unlocked:create:complete': [CreateCompleteEvent];
   'unlocked:validation:start': [ValidationStartEvent];
   'unlocked:validation:complete': [ValidationCompleteEvent];
+  'task:start': [TaskStartEvent];
+  'task:complete': [TaskCompleteEvent];
 }
 
 /**
@@ -231,6 +235,8 @@ export interface SourceBuildEvents {
   'source:assemble:complete': [SourceAssembleCompleteEvent];
   'source:test:start': [SourceTestStartEvent];
   'source:test:complete': [SourceTestCompleteEvent];
+  'task:start': [TaskStartEvent];
+  'task:complete': [TaskCompleteEvent];
 }
 
 /**

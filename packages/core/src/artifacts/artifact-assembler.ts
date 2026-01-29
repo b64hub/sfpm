@@ -1,9 +1,13 @@
 import path from 'path';
 import fs from 'fs-extra';
 import archiver from 'archiver';
+import crypto from 'crypto';
 import { Logger } from '../types/logger.js';
 import SfpmPackage from '../package/sfpm-package.js';
 import { VersionManager } from '../project/version-manager.js';
+import { SourceHasher } from '../utils/source-hasher.js';
+import { SfpmMetadataPackage } from '../package/sfpm-package.js';
+import { ArtifactManifest } from '../types/artifact.js';
 
 /**
  * Interface for providing changelogs.
@@ -23,18 +27,6 @@ class StubChangelogProvider implements ChangelogProvider {
             timestamp: Date.now()
         };
     }
-}
-
-interface ArtifactManifest {
-    name: string;
-    latest: string;
-    versions: {
-        [version: string]: {
-            path: string;
-            hash?: string;
-            generatedAt: number;
-        }
-    };
 }
 
 /**
@@ -69,36 +61,45 @@ export default class ArtifactAssembler {
 
     /**
      * @description Orchestrates the artifact assembly process.
+     * Always assembles when called - pre-build checks should happen elsewhere.
      * @returns {Promise<string>} The path to the generated artifact.zip.
      */
     public async assemble(): Promise<string> {
         try {
             this.logger?.info(`Assembling artifact for ${this.sfpmPackage.packageName}@${this.packageVersionNumber}`);
 
-            // 1. Prepare Version Directory
+            // 1. Calculate sourceHash from current package state
+            const currentSourceHash = await this.calculateSourceHash();
+            this.logger?.debug(`Current source hash: ${currentSourceHash}`);
+
+            // 2. Prepare Version Directory
             await fs.ensureDir(this.versionDirectory);
 
-            // 2. Generate Metadata (before moving staging directory)
+            // 3. Generate Metadata (before moving staging directory)
             const metadata = await (this.sfpmPackage as any).toPackageMetadata();
 
-            // 3. Prepare Source (Copy and Clean)
+            // 4. Prepare Source (Copy and Clean)
             const stagingSourceDir = await this.prepareSource();
 
-            // 4. Write Metadata to staging source
+            // 5. Write Metadata to staging source
             const metadataPath = path.join(stagingSourceDir, `artifact_metadata.json`);
             await fs.writeJson(metadataPath, metadata, { spaces: 4 });
 
-            // 5. Generate Changelog (using provider)
+            // 6. Generate Changelog (using provider)
             await this.generateChangelog(stagingSourceDir);
 
-            // 6. Create Zip using Archiver
+            // 7. Create Zip using Archiver (with deterministic timestamps)
             const zipPath = await this.createZip(stagingSourceDir);
 
-            // 7. Update Manifest & Symlink
-            await this.updateManifest(zipPath);
+            // 8. Calculate artifactHash from the generated zip
+            const artifactHash = await this.calculateFileHash(zipPath);
+            this.logger?.debug(`Artifact hash: ${artifactHash}`);
+
+            // 9. Update Manifest & Symlink with both hashes
+            await this.updateManifest(zipPath, currentSourceHash, artifactHash);
             await this.updateLatestSymlink();
 
-            // 8. Cleanup staging source
+            // 10. Cleanup staging source
             await fs.remove(stagingSourceDir);
 
             this.logger?.info(`Artifact successfully stored at ${zipPath}`);
@@ -155,14 +156,21 @@ export default class ArtifactAssembler {
 
             archive.pipe(output);
 
-            // Add the contents of the staging directory directly to the zip root.
-            archive.directory(contentDir, false);
+            // Add the contents of the staging directory with deterministic timestamps
+            // Set all file modification times to a fixed date for reproducible builds
+            const deterministicDate = new Date('1980-01-01T00:00:00.000Z');
+            
+            archive.directory(contentDir, false, (entry: any) => {
+                // Force deterministic timestamps for all entries
+                entry.date = deterministicDate;
+                return entry;
+            });
 
             archive.finalize();
         });
     }
 
-    private async updateManifest(zipPath: string): Promise<void> {
+    private async updateManifest(zipPath: string, sourceHash: string, artifactHash: string): Promise<void> {
         const manifestPath = path.join(this.packageArtifactRoot, 'manifest.json');
         let manifest: ArtifactManifest;
 
@@ -179,7 +187,10 @@ export default class ArtifactAssembler {
         manifest.latest = this.packageVersionNumber;
         manifest.versions[this.packageVersionNumber] = {
             path: path.relative(this.artifactsRootDir, zipPath),
-            generatedAt: Date.now()
+            sourceHash: sourceHash,
+            artifactHash: artifactHash,
+            generatedAt: Date.now(),
+            commit: this.sfpmPackage.commitId
         };
 
         await fs.writeJson(manifestPath, manifest, { spaces: 4 });
@@ -201,5 +212,33 @@ export default class ArtifactAssembler {
             const versionFilePath = path.join(this.packageArtifactRoot, 'latest.version');
             await fs.writeFile(versionFilePath, this.packageVersionNumber);
         }
+    }
+
+    /**
+     * Calculate a stable hash from the package's source components.
+     * Uses the ComponentSet to ensure consistency with .forceignore rules.
+     */
+    private async calculateSourceHash(): Promise<string> {
+        if (!(this.sfpmPackage instanceof SfpmMetadataPackage)) {
+            // For non-metadata packages, use a simple timestamp-based hash
+            return crypto.createHash('sha256').update(Date.now().toString()).digest('hex');
+        }
+
+        return await SourceHasher.calculate(this.sfpmPackage);
+    }
+
+    /**
+     * Calculate the SHA256 hash of a file using streams to avoid loading large files into memory.
+     * @param filePath Path to the file to hash
+     */
+    private async calculateFileHash(filePath: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const hash = crypto.createHash('sha256');
+            const stream = fs.createReadStream(filePath);
+
+            stream.on('data', (chunk) => hash.update(chunk));
+            stream.on('end', () => resolve(hash.digest('hex')));
+            stream.on('error', (err) => reject(err));
+        });
     }
 }
