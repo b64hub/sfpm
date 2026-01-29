@@ -6,6 +6,10 @@ import { AllBuildEvents } from "./types/events.js";
 import './package/builders/unlocked-package-builder.js';
 import './package/builders/source-package-builder.js';
 
+// Import installers to trigger decorator registration
+import './package/installers/unlocked-package-installer.js';
+import './package/installers/source-package-installer.js';
+
 // Import analyzers to trigger decorator registration
 import './package/analyzers/apex-type-analyzer.js';
 import './package/analyzers/fht-analyzer.js';
@@ -40,6 +44,8 @@ export * from './types/project.js';
 export * from './project/project-graph.js';
 export * from './types/package.js';
 export { PackageBuilder } from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
+export { default as PackageInstaller } from './package/package-installer.js';
+export { InstallerRegistry } from './package/installers/installer-registry.js';
 export * from './types/logger.js';
 export { GitService } from './git/git-service.js';
 export { default as Git } from './git/git.js';

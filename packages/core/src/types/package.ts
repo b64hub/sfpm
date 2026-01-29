@@ -4,6 +4,17 @@ import { DeploymentOptions } from "./project.js";
 
 export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff', Managed = 'managed' }
 
+export enum InstallationSourceType {
+    LocalSource = 'local',
+    BuiltArtifact = 'artifact',
+    RemoteNpm = 'npm'
+}
+
+export enum InstallationMode {
+    SourceDeploy = 'source-deploy',
+    VersionInstall = 'version-install'
+}
+
 export type MetadataFile = string | {
     name: string;
     path?: string;
