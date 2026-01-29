@@ -102,93 +102,54 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
             isSkipValidation: this.options.isSkipValidation,
         });
 
-        try {
-            await this.stagePackage(sfpmPackage);
-            await this.runAnalyzers(sfpmPackage);
+        await this.stagePackage(sfpmPackage);
+        await this.runAnalyzers(sfpmPackage);
 
-            if (!sfpmPackage.stagingDirectory) {
-                throw new Error('Package must be staged for build');
-            }
-
-            const BuilderClass = BuilderRegistry.getBuilder(sfpmPackage.type);
-
-            if (!BuilderClass) {
-                throw new Error(`No builder registered for package type: ${sfpmPackage.type}`);
-            }
-
-            const builderInstance: Builder = new BuilderClass(
-                sfpmPackage.stagingDirectory,
-                sfpmPackage,
-                this.logger
-            );
-
-            // Emit connection start if connecting to dev hub
-            if (this.options.devhubUsername) {
-                this.emit('connection:start', {
-                    timestamp: new Date(),
-                    packageName: sfpmPackage.packageName,
-                    username: this.options.devhubUsername,
-                    orgType: 'devhub',
-                });
-                
-                await builderInstance.connect(this.options.devhubUsername);
-                
-                this.emit('connection:complete', {
-                    timestamp: new Date(),
-                    packageName: sfpmPackage.packageName,
-                    username: this.options.devhubUsername,
-                });
-            }
-
-            // Emit builder start
-            this.emit('builder:start', {
-                timestamp: new Date(),
-                packageName: sfpmPackage.packageName,
-                packageType: sfpmPackage.type as PackageType,
-                builderName: BuilderClass.name,
-            });
-
-            // Bubble up events from builder if it's an EventEmitter
-            if (builderInstance instanceof EventEmitter) {
-                this.bubbleEvents(builderInstance);
-            }
-
-            const result = await builderInstance.exec();
-
-            // Emit builder complete
-            this.emit('builder:complete', {
-                timestamp: new Date(),
-                packageName: sfpmPackage.packageName,
-                packageType: sfpmPackage.type as PackageType,
-                builderName: BuilderClass.name,
-            });
-
-            // Emit build complete
-            this.emit('build:complete', {
-                timestamp: new Date(),
-                packageName: sfpmPackage.packageName,
-                success: true,
-                packageVersionId: 'packageVersionId' in sfpmPackage ? (sfpmPackage.packageVersionId as string) : undefined,
-            });
-
-            return result;
-        } catch (error: any) {
-            // Determine phase based on error context
-            let phase: 'staging' | 'analysis' | 'connection' | 'build' | 'post-build' = 'build';
-            if (error.message?.includes('staged')) phase = 'staging';
-            if (error.message?.includes('analyzer')) phase = 'analysis';
-            if (error.message?.includes('connect')) phase = 'connection';
-            if (error.message?.includes('no metadata components')) phase = 'staging';
-
+        if (!sfpmPackage.stagingDirectory) {
+            const error = new Error('Package must be staged for build');
             this.emit('build:error', {
                 timestamp: new Date(),
                 packageName: sfpmPackage.packageName,
                 error,
-                phase,
+                phase: 'staging',
             });
-
             throw error;
         }
+
+        const BuilderClass = BuilderRegistry.getBuilder(sfpmPackage.type);
+
+        if (!BuilderClass) {
+            const error = new Error(`No builder registered for package type: ${sfpmPackage.type}`);
+            this.emit('build:error', {
+                timestamp: new Date(),
+                packageName: sfpmPackage.packageName,
+                error,
+                phase: 'build',
+            });
+            throw error;
+        }
+
+        const builderInstance: Builder = new BuilderClass(
+            sfpmPackage.stagingDirectory,
+            sfpmPackage,
+            this.logger
+        );
+
+        // Connect to dev hub if needed
+        if (this.options.devhubUsername) {
+            await this.connectToDevHub(sfpmPackage, builderInstance, this.options.devhubUsername);
+        }
+
+        // Execute the builder
+        await this.executeBuilder(sfpmPackage, builderInstance, BuilderClass.name);
+
+        // Emit build complete
+        this.emit('build:complete', {
+            timestamp: new Date(),
+            packageName: sfpmPackage.packageName,
+            success: true,
+            packageVersionId: 'packageVersionId' in sfpmPackage ? (sfpmPackage.packageVersionId as string) : undefined,
+        });
     }
 
     public async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
@@ -198,27 +159,35 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
             stagingDirectory: sfpmPackage.stagingDirectory,
         });
 
-        const assemblyOutput = await new PackageAssembler(
-            sfpmPackage.packageName,
-            this.projectConfig,
-            {
-                versionNumber: sfpmPackage.version,
-                orgDefinitionPath: this.options.orgDefinitionPath,
-                destructiveManifestPath: this.options.destructiveManifestPath,
-            },
-            this.logger
-        ).assemble();
+        try {
+            const assemblyOutput = await new PackageAssembler(
+                sfpmPackage.packageName,
+                this.projectConfig,
+                {
+                    versionNumber: sfpmPackage.version,
+                    orgDefinitionPath: this.options.orgDefinitionPath,
+                    destructiveManifestPath: this.options.destructiveManifestPath,
+                },
+                this.logger
+            ).assemble();
 
-        sfpmPackage.stagingDirectory = assemblyOutput.stagingDirectory;
+            sfpmPackage.stagingDirectory = assemblyOutput.stagingDirectory;
 
-        this.emit('stage:complete', {
-            timestamp: new Date(),
-            packageName: sfpmPackage.packageName,
-            stagingDirectory: assemblyOutput.stagingDirectory,
-            componentCount: assemblyOutput.componentCount || 0,
-        });
-
-        return;
+            this.emit('stage:complete', {
+                timestamp: new Date(),
+                packageName: sfpmPackage.packageName,
+                stagingDirectory: assemblyOutput.stagingDirectory,
+                componentCount: assemblyOutput.componentCount || 0,
+            });
+        } catch (error: any) {
+            this.emit('build:error', {
+                timestamp: new Date(),
+                packageName: sfpmPackage.packageName,
+                error,
+                phase: 'staging',
+            });
+            throw error;
+        }
     }
 
 
@@ -236,31 +205,127 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
             analyzerCount: enabledAnalyzers.length,
         });
 
-        for (const analyzer of enabledAnalyzers) {
-            const analyzerName = analyzer.constructor.name;
-            
-            this.emit('analyzer:start', {
-                timestamp: new Date(),
-                packageName: sfpmPackage.packageName,
-                analyzerName,
+        try {
+            // Run all analyzers in parallel
+            const analyzerPromises = enabledAnalyzers.map(async (analyzer) => {
+                const analyzerName = analyzer.constructor.name;
+                
+                this.emit('analyzer:start', {
+                    timestamp: new Date(),
+                    packageName: sfpmPackage.packageName,
+                    analyzerName,
+                });
+
+                try {
+                    const metadataContribution = await analyzer.analyze(sfpmPackage);
+                    merge(sfpmPackage.metadata, metadataContribution);
+
+                    this.emit('analyzer:complete', {
+                        timestamp: new Date(),
+                        packageName: sfpmPackage.packageName,
+                        analyzerName,
+                        findings: metadataContribution,
+                    });
+
+                    return { success: true, analyzerName };
+                } catch (error) {
+                    this.emit('analyzer:complete', {
+                        timestamp: new Date(),
+                        packageName: sfpmPackage.packageName,
+                        analyzerName,
+                        findings: {},
+                    });
+
+                    throw error;
+                }
             });
 
-            const metadataContribution = await analyzer.analyze(sfpmPackage);
-            merge(sfpmPackage.metadata, metadataContribution);
+            await Promise.all(analyzerPromises);
 
-            this.emit('analyzer:complete', {
+            this.emit('analyzers:complete', {
                 timestamp: new Date(),
                 packageName: sfpmPackage.packageName,
-                analyzerName,
-                findings: metadataContribution,
+                completedCount: enabledAnalyzers.length,
             });
+        } catch (error: any) {
+            this.emit('build:error', {
+                timestamp: new Date(),
+                packageName: sfpmPackage.packageName,
+                error,
+                phase: 'analysis',
+            });
+            throw error;
         }
+    }
 
-        this.emit('analyzers:complete', {
+    private async connectToDevHub(
+        sfpmPackage: SfpmPackage,
+        builderInstance: Builder,
+        devhubUsername: string
+    ): Promise<void> {
+        this.emit('connection:start', {
             timestamp: new Date(),
             packageName: sfpmPackage.packageName,
-            completedCount: enabledAnalyzers.length,
+            username: devhubUsername,
+            orgType: 'devhub',
         });
+
+        try {
+            await builderInstance.connect(devhubUsername);
+
+            this.emit('connection:complete', {
+                timestamp: new Date(),
+                packageName: sfpmPackage.packageName,
+                username: devhubUsername,
+            });
+        } catch (error: any) {
+            this.emit('build:error', {
+                timestamp: new Date(),
+                packageName: sfpmPackage.packageName,
+                error,
+                phase: 'connection',
+            });
+            throw error;
+        }
+    }
+
+    private async executeBuilder(
+        sfpmPackage: SfpmPackage,
+        builderInstance: Builder,
+        builderName: string
+    ): Promise<any> {
+        this.emit('builder:start', {
+            timestamp: new Date(),
+            packageName: sfpmPackage.packageName,
+            packageType: sfpmPackage.type as PackageType,
+            builderName,
+        });
+
+        // Bubble up events from builder if it's an EventEmitter
+        if (builderInstance instanceof EventEmitter) {
+            this.bubbleEvents(builderInstance);
+        }
+
+        try {
+            const result = await builderInstance.exec();
+
+            this.emit('builder:complete', {
+                timestamp: new Date(),
+                packageName: sfpmPackage.packageName,
+                packageType: sfpmPackage.type as PackageType,
+                builderName,
+            });
+
+            return result;
+        } catch (error: any) {
+            this.emit('build:error', {
+                timestamp: new Date(),
+                packageName: sfpmPackage.packageName,
+                error,
+                phase: 'build',
+            });
+            throw error;
+        }
     }
 
     /**
