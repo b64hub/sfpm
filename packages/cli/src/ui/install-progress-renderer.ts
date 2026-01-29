@@ -130,16 +130,12 @@ export class InstallProgressRenderer {
         this.timings.installStart = new Date();
 
         if (this.mode === 'interactive') {
+            const packageDisplay = event.packageVersion 
+                ? `${event.packageName}@${event.packageVersion}`
+                : event.packageName;
+
             this.logger.log(
-                boxen(
-                    chalk.bold.cyan(`Installing ${event.packageName}`),
-                    {
-                        padding: 1,
-                        margin: { top: 1, bottom: 1 },
-                        borderStyle: 'round',
-                        borderColor: 'cyan',
-                    }
-                )
+                chalk.bold(`Installing package: ${chalk.cyan(packageDisplay)} (${event.packageType})\n`)
             );
 
             this.spinner = ora({

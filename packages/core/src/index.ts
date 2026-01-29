@@ -46,6 +46,7 @@ export * from './types/package.js';
 export { PackageBuilder } from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
 export { default as PackageInstaller } from './package/package-installer.js';
 export { InstallerRegistry } from './package/installers/installer-registry.js';
+export { ArtifactService } from './artifacts/artifact-service.js';
 export * from './types/logger.js';
 export { GitService } from './git/git-service.js';
 export { default as Git } from './git/git.js';

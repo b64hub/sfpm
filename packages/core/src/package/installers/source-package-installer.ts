@@ -8,6 +8,7 @@ import { PackageType, InstallationSourceType } from '../../types/package.js';
 import SfpmPackage, { SfpmSourcePackage } from '../sfpm-package.js';
 import { Logger } from '../../types/logger.js';
 import { InstallationStrategy } from './installation-strategy.js';
+import { ArtifactService } from '../../artifacts/artifact-service.js';
 
 // Import strategies
 import SourceDeployStrategy from './strategies/source-deploy-strategy.js';
@@ -28,6 +29,7 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
     private org?: Org;
     private strategies: InstallationStrategy[];
     private sourceType: InstallationSourceType;
+    private artifactService: ArtifactService;
 
     public preInstallTasks: InstallTask[] = [];
     public postInstallTasks: InstallTask[] = [];
@@ -43,6 +45,9 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
         this.sfpmPackage = sfpmPackage;
         this.logger = logger;
 
+        // Initialize artifact service
+        this.artifactService = new ArtifactService(logger);
+
         // Initialize strategies - source packages only use source deployment (pass this as event emitter)
         this.strategies = [
             new SourceDeployStrategy(logger, this),
@@ -57,14 +62,8 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
             return options.sourceType;
         }
 
-        // Auto-detect source type
-        const artifactPath = path.join(
-            this.sfpmPackage.projectDirectory,
-            'artifacts',
-            this.sfpmPackage.packageName
-        );
-
-        if (fs.existsSync(artifactPath)) {
+        // Auto-detect source type using ArtifactService
+        if (this.artifactService.hasLocalArtifacts(this.sfpmPackage.projectDirectory, this.sfpmPackage.packageName)) {
             return InstallationSourceType.BuiltArtifact;
         }
 

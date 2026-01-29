@@ -3,7 +3,8 @@ import { Logger } from "../types/logger.js";
 import { PackageType, InstallationSourceType } from "../types/package.js";
 import ProjectConfig from "../project/project-config.js";
 import { Installer, InstallerRegistry } from "./installers/installer-registry.js";
-import SfpmPackage, { PackageFactory } from "./sfpm-package.js";
+import SfpmPackage, { PackageFactory, SfpmUnlockedPackage } from "./sfpm-package.js";
+import { ArtifactService } from "../artifacts/artifact-service.js";
 
 // Import installers to trigger registration
 import "./installers/unlocked-package-installer.js";
@@ -54,12 +55,33 @@ export default class PackageInstaller extends EventEmitter {
         const packageFactory = new PackageFactory(this.projectConfig);
         const sfpmPackage = packageFactory.createFromName(packageName);
 
+        // Check for artifacts and update version if available
+        // This ensures we show the actual built version instead of ".NEXT" when artifacts exist
+        const artifactService = new ArtifactService(this.logger);
+        const artifactInfo = artifactService.getLocalArtifactInfo(
+            sfpmPackage.projectDirectory,
+            sfpmPackage.packageName
+        );
+
+        if (artifactInfo.version) {
+            sfpmPackage.version = artifactInfo.version;
+            
+            // For unlocked packages, also update package version ID if available from metadata
+            if (sfpmPackage instanceof SfpmUnlockedPackage && artifactInfo.metadata) {
+                const unlockedIdentity = artifactInfo.metadata.identity as any;
+                if (unlockedIdentity?.packageVersionId) {
+                    sfpmPackage.packageVersionId = unlockedIdentity.packageVersionId;
+                }
+            }
+        }
+
         this.logger?.info(`Starting installation of package: ${sfpmPackage.packageName}`);
 
         // Emit install start event
         this.emit('install:start', {
             timestamp: new Date(),
             packageName: sfpmPackage.packageName,
+            packageVersion: sfpmPackage.version,
             packageType: sfpmPackage.type as PackageType,
             targetOrg: this.options.targetOrg,
         });
@@ -89,6 +111,7 @@ export default class PackageInstaller extends EventEmitter {
             this.emit('install:complete', {
                 timestamp: new Date(),
                 packageName: sfpmPackage.packageName,
+                packageVersion: sfpmPackage.version,
                 packageType: sfpmPackage.type as PackageType,
                 targetOrg: this.options.targetOrg,
                 success: true,
@@ -100,6 +123,7 @@ export default class PackageInstaller extends EventEmitter {
             this.emit('install:error', {
                 timestamp: new Date(),
                 packageName: sfpmPackage.packageName,
+                packageVersion: sfpmPackage.version,
                 packageType: sfpmPackage.type as PackageType,
                 targetOrg: this.options.targetOrg,
                 error: error instanceof Error ? error.message : String(error),
