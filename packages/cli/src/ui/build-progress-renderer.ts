@@ -155,16 +155,21 @@ export class BuildProgressRenderer {
             error: event.error,
         };
 
-        // Stop any active spinner with failure
+        // Stop any active spinner with failure and show what was running
         if (this.spinner && this.mode === 'interactive') {
-            this.spinner.fail(chalk.red('failed'));
+            if (this.currentAction) {
+                this.spinner.fail(chalk.red(`failed while: ${this.currentAction}`));
+            } else {
+                this.spinner.fail(chalk.red('failed'));
+            }
             this.spinner = undefined;
             this.currentAction = undefined;
         }
 
         // Always show errors, even in quiet mode
+        const phaseInfo = this.currentAction ? ` (during ${this.currentAction})` : '';
         this.logger.error(
-            chalk.red.bold(`✗ Build failed in ${event.phase} phase: `) + event.error.message
+            chalk.red.bold(`✗ Build failed in ${event.phase} phase${phaseInfo}: `) + event.error.message
         );
     }
 
@@ -205,7 +210,8 @@ export class BuildProgressRenderer {
         this.timings.analyzerStarts.set(event.analyzerName, event.timestamp);
 
         if (this.mode === 'interactive') {
-            this.spinner = ora(`  ${event.analyzerName}`).start();
+            this.currentAction = `analyzer:${event.analyzerName}`;
+            this.spinner = ora(`  Analyzing with ${chalk.cyan(event.analyzerName)}`).start();
         }
     }
 
@@ -215,7 +221,26 @@ export class BuildProgressRenderer {
         if (this.mode === 'interactive' && this.spinner) {
             const startTime = this.timings.analyzerStarts.get(event.analyzerName);
             const duration = this.calculateDuration(startTime, event.timestamp);
-            this.spinner.succeed(chalk.gray(duration));
+            
+            // Show what was found if there are findings
+            let message = chalk.gray(duration);
+            if (event.findings && Object.keys(event.findings).length > 0) {
+                const findingsSummary = Object.entries(event.findings)
+                    .filter(([_, value]) => value && (Array.isArray(value) ? value.length > 0 : true))
+                    .map(([key, value]) => {
+                        if (Array.isArray(value)) {
+                            return `${key}: ${value.length}`;
+                        }
+                        return key;
+                    })
+                    .join(', ');
+                
+                if (findingsSummary) {
+                    message = chalk.gray(`${duration} - ${findingsSummary}`);
+                }
+            }
+            
+            this.spinner.succeed(message);
             this.spinner = undefined;
             this.currentAction = undefined;
         }
@@ -343,7 +368,7 @@ export class BuildProgressRenderer {
 
         if (this.mode === 'interactive') {
             this.currentAction = `task:${event.taskName}`;
-            this.spinner = ora(`  ${event.taskType}: ${event.taskName}`).start();
+            this.spinner = ora(`  ${chalk.cyan(event.taskType)}: ${event.taskName}`).start();
         }
     }
 
@@ -352,9 +377,9 @@ export class BuildProgressRenderer {
 
         if (this.mode === 'interactive' && this.spinner) {
             if (event.success) {
-                this.spinner.succeed();
+                this.spinner.succeed(chalk.gray(event.taskName));
             } else {
-                this.spinner.fail();
+                this.spinner.fail(chalk.red(`${event.taskName} failed`));
             }
             this.spinner = undefined;
             this.currentAction = undefined;
