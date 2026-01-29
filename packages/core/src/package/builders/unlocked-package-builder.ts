@@ -15,6 +15,7 @@ import { UnlockedBuildEvents } from '../../types/events.js';
 
 import AssembleArtifactTask from './tasks/assemble-artifact-task.js';
 import GitTagTask from './tasks/git-tag-task.js';
+import SourceHashTask from './tasks/source-hash-task.js';
 
 import { Logger } from '../../types/logger.js';
 
@@ -48,6 +49,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
 
         // Use project directory for artifacts, not the staging directory
         const projectDir = this.sfpmPackage.projectDirectory;
+        this.preBuildTasks.push(new SourceHashTask(this.sfpmPackage, projectDir, this.logger));
         this.postBuildTasks.push(new AssembleArtifactTask(this.sfpmPackage, projectDir));
         this.postBuildTasks.push(new GitTagTask(this.sfpmPackage, projectDir));
     }
@@ -83,13 +85,73 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
         const allDependencies = await ProjectService.getPackageDependencies(this.sfpmPackage.name);
 
         for (const task of this.preBuildTasks) {
-            await task.exec();
+            const taskName = task.constructor.name;
+            
+            this.emit('task:start', {
+                timestamp: new Date(),
+                packageName: this.sfpmPackage.packageName,
+                taskName,
+                taskType: 'pre-build',
+            });
+
+            try {
+                await task.exec();
+                
+                this.emit('task:complete', {
+                    timestamp: new Date(),
+                    packageName: this.sfpmPackage.packageName,
+                    taskName,
+                    taskType: 'pre-build',
+                    success: true,
+                });
+            } catch (error) {
+                const success = error instanceof Error && (error as any).code === 'BUILD_NOT_REQUIRED';
+                
+                this.emit('task:complete', {
+                    timestamp: new Date(),
+                    packageName: this.sfpmPackage.packageName,
+                    taskName,
+                    taskType: 'pre-build',
+                    success,
+                });
+                
+                throw error;
+            }
         }
     }
 
     private async runPostBuildTasks(): Promise<void> {
         for (const task of this.postBuildTasks) {
-            await task.exec();
+            const taskName = task.constructor.name;
+            
+            this.emit('task:start', {
+                timestamp: new Date(),
+                packageName: this.sfpmPackage.packageName,
+                taskName,
+                taskType: 'post-build',
+            });
+
+            try {
+                await task.exec();
+                
+                this.emit('task:complete', {
+                    timestamp: new Date(),
+                    packageName: this.sfpmPackage.packageName,
+                    taskName,
+                    taskType: 'post-build',
+                    success: true,
+                });
+            } catch (error) {
+                this.emit('task:complete', {
+                    timestamp: new Date(),
+                    packageName: this.sfpmPackage.packageName,
+                    taskName,
+                    taskType: 'post-build',
+                    success: false,
+                });
+                
+                throw error;
+            }
         }
     }
 
@@ -157,6 +219,13 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
             if (result.SubscriberPackageVersionId) {
                 this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
                 
+                // Update the package version with the actual version number (including build number)
+                // This ensures artifact folders and git tags use the complete version (e.g., 1.1.0-1 instead of 1.1.0.NEXT)
+                if (result.VersionNumber) {
+                    this.sfpmPackage.version = result.VersionNumber;
+                    this.logger?.debug(`Updated package version to ${result.VersionNumber}`);
+                }
+                
                 // Emit create complete event with detailed result information
                 this.emit('unlocked:create:complete', {
                     timestamp: new Date(),
@@ -182,7 +251,6 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
                 throw new Error(`Package creation failed or timed out. Status: ${result.Status}`);
             }
 
-            // Coverage check
             if (
                 buildOptions?.isCoverageEnabled &&
                 !this.sfpmPackage.isOrgDependent &&

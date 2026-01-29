@@ -5,6 +5,7 @@ import { PackageType } from "../../types/package.js";
 import SfpmPackage, { SfpmSourcePackage } from "../sfpm-package.js";
 import { Logger } from "../../types/logger.js";
 import { SourceBuildEvents } from "../../types/events.js";
+import SourceHashTask from './tasks/source-hash-task.js';
 
 export interface SourcePackageBuilderOptions {
 }
@@ -30,6 +31,10 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
         this.workingDirectory = workingDirectory;
         this.sfpmPackage = sfpmPackage;
         this.logger = logger;
+
+        // Add source hash check to prevent redundant builds
+        const projectDir = this.sfpmPackage.projectDirectory;
+        this.preBuildTasks.push(new SourceHashTask(this.sfpmPackage, projectDir, this.logger));
     }
 
     public async exec(): Promise<void> {
@@ -44,13 +49,73 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
 
     public async runPreBuildTasks() {
         for (const task of this.preBuildTasks) {
-            await task.exec();
+            const taskName = task.constructor.name;
+            
+            this.emit('task:start', {
+                timestamp: new Date(),
+                packageName: this.sfpmPackage.packageName,
+                taskName,
+                taskType: 'pre-build',
+            });
+
+            try {
+                await task.exec();
+                
+                this.emit('task:complete', {
+                    timestamp: new Date(),
+                    packageName: this.sfpmPackage.packageName,
+                    taskName,
+                    taskType: 'pre-build',
+                    success: true,
+                });
+            } catch (error) {
+                const success = error instanceof Error && (error as any).code === 'BUILD_NOT_REQUIRED';
+                
+                this.emit('task:complete', {
+                    timestamp: new Date(),
+                    packageName: this.sfpmPackage.packageName,
+                    taskName,
+                    taskType: 'pre-build',
+                    success,
+                });
+                
+                throw error;
+            }
         }
     }
 
     public async runPostBuildTasks() {
         for (const task of this.postBuildTasks) {
-            await task.exec();
+            const taskName = task.constructor.name;
+            
+            this.emit('task:start', {
+                timestamp: new Date(),
+                packageName: this.sfpmPackage.packageName,
+                taskName,
+                taskType: 'post-build',
+            });
+
+            try {
+                await task.exec();
+                
+                this.emit('task:complete', {
+                    timestamp: new Date(),
+                    packageName: this.sfpmPackage.packageName,
+                    taskName,
+                    taskType: 'post-build',
+                    success: true,
+                });
+            } catch (error) {
+                this.emit('task:complete', {
+                    timestamp: new Date(),
+                    packageName: this.sfpmPackage.packageName,
+                    taskName,
+                    taskType: 'post-build',
+                    success: false,
+                });
+                
+                throw error;
+            }
         }
     }
 

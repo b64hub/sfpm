@@ -6,6 +6,13 @@ import { AllBuildEvents } from "./types/events.js";
 import './package/builders/unlocked-package-builder.js';
 import './package/builders/source-package-builder.js';
 
+// Import analyzers to trigger decorator registration
+import './package/analyzers/apex-type-analyzer.js';
+import './package/analyzers/fht-analyzer.js';
+import './package/analyzers/ft-analyzer.js';
+import './package/analyzers/manifest-analyzer.js';
+import './package/analyzers/picklist-analyzer.js';
+
 export class SfpmCore extends EventEmitter<AllBuildEvents> {
   project!: ProjectService;
 

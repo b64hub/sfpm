@@ -178,6 +178,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
             if (error.message?.includes('staged')) phase = 'staging';
             if (error.message?.includes('analyzer')) phase = 'analysis';
             if (error.message?.includes('connect')) phase = 'connection';
+            if (error.message?.includes('no metadata components')) phase = 'staging';
 
             this.emit('build:error', {
                 timestamp: new Date(),
