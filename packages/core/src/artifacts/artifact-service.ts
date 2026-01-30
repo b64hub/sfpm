@@ -1,6 +1,7 @@
 import { Org, Connection } from "@salesforce/core";
 import path from "path";
 import fs from "fs-extra";
+import AdmZip from "adm-zip";
 import SfpmPackage from "../package/sfpm-package.js";
 import { Logger } from "../types/logger.js";
 import { InstalledArtifact, PackageType, SfpmPackageMetadata } from "../types/package.js";
@@ -261,6 +262,7 @@ export class ArtifactService {
 
     /**
      * Read artifact metadata for a specific version
+     * Extracts metadata from the artifact zip to a temp location
      * @param projectDirectory - Root project directory
      * @param packageName - Name of the package
      * @param version - Version to read (defaults to latest)
@@ -289,16 +291,26 @@ export class ArtifactService {
                 return undefined;
             }
 
-            // Try to read metadata file
+            // Extract and read metadata from the artifact zip
             const artifactPath = this.getLocalArtifactPath(projectDirectory, packageName);
-            const metadataPath = path.join(artifactPath, targetVersion, 'artifact_metadata.json');
+            const zipPath = path.join(artifactPath, targetVersion, 'artifact.zip');
 
-            if (!fs.existsSync(metadataPath)) {
-                this.logger?.debug(`No artifact_metadata.json found at ${metadataPath}`);
+            if (!fs.existsSync(zipPath)) {
+                this.logger?.debug(`No artifact.zip found at ${zipPath}`);
                 return undefined;
             }
 
-            return fs.readJsonSync(metadataPath);
+            // Use adm-zip for simple synchronous extraction
+            const zip = new AdmZip(zipPath);
+            const metadataEntry = zip.getEntry('artifact_metadata.json');
+            
+            if (!metadataEntry) {
+                this.logger?.debug(`No artifact_metadata.json found inside ${zipPath}`);
+                return undefined;
+            }
+
+            const metadataContent = zip.readAsText(metadataEntry);
+            return JSON.parse(metadataContent);
         } catch (error) {
             this.logger?.warn(`Failed to read artifact metadata: ${error instanceof Error ? error.message : String(error)}`);
             return undefined;

@@ -84,6 +84,8 @@ export default class UnlockedVersionInstallStrategy implements InstallationStrat
             SubscriberPackageVersionKey: versionId,
             Password: installationKey || '',
             ApexCompileType: 'package',
+            NameConflictResolution: 'Block',
+            SecurityType: 'Full',
         };
 
         const result = await connection.tooling.create('PackageInstallRequest', installRequest);

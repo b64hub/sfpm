@@ -129,7 +129,14 @@ export default class PackageInstaller extends EventEmitter {
                 error: error instanceof Error ? error.message : String(error),
             });
 
-            this.logger?.error(`Failed to install package: ${sfpmPackage.packageName}`);
+            this.logger?.error(`Failed to install package: ${sfpmPackage.packageName}. Error: ${error instanceof Error ? error.message : String(error)}`);
+            
+            // Re-throw with more context
+            if (error instanceof Error) {
+                const detailedError = new Error(`Failed to install package: ${sfpmPackage.packageName}. ${error.message}`);
+                (detailedError as any).cause = error;
+                throw detailedError;
+            }
             throw error;
         }
     }

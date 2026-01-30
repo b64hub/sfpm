@@ -100,7 +100,18 @@ export default class Install extends SfpmCommand {
         this.logJson(renderer.getJsonOutput());
       }
       
-      throw error;
+      // Re-throw with original error for better debugging
+      if (error instanceof Error) {
+        // Show the actual error message, not just the wrapper
+        const errorMessage = error.message || String(error);
+        this.log(`\nError details: ${errorMessage}`);
+        if (error.stack) {
+          this.debug(`Stack trace: ${error.stack}`);
+        }
+        this.error(errorMessage, { exit: 2 });
+      } else {
+        throw error;
+      }
     }
   }
 }
