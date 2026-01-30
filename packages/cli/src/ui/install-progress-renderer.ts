@@ -124,27 +124,34 @@ export class InstallProgressRenderer {
     }
 
     /**
+     * Check if renderer is in interactive mode
+     */
+    private isInteractive(): boolean {
+        return this.mode === 'interactive';
+    }
+
+    /**
      * Handle install start event
      */
     private handleInstallStart(event: any): void {
         this.timings.installStart = new Date();
 
-        if (this.mode === 'interactive') {
-            const packageDisplay = event.packageVersion 
-                ? `${event.packageName}@${event.packageVersion}`
-                : event.packageName;
-
-            this.logger.log(
-                chalk.bold(`Installing package: ${chalk.cyan(packageDisplay)} (${event.packageType})\n`)
-            );
-
-            this.spinner = ora({
-                text: `Installing ${chalk.cyan(event.packageName)} to ${chalk.yellow(event.targetOrg)}`,
-                color: 'cyan',
-            }).start();
-        } else if (this.mode === 'quiet') {
-            // Only log errors in quiet mode
+        if (!this.isInteractive()) {
+            return;
         }
+
+        const packageDisplay = event.packageVersion 
+            ? `${event.packageName}@${event.packageVersion}`
+            : event.packageName;
+
+        this.logger.log(
+            chalk.bold(`Installing package: ${chalk.cyan(packageDisplay)} (${event.packageType})\n`)
+        );
+
+        this.spinner = ora({
+            text: `Installing ${chalk.cyan(event.packageName)} to ${chalk.yellow(event.targetOrg)}`,
+            color: 'cyan',
+        }).start();
     }
 
     /**
@@ -153,35 +160,35 @@ export class InstallProgressRenderer {
     private handleInstallComplete(event: any): void {
         this.installResult = { success: true };
 
-        if (this.mode === 'interactive') {
-            this.spinner?.succeed(
-                chalk.green(`Successfully installed ${chalk.bold(event.packageName)}`)
-            );
-
-            const duration = this.timings.installStart 
-                ? Date.now() - this.timings.installStart.getTime()
-                : 0;
-
-            this.logger.log(
-                boxen(
-                    chalk.green.bold('Installation Complete') +
-                        '\n\n' +
-                        chalk.gray(`Package: ${event.packageName}`) +
-                        '\n' +
-                        chalk.gray(`Target Org: ${event.targetOrg}`) +
-                        '\n' +
-                        chalk.gray(`Duration: ${this.formatDuration(duration)}`),
-                    {
-                        padding: 1,
-                        margin: { top: 1, bottom: 1 },
-                        borderStyle: 'round',
-                        borderColor: 'green',
-                    }
-                )
-            );
-        } else if (this.mode === 'quiet') {
-            // Silent success in quiet mode
+        if (!this.isInteractive()) {
+            return;
         }
+
+        this.spinner?.succeed(
+            chalk.green(`Successfully installed ${chalk.bold(event.packageName)}`)
+        );
+
+        const duration = this.timings.installStart 
+            ? Date.now() - this.timings.installStart.getTime()
+            : 0;
+
+        this.logger.log(
+            boxen(
+                chalk.green.bold('Installation Complete') +
+                    '\n\n' +
+                    chalk.gray(`Package: ${event.packageName}`) +
+                    '\n' +
+                    chalk.gray(`Target Org: ${event.targetOrg}`) +
+                    '\n' +
+                    chalk.gray(`Duration: ${this.formatDuration(duration)}`),
+                {
+                    padding: 1,
+                    margin: { top: 1, bottom: 1 },
+                    borderStyle: 'round',
+                    borderColor: 'green',
+                }
+            )
+        );
     }
 
     /**
@@ -193,13 +200,16 @@ export class InstallProgressRenderer {
             error: event.error,
         };
 
-        if (this.mode === 'interactive') {
-            this.spinner?.fail(
-                chalk.red(`Failed to install ${chalk.bold(event.packageName)}`)
-            );
-        } else if (this.mode === 'quiet') {
-            this.logger.error(event.error);
+        if (!this.isInteractive()) {
+            if (this.mode === 'quiet') {
+                this.logger.error(event.error);
+            }
+            return;
         }
+
+        this.spinner?.fail(
+            chalk.red(`Failed to install ${chalk.bold(event.packageName)}`)
+        );
     }
 
     /**
@@ -208,20 +218,24 @@ export class InstallProgressRenderer {
     private handleConnectionStart(event: any): void {
         this.timings.connectionStart = new Date();
 
-        if (this.mode === 'interactive') {
-            this.spinner?.start(`Connecting to org ${chalk.yellow(event.targetOrg)}...`);
+        if (!this.isInteractive()) {
+            return;
         }
+
+        this.spinner?.start(`Connecting to org ${chalk.yellow(event.targetOrg)}...`);
     }
 
     /**
      * Handle connection complete event
      */
     private handleConnectionComplete(event: any): void {
-        if (this.mode === 'interactive') {
-            this.spinner?.succeed(
-                chalk.green(`Connected to org ${chalk.yellow(event.targetOrg)}`)
-            );
+        if (!this.isInteractive()) {
+            return;
         }
+
+        this.spinner?.succeed(
+            chalk.green(`Connected to org ${chalk.yellow(event.targetOrg)}`)
+        );
     }
 
     /**
@@ -230,47 +244,53 @@ export class InstallProgressRenderer {
     private handleDeploymentStart(event: any): void {
         this.timings.deploymentStart = new Date();
 
-        if (this.mode === 'interactive') {
-            this.spinner = ora({
-                text: `Deploying metadata to ${chalk.yellow(event.targetOrg)}...`,
-                color: 'cyan',
-            }).start();
+        if (!this.isInteractive()) {
+            return;
         }
+
+        this.spinner = ora({
+            text: `Deploying metadata to ${chalk.yellow(event.targetOrg)}...`,
+            color: 'cyan',
+        }).start();
     }
 
     /**
      * Handle deployment progress event
      */
     private handleDeploymentProgress(event: any): void {
-        if (this.mode === 'interactive' && this.spinner) {
-            const status = event.status || 'InProgress';
-            const componentsDeployed = event.numberComponentsDeployed || 0;
-            const componentsTotal = event.numberComponentsTotal || 0;
-
-            let progressText = `Deploying metadata: ${status}`;
-            if (componentsTotal > 0) {
-                const percentage = Math.round((componentsDeployed / componentsTotal) * 100);
-                progressText += ` (${componentsDeployed}/${componentsTotal} - ${percentage}%)`;
-            }
-
-            this.spinner.text = progressText;
+        if (!this.isInteractive() || !this.spinner) {
+            return;
         }
+
+        const status = event.status || 'InProgress';
+        const componentsDeployed = event.numberComponentsDeployed || 0;
+        const componentsTotal = event.numberComponentsTotal || 0;
+
+        let progressText = `Deploying metadata: ${status}`;
+        if (componentsTotal > 0) {
+            const percentage = Math.round((componentsDeployed / componentsTotal) * 100);
+            progressText += ` (${componentsDeployed}/${componentsTotal} - ${percentage}%)`;
+        }
+
+        this.spinner.text = progressText;
     }
 
     /**
      * Handle deployment complete event
      */
     private handleDeploymentComplete(event: any): void {
-        if (this.mode === 'interactive') {
-            this.spinner?.succeed(
-                chalk.green(`Metadata deployed successfully`)
-            );
+        if (!this.isInteractive()) {
+            return;
+        }
 
-            if (event.numberComponentsDeployed) {
-                this.logger.log(
-                    chalk.gray(`  Deployed ${event.numberComponentsDeployed} components`)
-                );
-            }
+        this.spinner?.succeed(
+            chalk.green(`Metadata deployed successfully`)
+        );
+
+        if (event.numberComponentsDeployed) {
+            this.logger.log(
+                chalk.gray(`  Deployed ${event.numberComponentsDeployed} components`)
+            );
         }
     }
 
@@ -278,33 +298,39 @@ export class InstallProgressRenderer {
      * Handle version install start event
      */
     private handleVersionInstallStart(event: any): void {
-        if (this.mode === 'interactive') {
-            this.spinner = ora({
-                text: `Installing package version ${chalk.cyan(event.packageVersionId)}...`,
-                color: 'cyan',
-            }).start();
+        if (!this.isInteractive()) {
+            return;
         }
+
+        this.spinner = ora({
+            text: `Installing package version ${chalk.cyan(event.packageVersionId)}...`,
+            color: 'cyan',
+        }).start();
     }
 
     /**
      * Handle version install progress event
      */
     private handleVersionInstallProgress(event: any): void {
-        if (this.mode === 'interactive' && this.spinner) {
-            const status = event.status || 'InProgress';
-            this.spinner.text = `Installing package: ${status}`;
+        if (!this.isInteractive() || !this.spinner) {
+            return;
         }
+
+        const status = event.status || 'InProgress';
+        this.spinner.text = `Installing package: ${status}`;
     }
 
     /**
      * Handle version install complete event
      */
     private handleVersionInstallComplete(event: any): void {
-        if (this.mode === 'interactive') {
-            this.spinner?.succeed(
-                chalk.green(`Package version installed successfully`)
-            );
+        if (!this.isInteractive()) {
+            return;
         }
+
+        this.spinner?.succeed(
+            chalk.green(`Package version installed successfully`)
+        );
     }
 
     /**
@@ -316,25 +342,28 @@ export class InstallProgressRenderer {
             error,
         };
 
-        if (this.mode === 'interactive') {
-            this.spinner?.fail(chalk.red('Installation failed'));
-
-            this.logger.log(
-                boxen(
-                    chalk.white(error.message),
-                    {
-                        padding: 1,
-                        margin: { top: 1, bottom: 1 },
-                        borderStyle: 'round',
-                        borderColor: 'red',
-                        title: 'Installation Error',
-                        titleAlignment: 'center',
-                    }
-                )
-            );
-        } else if (this.mode === 'quiet') {
-            this.logger.error(error);
+        if (!this.isInteractive()) {
+            if (this.mode === 'quiet') {
+                this.logger.error(error);
+            }
+            return;
         }
+
+        this.spinner?.fail(chalk.red('Installation failed'));
+
+        this.logger.log(
+            boxen(
+                chalk.white(error.message),
+                {
+                    padding: 1,
+                    margin: { top: 1, bottom: 1 },
+                    borderStyle: 'round',
+                    borderColor: 'red',
+                    title: 'Installation Error',
+                    titleAlignment: 'center',
+                }
+            )
+        );
     }
 
     /**

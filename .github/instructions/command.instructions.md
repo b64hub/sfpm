@@ -98,10 +98,12 @@ const summary = boxen(
 )
 this.log(summary)
 
-// ✅ Respect output mode
-if (mode === 'interactive') {
-  this.log(chalk.dim('Processing...'))
+// ✅ Respect output mode (use early returns)
+if (!this.isInteractive()) {
+  return;
 }
+
+this.log(chalk.dim('Processing...'))
 ```
 
 **DON'T:**
@@ -181,20 +183,29 @@ export class BuildProgressRenderer {
     // ... more events
   }
 
+  // Helper method to reduce repetition
+  private isInteractive(): boolean {
+    return this.mode === 'interactive'
+  }
+
   private handleStageStart(event: StageStartEvent): void {
     this.logEvent('stage:start', event) // For JSON mode
     
-    if (this.mode === 'interactive') {
-      this.spinner = ora('Staging package').start()
+    if (!this.isInteractive()) {
+      return;
     }
+    
+    this.spinner = ora('Staging package').start()
   }
 
   private handleStageComplete(event: StageCompleteEvent): void {
     this.logEvent('stage:complete', event)
     
-    if (this.mode === 'interactive') {
-      this.spinner?.succeed(`Staged ${event.componentCount} components`)
+    if (!this.isInteractive()) {
+      return;
     }
+    
+    this.spinner?.succeed(`Staged ${event.componentCount} components`)
   }
 }
 ```
@@ -254,6 +265,29 @@ Events use namespaced names: `<domain>:<action>`
 - `stage:start`, `stage:complete`
 - `analyzer:start`, `analyzer:complete`
 - `deployment:start`, `deployment:progress`, `deployment:complete`
+
+### Renderer Best Practices
+
+**Use helper methods for mode checks** - Instead of repeating `this.mode === 'interactive'` throughout your renderer, create a helper method:
+
+```typescript
+private isInteractive(): boolean {
+  return this.mode === 'interactive'
+}
+
+// Use it in event handlers with early returns
+private handleStageStart(event: StageStartEvent): void {
+  this.logEvent('stage:start', event)
+  
+  if (!this.isInteractive()) {
+    return;
+  }
+  
+  this.spinner = ora('Staging package').start()
+}
+```
+
+This makes the code more readable and easier to maintain if mode logic becomes more complex. **Favor early returns** with negative checks (`!this.isInteractive()`) to reduce nesting.
 
 ### Benefits of Event-Driven UI
 
