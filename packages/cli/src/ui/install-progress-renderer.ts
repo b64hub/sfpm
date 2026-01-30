@@ -321,14 +321,14 @@ export class InstallProgressRenderer {
 
             this.logger.log(
                 boxen(
-                    chalk.red.bold('Installation Error') +
-                        '\n\n' +
-                        chalk.white(error.message),
+                    chalk.white(error.message),
                     {
                         padding: 1,
                         margin: { top: 1, bottom: 1 },
                         borderStyle: 'round',
                         borderColor: 'red',
+                        title: 'Installation Error',
+                        titleAlignment: 'center',
                     }
                 )
             );
