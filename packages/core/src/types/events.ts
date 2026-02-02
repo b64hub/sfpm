@@ -247,7 +247,42 @@ export interface SourceBuildEvents {
   'task:complete': [TaskCompleteEvent];
 }
 
+// ============================================================================
+// Artifact Assembly Events
+// ============================================================================
+
+export interface AssemblyStartEvent extends BaseEvent {
+  version: string;
+}
+
+export interface AssemblyPackEvent extends BaseEvent {
+  tarballName: string;
+}
+
+export interface AssemblyCompleteEvent extends BaseEvent {
+  version: string;
+  artifactPath: string;
+  sourceHash: string;
+  artifactHash: string;
+  duration: number;
+}
+
+export interface AssemblyErrorEvent extends BaseEvent {
+  version: string;
+  error: Error;
+}
+
+/**
+ * Artifact assembly events emitted by ArtifactAssembler
+ */
+export interface AssemblyEvents {
+  'assembly:start': [AssemblyStartEvent];
+  'assembly:pack': [AssemblyPackEvent];
+  'assembly:complete': [AssemblyCompleteEvent];
+  'assembly:error': [AssemblyErrorEvent];
+}
+
 /**
  * Combined event map for all build events
  */
-export type AllBuildEvents = BuildEvents & UnlockedBuildEvents & SourceBuildEvents;
+export type AllBuildEvents = BuildEvents & UnlockedBuildEvents & SourceBuildEvents & AssemblyEvents;

@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import crypto from 'crypto';
 import { execSync } from 'child_process';
+import { EventEmitter } from 'events';
 import { Logger } from '../types/logger.js';
 import SfpmPackage from '../package/sfpm-package.js';
 import { VersionManager } from '../project/version-manager.js';
@@ -25,8 +26,8 @@ export interface ChangelogProvider {
 class StubChangelogProvider implements ChangelogProvider {
     async generateChangelog(_pkg: SfpmPackage, _projectDirectory: string): Promise<any> {
         return {
-            message: "Changelog generation is currently disabled.",
-            timestamp: Date.now()
+            message: 'Changelog generation is currently disabled.',
+            timestamp: Date.now(),
         };
     }
 }
@@ -49,7 +50,7 @@ export interface ArtifactAssemblerOptions {
 
 /**
  * @description Assembles artifacts using npm pack for npm-native packaging.
- * 
+ *
  * The new assembly flow:
  * 1. Prepare staging directory with source, sfdx-project.json, scripts, etc.
  * 2. Generate package.json with sfpm metadata
@@ -59,8 +60,7 @@ export interface ArtifactAssemblerOptions {
  * 6. Update manifest and symlink
  * 7. Clean up staging directory
  */
-export default class ArtifactAssembler {
-
+export default class ArtifactAssembler extends EventEmitter {
     private repository: ArtifactRepository;
     private versionDirectory: string;
     private packageVersionNumber: string;
@@ -71,21 +71,17 @@ export default class ArtifactAssembler {
         private sfpmPackage: SfpmPackage,
         private projectDirectory: string,
         options: ArtifactAssemblerOptions,
-        private logger?: Logger
+        private logger?: Logger,
     ) {
+        super();
         this.options = options;
-        this.packageVersionNumber = VersionManager.normalizeVersion(
-            sfpmPackage.version || '0.0.0.1'
-        );
+        this.packageVersionNumber = VersionManager.normalizeVersion(sfpmPackage.version || '0.0.0.1');
 
         // Create repository for artifact operations
         this.repository = new ArtifactRepository(projectDirectory, logger);
 
         // artifacts/<package_name>/<version>
-        this.versionDirectory = this.repository.getVersionPath(
-            sfpmPackage.packageName, 
-            this.packageVersionNumber
-        );
+        this.versionDirectory = this.repository.getVersionPath(sfpmPackage.packageName, this.packageVersionNumber);
 
         this.changelogProvider = options.changelogProvider || new StubChangelogProvider();
     }
@@ -95,18 +91,18 @@ export default class ArtifactAssembler {
      * @returns {Promise<string>} The path to the generated artifact.tgz.
      */
     public async assemble(): Promise<string> {
+        const startTime = Date.now();
         try {
-            this.logger?.info(`Assembling artifact for ${this.sfpmPackage.packageName}@${this.packageVersionNumber}`);
+            this.emitStart();
 
             // 1. Calculate sourceHash from current package state
             const currentSourceHash = await this.calculateSourceHash();
-            this.logger?.debug(`Current source hash: ${currentSourceHash}`);
 
             // 2. Prepare staging directory with source files
             const stagingDir = await this.prepareStagingDirectory();
 
             // 3. Generate package.json with sfpm metadata
-            await this.generatePackageJson(stagingDir, currentSourceHash);
+            await this.generatePackageJson(stagingDir);
 
             // 4. Generate changelog
             await this.generateChangelog(stagingDir);
@@ -120,40 +116,20 @@ export default class ArtifactAssembler {
             // 7. Move tarball to version directory
             const artifactPath = await this.moveTarball(stagingDir, tarballName);
 
-            // 8. Calculate artifact hash
-            const artifactHash = await this.repository.calculateFileHash(artifactPath);
-            this.logger?.debug(`Artifact hash: ${artifactHash}`);
+            // 8. Calculate artifact hash and finalize
+            const artifactHash = await this.finalizeArtifact(artifactPath, currentSourceHash);
 
-            // 9. Update manifest and symlink via repository
-            await this.repository.finalizeArtifact(
-                this.sfpmPackage.packageName,
-                this.packageVersionNumber,
-                {
-                    path: this.repository.getArtifactPath(this.sfpmPackage.packageName, this.packageVersionNumber),
-                    sourceHash: currentSourceHash,
-                    artifactHash: artifactHash,
-                    generatedAt: Date.now(),
-                    commit: this.sfpmPackage.commitId
-                }
-            );
-
-            // 10. Cleanup staging directory
+            // 9. Cleanup staging directory
             await fs.remove(stagingDir);
 
-            this.logger?.info(`Artifact successfully stored at ${artifactPath}`);
+            this.emitComplete(artifactPath, currentSourceHash, artifactHash, startTime);
             return artifactPath;
-
         } catch (error: any) {
-            this.logger?.error(`Failed to assemble artifact: ${error.message}`);
-            throw new ArtifactError(
-                this.sfpmPackage.packageName,
-                'assembly',
-                'Failed to assemble artifact',
-                {
-                    version: this.packageVersionNumber,
-                    cause: error instanceof Error ? error : new Error(String(error))
-                }
-            );
+            this.emitError(error);
+            throw new ArtifactError(this.sfpmPackage.packageName, 'assembly', 'Failed to assemble artifact', {
+                version: this.packageVersionNumber,
+                cause: error instanceof Error ? error : new Error(String(error)),
+            });
         }
     }
 
@@ -164,7 +140,7 @@ export default class ArtifactAssembler {
     private async prepareStagingDirectory(): Promise<string> {
         if (this.sfpmPackage.stagingDirectory) {
             this.logger?.debug(`Using staging directory: ${this.sfpmPackage.stagingDirectory}`);
-            
+
             // Cleanup noise from staging directory
             const noise = ['.sfpm', '.sfdx', 'node_modules'];
             for (const dir of noise) {
@@ -181,7 +157,7 @@ export default class ArtifactAssembler {
             this.sfpmPackage.packageName,
             'assembly',
             'No staging directory available - package must be staged before assembly',
-            { version: this.packageVersionNumber }
+            { version: this.packageVersionNumber },
         );
     }
 
@@ -189,7 +165,7 @@ export default class ArtifactAssembler {
      * Generate package.json in the staging directory.
      * Constructs the full npm package.json with sfpm metadata from the package.
      */
-    private async generatePackageJson(stagingDir: string, sourceHash: string): Promise<void> {
+    private async generatePackageJson(stagingDir: string): Promise<void> {
         const { npmScope, additionalKeywords, author, license } = this.options;
         const pkg = this.sfpmPackage;
 
@@ -206,12 +182,7 @@ export default class ArtifactAssembler {
         }
 
         // Build keywords
-        const keywords = [
-            'sfpm',
-            'salesforce',
-            String(pkg.type),
-            ...(additionalKeywords || [])
-        ];
+        const keywords = ['sfpm', 'salesforce', String(pkg.type), ...(additionalKeywords || [])];
 
         // Construct package.json
         const packageJson: NpmPackageJson = {
@@ -228,7 +199,7 @@ export default class ArtifactAssembler {
                 'config/**',
                 'sfdx-project.json',
                 '.forceignore',
-                'changelog.json'
+                'changelog.json',
             ],
             sfpm: sfpmMeta,
         };
@@ -246,7 +217,7 @@ export default class ArtifactAssembler {
         if (pkg.metadata?.source?.repositoryUrl) {
             packageJson.repository = {
                 type: 'git',
-                url: pkg.metadata.source.repositoryUrl
+                url: pkg.metadata.source.repositoryUrl,
             };
         }
 
@@ -260,10 +231,7 @@ export default class ArtifactAssembler {
      * Generate changelog.json in the staging directory.
      */
     private async generateChangelog(stagingDir: string): Promise<void> {
-        const changelog = await this.changelogProvider.generateChangelog(
-            this.sfpmPackage, 
-            this.projectDirectory
-        );
+        const changelog = await this.changelogProvider.generateChangelog(this.sfpmPackage, this.projectDirectory);
         const changelogPath = path.join(stagingDir, 'changelog.json');
         await fs.writeJson(changelogPath, changelog, { spaces: 4 });
     }
@@ -282,7 +250,7 @@ export default class ArtifactAssembler {
      */
     private async runNpmPack(stagingDir: string): Promise<string> {
         this.logger?.debug(`Running npm pack in ${stagingDir}`);
-        
+
         try {
             // npm pack outputs the filename of the created tarball
             const output = execSync('npm pack', {
@@ -293,25 +261,26 @@ export default class ArtifactAssembler {
 
             // The output is the tarball filename (e.g., "myorg-my-package-1.0.0-1.tgz")
             const tarballName = output.split('\n').pop()?.trim();
-            
+
             if (!tarballName || !tarballName.endsWith('.tgz')) {
                 throw new Error(`Unexpected npm pack output: ${output}`);
             }
 
             this.logger?.debug(`npm pack created: ${tarballName}`);
-            return tarballName;
 
+            this.emit('assembly:pack', {
+                timestamp: new Date(),
+                packageName: this.sfpmPackage.packageName,
+                tarballName,
+            });
+
+            return tarballName;
         } catch (error) {
-            throw new ArtifactError(
-                this.sfpmPackage.packageName,
-                'pack',
-                'npm pack failed',
-                {
-                    version: this.packageVersionNumber,
-                    context: { stagingDir },
-                    cause: error instanceof Error ? error : new Error(String(error))
-                }
-            );
+            throw new ArtifactError(this.sfpmPackage.packageName, 'pack', 'npm pack failed', {
+                version: this.packageVersionNumber,
+                context: { stagingDir },
+                cause: error instanceof Error ? error : new Error(String(error)),
+            });
         }
     }
 
@@ -320,10 +289,7 @@ export default class ArtifactAssembler {
      */
     private async moveTarball(stagingDir: string, tarballName: string): Promise<string> {
         const sourcePath = path.join(stagingDir, tarballName);
-        const targetPath = this.repository.getArtifactTgzPath(
-            this.sfpmPackage.packageName,
-            this.packageVersionNumber
-        );
+        const targetPath = this.repository.getArtifactTgzPath(this.sfpmPackage.packageName, this.packageVersionNumber);
 
         // Ensure version directory exists
         await fs.ensureDir(path.dirname(targetPath));
@@ -340,11 +306,70 @@ export default class ArtifactAssembler {
      * Uses the ComponentSet to ensure consistency with .forceignore rules.
      */
     private async calculateSourceHash(): Promise<string> {
+        let hash: string;
+
         if (!(this.sfpmPackage instanceof SfpmMetadataPackage)) {
             // For non-metadata packages, use a simple timestamp-based hash
-            return crypto.createHash('sha256').update(Date.now().toString()).digest('hex');
+            hash = crypto.createHash('sha256').update(Date.now().toString()).digest('hex');
+        } else {
+            hash = await SourceHasher.calculate(this.sfpmPackage);
         }
 
-        return await SourceHasher.calculate(this.sfpmPackage);
+        this.logger?.debug(`Current source hash: ${hash}`);
+        return hash;
+    }
+
+    /**
+     * Calculate artifact hash and update manifest.
+     */
+    private async finalizeArtifact(artifactPath: string, sourceHash: string): Promise<string> {
+        const artifactHash = await this.repository.calculateFileHash(artifactPath);
+        this.logger?.debug(`Artifact hash: ${artifactHash}`);
+
+        await this.repository.finalizeArtifact(this.sfpmPackage.packageName, this.packageVersionNumber, {
+            path: this.repository.getArtifactPath(this.sfpmPackage.packageName, this.packageVersionNumber),
+            sourceHash,
+            artifactHash,
+            generatedAt: Date.now(),
+            commit: this.sfpmPackage.commitId,
+        });
+
+        return artifactHash;
+    }
+
+    // =========================================================================
+    // Event Emission Helpers
+    // =========================================================================
+
+    private emitStart(): void {
+        this.logger?.info(`Assembling artifact for ${this.sfpmPackage.packageName}@${this.packageVersionNumber}`);
+        this.emit('assembly:start', {
+            timestamp: new Date(),
+            packageName: this.sfpmPackage.packageName,
+            version: this.packageVersionNumber,
+        });
+    }
+
+    private emitComplete(artifactPath: string, sourceHash: string, artifactHash: string, startTime: number): void {
+        this.logger?.info(`Artifact successfully stored at ${artifactPath}`);
+        this.emit('assembly:complete', {
+            timestamp: new Date(),
+            packageName: this.sfpmPackage.packageName,
+            version: this.packageVersionNumber,
+            artifactPath,
+            sourceHash,
+            artifactHash,
+            duration: Date.now() - startTime,
+        });
+    }
+
+    private emitError(error: any): void {
+        this.logger?.error(`Failed to assemble artifact: ${error.message}`);
+        this.emit('assembly:error', {
+            timestamp: new Date(),
+            packageName: this.sfpmPackage.packageName,
+            version: this.packageVersionNumber,
+            error: error instanceof Error ? error : new Error(String(error)),
+        });
     }
 }
