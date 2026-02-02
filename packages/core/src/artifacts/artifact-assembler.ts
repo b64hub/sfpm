@@ -194,7 +194,7 @@ export default class ArtifactAssembler {
         const pkg = this.sfpmPackage;
 
         // Get sfpm metadata from the package
-        const sfpmMeta = pkg.toJson();
+        const sfpmMeta = await pkg.toJson();
 
         // Build optional dependencies from sfdx-project.json dependencies
         const optionalDependencies: Record<string, string> = {};

@@ -154,7 +154,7 @@ export default abstract class SfpmPackage {
      * @param sourceHash - Optional source hash to include
      * @returns SFPM metadata object for package.json
      */
-    public toJson(): SfpmPackageMetadata {
+    public async toJson(): Promise<SfpmPackageMetadata> {
         return this.metadata
     }
 }
@@ -419,8 +419,12 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
     }
 
     // Override toJSON to ensure serialization is always reconciled
-    public async toJSON(): Promise<SfpmPackageMetadata> {
-        return await this.toPackageMetadata();
+    override async toJson(): Promise<SfpmPackageMetadata> {
+        const baseMetadata = await super.toJson();
+        return {
+            ...baseMetadata,
+            ...(await this.toPackageMetadata())
+        };
     }
 }
 
@@ -471,8 +475,8 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
     /**
      * Override to include unlocked-package-specific metadata.
      */
-    override toJson(): SfpmPackageMetadata {
-        const baseMetadata = super.toJson();
+    override async toJson(): Promise<SfpmPackageMetadata> {
+        const baseMetadata = await super.toJson();
         return {
             ...baseMetadata,
             packageId: this.packageId || undefined,
