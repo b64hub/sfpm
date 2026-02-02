@@ -1,13 +1,12 @@
 import path from 'path';
 import fs from 'fs-extra';
-import archiver from 'archiver';
 import crypto from 'crypto';
 import { Logger } from '../types/logger.js';
 import SfpmPackage from '../package/sfpm-package.js';
 import { VersionManager } from '../project/version-manager.js';
 import { SourceHasher } from '../utils/source-hasher.js';
 import { SfpmMetadataPackage } from '../package/sfpm-package.js';
-import { ArtifactManifest } from '../types/artifact.js';
+import { ArtifactRepository } from './artifact-repository.js';
 
 /**
  * Interface for providing changelogs.
@@ -34,7 +33,7 @@ class StubChangelogProvider implements ChangelogProvider {
  */
 export default class ArtifactAssembler {
 
-    private packageArtifactRoot: string;
+    private repository: ArtifactRepository;
     private versionDirectory: string;
     private packageVersionNumber: string;
     private changelogProvider: ChangelogProvider;
@@ -50,11 +49,11 @@ export default class ArtifactAssembler {
             sfpmPackage.version || '0.0.0.1'
         );
 
-        // artifacts/<package_name>
-        this.packageArtifactRoot = path.join(this.artifactsRootDir, sfpmPackage.packageName);
+        // Create repository for artifact operations
+        this.repository = new ArtifactRepository(projectDirectory, logger);
 
         // artifacts/<package_name>/<version>
-        this.versionDirectory = path.join(this.packageArtifactRoot, this.packageVersionNumber);
+        this.versionDirectory = this.repository.getVersionPath(sfpmPackage.packageName, this.packageVersionNumber);
 
         this.changelogProvider = changelogProvider || new StubChangelogProvider();
     }
@@ -92,12 +91,12 @@ export default class ArtifactAssembler {
             const zipPath = await this.createZip(stagingSourceDir);
 
             // 8. Calculate artifactHash from the generated zip
-            const artifactHash = await this.calculateFileHash(zipPath);
+            const artifactHash = await this.repository.calculateFileHash(zipPath);
             this.logger?.debug(`Artifact hash: ${artifactHash}`);
 
             // 9. Update Manifest & Symlink with both hashes
             await this.updateManifest(zipPath, currentSourceHash, artifactHash);
-            await this.updateLatestSymlink();
+            await this.repository.updateLatestSymlink(this.sfpmPackage.packageName, this.packageVersionNumber);
 
             // 10. Cleanup staging source
             await fs.remove(stagingSourceDir);
@@ -144,39 +143,18 @@ export default class ArtifactAssembler {
     }
 
     private async createZip(contentDir: string): Promise<string> {
-        const zipPath = path.join(this.versionDirectory, 'artifact.zip');
-        const output = fs.createWriteStream(zipPath);
-        const archive = archiver('zip', {
-            zlib: { level: 9 }
-        });
-
-        return new Promise((resolve, reject) => {
-            output.on('close', () => resolve(zipPath));
-            archive.on('error', (err) => reject(err));
-
-            archive.pipe(output);
-
-            // Add the contents of the staging directory with deterministic timestamps
-            // Set all file modification times to a fixed date for reproducible builds
-            const deterministicDate = new Date('1980-01-01T00:00:00.000Z');
-            
-            archive.directory(contentDir, false, (entry: any) => {
-                // Force deterministic timestamps for all entries
-                entry.date = deterministicDate;
-                return entry;
-            });
-
-            archive.finalize();
-        });
+        const zipPath = this.repository.getArtifactZipPath(
+            this.sfpmPackage.packageName, 
+            this.packageVersionNumber
+        );
+        await this.repository.createArtifactZip(contentDir, zipPath);
+        return zipPath;
     }
 
     private async updateManifest(zipPath: string, sourceHash: string, artifactHash: string): Promise<void> {
-        const manifestPath = path.join(this.packageArtifactRoot, 'manifest.json');
-        let manifest: ArtifactManifest;
+        let manifest = await this.repository.getManifest(this.sfpmPackage.packageName);
 
-        if (await fs.pathExists(manifestPath)) {
-            manifest = await fs.readJson(manifestPath);
-        } else {
+        if (!manifest) {
             manifest = {
                 name: this.sfpmPackage.packageName,
                 latest: '',
@@ -186,32 +164,14 @@ export default class ArtifactAssembler {
 
         manifest.latest = this.packageVersionNumber;
         manifest.versions[this.packageVersionNumber] = {
-            path: path.relative(this.artifactsRootDir, zipPath),
+            path: `${this.sfpmPackage.packageName}/${this.packageVersionNumber}/artifact.zip`,
             sourceHash: sourceHash,
             artifactHash: artifactHash,
             generatedAt: Date.now(),
             commit: this.sfpmPackage.commitId
         };
 
-        await fs.writeJson(manifestPath, manifest, { spaces: 4 });
-    }
-
-    private async updateLatestSymlink(): Promise<void> {
-        const symlinkPath = path.join(this.packageArtifactRoot, 'latest');
-
-        try {
-            await fs.remove(symlinkPath);
-        } catch (e) { }
-
-        try {
-            const target = path.join('.', this.packageVersionNumber);
-            // 'junction' is more reliable for directory links on Windows
-            await fs.symlink(target, symlinkPath, 'junction');
-        } catch (e: any) {
-            this.logger?.warn(`Symlink failed: ${e.message}. Falling back to latest.version identifier.`);
-            const versionFilePath = path.join(this.packageArtifactRoot, 'latest.version');
-            await fs.writeFile(versionFilePath, this.packageVersionNumber);
-        }
+        await this.repository.saveManifest(this.sfpmPackage.packageName, manifest);
     }
 
     /**
@@ -225,20 +185,5 @@ export default class ArtifactAssembler {
         }
 
         return await SourceHasher.calculate(this.sfpmPackage);
-    }
-
-    /**
-     * Calculate the SHA256 hash of a file using streams to avoid loading large files into memory.
-     * @param filePath Path to the file to hash
-     */
-    private async calculateFileHash(filePath: string): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const hash = crypto.createHash('sha256');
-            const stream = fs.createReadStream(filePath);
-
-            stream.on('data', (chunk) => hash.update(chunk));
-            stream.on('end', () => resolve(hash.digest('hex')));
-            stream.on('error', (err) => reject(err));
-        });
     }
 }

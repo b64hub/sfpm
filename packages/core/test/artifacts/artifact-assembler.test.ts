@@ -1,9 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import path from 'path';
 import * as fs from 'fs-extra';
-import archiver from 'archiver';
-import ArtifactAssembler from '../../src/artifacts/artifact-assembler.js';
 import { VersionManager } from '../../src/project/version-manager.js';
+
+// Create a mock repository instance that we can control
+const mockRepository = {
+    getVersionPath: vi.fn(),
+    getArtifactZipPath: vi.fn(),
+    getManifest: vi.fn(),
+    getManifestSync: vi.fn(),
+    saveManifest: vi.fn(),
+    updateLatestSymlink: vi.fn(),
+    calculateFileHash: vi.fn(),
+    createArtifactZip: vi.fn(),
+};
 
 vi.mock('fs-extra', () => {
     const mocks = {
@@ -12,10 +22,15 @@ vi.mock('fs-extra', () => {
         remove: vi.fn(),
         copy: vi.fn(),
         writeJSON: vi.fn(),
+        writeJson: vi.fn(),
         readJSON: vi.fn(),
         symlink: vi.fn(),
         writeFile: vi.fn(),
         createWriteStream: vi.fn(),
+        createReadStream: vi.fn(),
+        existsSync: vi.fn(),
+        readJsonSync: vi.fn(),
+        move: vi.fn(),
     };
     return {
         ...mocks,
@@ -23,20 +38,21 @@ vi.mock('fs-extra', () => {
     };
 });
 
-vi.mock('archiver', () => ({
-    default: vi.fn(() => ({
-        pipe: vi.fn(),
-        directory: vi.fn(),
-        finalize: vi.fn(),
-        on: vi.fn()
-    }))
-}));
+// Mock artifact-repository with our controlled mock
+vi.mock('../../src/artifacts/artifact-repository.js', () => {
+    return {
+        ArtifactRepository: function() { return mockRepository; },
+    };
+});
 
 vi.mock('../../src/project/version-manager.js', () => ({
     VersionManager: {
         normalizeVersion: vi.fn()
     }
 }));
+
+// Import after mocks are set up
+import ArtifactAssembler from '../../src/artifacts/artifact-assembler.js';
 
 describe('ArtifactAssembler', () => {
     let mockSfpmPackage: any;
@@ -50,7 +66,17 @@ describe('ArtifactAssembler', () => {
     const version = '1.0.0.1';
 
     beforeEach(() => {
-        vi.resetAllMocks();
+        vi.clearAllMocks();
+
+        // Configure mock repository for this test (after clear, need to set implementations)
+        mockRepository.getVersionPath.mockImplementation((pkg: string, ver: string) => `/artifacts/${pkg}/${ver}`);
+        mockRepository.getArtifactZipPath.mockImplementation((pkg: string, ver: string) => `/artifacts/${pkg}/${ver}/artifact.zip`);
+        mockRepository.getManifest.mockResolvedValue(undefined);
+        mockRepository.getManifestSync.mockReturnValue(undefined);
+        mockRepository.saveManifest.mockResolvedValue(undefined);
+        mockRepository.updateLatestSymlink.mockResolvedValue(undefined);
+        mockRepository.calculateFileHash.mockResolvedValue('mockhash123');
+        mockRepository.createArtifactZip.mockResolvedValue(undefined);
 
         mockSfpmPackage = {
             packageName,
@@ -62,7 +88,8 @@ describe('ArtifactAssembler', () => {
         mockLogger = {
             info: vi.fn(),
             error: vi.fn(),
-            warn: vi.fn()
+            warn: vi.fn(),
+            debug: vi.fn(),
         };
 
         mockChangelogProvider = {
@@ -81,8 +108,9 @@ describe('ArtifactAssembler', () => {
     });
 
     it('should initialize with correct paths', () => {
-        expect((assembler as any).packageArtifactRoot).toBe(path.join(artifactsRootDir, packageName));
-        expect((assembler as any).versionDirectory).toBe(path.join(artifactsRootDir, packageName, version));
+        // Mock returns /artifacts/<pkg>/<version>
+        expect((assembler as any).versionDirectory).toBe(`/artifacts/${packageName}/${version}`);
+        expect((assembler as any).repository).toBeDefined();
     });
 
     describe('assemble', () => {
@@ -93,46 +121,23 @@ describe('ArtifactAssembler', () => {
             vi.mocked(fs.remove).mockResolvedValue(undefined as any);
             vi.mocked(fs.copy).mockResolvedValue(undefined as any);
             vi.mocked(fs.writeJSON).mockResolvedValue(undefined as any);
-            vi.mocked(fs.readJSON).mockResolvedValue({ versions: {} });
-            vi.mocked(fs.symlink).mockResolvedValue(undefined as any);
-
-            // Mock archiver
-            const mockArchive = {
-                pipe: vi.fn(),
-                directory: vi.fn(),
-                finalize: vi.fn(),
-                on: vi.fn((event, cb) => {
-                    if (event === 'close') {
-                        // This matches the output stream on close, but archiver also has on events
-                    }
-                })
-            };
-            vi.mocked(archiver).mockReturnValue(mockArchive as any);
-
-            // Mock fs.createWriteStream
-            const mockStream = {
-                on: vi.fn((event, cb) => {
-                    if (event === 'close') setTimeout(cb, 0);
-                    return mockStream;
-                })
-            };
-            vi.mocked(fs.createWriteStream).mockReturnValue(mockStream as any);
+            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
 
             const result = await assembler.assemble();
 
-            expect(result).toBe(path.join(artifactsRootDir, packageName, version, 'artifact.zip'));
-            expect(fs.ensureDir).toHaveBeenCalledWith(path.join(artifactsRootDir, packageName, version));
+            // Mock returns /artifacts/<pkg>/<version>/artifact.zip
+            expect(result).toBe(`/artifacts/${packageName}/${version}/artifact.zip`);
+            expect(fs.ensureDir).toHaveBeenCalledWith(`/artifacts/${packageName}/${version}`);
             expect(mockChangelogProvider.generateChangelog).toHaveBeenCalledWith(mockSfpmPackage, projectDirectory);
-            expect(fs.writeJSON).toHaveBeenCalledWith(
+            expect(fs.writeJson).toHaveBeenCalledWith(
                 expect.stringContaining('artifact_metadata.json'),
                 { some: 'metadata' },
                 { spaces: 4 }
             );
-            expect(fs.writeJSON).toHaveBeenCalledWith(
-                expect.stringContaining('manifest.json'),
-                expect.objectContaining({ latest: version }),
-                { spaces: 4 }
-            );
+            // Repository handles manifest and symlink
+            const repo = (assembler as any).repository;
+            expect(repo.saveManifest).toHaveBeenCalled();
+            expect(repo.updateLatestSymlink).toHaveBeenCalledWith(packageName, version);
             expect(fs.remove).toHaveBeenCalledWith('/tmp/staging');
             expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('source'));
         });
@@ -147,13 +152,15 @@ describe('ArtifactAssembler', () => {
 
     describe('prepareSource', () => {
         it('should copy staging directory and remove noise', async () => {
+            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
             vi.mocked(fs.pathExists).mockResolvedValue(true);
             vi.mocked(fs.remove).mockResolvedValue(undefined as any);
             vi.mocked(fs.copy).mockResolvedValue(undefined as any);
 
             const stagingSourceDir = await (assembler as any).prepareSource();
 
-            expect(stagingSourceDir).toBe(path.join(artifactsRootDir, packageName, version, 'source'));
+            // Mock repo returns /artifacts/<pkg>/<version>
+            expect(stagingSourceDir).toBe(`/artifacts/${packageName}/${version}/source`);
             expect(fs.remove).toHaveBeenCalledWith(path.join('/tmp/staging', '.sfpm'));
             expect(fs.remove).toHaveBeenCalledWith(path.join('/tmp/staging', '.sfdx'));
             expect(fs.copy).toHaveBeenCalledWith('/tmp/staging', stagingSourceDir);
@@ -161,35 +168,43 @@ describe('ArtifactAssembler', () => {
         });
 
         it('should work when no staging directory is provided', async () => {
+            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
             mockSfpmPackage.stagingDirectory = undefined;
+            
+            // Need to recreate assembler with the modified package
+            assembler = new ArtifactAssembler(
+                mockSfpmPackage,
+                projectDirectory,
+                artifactsRootDir,
+                mockLogger,
+                mockChangelogProvider
+            );
+            
             const stagingSourceDir = await (assembler as any).prepareSource();
-            expect(stagingSourceDir).toBe(path.join(artifactsRootDir, packageName, version, 'source'));
+            expect(stagingSourceDir).toBe(`/artifacts/${packageName}/${version}/source`);
             expect(fs.copy).not.toHaveBeenCalled();
         });
     });
 
     describe('updateManifest', () => {
         it('should create new manifest if it does not exist', async () => {
-            vi.mocked(fs.pathExists).mockResolvedValue(false);
-            vi.mocked(fs.writeJSON).mockResolvedValue(undefined as any);
+            // The repository mock handles this now
+            await (assembler as any).updateManifest('/path/to/zip', 'sourcehash', 'artifacthash');
 
-            await (assembler as any).updateManifest('/path/to/zip');
-
-            expect(fs.writeJSON).toHaveBeenCalledWith(
-                expect.stringContaining('manifest.json'),
+            const repo = (assembler as any).repository;
+            expect(repo.saveManifest).toHaveBeenCalledWith(
+                packageName,
                 expect.objectContaining({
                     name: packageName,
                     latest: version,
                     versions: expect.objectContaining({
                         [version]: expect.any(Object)
                     })
-                }),
-                { spaces: 4 }
+                })
             );
         });
 
         it('should update existing manifest', async () => {
-            vi.mocked(fs.pathExists).mockResolvedValue(true);
             const existingManifest = {
                 name: packageName,
                 latest: '0.0.0.1',
@@ -197,45 +212,16 @@ describe('ArtifactAssembler', () => {
                     '0.0.0.1': { path: 'old/path', generatedAt: 123 }
                 }
             };
-            vi.mocked(fs.readJSON).mockResolvedValue(existingManifest);
-            vi.mocked(fs.writeJSON).mockResolvedValue(undefined as any);
+            const repo = (assembler as any).repository;
+            repo.getManifest.mockResolvedValue(existingManifest);
 
-            await (assembler as any).updateManifest('/path/to/zip');
+            await (assembler as any).updateManifest('/path/to/zip', 'sourcehash', 'artifacthash');
 
-            const savedManifest = vi.mocked(fs.writeJSON).mock.calls[0][1];
+            expect(repo.saveManifest).toHaveBeenCalled();
+            const savedManifest = repo.saveManifest.mock.calls[0][1];
             expect(savedManifest.latest).toBe(version);
             expect(savedManifest.versions[version]).toBeDefined();
             expect(savedManifest.versions['0.0.0.1']).toBeDefined();
-        });
-    });
-
-    describe('updateLatestSymlink', () => {
-        it('should create a junction/symlink', async () => {
-            vi.mocked(fs.remove).mockResolvedValue(undefined as any);
-            vi.mocked(fs.symlink).mockResolvedValue(undefined as any);
-
-            await (assembler as any).updateLatestSymlink();
-
-            expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('latest'));
-            expect(fs.symlink).toHaveBeenCalledWith(
-                path.join('.', version),
-                expect.stringContaining('latest'),
-                'junction'
-            );
-        });
-
-        it('should fallback to latest.version file if symlink fails', async () => {
-            vi.mocked(fs.remove).mockResolvedValue(undefined as any);
-            vi.mocked(fs.symlink).mockRejectedValue(new Error('Symlink not supported'));
-            vi.mocked(fs.writeFile).mockResolvedValue(undefined as any);
-
-            await (assembler as any).updateLatestSymlink();
-
-            expect(fs.writeFile).toHaveBeenCalledWith(
-                expect.stringContaining('latest.version'),
-                version
-            );
-            expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('Symlink failed'));
         });
     });
 });

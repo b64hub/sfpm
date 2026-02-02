@@ -4,10 +4,19 @@ import ProjectConfig from '../../../src/project/project-config.js';
 import { InstallerRegistry } from '../../../src/package/installers/installer-registry.js';
 import { PackageFactory } from '../../../src/package/sfpm-package.js';
 import { PackageType, InstallationSourceType } from '../../../src/types/package.js';
+import { ArtifactService } from '../../../src/artifacts/artifact-service.js';
 
 // Mocks
 vi.mock('../../../src/project/project-config.js');
 vi.mock('../../../src/package/sfpm-package.js');
+// Mock the ArtifactService module to return empty artifact info
+vi.mock('../../../src/artifacts/artifact-service.js', () => ({
+    ArtifactService: function() {
+        return {
+            getLocalArtifactInfo: vi.fn().mockReturnValue({ version: undefined, metadata: undefined }),
+        };
+    }
+}));
 
 describe('PackageInstaller', () => {
     let installer: PackageInstaller;
@@ -32,6 +41,7 @@ describe('PackageInstaller', () => {
         mockPackage = {
             packageName: 'test-package',
             type: PackageType.Unlocked,
+            projectDirectory: '/test/project',
         };
 
         mockInstallerInstance = {
@@ -145,7 +155,9 @@ describe('PackageInstaller', () => {
 
             await expect(installer.installPackage('test-package')).rejects.toThrow('Connection failed');
 
-            expect(mockLogger.error).toHaveBeenCalledWith('Failed to install package: test-package');
+            expect(mockLogger.error).toHaveBeenCalledWith(
+                expect.stringContaining('Failed to install package: test-package')
+            );
         });
 
         it('should create installer with correct parameters', async () => {

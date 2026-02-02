@@ -47,6 +47,10 @@ export { PackageBuilder } from './package/package-builder.js'; // Avoid export *
 export { default as PackageInstaller } from './package/package-installer.js';
 export { InstallerRegistry } from './package/installers/installer-registry.js';
 export { ArtifactService } from './artifacts/artifact-service.js';
+export { ArtifactRepository } from './artifacts/artifact-repository.js';
+export { ArtifactResolver } from './artifacts/artifact-resolver.js';
+export { RegistryClient, NpmRegistryClient, type RegistryClientConfig, type RegistryPackageInfo, type RegistryVersionInfo, type DownloadResult } from './artifacts/registry/index.js';
+export * from './types/artifact.js';
 export * from './types/logger.js';
 export { GitService } from './git/git-service.js';
 export { default as Git } from './git/git.js';

@@ -1,11 +1,9 @@
 import { Org, Connection } from "@salesforce/core";
-import path from "path";
-import fs from "fs-extra";
-import AdmZip from "adm-zip";
 import SfpmPackage from "../package/sfpm-package.js";
 import { Logger } from "../types/logger.js";
-import { InstalledArtifact, PackageType, SfpmPackageMetadata } from "../types/package.js";
-import { ArtifactManifest } from "../types/artifact.js";
+import { InstalledArtifact, SfpmPackageMetadata } from "../types/package.js";
+import { ArtifactManifest, ArtifactVersionEntry } from "../types/artifact.js";
+import { ArtifactRepository } from "./artifact-repository.js";
 
 export interface SfpmArtifact__c {
     Id?: string;
@@ -201,8 +199,16 @@ export class ArtifactService {
     }
 
     // ========================================================================
-    // Local Artifact Management
+    // Local Artifact Management (delegates to ArtifactRepository)
     // ========================================================================
+
+    /**
+     * Get an ArtifactRepository for the given project directory.
+     * Use this when you need direct access to repository methods.
+     */
+    public getRepository(projectDirectory: string): ArtifactRepository {
+        return new ArtifactRepository(projectDirectory, this.logger);
+    }
 
     /**
      * Get the path to the local artifacts directory for a package
@@ -211,7 +217,7 @@ export class ArtifactService {
      * @returns Path to the package's artifact directory
      */
     public getLocalArtifactPath(projectDirectory: string, packageName: string): string {
-        return path.join(projectDirectory, 'artifacts', packageName);
+        return this.getRepository(projectDirectory).getPackageArtifactPath(packageName);
     }
 
     /**
@@ -221,9 +227,7 @@ export class ArtifactService {
      * @returns True if artifacts exist
      */
     public hasLocalArtifacts(projectDirectory: string, packageName: string): boolean {
-        const artifactPath = this.getLocalArtifactPath(projectDirectory, packageName);
-        const manifestPath = path.join(artifactPath, 'manifest.json');
-        return fs.existsSync(manifestPath);
+        return this.getRepository(projectDirectory).hasArtifacts(packageName);
     }
 
     /**
@@ -233,20 +237,7 @@ export class ArtifactService {
      * @returns Artifact manifest or undefined if not found
      */
     public getLocalArtifactManifest(projectDirectory: string, packageName: string): ArtifactManifest | undefined {
-        try {
-            const artifactPath = this.getLocalArtifactPath(projectDirectory, packageName);
-            const manifestPath = path.join(artifactPath, 'manifest.json');
-
-            if (!fs.existsSync(manifestPath)) {
-                this.logger?.debug(`No manifest found at ${manifestPath}`);
-                return undefined;
-            }
-
-            return fs.readJsonSync(manifestPath);
-        } catch (error) {
-            this.logger?.warn(`Failed to read artifact manifest: ${error instanceof Error ? error.message : String(error)}`);
-            return undefined;
-        }
+        return this.getRepository(projectDirectory).getManifestSync(packageName);
     }
 
     /**
@@ -256,13 +247,12 @@ export class ArtifactService {
      * @returns Latest version or undefined if not found
      */
     public getLocalArtifactLatestVersion(projectDirectory: string, packageName: string): string | undefined {
-        const manifest = this.getLocalArtifactManifest(projectDirectory, packageName);
-        return manifest?.latest;
+        return this.getRepository(projectDirectory).getLatestVersion(packageName);
     }
 
     /**
      * Read artifact metadata for a specific version
-     * Extracts metadata from the artifact zip to a temp location
+     * Extracts metadata from the artifact zip
      * @param projectDirectory - Root project directory
      * @param packageName - Name of the package
      * @param version - Version to read (defaults to latest)
@@ -273,48 +263,7 @@ export class ArtifactService {
         packageName: string,
         version?: string
     ): SfpmPackageMetadata | undefined {
-        try {
-            const manifest = this.getLocalArtifactManifest(projectDirectory, packageName);
-            if (!manifest) {
-                return undefined;
-            }
-
-            const targetVersion = version || manifest.latest;
-            if (!targetVersion) {
-                this.logger?.warn(`No version specified and no latest version in manifest for ${packageName}`);
-                return undefined;
-            }
-
-            // Check if version exists in manifest
-            if (!manifest.versions[targetVersion]) {
-                this.logger?.warn(`Version ${targetVersion} not found in manifest for ${packageName}`);
-                return undefined;
-            }
-
-            // Extract and read metadata from the artifact zip
-            const artifactPath = this.getLocalArtifactPath(projectDirectory, packageName);
-            const zipPath = path.join(artifactPath, targetVersion, 'artifact.zip');
-
-            if (!fs.existsSync(zipPath)) {
-                this.logger?.debug(`No artifact.zip found at ${zipPath}`);
-                return undefined;
-            }
-
-            // Use adm-zip for simple synchronous extraction
-            const zip = new AdmZip(zipPath);
-            const metadataEntry = zip.getEntry('artifact_metadata.json');
-            
-            if (!metadataEntry) {
-                this.logger?.debug(`No artifact_metadata.json found inside ${zipPath}`);
-                return undefined;
-            }
-
-            const metadataContent = zip.readAsText(metadataEntry);
-            return JSON.parse(metadataContent);
-        } catch (error) {
-            this.logger?.warn(`Failed to read artifact metadata: ${error instanceof Error ? error.message : String(error)}`);
-            return undefined;
-        }
+        return this.getRepository(projectDirectory).getMetadata(packageName, version);
     }
 
     /**
@@ -332,29 +281,8 @@ export class ArtifactService {
         version?: string;
         manifest?: ArtifactManifest;
         metadata?: SfpmPackageMetadata;
-        versionInfo?: ArtifactManifest['versions'][string];
+        versionInfo?: ArtifactVersionEntry;
     } {
-        const manifest = this.getLocalArtifactManifest(projectDirectory, packageName);
-        
-        if (!manifest) {
-            return {};
-        }
-
-        const targetVersion = version || manifest.latest;
-        const versionInfo = targetVersion ? manifest.versions[targetVersion] : undefined;
-        const metadata = this.getLocalArtifactMetadata(projectDirectory, packageName, targetVersion);
-
-        return {
-            version: targetVersion,
-            manifest,
-            metadata,
-            versionInfo,
-        };
+        return this.getRepository(projectDirectory).getArtifactInfo(packageName, version);
     }
-
-    // ========================================================================
-    // Future: Remote Artifact Management
-    // ========================================================================
-    // Methods for retrieving artifacts from remote repositories (npm, etc.)
-    // can be added here in the future
 }
