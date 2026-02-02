@@ -3,39 +3,26 @@ import path from 'path';
 import fs from 'fs-extra';
 import { ArtifactRepository } from '../../src/artifacts/artifact-repository.js';
 import { ArtifactManifest } from '../../src/types/artifact.js';
+import { PackageType } from '../../src/types/package.js';
 
-// Create mock instances
-const mockAdmZipInstance = {
-    getEntry: vi.fn().mockReturnValue({
-        name: 'artifact_metadata.json',
-    }),
-    readAsText: vi.fn().mockReturnValue(JSON.stringify({
-        identity: {
-            packageName: 'test-package',
-            packageVersionId: '04t1234567890',
-        },
-    })),
+// Mock package.json content for tgz extraction
+const mockPackageJson = {
+    name: '@testorg/test-package',
+    version: '1.0.0-1',
+    sfpm: {
+        packageType: PackageType.Unlocked,
+        packageName: 'test-package',
+        versionNumber: '1.0.0-1',
+        packageId: '0Ho1234567890',
+        packageVersionId: '04t1234567890',
+        generatedAt: Date.now(),
+    }
 };
 
 // Mock external dependencies
 vi.mock('fs-extra');
-vi.mock('adm-zip', () => {
-    return {
-        default: function AdmZip() { return mockAdmZipInstance; },
-    };
-});
-
-vi.mock('archiver', () => ({
-    default: vi.fn().mockImplementation(() => ({
-        pipe: vi.fn(),
-        directory: vi.fn(),
-        finalize: vi.fn(),
-        on: vi.fn((event, callback) => {
-            if (event === 'close') {
-                setTimeout(callback, 0);
-            }
-        }),
-    })),
+vi.mock('child_process', () => ({
+    execSync: vi.fn().mockImplementation(() => JSON.stringify(mockPackageJson))
 }));
 
 describe('ArtifactRepository', () => {
@@ -57,7 +44,7 @@ describe('ArtifactRepository', () => {
         lastCheckedRemote: Date.now() - 30 * 60 * 1000,
         versions: {
             '1.0.0-1': {
-                path: 'test-package/1.0.0-1/artifact.zip',
+                path: 'test-package/1.0.0-1/artifact.tgz',
                 sourceHash: 'abc123',
                 artifactHash: 'def456',
                 generatedAt: Date.now() - 60000,
@@ -93,9 +80,9 @@ describe('ArtifactRepository', () => {
             );
         });
 
-        it('should return correct artifact zip path', () => {
-            expect(repository.getArtifactZipPath('my-package', '1.0.0-1')).toBe(
-                path.join(projectDirectory, 'artifacts', 'my-package', '1.0.0-1', 'artifact.zip')
+        it('should return correct artifact tgz path', () => {
+            expect(repository.getArtifactTgzPath('my-package', '1.0.0-1')).toBe(
+                path.join(projectDirectory, 'artifacts', 'my-package', '1.0.0-1', 'artifact.tgz')
             );
         });
 
@@ -126,9 +113,9 @@ describe('ArtifactRepository', () => {
             expect(repository.hasVersion('test-package', '2.0.0-1')).toBe(false);
         });
 
-        it('should check if artifact zip exists', () => {
+        it('should check if artifact tgz exists', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
-            expect(repository.artifactZipExists('test-package', '1.0.0-1')).toBe(true);
+            expect(repository.artifactExists('test-package', '1.0.0-1')).toBe(true);
         });
     });
 
@@ -196,20 +183,25 @@ describe('ArtifactRepository', () => {
     });
 
     describe('metadata operations', () => {
-        it('should get metadata from artifact zip', () => {
+        it('should get metadata from artifact tgz', () => {
             const manifest = createMockManifest();
-            vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
+            vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+                return p.endsWith('manifest.json') || p.endsWith('artifact.tgz');
+            });
 
             const metadata = repository.getMetadata('test-package');
             expect(metadata).toBeDefined();
             expect(metadata?.identity).toBeDefined();
+            expect(metadata?.identity?.packageVersionId).toBe('04t1234567890');
         });
 
         it('should extract packageVersionId', () => {
             const manifest = createMockManifest();
-            vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
+            vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+                return p.endsWith('manifest.json') || p.endsWith('artifact.tgz');
+            });
 
             const versionId = repository.extractPackageVersionId('test-package');
             expect(versionId).toBe('04t1234567890');
@@ -217,8 +209,10 @@ describe('ArtifactRepository', () => {
 
         it('should get comprehensive artifact info', () => {
             const manifest = createMockManifest();
-            vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
+            vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+                return p.endsWith('manifest.json') || p.endsWith('artifact.tgz');
+            });
 
             const info = repository.getArtifactInfo('test-package');
             expect(info.version).toBe('1.0.0-1');

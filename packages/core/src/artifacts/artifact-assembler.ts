@@ -1,12 +1,15 @@
 import path from 'path';
 import fs from 'fs-extra';
 import crypto from 'crypto';
+import { execSync } from 'child_process';
 import { Logger } from '../types/logger.js';
 import SfpmPackage from '../package/sfpm-package.js';
 import { VersionManager } from '../project/version-manager.js';
 import { SourceHasher } from '../utils/source-hasher.js';
 import { SfpmMetadataPackage } from '../package/sfpm-package.js';
 import { ArtifactRepository } from './artifact-repository.js';
+import { NpmPackageJson, convertDependencyToNpm } from '../types/npm.js';
+import { ArtifactError } from '../types/errors.js';
 
 /**
  * Interface for providing changelogs.
@@ -20,7 +23,7 @@ export interface ChangelogProvider {
  * Stub implementation of the ChangelogProvider.
  */
 class StubChangelogProvider implements ChangelogProvider {
-    async generateChangelog(pkg: SfpmPackage, projectDirectory: string): Promise<any> {
+    async generateChangelog(_pkg: SfpmPackage, _projectDirectory: string): Promise<any> {
         return {
             message: "Changelog generation is currently disabled.",
             timestamp: Date.now()
@@ -29,7 +32,32 @@ class StubChangelogProvider implements ChangelogProvider {
 }
 
 /**
- * @description Assembles artifacts in a structured monorepo format.
+ * Options for artifact assembly
+ */
+export interface ArtifactAssemblerOptions {
+    /** npm scope for the package (e.g., "@myorg") - required */
+    npmScope: string;
+    /** Changelog provider for generating changelog.json */
+    changelogProvider?: ChangelogProvider;
+    /** Additional keywords for package.json */
+    additionalKeywords?: string[];
+    /** Author string for package.json */
+    author?: string;
+    /** License identifier for package.json */
+    license?: string;
+}
+
+/**
+ * @description Assembles artifacts using npm pack for npm-native packaging.
+ * 
+ * The new assembly flow:
+ * 1. Prepare staging directory with source, sfdx-project.json, scripts, etc.
+ * 2. Generate package.json with sfpm metadata
+ * 3. Generate changelog.json
+ * 4. Run npm pack to create tarball
+ * 5. Move tarball to artifacts/<package>/<version>/artifact.tgz
+ * 6. Update manifest and symlink
+ * 7. Clean up staging directory
  */
 export default class ArtifactAssembler {
 
@@ -37,14 +65,15 @@ export default class ArtifactAssembler {
     private versionDirectory: string;
     private packageVersionNumber: string;
     private changelogProvider: ChangelogProvider;
+    private options: ArtifactAssemblerOptions;
 
     constructor(
         private sfpmPackage: SfpmPackage,
         private projectDirectory: string,
-        private artifactsRootDir: string,
-        private logger?: Logger,
-        changelogProvider?: ChangelogProvider
+        options: ArtifactAssemblerOptions,
+        private logger?: Logger
     ) {
+        this.options = options;
         this.packageVersionNumber = VersionManager.normalizeVersion(
             sfpmPackage.version || '0.0.0.1'
         );
@@ -53,15 +82,17 @@ export default class ArtifactAssembler {
         this.repository = new ArtifactRepository(projectDirectory, logger);
 
         // artifacts/<package_name>/<version>
-        this.versionDirectory = this.repository.getVersionPath(sfpmPackage.packageName, this.packageVersionNumber);
+        this.versionDirectory = this.repository.getVersionPath(
+            sfpmPackage.packageName, 
+            this.packageVersionNumber
+        );
 
-        this.changelogProvider = changelogProvider || new StubChangelogProvider();
+        this.changelogProvider = options.changelogProvider || new StubChangelogProvider();
     }
 
     /**
-     * @description Orchestrates the artifact assembly process.
-     * Always assembles when called - pre-build checks should happen elsewhere.
-     * @returns {Promise<string>} The path to the generated artifact.zip.
+     * @description Orchestrates the artifact assembly process using npm pack.
+     * @returns {Promise<string>} The path to the generated artifact.tgz.
      */
     public async assemble(): Promise<string> {
         try {
@@ -71,54 +102,71 @@ export default class ArtifactAssembler {
             const currentSourceHash = await this.calculateSourceHash();
             this.logger?.debug(`Current source hash: ${currentSourceHash}`);
 
-            // 2. Prepare Version Directory
-            await fs.ensureDir(this.versionDirectory);
+            // 2. Prepare staging directory with source files
+            const stagingDir = await this.prepareStagingDirectory();
 
-            // 3. Generate Metadata (before moving staging directory)
-            const metadata = await (this.sfpmPackage as any).toPackageMetadata();
+            // 3. Generate package.json with sfpm metadata
+            await this.generatePackageJson(stagingDir, currentSourceHash);
 
-            // 4. Prepare Source (Copy and Clean)
-            const stagingSourceDir = await this.prepareSource();
+            // 4. Generate changelog
+            await this.generateChangelog(stagingDir);
 
-            // 5. Write Metadata to staging source
-            const metadataPath = path.join(stagingSourceDir, `artifact_metadata.json`);
-            await fs.writeJson(metadataPath, metadata, { spaces: 4 });
+            // 5. Create an empty index.js (npm requires a main entry point)
+            await this.createStubEntryPoint(stagingDir);
 
-            // 6. Generate Changelog (using provider)
-            await this.generateChangelog(stagingSourceDir);
+            // 6. Run npm pack in staging directory
+            const tarballName = await this.runNpmPack(stagingDir);
 
-            // 7. Create Zip using Archiver (with deterministic timestamps)
-            const zipPath = await this.createZip(stagingSourceDir);
+            // 7. Move tarball to version directory
+            const artifactPath = await this.moveTarball(stagingDir, tarballName);
 
-            // 8. Calculate artifactHash from the generated zip
-            const artifactHash = await this.repository.calculateFileHash(zipPath);
+            // 8. Calculate artifact hash
+            const artifactHash = await this.repository.calculateFileHash(artifactPath);
             this.logger?.debug(`Artifact hash: ${artifactHash}`);
 
-            // 9. Update Manifest & Symlink with both hashes
-            await this.updateManifest(zipPath, currentSourceHash, artifactHash);
-            await this.repository.updateLatestSymlink(this.sfpmPackage.packageName, this.packageVersionNumber);
+            // 9. Update manifest and symlink via repository
+            await this.repository.finalizeArtifact(
+                this.sfpmPackage.packageName,
+                this.packageVersionNumber,
+                {
+                    path: this.repository.getArtifactPath(this.sfpmPackage.packageName, this.packageVersionNumber),
+                    sourceHash: currentSourceHash,
+                    artifactHash: artifactHash,
+                    generatedAt: Date.now(),
+                    commit: this.sfpmPackage.commitId
+                }
+            );
 
-            // 10. Cleanup staging source
-            await fs.remove(stagingSourceDir);
+            // 10. Cleanup staging directory
+            await fs.remove(stagingDir);
 
-            this.logger?.info(`Artifact successfully stored at ${zipPath}`);
-            return zipPath;
+            this.logger?.info(`Artifact successfully stored at ${artifactPath}`);
+            return artifactPath;
+
         } catch (error: any) {
             this.logger?.error(`Failed to assemble artifact: ${error.message}`);
-            throw new Error('Unable to create artifact: ' + error.message);
+            throw new ArtifactError(
+                this.sfpmPackage.packageName,
+                'assembly',
+                'Failed to assemble artifact',
+                {
+                    version: this.packageVersionNumber,
+                    cause: error instanceof Error ? error : new Error(String(error))
+                }
+            );
         }
     }
 
-    private async prepareSource(): Promise<string> {
-        const stagingSourceDir = path.join(this.versionDirectory, 'source');
-        await fs.ensureDir(stagingSourceDir);
-
+    /**
+     * Prepare staging directory with source files.
+     * Uses the package's staging directory from PackageAssembler.
+     */
+    private async prepareStagingDirectory(): Promise<string> {
         if (this.sfpmPackage.stagingDirectory) {
-            this.logger?.debug(`Preparing source from staging directory: ${this.sfpmPackage.stagingDirectory}`);
-            this.logger?.debug(`Target staging source directory: ${stagingSourceDir}`);
+            this.logger?.debug(`Using staging directory: ${this.sfpmPackage.stagingDirectory}`);
             
-            // Cleanup noise from staging directory if it exists
-            const noise = ['.sfpm', '.sfdx'];
+            // Cleanup noise from staging directory
+            const noise = ['.sfpm', '.sfdx', 'node_modules'];
             for (const dir of noise) {
                 const noiseDir = path.join(this.sfpmPackage.stagingDirectory, dir);
                 if (await fs.pathExists(noiseDir)) {
@@ -126,52 +174,165 @@ export default class ArtifactAssembler {
                 }
             }
 
-            // Copy staging contents to artifact source
-            await fs.copy(this.sfpmPackage.stagingDirectory, stagingSourceDir);
-
-            // Cleanup the original staging directory (as it's transient)
-            await fs.remove(this.sfpmPackage.stagingDirectory);
+            return this.sfpmPackage.stagingDirectory;
         }
 
-        return stagingSourceDir;
-    }
-
-    private async generateChangelog(stagingDir: string): Promise<void> {
-        const changelog = await this.changelogProvider.generateChangelog(this.sfpmPackage, this.projectDirectory);
-        const changelogPath = path.join(stagingDir, `changelog.json`);
-        await fs.writeJson(changelogPath, changelog, { spaces: 4 });
-    }
-
-    private async createZip(contentDir: string): Promise<string> {
-        const zipPath = this.repository.getArtifactZipPath(
-            this.sfpmPackage.packageName, 
-            this.packageVersionNumber
+        throw new ArtifactError(
+            this.sfpmPackage.packageName,
+            'assembly',
+            'No staging directory available - package must be staged before assembly',
+            { version: this.packageVersionNumber }
         );
-        await this.repository.createArtifactZip(contentDir, zipPath);
-        return zipPath;
     }
 
-    private async updateManifest(zipPath: string, sourceHash: string, artifactHash: string): Promise<void> {
-        let manifest = await this.repository.getManifest(this.sfpmPackage.packageName);
+    /**
+     * Generate package.json in the staging directory.
+     * Constructs the full npm package.json with sfpm metadata from the package.
+     */
+    private async generatePackageJson(stagingDir: string, sourceHash: string): Promise<void> {
+        const { npmScope, additionalKeywords, author, license } = this.options;
+        const pkg = this.sfpmPackage;
 
-        if (!manifest) {
-            manifest = {
-                name: this.sfpmPackage.packageName,
-                latest: '',
-                versions: {}
+        // Get sfpm metadata from the package
+        const sfpmMeta = pkg.toJson();
+
+        // Build optional dependencies from sfdx-project.json dependencies
+        const optionalDependencies: Record<string, string> = {};
+        if (pkg.dependencies) {
+            for (const dep of pkg.dependencies) {
+                const [name, versionRange] = convertDependencyToNpm(dep, npmScope);
+                optionalDependencies[name] = versionRange;
+            }
+        }
+
+        // Build keywords
+        const keywords = [
+            'sfpm',
+            'salesforce',
+            String(pkg.type),
+            ...(additionalKeywords || [])
+        ];
+
+        // Construct package.json
+        const packageJson: NpmPackageJson = {
+            name: `${npmScope}/${pkg.packageName}`,
+            version: this.packageVersionNumber,
+            description: pkg.packageDefinition?.versionDescription || `SFPM ${pkg.type} package: ${pkg.packageName}`,
+            main: 'index.js',
+            keywords,
+            license: license || 'UNLICENSED',
+            files: [
+                'force-app/**',
+                'scripts/**',
+                'manifest/**',
+                'config/**',
+                'sfdx-project.json',
+                '.forceignore',
+                'changelog.json'
+            ],
+            sfpm: sfpmMeta,
+        };
+
+        // Add optional fields
+        if (author) {
+            packageJson.author = author;
+        }
+
+        if (Object.keys(optionalDependencies).length > 0) {
+            packageJson.optionalDependencies = optionalDependencies;
+        }
+
+        // Add repository if available
+        if (pkg.metadata?.source?.repositoryUrl) {
+            packageJson.repository = {
+                type: 'git',
+                url: pkg.metadata.source.repositoryUrl
             };
         }
 
-        manifest.latest = this.packageVersionNumber;
-        manifest.versions[this.packageVersionNumber] = {
-            path: `${this.sfpmPackage.packageName}/${this.packageVersionNumber}/artifact.zip`,
-            sourceHash: sourceHash,
-            artifactHash: artifactHash,
-            generatedAt: Date.now(),
-            commit: this.sfpmPackage.commitId
-        };
+        // Write package.json
+        const packageJsonPath = path.join(stagingDir, 'package.json');
+        await fs.writeJson(packageJsonPath, packageJson, { spaces: 2 });
+        this.logger?.debug(`Generated package.json at ${packageJsonPath}`);
+    }
 
-        await this.repository.saveManifest(this.sfpmPackage.packageName, manifest);
+    /**
+     * Generate changelog.json in the staging directory.
+     */
+    private async generateChangelog(stagingDir: string): Promise<void> {
+        const changelog = await this.changelogProvider.generateChangelog(
+            this.sfpmPackage, 
+            this.projectDirectory
+        );
+        const changelogPath = path.join(stagingDir, 'changelog.json');
+        await fs.writeJson(changelogPath, changelog, { spaces: 4 });
+    }
+
+    /**
+     * Create a stub index.js file (npm pack requires main entry point).
+     */
+    private async createStubEntryPoint(stagingDir: string): Promise<void> {
+        const indexPath = path.join(stagingDir, 'index.js');
+        await fs.writeFile(indexPath, '// SFPM Package - See sfpm metadata in package.json\n');
+    }
+
+    /**
+     * Run npm pack in the staging directory.
+     * @returns The name of the generated tarball file.
+     */
+    private async runNpmPack(stagingDir: string): Promise<string> {
+        this.logger?.debug(`Running npm pack in ${stagingDir}`);
+        
+        try {
+            // npm pack outputs the filename of the created tarball
+            const output = execSync('npm pack', {
+                cwd: stagingDir,
+                encoding: 'utf-8',
+                timeout: 60000,
+            }).trim();
+
+            // The output is the tarball filename (e.g., "myorg-my-package-1.0.0-1.tgz")
+            const tarballName = output.split('\n').pop()?.trim();
+            
+            if (!tarballName || !tarballName.endsWith('.tgz')) {
+                throw new Error(`Unexpected npm pack output: ${output}`);
+            }
+
+            this.logger?.debug(`npm pack created: ${tarballName}`);
+            return tarballName;
+
+        } catch (error) {
+            throw new ArtifactError(
+                this.sfpmPackage.packageName,
+                'pack',
+                'npm pack failed',
+                {
+                    version: this.packageVersionNumber,
+                    context: { stagingDir },
+                    cause: error instanceof Error ? error : new Error(String(error))
+                }
+            );
+        }
+    }
+
+    /**
+     * Move the tarball from staging to the version directory.
+     */
+    private async moveTarball(stagingDir: string, tarballName: string): Promise<string> {
+        const sourcePath = path.join(stagingDir, tarballName);
+        const targetPath = this.repository.getArtifactTgzPath(
+            this.sfpmPackage.packageName,
+            this.packageVersionNumber
+        );
+
+        // Ensure version directory exists
+        await fs.ensureDir(path.dirname(targetPath));
+
+        // Move the tarball
+        await fs.move(sourcePath, targetPath, { overwrite: true });
+        this.logger?.debug(`Moved tarball to ${targetPath}`);
+
+        return targetPath;
     }
 
     /**

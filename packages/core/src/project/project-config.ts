@@ -1,5 +1,5 @@
 import { SfProject, SfProjectJson, ProjectJsonSchema, ProjectJson, Logger } from '@salesforce/core';
-import { ProjectDefinition, PackageDefinition, ProjectDefinitionSchema } from '../types/project.js';
+import { ProjectDefinition, PackageDefinition, ProjectDefinitionSchema, SfpmPluginConfig } from '../types/project.js';
 import { PackageType } from '../types/package.js';
 
 
@@ -93,6 +93,36 @@ export default class ProjectConfig {
      */
     public get projectDirectory(): string {
         return this.project.getPath();
+    }
+
+    /**
+     * Returns the SFPM plugin configuration
+     */
+    public getSfpmConfig(): SfpmPluginConfig | undefined {
+        return this.getProjectDefinition().plugins?.sfpm;
+    }
+
+    /**
+     * Returns the npm scope for publishing packages.
+     * This is required for npm registry integration.
+     * @throws Error if npm scope is not configured
+     */
+    public getNpmScope(): string {
+        const config = this.getSfpmConfig();
+        if (!config?.npmScope) {
+            throw new Error(
+                'npm scope not configured. Add plugins.sfpm.npmScope to sfdx-project.json (e.g., "@myorg")'
+            );
+        }
+        return config.npmScope;
+    }
+
+    /**
+     * Returns the npm scope if configured, undefined otherwise.
+     * Use this for optional scope access without throwing.
+     */
+    public getNpmScopeOrUndefined(): string | undefined {
+        return this.getSfpmConfig()?.npmScope;
     }
 
     /**

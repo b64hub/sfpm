@@ -157,7 +157,7 @@ export class ArtifactResolver extends EventEmitter {
         return this.repository;
     }
 
-    
+
     /**
      * Resolve the best available artifact version for a package.
      * 
@@ -652,7 +652,7 @@ export class ArtifactResolver extends EventEmitter {
         });
 
         const versionDir = await this.repository.ensureVersionDir(packageName, version);
-        const artifactPath = this.repository.getArtifactZipPath(packageName, version);
+        const artifactPath = this.repository.getArtifactPath(packageName, version);
 
         try {
             // Download the package tarball using registry client
@@ -666,7 +666,7 @@ export class ArtifactResolver extends EventEmitter {
             const sourceHash = artifactHash; // For downloaded packages, use artifact hash
 
             // Extract metadata from the artifact
-            const metadata = this.repository.extractMetadataFromZip(artifactPath);
+            const metadata = this.repository.getMetadata(packageName, version);
             let packageVersionId: string | undefined;
 
             if (metadata?.identity) {
@@ -679,7 +679,7 @@ export class ArtifactResolver extends EventEmitter {
 
             // Build version entry
             const versionEntry: ArtifactVersionEntry = {
-                path: `${packageName}/${version}/artifact.zip`,
+                path: `${packageName}/${version}/artifact.tgz`,
                 artifactHash,
                 sourceHash,
                 generatedAt: Date.now(),

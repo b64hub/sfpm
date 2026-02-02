@@ -1,6 +1,7 @@
 import { ComponentSet, SourceComponent } from "@salesforce/source-deploy-retrieve";
 import { ProjectDefinition, PackageDefinition } from "../types/project.js";
 import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata, SfpmUnlockedPackageBuildOptions } from "../types/package.js";
+import { NpmPackageSfpmMetadata } from "../types/npm.js";
 import ProjectConfig from "../project/project-config.js";
 import { omit, merge, get, set } from "lodash-es";
 import path from "path";
@@ -144,6 +145,17 @@ export default abstract class SfpmPackage {
      */
     public setOrchestrationOptions(options: any): void {
         // Base implementation does nothing - subclasses override as needed
+    }
+
+    /**
+     * This is the package-agnostic metadata that describes the SFPM package.
+     * The ArtifactAssembler is responsible for constructing the full package.json.
+     * 
+     * @param sourceHash - Optional source hash to include
+     * @returns SFPM metadata object for package.json
+     */
+    public toJson(): SfpmPackageMetadata {
+        return this.metadata
     }
 }
 
@@ -407,7 +419,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
     }
 
     // Override toJSON to ensure serialization is always reconciled
-    public async toJSON() {
+    public async toJSON(): Promise<SfpmPackageMetadata> {
         return await this.toPackageMetadata();
     }
 }
@@ -454,6 +466,19 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
         if (options.isSkipValidation !== undefined) {
             set(this.metadata, 'orchestration.buildOptions.isSkipValidation', options.isSkipValidation);
         }
+    }
+
+    /**
+     * Override to include unlocked-package-specific metadata.
+     */
+    override toJson(): SfpmPackageMetadata {
+        const baseMetadata = super.toJson();
+        return {
+            ...baseMetadata,
+            packageId: this.packageId || undefined,
+            packageVersionId: this.packageVersionId,
+            isOrgDependent: this.isOrgDependent || undefined,
+        };
     }
 }
 

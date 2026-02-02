@@ -251,11 +251,11 @@ export class ArtifactError extends Error implements DisplayableError {
     public readonly context: Record<string, any>;
     public readonly packageName: string;
     public readonly version?: string;
-    public readonly operation: 'read' | 'write' | 'extract' | 'validate' | 'resolve' | 'download';
+    public readonly operation: 'read' | 'write' | 'extract' | 'validate' | 'resolve' | 'download' | 'assembly' | 'pack';
 
     constructor(
         packageName: string,
-        operation: 'read' | 'write' | 'extract' | 'validate' | 'resolve' | 'download',
+        operation: 'read' | 'write' | 'extract' | 'validate' | 'resolve' | 'download' | 'assembly' | 'pack',
         message: string,
         options?: {
             version?: string;

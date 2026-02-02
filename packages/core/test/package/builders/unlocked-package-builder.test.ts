@@ -95,6 +95,15 @@ describe('UnlockedPackageBuilder', () => {
             }
         });
 
+        // Mock project definition with npm scope for artifact assembly
+        mockSfpmPackage.projectDefinition = {
+            plugins: {
+                sfpm: {
+                    npmScope: '@testorg'
+                }
+            }
+        } as any;
+
         // Setup Org Mock
         mockConnection = { getApiVersion: () => '50.0' };
         mockOrg = {

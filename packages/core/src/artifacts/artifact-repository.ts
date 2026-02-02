@@ -1,11 +1,11 @@
 import path from 'path';
 import fs from 'fs-extra';
 import crypto from 'crypto';
-import AdmZip from 'adm-zip';
-import archiver from 'archiver';
+import { execSync } from 'child_process';
 import { Logger } from '../types/logger.js';
 import { ArtifactManifest, ArtifactVersionEntry } from '../types/artifact.js';
 import { SfpmPackageMetadata } from '../types/package.js';
+import { NpmPackageJson, NpmPackageSfpmMetadata } from '../types/npm.js';
 import { ArtifactError } from '../types/errors.js';
 
 /**
@@ -71,10 +71,17 @@ export class ArtifactRepository {
     }
 
     /**
-     * Get the path to a specific version's artifact.zip
+     * Get the path to a specific version's artifact.tgz
      */
-    public getArtifactZipPath(packageName: string, version: string): string {
-        return path.join(this.getVersionPath(packageName, version), 'artifact.zip');
+    public getArtifactTgzPath(packageName: string, version: string): string {
+        return path.join(this.getVersionPath(packageName, version), 'artifact.tgz');
+    }
+
+    /**
+     * Get the path to the artifact file
+     */
+    public getArtifactPath(packageName: string, version: string): string {
+        return this.getArtifactTgzPath(packageName, version);
     }
 
     /**
@@ -121,11 +128,11 @@ export class ArtifactRepository {
     }
 
     /**
-     * Check if an artifact.zip exists for a version
+     * Check if an artifact exists for a version
      */
-    public artifactZipExists(packageName: string, version: string): boolean {
-        const zipPath = this.getArtifactZipPath(packageName, version);
-        return fs.existsSync(zipPath);
+    public artifactExists(packageName: string, version: string): boolean {
+        const tgzPath = this.getArtifactTgzPath(packageName, version);
+        return fs.existsSync(tgzPath);
     }
 
     // =========================================================================
@@ -248,8 +255,8 @@ export class ArtifactRepository {
     // =========================================================================
 
     /**
-     * Read artifact metadata from a specific version
-     * Extracts artifact_metadata.json from the artifact zip
+     * Read artifact metadata from a specific version.
+     * Reads the sfpm property from package.json inside the tarball.
      */
     public getMetadata(packageName: string, version?: string): SfpmPackageMetadata | undefined {
         try {
@@ -270,8 +277,8 @@ export class ArtifactRepository {
                 return undefined;
             }
 
-            const zipPath = this.getArtifactZipPath(packageName, targetVersion);
-            return this.extractMetadataFromZip(zipPath);
+            const tgzPath = this.getArtifactTgzPath(packageName, targetVersion);
+            return this.extractMetadataFromTarball(tgzPath);
         } catch (error) {
             this.logger?.warn(`Failed to read artifact metadata: ${error instanceof Error ? error.message : String(error)}`);
             return undefined;
@@ -279,29 +286,81 @@ export class ArtifactRepository {
     }
 
     /**
-     * Extract metadata from an artifact zip file
+     * Extract metadata from a tarball (npm package format).
+     * Reads the sfpm property from package.json and converts to SfpmPackageMetadata.
      */
-    public extractMetadataFromZip(zipPath: string): SfpmPackageMetadata | undefined {
+    public extractMetadataFromTarball(tarballPath: string): SfpmPackageMetadata | undefined {
         try {
-            if (!fs.existsSync(zipPath)) {
-                this.logger?.debug(`No artifact.zip found at ${zipPath}`);
+            if (!fs.existsSync(tarballPath)) {
+                this.logger?.debug(`No artifact.tgz found at ${tarballPath}`);
                 return undefined;
             }
 
-            const zip = new AdmZip(zipPath);
-            const metadataEntry = zip.getEntry('artifact_metadata.json');
-
-            if (!metadataEntry) {
-                this.logger?.debug(`No artifact_metadata.json found inside ${zipPath}`);
+            const packageJson = this.extractPackageJsonFromTarball(tarballPath);
+            if (!packageJson?.sfpm) {
+                this.logger?.debug(`No sfpm metadata found in package.json inside ${tarballPath}`);
                 return undefined;
             }
 
-            const metadataContent = zip.readAsText(metadataEntry);
-            return JSON.parse(metadataContent);
+            // Convert NpmPackageSfpmMetadata to SfpmPackageMetadata
+            return this.convertNpmMetadataToSfpm(packageJson);
         } catch (error) {
-            this.logger?.debug(`Failed to extract metadata from ${zipPath}: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger?.debug(`Failed to extract metadata from tarball ${tarballPath}: ${error instanceof Error ? error.message : String(error)}`);
             return undefined;
         }
+    }
+
+    /**
+     * Extract package.json from a tarball
+     */
+    public extractPackageJsonFromTarball(tarballPath: string): NpmPackageJson | undefined {
+        try {
+            // Extract package.json content from tarball without fully extracting
+            const packageJsonContent = execSync(
+                `tar -xOzf "${tarballPath}" package/package.json`,
+                { encoding: 'utf-8', timeout: 30000 }
+            );
+            return JSON.parse(packageJsonContent);
+        } catch (error) {
+            this.logger?.debug(`Failed to extract package.json from ${tarballPath}: ${error instanceof Error ? error.message : String(error)}`);
+            return undefined;
+        }
+    }
+
+    /**
+     * Convert npm package.json with sfpm metadata to SfpmPackageMetadata
+     */
+    private convertNpmMetadataToSfpm(packageJson: NpmPackageJson): SfpmPackageMetadata {
+        const sfpm = packageJson.sfpm;
+        
+        // Parse name to get package name (remove scope)
+        const packageName = packageJson.name.includes('/') 
+            ? packageJson.name.split('/')[1] 
+            : packageJson.name;
+
+        // If full metadata is embedded, use it directly
+        if (sfpm.metadata) {
+            return sfpm.metadata;
+        }
+
+        // Otherwise, reconstruct from sfpm properties
+        return {
+            identity: {
+                packageName,
+                packageType: sfpm.packageType as any,
+                versionNumber: packageJson.version,
+                apiVersion: sfpm.apiVersion,
+                ...(sfpm.packageId && { packageId: sfpm.packageId }),
+                ...(sfpm.packageVersionId && { packageVersionId: sfpm.packageVersionId }),
+                ...(sfpm.isOrgDependent !== undefined && { isOrgDependent: sfpm.isOrgDependent }),
+            },
+            source: {
+                commitSHA: sfpm.commitId,
+            },
+            content: {},
+            validation: {},
+            orchestration: {},
+        } as SfpmPackageMetadata;
     }
 
     /**
@@ -405,6 +464,33 @@ export class ArtifactRepository {
     }
 
     // =========================================================================
+    // Artifact Finalization
+    // =========================================================================
+
+    /**
+     * Finalize an artifact by updating the manifest and symlink.
+     * 
+     * This is a convenience method that combines:
+     * 1. Adding/updating the version entry in manifest
+     * 2. Updating the latest symlink
+     * 
+     * @param packageName - Name of the package
+     * @param version - Version being finalized
+     * @param entry - Version entry data for the manifest
+     */
+    public async finalizeArtifact(
+        packageName: string,
+        version: string,
+        entry: ArtifactVersionEntry
+    ): Promise<void> {
+        // Update manifest
+        await this.addVersionEntry(packageName, version, entry, true);
+        
+        // Update symlink
+        await this.updateLatestSymlink(packageName, version);
+    }
+
+    // =========================================================================
     // Directory Management
     // =========================================================================
 
@@ -426,48 +512,16 @@ export class ArtifactRepository {
     }
 
     // =========================================================================
-    // Zip Creation
-    // =========================================================================
-
-    /**
-     * Create a zip file from a source directory with deterministic timestamps
-     */
-    public async createArtifactZip(sourceDir: string, targetPath: string): Promise<void> {
-        const output = fs.createWriteStream(targetPath);
-        const archive = archiver('zip', { zlib: { level: 9 } });
-
-        return new Promise((resolve, reject) => {
-            output.on('close', () => resolve());
-            archive.on('error', (err) => reject(err));
-
-            archive.pipe(output);
-
-            // Set all file modification times to a fixed date for reproducible builds
-            const deterministicDate = new Date('1980-01-01T00:00:00.000Z');
-
-            archive.directory(sourceDir, false, (entry: any) => {
-                entry.date = deterministicDate;
-                return entry;
-            });
-
-            archive.finalize();
-        });
-    }
-
-    // =========================================================================
     // Tarball Localization
     // =========================================================================
 
     /**
      * Localize a downloaded tarball into the artifact repository.
      * 
-     * This method:
-     * 1. Creates a temp directory under .sfpm/tmp/downloads/
-     * 2. Extracts the tarball to the temp directory
-     * 3. Looks for existing SFPM artifacts inside
-     * 4. If found, copies the artifact.zip directly
-     * 5. If not found, creates a new artifact.zip from package contents
-     * 6. Cleans up temporary files
+     * Strategy:
+     * 1. Read package.json from tarball to extract sfpm metadata
+     * 2. Move tarball directly to artifacts/<package>/<version>/artifact.tgz
+     * 3. No extraction needed - the tarball IS the artifact
      * 
      * @param tarballPath - Path to the downloaded .tgz file
      * @param packageName - Name of the package
@@ -485,60 +539,28 @@ export class ArtifactRepository {
         packageVersionId?: string;
     }> {
         const versionDir = this.getVersionPath(packageName, version);
-        const artifactPath = this.getArtifactZipPath(packageName, version);
-        
-        // Create temp dir under .sfpm/tmp/downloads/ for extraction
-        const extractDir = await this.createTempDir(packageName);
+        const artifactPath = this.getArtifactTgzPath(packageName, version);
 
         try {
             // Ensure version directory exists
             await fs.ensureDir(versionDir);
 
-            // Extract tarball using tar command
-            const { execSync } = await import('child_process');
-            execSync(`tar -xzf "${tarballPath}" -C "${extractDir}"`, {
-                encoding: 'utf-8',
-                timeout: 60000,
-            });
-
-            // npm packages extract to a 'package' subdirectory
-            const packageDir = path.join(extractDir, 'package');
+            // Read sfpm metadata from the tarball's package.json
+            const packageJson = this.extractPackageJsonFromTarball(tarballPath);
             
-            // Look for existing SFPM artifacts inside the package
-            const existingArtifactsDir = path.join(packageDir, 'artifacts');
-            let foundExisting = false;
+            // Move tarball to the artifacts folder
+            await fs.move(tarballPath, artifactPath, { overwrite: true });
             
-            if (await fs.pathExists(existingArtifactsDir)) {
-                // This is an SFPM package - find the artifact.zip inside
-                foundExisting = await this.findAndCopyExistingArtifact(
-                    existingArtifactsDir,
-                    artifactPath
-                );
-            }
-
-            if (!foundExisting) {
-                // No pre-built artifact - create one from the package contents
-                await this.createArtifactZip(packageDir, artifactPath);
-            }
-
-            // Calculate hash
             const artifactHash = await this.calculateFileHash(artifactPath);
-
-            // Extract metadata
-            const metadata = this.extractMetadataFromZip(artifactPath);
+            
+            let metadata: SfpmPackageMetadata | undefined;
             let packageVersionId: string | undefined;
-
-            if (metadata?.identity) {
-                const identity = metadata.identity as any;
-                if (identity.packageVersionId) {
-                    packageVersionId = identity.packageVersionId;
-                }
+            
+            if (packageJson?.sfpm) {
+                metadata = this.convertNpmMetadataToSfpm(packageJson);
+                packageVersionId = packageJson.sfpm.packageVersionId;
             }
-
-            // Cleanup
-            await fs.remove(extractDir);
-            await fs.remove(tarballPath);
-
+            
             return {
                 artifactPath,
                 artifactHash,
@@ -547,9 +569,6 @@ export class ArtifactRepository {
             };
 
         } catch (error) {
-            // Cleanup on failure
-            await fs.remove(extractDir).catch(() => { /* ignore */ });
-            
             throw new ArtifactError(packageName, 'extract', 'Failed to localize tarball', {
                 version,
                 context: { tarballPath, artifactPath },
@@ -558,45 +577,4 @@ export class ArtifactRepository {
         }
     }
 
-    /**
-     * Search for and copy an existing artifact.zip from an SFPM package.
-     * 
-     * SFPM packages published to npm include their artifacts directory.
-     * This searches through that directory to find the correct artifact.zip.
-     * 
-     * @param artifactsDir - Path to the 'artifacts' directory inside the package
-     * @param targetPath - Where to copy the found artifact.zip
-     * @returns True if an artifact was found and copied
-     */
-    private async findAndCopyExistingArtifact(
-        artifactsDir: string,
-        targetPath: string
-    ): Promise<boolean> {
-        try {
-            const packageDirs = await fs.readdir(artifactsDir);
-            
-            for (const pkgDir of packageDirs) {
-                const pkgPath = path.join(artifactsDir, pkgDir);
-                const stat = await fs.stat(pkgPath);
-                
-                if (!stat.isDirectory()) continue;
-
-                const versionDirs = await fs.readdir(pkgPath);
-                
-                for (const vDir of versionDirs) {
-                    const zipPath = path.join(pkgPath, vDir, 'artifact.zip');
-                    
-                    if (await fs.pathExists(zipPath)) {
-                        await fs.copy(zipPath, targetPath);
-                        this.logger?.debug(`Found existing artifact at ${zipPath}`);
-                        return true;
-                    }
-                }
-            }
-        } catch (error) {
-            this.logger?.debug(`Error searching for existing artifact: ${error instanceof Error ? error.message : String(error)}`);
-        }
-
-        return false;
-    }
 }

@@ -156,8 +156,8 @@ export default class PackageAssembler {
                 steps.push(new DestructiveManifestStep(this.packageName, this.projectConfig, this.logger));
             }
 
+            // always final
             steps.push(new ProjectJsonAssemblyStep(this.packageName, this.projectConfig, this.logger));
-
 
             for (const step of steps) {
                 this.logger?.debug(`Executing step: ${step.constructor.name}`);

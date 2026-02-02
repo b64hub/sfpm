@@ -13,7 +13,7 @@ import { PackageType, SfpmUnlockedPackageBuildOptions } from '../../types/packag
 import ProjectService from '../../project/project-service.js';
 import { UnlockedBuildEvents } from '../../types/events.js';
 
-import AssembleArtifactTask from './tasks/assemble-artifact-task.js';
+import AssembleArtifactTask, { AssembleArtifactTaskOptions } from './tasks/assemble-artifact-task.js';
 import GitTagTask from './tasks/git-tag-task.js';
 import SourceHashTask from './tasks/source-hash-task.js';
 
@@ -49,9 +49,31 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
 
         // Use project directory for artifacts, not the staging directory
         const projectDir = this.sfpmPackage.projectDirectory;
+        
+        // Get npm scope from project definition - throw if not configured
+        const npmScope = this.getNpmScope();
+        const assembleOptions: AssembleArtifactTaskOptions = { npmScope };
+
         this.preBuildTasks.push(new SourceHashTask(this.sfpmPackage, projectDir, this.logger));
-        this.postBuildTasks.push(new AssembleArtifactTask(this.sfpmPackage, projectDir));
+        this.postBuildTasks.push(new AssembleArtifactTask(this.sfpmPackage, projectDir, assembleOptions));
         this.postBuildTasks.push(new GitTagTask(this.sfpmPackage, projectDir));
+    }
+
+    /**
+     * Get npm scope from project definition.
+     * @throws Error if npm scope is not configured
+     */
+    private getNpmScope(): string {
+        const projectDef = this.sfpmPackage.projectDefinition;
+        const npmScope = projectDef?.plugins?.sfpm?.npmScope;
+        
+        if (!npmScope) {
+            throw new Error(
+                'npm scope not configured. Add plugins.sfpm.npmScope to sfdx-project.json (e.g., "@myorg")'
+            );
+        }
+        
+        return npmScope;
     }
 
     public async exec(): Promise<void> {
