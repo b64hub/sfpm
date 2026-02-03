@@ -18,8 +18,8 @@ export interface UnlockedPackageInstallerOptions {
     installationKey?: string;
     /** Where the code comes from: 'local' (project source) or 'artifact' */
     source?: InstallationSource;
-    /** Force a specific installation mode (overrides auto-detection) */
-    forceMode?: InstallationMode;
+    /** Specify installation mode (overrides auto-detection) */
+    mode?: InstallationMode;
 }
 
 export interface InstallTask {
@@ -34,7 +34,7 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
     private org?: Org;
     private strategies: InstallationStrategy[];
     private source: InstallationSource;
-    private forceMode?: InstallationMode;
+    private mode?: InstallationMode;
     private artifactService: ArtifactService;
 
     public preInstallTasks: InstallTask[] = [];
@@ -50,7 +50,7 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
         this.targetOrg = targetOrg;
         this.sfpmPackage = sfpmPackage;
         this.logger = logger;
-        this.forceMode = options?.forceMode;
+        this.mode = options?.mode;
 
         // Initialize artifact service
         this.artifactService = new ArtifactService(logger);
@@ -108,11 +108,11 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
         // Find appropriate strategy
         let strategy: InstallationStrategy | undefined;
 
-        // If forceMode is set, find strategy with matching mode
-        if (this.forceMode) {
-            strategy = this.strategies.find(s => s.getMode() === this.forceMode);
+        // If mode is explicitly set, find strategy with matching mode
+        if (this.mode) {
+            strategy = this.strategies.find(s => s.getMode() === this.mode);
             if (!strategy) {
-                throw new Error(`No strategy found for forced mode: ${this.forceMode}`);
+                throw new Error(`No strategy found for mode: ${this.mode}`);
             }
         } else {
             // Auto-select based on source and package state

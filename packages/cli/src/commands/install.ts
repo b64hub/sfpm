@@ -28,8 +28,9 @@ export default class Install extends SfpmCommand {
       description: 'installation source: local (project source) or artifact',
       options: ['local', 'artifact'],
     }),
-    'force-mode': Flags.string({
-      description: 'force installation mode for unlocked packages (source-deploy or version-install)',
+    'mode': Flags.string({
+      char: 'm',
+      description: 'installation mode for unlocked packages (source-deploy or version-install)',
       options: ['source-deploy', 'version-install'],
     }),
     force: Flags.boolean({ char: 'f', description: 'force reinstall even if already installed' }),
@@ -78,7 +79,7 @@ export default class Install extends SfpmCommand {
       targetOrg: flags['target-org'],
       installationKey: flags['installation-key'],
       source: flags['source'] as InstallationSource | undefined,
-      mode: flags['force-mode'] as InstallationMode | undefined,
+      mode: flags['mode'] as InstallationMode | undefined,
       force: flags.force,
     }, logger);
 
