@@ -4,10 +4,8 @@ import crypto from 'crypto';
 import { execSync } from 'child_process';
 import { EventEmitter } from 'events';
 import { Logger } from '../types/logger.js';
-import SfpmPackage from '../package/sfpm-package.js';
+import SfpmPackage, { SfpmMetadataPackage } from '../package/sfpm-package.js';
 import { VersionManager } from '../project/version-manager.js';
-import { SourceHasher } from '../utils/source-hasher.js';
-import { SfpmMetadataPackage } from '../package/sfpm-package.js';
 import { ArtifactRepository } from './artifact-repository.js';
 import { NpmPackageJson, convertDependencyToNpm } from '../types/npm.js';
 import { ArtifactError } from '../types/errors.js';
@@ -289,7 +287,7 @@ export default class ArtifactAssembler extends EventEmitter {
      */
     private async moveTarball(stagingDir: string, tarballName: string): Promise<string> {
         const sourcePath = path.join(stagingDir, tarballName);
-        const targetPath = this.repository.getArtifactTgzPath(this.sfpmPackage.packageName, this.packageVersionNumber);
+        const targetPath = this.repository.getArtifactPath(this.sfpmPackage.packageName, this.packageVersionNumber);
 
         // Ensure version directory exists
         await fs.ensureDir(path.dirname(targetPath));
@@ -302,20 +300,28 @@ export default class ArtifactAssembler extends EventEmitter {
     }
 
     /**
-     * Calculate a stable hash from the package's source components.
-     * Uses the ComponentSet to ensure consistency with .forceignore rules.
+     * Get or calculate the source hash for the package.
+     * Prefers the package's existing sourceHash if already set.
+     * For metadata packages, calculates and sets the hash on the package.
      */
     private async calculateSourceHash(): Promise<string> {
-        let hash: string;
-
-        if (!(this.sfpmPackage instanceof SfpmMetadataPackage)) {
-            // For non-metadata packages, use a simple timestamp-based hash
-            hash = crypto.createHash('sha256').update(Date.now().toString()).digest('hex');
-        } else {
-            hash = await SourceHasher.calculate(this.sfpmPackage);
+        // If sourceHash is already set on the package, use it
+        if (this.sfpmPackage.sourceHash) {
+            this.logger?.debug(`Using existing source hash: ${this.sfpmPackage.sourceHash}`);
+            return this.sfpmPackage.sourceHash;
         }
 
-        this.logger?.debug(`Current source hash: ${hash}`);
+        let hash: string;
+        if (this.sfpmPackage instanceof SfpmMetadataPackage) {
+            // Calculate and set the hash on the package
+            hash = await this.sfpmPackage.calculateSourceHash();
+        } else {
+            // For non-metadata packages, use a simple timestamp-based hash
+            hash = crypto.createHash('sha256').update(Date.now().toString()).digest('hex');
+            this.sfpmPackage.sourceHash = hash;
+        }
+
+        this.logger?.debug(`Calculated source hash: ${hash}`);
         return hash;
     }
 

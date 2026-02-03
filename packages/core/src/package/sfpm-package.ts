@@ -3,6 +3,7 @@ import { ProjectDefinition, PackageDefinition } from "../types/project.js";
 import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata, SfpmUnlockedPackageBuildOptions } from "../types/package.js";
 import { NpmPackageSfpmMetadata } from "../types/npm.js";
 import ProjectConfig from "../project/project-config.js";
+import { SourceHasher } from "../utils/source-hasher.js";
 import { omit, merge, get, set } from "lodash-es";
 import path from "path";
 
@@ -84,6 +85,9 @@ export default abstract class SfpmPackage {
 
     get tag() { return this._metadata.source?.tag || `${this.name}@${this.version}`; }
     get commitId() { return this._metadata.source?.commitSHA; }
+
+    get sourceHash() { return this._metadata.source?.sourceHash; }
+    set sourceHash(val: string | undefined) { this._metadata.source = { ...this._metadata.source, sourceHash: val }; }
 
     get dependencies(): { package: string; versionNumber?: string }[] | undefined {
         return this.packageDefinition?.dependencies;
@@ -180,6 +184,17 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
      */
     public async getManifestObject() {
         return await this.getComponentSet().getObject();
+    }
+
+    /**
+     * Calculate and set the source hash for this package.
+     * Uses ComponentSet to ensure consistency with .forceignore rules.
+     * @returns The calculated source hash
+     */
+    public async calculateSourceHash(): Promise<string> {
+        const hash = await SourceHasher.calculate(this);
+        this.sourceHash = hash;
+        return hash;
     }
 
     get apexClasses(): SourceComponent[] {

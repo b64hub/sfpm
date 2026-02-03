@@ -7,7 +7,6 @@ import { EventEmitter } from 'events';
 import { Logger } from '../types/logger.js';
 import { 
     ArtifactManifest, 
-    ArtifactVersionEntry, 
     ResolvedArtifact, 
     ArtifactResolveOptions 
 } from '../types/artifact.js';
@@ -290,7 +289,7 @@ export class ArtifactResolver extends EventEmitter {
             }
         }
 
-        const result = await this.downloadAndLocalize(packageName, version, manifest);
+        const result = await this.download(packageName, version);
         this.emitComplete(packageName, result.version, 'npm');
         return result;
     }
@@ -630,13 +629,12 @@ export class ArtifactResolver extends EventEmitter {
     }
 
     /**
-     * Download a package from the registry and localize it.
+     * Download a package from the registry.
      * Requires a registry client - throws if running in local-only mode.
      */
-    private async downloadAndLocalize(
+    private async download(
         packageName: string,
-        version: string,
-        existingManifest: ArtifactManifest | undefined
+        version: string
     ): Promise<ResolvedArtifact> {
         if (!this.registryClient) {
             throw new ArtifactError(packageName, 'download', 'Cannot download package in local-only mode', {
@@ -652,73 +650,28 @@ export class ArtifactResolver extends EventEmitter {
         });
 
         const versionDir = await this.repository.ensureVersionDir(packageName, version);
-        const artifactPath = this.repository.getArtifactPath(packageName, version);
 
         try {
             // Download the package tarball using registry client
             const { tarballPath } = await this.registryClient.downloadPackage(packageName, version, versionDir);
 
-            // Extract and localize the tarball using repository
-            await this.repository.localizeFromTarball(tarballPath, packageName, version);
-
-            // Calculate hashes using repository
-            const artifactHash = await this.repository.calculateFileHash(artifactPath);
-            const sourceHash = artifactHash; // For downloaded packages, use artifact hash
-
-            // Extract metadata from the artifact
-            const metadata = this.repository.getMetadata(packageName, version);
-            let packageVersionId: string | undefined;
-
-            if (metadata?.identity) {
-                // Check if it's an unlocked package with versionId
-                const identity = metadata.identity as any;
-                if (identity.packageVersionId) {
-                    packageVersionId = identity.packageVersionId;
-                }
-            }
-
-            // Build version entry
-            const versionEntry: ArtifactVersionEntry = {
-                path: `${packageName}/${version}/artifact.tgz`,
-                artifactHash,
-                sourceHash,
-                generatedAt: Date.now(),
-                packageVersionId,
-            };
-
-            // Update manifest
-            const manifest: ArtifactManifest = existingManifest || {
-                name: packageName,
-                latest: version,
-                versions: {},
-            };
-
-            manifest.versions[version] = versionEntry;
-            manifest.latest = this.findHighestVersion(Object.keys(manifest.versions), true) || version;
-            manifest.lastCheckedRemote = Date.now();
-
-            await this.repository.saveManifest(packageName, manifest);
-
-            // Update latest symlink
-            await this.repository.updateLatestSymlink(packageName, version);
-
-            // Cleanup tarball
-            await fs.remove(tarballPath);
+            // Localize tarball (move, update manifest, symlink, lastChecked)
+            const localized = await this.repository.localizeTarball(tarballPath, packageName, version);
 
             this.emit('resolve:download:complete', {
                 packageName,
                 version,
-                artifactPath,
+                artifactPath: localized.artifactPath,
                 timestamp: new Date(),
             });
 
             return {
                 version,
-                artifactPath,
+                artifactPath: localized.artifactPath,
                 isRemote: true,
                 source: 'npm',
-                versionEntry,
-                packageVersionId,
+                versionEntry: localized.versionEntry,
+                packageVersionId: localized.packageVersionId,
             };
 
         } catch (error) {
@@ -727,7 +680,7 @@ export class ArtifactResolver extends EventEmitter {
             
             throw new ArtifactError(packageName, 'extract', 'Failed to download and localize artifact', {
                 version,
-                context: { artifactPath },
+                context: { versionDir },
                 cause: error instanceof Error ? error : new Error(String(error)),
             });
         }

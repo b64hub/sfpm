@@ -5,7 +5,7 @@ import { execSync } from 'child_process';
 import { Logger } from '../types/logger.js';
 import { ArtifactManifest, ArtifactVersionEntry } from '../types/artifact.js';
 import { SfpmPackageMetadata } from '../types/package.js';
-import { NpmPackageJson, NpmPackageSfpmMetadata } from '../types/npm.js';
+import { NpmPackageJson } from '../types/npm.js';
 import { ArtifactError } from '../types/errors.js';
 
 /**
@@ -45,10 +45,6 @@ export class ArtifactRepository {
         return this.projectDirectory;
     }
 
-    // =========================================================================
-    // Path Resolution
-    // =========================================================================
-
     /**
      * Get the root directory for all artifacts
      */
@@ -71,23 +67,16 @@ export class ArtifactRepository {
     }
 
     /**
-     * Get the path to a specific version's artifact.tgz
-     */
-    public getArtifactTgzPath(packageName: string, version: string): string {
-        return path.join(this.getVersionPath(packageName, version), 'artifact.tgz');
-    }
-
-    /**
      * Get the path to the artifact file
      */
     public getArtifactPath(packageName: string, version: string): string {
-        return this.getArtifactTgzPath(packageName, version);
+        return path.join(this.getVersionPath(packageName, version), 'artifact.tgz');
     }
 
     /**
      * Get the path to the manifest file for a package
      */
-    public getManifestPath(packageName: string): string {
+    private getManifestPath(packageName: string): string {
         return path.join(this.getPackageArtifactPath(packageName), 'manifest.json');
     }
 
@@ -95,7 +84,7 @@ export class ArtifactRepository {
      * Create a unique temporary directory for downloads/extraction.
      * Pattern: .sfpm/tmp/downloads/[timestamp]-[packageName]-[hash]
      */
-    public async createTempDir(packageName: string): Promise<string> {
+    private async createTempDir(packageName: string): Promise<string> {
         const timestamp = new Date().toISOString()
             .replace(/T/, '-')
             .replace(/\..+/, '')
@@ -122,7 +111,7 @@ export class ArtifactRepository {
     /**
      * Check if a specific version exists locally
      */
-    public hasVersion(packageName: string, version: string): boolean {
+    private hasVersion(packageName: string, version: string): boolean {
         const manifest = this.getManifestSync(packageName);
         return manifest?.versions[version] !== undefined;
     }
@@ -130,8 +119,8 @@ export class ArtifactRepository {
     /**
      * Check if an artifact exists for a version
      */
-    public artifactExists(packageName: string, version: string): boolean {
-        const tgzPath = this.getArtifactTgzPath(packageName, version);
+    private artifactExists(packageName: string, version: string): boolean {
+        const tgzPath = this.getArtifactPath(packageName, version);
         return fs.existsSync(tgzPath);
     }
 
@@ -176,7 +165,7 @@ export class ArtifactRepository {
     /**
      * Save the manifest for a package (atomic write)
      */
-    public async saveManifest(packageName: string, manifest: ArtifactManifest): Promise<void> {
+    private async saveManifest(packageName: string, manifest: ArtifactManifest): Promise<void> {
         const manifestPath = this.getManifestPath(packageName);
         const tempPath = `${manifestPath}.tmp`;
 
@@ -198,7 +187,7 @@ export class ArtifactRepository {
     /**
      * Get all local versions for a package
      */
-    public getVersions(packageName: string): string[] {
+    private getVersions(packageName: string): string[] {
         const manifest = this.getManifestSync(packageName);
         return manifest ? Object.keys(manifest.versions) : [];
     }
@@ -206,7 +195,7 @@ export class ArtifactRepository {
     /**
      * Get version entry from manifest
      */
-    public getVersionEntry(packageName: string, version: string): ArtifactVersionEntry | undefined {
+    private getVersionEntry(packageName: string, version: string): ArtifactVersionEntry | undefined {
         const manifest = this.getManifestSync(packageName);
         return manifest?.versions[version];
     }
@@ -214,7 +203,7 @@ export class ArtifactRepository {
     /**
      * Add or update a version entry in the manifest
      */
-    public async addVersionEntry(
+    private async addVersionEntry(
         packageName: string,
         version: string,
         entry: ArtifactVersionEntry,
@@ -277,7 +266,7 @@ export class ArtifactRepository {
                 return undefined;
             }
 
-            const tgzPath = this.getArtifactTgzPath(packageName, targetVersion);
+            const tgzPath = this.getArtifactPath(packageName, targetVersion);
             return this.extractMetadataFromTarball(tgzPath);
         } catch (error) {
             this.logger?.warn(`Failed to read artifact metadata: ${error instanceof Error ? error.message : String(error)}`);
@@ -289,7 +278,7 @@ export class ArtifactRepository {
      * Extract metadata from a tarball (npm package format).
      * Reads the sfpm property from package.json and converts to SfpmPackageMetadata.
      */
-    public extractMetadataFromTarball(tarballPath: string): SfpmPackageMetadata | undefined {
+    private extractMetadataFromTarball(tarballPath: string): SfpmPackageMetadata | undefined {
         try {
             if (!fs.existsSync(tarballPath)) {
                 this.logger?.debug(`No artifact.tgz found at ${tarballPath}`);
@@ -313,7 +302,7 @@ export class ArtifactRepository {
     /**
      * Extract package.json from a tarball
      */
-    public extractPackageJsonFromTarball(tarballPath: string): NpmPackageJson | undefined {
+    private extractPackageJsonFromTarball(tarballPath: string): NpmPackageJson | undefined {
         try {
             // Extract package.json content from tarball without fully extracting
             const packageJsonContent = execSync(
@@ -428,7 +417,7 @@ export class ArtifactRepository {
     /**
      * Calculate SHA-256 hash of a file (sync)
      */
-    public calculateFileHashSync(filePath: string): string {
+    private calculateFileHashSync(filePath: string): string {
         const content = fs.readFileSync(filePath);
         return crypto.createHash('sha256').update(content).digest('hex');
     }
@@ -440,7 +429,7 @@ export class ArtifactRepository {
     /**
      * Update the 'latest' symlink to point to a version directory
      */
-    public async updateLatestSymlink(packageName: string, version: string): Promise<void> {
+    private async updateLatestSymlink(packageName: string, version: string): Promise<void> {
         const packageArtifactRoot = this.getPackageArtifactPath(packageName);
         const symlinkPath = path.join(packageArtifactRoot, 'latest');
 
@@ -483,10 +472,7 @@ export class ArtifactRepository {
         version: string,
         entry: ArtifactVersionEntry
     ): Promise<void> {
-        // Update manifest
         await this.addVersionEntry(packageName, version, entry, true);
-        
-        // Update symlink
         await this.updateLatestSymlink(packageName, version);
     }
 
@@ -511,35 +497,34 @@ export class ArtifactRepository {
         await fs.remove(versionPath);
     }
 
-    // =========================================================================
-    // Tarball Localization
-    // =========================================================================
-
     /**
      * Localize a downloaded tarball into the artifact repository.
      * 
-     * Strategy:
+     * This method owns the full responsibility of "localization":
      * 1. Read package.json from tarball to extract sfpm metadata
-     * 2. Move tarball directly to artifacts/<package>/<version>/artifact.tgz
-     * 3. No extraction needed - the tarball IS the artifact
+     * 2. Move tarball to artifacts/<package>/<version>/artifact.tgz
+     * 3. Calculate artifact hash
+     * 4. Build and save version entry in manifest
+     * 5. Update 'latest' symlink
+     * 6. Update lastCheckedRemote timestamp
      * 
      * @param tarballPath - Path to the downloaded .tgz file
      * @param packageName - Name of the package
      * @param version - Version being localized
-     * @returns Localization result with artifact path and metadata
+     * @returns Localized artifact info including version entry
      */
-    public async localizeFromTarball(
+    public async localizeTarball(
         tarballPath: string,
         packageName: string,
         version: string
     ): Promise<{
         artifactPath: string;
-        artifactHash: string;
+        versionEntry: ArtifactVersionEntry;
         metadata?: SfpmPackageMetadata;
         packageVersionId?: string;
     }> {
         const versionDir = this.getVersionPath(packageName, version);
-        const artifactPath = this.getArtifactTgzPath(packageName, version);
+        const artifactPath = this.getArtifactPath(packageName, version);
 
         try {
             // Ensure version directory exists
@@ -560,10 +545,28 @@ export class ArtifactRepository {
                 metadata = this.convertNpmMetadataToSfpm(packageJson);
                 packageVersionId = packageJson.sfpm.packageVersionId;
             }
+
+            // Use sourceHash from metadata if available, otherwise fall back to artifactHash
+            const sourceHash = metadata?.source?.sourceHash || artifactHash;
+
+            // Build version entry
+            const versionEntry: ArtifactVersionEntry = {
+                path: `${packageName}/${version}/artifact.tgz`,
+                artifactHash,
+                sourceHash,
+                generatedAt: Date.now(),
+                packageVersionId,
+            };
+
+            // Finalize: update manifest and symlink
+            await this.finalizeArtifact(packageName, version, versionEntry);
             
+            // Update last checked remote timestamp
+            await this.updateLastCheckedRemote(packageName);
+
             return {
                 artifactPath,
-                artifactHash,
+                versionEntry,
                 metadata,
                 packageVersionId,
             };

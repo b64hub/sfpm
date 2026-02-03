@@ -39,6 +39,7 @@ export interface SfpmPackageSource {
     branch?: string;
     commitSHA?: string;
     tag?: string;
+    sourceHash?: string;
 }
 
 /**

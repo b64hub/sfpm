@@ -2,7 +2,6 @@ import path from 'path';
 import fs from 'fs-extra';
 import { BuildTask } from "../../package-builder.js";
 import SfpmPackage, { SfpmMetadataPackage } from "../../sfpm-package.js";
-import { SourceHasher } from "../../../utils/source-hasher.js";
 import { Logger } from "../../../types/logger.js";
 import { ArtifactManifest } from "../../../types/artifact.js";
 import { NoSourceChangesError } from "../../../types/errors.js";
@@ -50,8 +49,8 @@ export default class SourceHashTask implements BuildTask {
 
         this.logger?.debug(`Package contains ${components.length} components`);
 
-        // 2. Calculate current source hash
-        const currentSourceHash = await SourceHasher.calculate(this.sfpmPackage);
+        // 2. Calculate current source hash (this also sets it on the package)
+        const currentSourceHash = await this.sfpmPackage.calculateSourceHash();
         this.logger?.debug(`Current source hash: ${currentSourceHash}`);
 
         // 3. Check manifest for previous builds
