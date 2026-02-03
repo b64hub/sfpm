@@ -1,10 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import PackageInstaller from '../../../src/package/package-installer.js';
-import ProjectConfig from '../../../src/project/project-config.js';
 import { InstallerRegistry } from '../../../src/package/installers/installer-registry.js';
 import { PackageFactory } from '../../../src/package/sfpm-package.js';
-import { PackageType, InstallationSourceType } from '../../../src/types/package.js';
-import { ArtifactService } from '../../../src/artifacts/artifact-service.js';
+import { PackageType } from '../../../src/types/package.js';
 
 // Mocks
 vi.mock('../../../src/project/project-config.js');

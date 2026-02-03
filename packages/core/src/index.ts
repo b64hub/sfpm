@@ -44,9 +44,9 @@ export * from './types/project.js';
 export * from './project/project-graph.js';
 export * from './types/package.js';
 export { PackageBuilder } from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
-export { default as PackageInstaller } from './package/package-installer.js';
+export { default as PackageInstaller, type InstallOptions, type InstallResult } from './package/package-installer.js';
 export { InstallerRegistry } from './package/installers/installer-registry.js';
-export { ArtifactService } from './artifacts/artifact-service.js';
+export { ArtifactService, type InstallTarget } from './artifacts/artifact-service.js';
 export { ArtifactRepository } from './artifacts/artifact-repository.js';
 export { ArtifactResolver } from './artifacts/artifact-resolver.js';
 export { default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider } from './artifacts/artifact-assembler.js';

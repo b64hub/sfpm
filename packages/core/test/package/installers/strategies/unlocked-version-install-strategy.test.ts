@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import UnlockedVersionInstallStrategy from '../../../../src/package/installers/strategies/unlocked-version-install-strategy.js';
-import { InstallationSourceType, InstallationMode, PackageType } from '../../../../src/types/package.js';
+import { InstallationSource, InstallationMode, PackageType } from '../../../../src/types/package.js';
 import { SfpmUnlockedPackage, SfpmSourcePackage } from '../../../../src/package/sfpm-package.js';
 import { Org } from '@salesforce/core';
 
@@ -33,33 +33,26 @@ describe('UnlockedVersionInstallStrategy', () => {
             const unlockedPackage = new SfpmUnlockedPackage('test-package', '/test/project');
             unlockedPackage.packageVersionId = '04t...';
             
-            expect(strategy.canHandle(InstallationSourceType.BuiltArtifact, unlockedPackage)).toBe(true);
+            expect(strategy.canHandle(InstallationSource.Artifact, unlockedPackage)).toBe(true);
         });
 
-        it('should handle unlocked packages with version ID from npm', () => {
+        it('should not handle unlocked packages from local source (even with version ID)', () => {
             const unlockedPackage = new SfpmUnlockedPackage('test-package', '/test/project');
             unlockedPackage.packageVersionId = '04t...';
             
-            expect(strategy.canHandle(InstallationSourceType.RemoteNpm, unlockedPackage)).toBe(true);
-        });
-
-        it('should not handle unlocked packages from local source', () => {
-            const unlockedPackage = new SfpmUnlockedPackage('test-package', '/test/project');
-            unlockedPackage.packageVersionId = '04t...';
-            
-            expect(strategy.canHandle(InstallationSourceType.LocalSource, unlockedPackage)).toBe(false);
+            expect(strategy.canHandle(InstallationSource.Local, unlockedPackage)).toBe(false);
         });
 
         it('should not handle unlocked packages without version ID', () => {
             const unlockedPackage = new SfpmUnlockedPackage('test-package', '/test/project');
             
-            expect(strategy.canHandle(InstallationSourceType.BuiltArtifact, unlockedPackage)).toBe(false);
+            expect(strategy.canHandle(InstallationSource.Artifact, unlockedPackage)).toBe(false);
         });
 
         it('should not handle source packages', () => {
             const sourcePackage = new SfpmSourcePackage('test-package', '/test/project');
             
-            expect(strategy.canHandle(InstallationSourceType.BuiltArtifact, sourcePackage)).toBe(false);
+            expect(strategy.canHandle(InstallationSource.Artifact, sourcePackage)).toBe(false);
         });
     });
 

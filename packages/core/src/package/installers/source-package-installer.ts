@@ -4,7 +4,7 @@ import EventEmitter from 'node:events';
 
 import { Org } from '@salesforce/core';
 import { Installer, RegisterInstaller } from './installer-registry.js';
-import { PackageType, InstallationSourceType } from '../../types/package.js';
+import { PackageType, InstallationSource } from '../../types/package.js';
 import SfpmPackage, { SfpmSourcePackage } from '../sfpm-package.js';
 import { Logger } from '../../types/logger.js';
 import { InstallationStrategy } from './installation-strategy.js';
@@ -14,7 +14,8 @@ import { ArtifactService } from '../../artifacts/artifact-service.js';
 import SourceDeployStrategy from './strategies/source-deploy-strategy.js';
 
 export interface SourcePackageInstallerOptions {
-    sourceType?: InstallationSourceType;
+    /** Where the code comes from: 'local' (project source) or 'artifact' */
+    source?: InstallationSource;
 }
 
 export interface InstallTask {
@@ -28,7 +29,7 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
     private logger?: Logger;
     private org?: Org;
     private strategies: InstallationStrategy[];
-    private sourceType: InstallationSourceType;
+    private source: InstallationSource;
     private artifactService: ArtifactService;
 
     public preInstallTasks: InstallTask[] = [];
@@ -53,23 +54,21 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
             new SourceDeployStrategy(logger, this),
         ];
 
-        // Determine source type
-        this.sourceType = this.determineSourceType(options);
+        // Determine source
+        this.source = this.determineSource(options);
     }
 
-    private determineSourceType(options?: SourcePackageInstallerOptions): InstallationSourceType {
-        if (options?.sourceType) {
-            return options.sourceType;
+    private determineSource(options?: SourcePackageInstallerOptions): InstallationSource {
+        if (options?.source) {
+            return options.source;
         }
 
-        // Auto-detect source type using ArtifactService
+        // Auto-detect: if artifacts exist, use artifact; otherwise local
         if (this.artifactService.hasLocalArtifacts(this.sfpmPackage.projectDirectory, this.sfpmPackage.packageName)) {
-            return InstallationSourceType.BuiltArtifact;
+            return InstallationSource.Artifact;
         }
 
-        // Check if it's from npm (this would need more sophisticated detection)
-        // For now, default to local source
-        return InstallationSourceType.LocalSource;
+        return InstallationSource.Local;
     }
 
     public async connect(username: string): Promise<void> {
@@ -101,12 +100,12 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
     private async installPackage(): Promise<void> {
         // Find appropriate strategy (for source packages, there's only one)
         const strategy = this.strategies.find(s => 
-            s.canHandle(this.sourceType, this.sfpmPackage)
+            s.canHandle(this.source, this.sfpmPackage)
         );
 
         if (!strategy) {
             throw new Error(
-                `No installation strategy found for source type: ${this.sourceType}, package: ${this.sfpmPackage.packageName}`
+                `No installation strategy found for source: ${this.source}, package: ${this.sfpmPackage.packageName}`
             );
         }
 

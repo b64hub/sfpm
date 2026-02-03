@@ -1,5 +1,5 @@
 import SfpmPackage from "../sfpm-package.js";
-import { InstallationSourceType, InstallationMode } from "../../types/package.js";
+import { InstallationSource, InstallationMode } from "../../types/package.js";
 import { Logger } from "../../types/logger.js";
 
 /**
@@ -8,12 +8,15 @@ import { Logger } from "../../types/logger.js";
  */
 export interface InstallationStrategy {
     /**
-     * Determines if this strategy can handle the given package and source type
+     * Determines if this strategy can handle the given package and source
+     * @param source - Where the code comes from (local project or artifact)
+     * @param sfpmPackage - The package to install
      */
-    canHandle(sourceType: InstallationSourceType, sfpmPackage: SfpmPackage): boolean;
+    canHandle(source: InstallationSource, sfpmPackage: SfpmPackage): boolean;
     
     /**
-     * Gets the installation mode this strategy will use
+     * Gets the installation mode this strategy will use.
+     * Note: Source packages always use SourceDeploy; this is mainly for unlocked packages.
      */
     getMode(): InstallationMode;
     

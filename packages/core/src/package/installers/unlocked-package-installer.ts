@@ -4,7 +4,7 @@ import EventEmitter from 'node:events';
 
 import { Org } from '@salesforce/core';
 import { Installer, RegisterInstaller } from './installer-registry.js';
-import { PackageType, InstallationSourceType } from '../../types/package.js';
+import { PackageType, InstallationSource, InstallationMode } from '../../types/package.js';
 import SfpmPackage, { SfpmUnlockedPackage } from '../sfpm-package.js';
 import { Logger } from '../../types/logger.js';
 import { InstallationStrategy } from './installation-strategy.js';
@@ -16,7 +16,10 @@ import UnlockedVersionInstallStrategy from './strategies/unlocked-version-instal
 
 export interface UnlockedPackageInstallerOptions {
     installationKey?: string;
-    sourceType?: InstallationSourceType;
+    /** Where the code comes from: 'local' (project source) or 'artifact' */
+    source?: InstallationSource;
+    /** Force a specific installation mode (overrides auto-detection) */
+    forceMode?: InstallationMode;
 }
 
 export interface InstallTask {
@@ -30,7 +33,8 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
     private logger?: Logger;
     private org?: Org;
     private strategies: InstallationStrategy[];
-    private sourceType: InstallationSourceType;
+    private source: InstallationSource;
+    private forceMode?: InstallationMode;
     private artifactService: ArtifactService;
 
     public preInstallTasks: InstallTask[] = [];
@@ -46,33 +50,32 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
         this.targetOrg = targetOrg;
         this.sfpmPackage = sfpmPackage;
         this.logger = logger;
+        this.forceMode = options?.forceMode;
 
         // Initialize artifact service
         this.artifactService = new ArtifactService(logger);
 
-        // Initialize strategies (pass this as event emitter)
+        // Initialize strategies (order matters: version install first, source deploy as fallback)
         this.strategies = [
             new UnlockedVersionInstallStrategy(logger, this),
             new SourceDeployStrategy(logger, this),
         ];
 
-        // Determine source type
-        this.sourceType = this.determineSourceType(options);
+        // Determine source
+        this.source = this.determineSource(options);
     }
 
-    private determineSourceType(options?: UnlockedPackageInstallerOptions): InstallationSourceType {
-        if (options?.sourceType) {
-            return options.sourceType;
+    private determineSource(options?: UnlockedPackageInstallerOptions): InstallationSource {
+        if (options?.source) {
+            return options.source;
         }
 
-        // Auto-detect source type using ArtifactService
+        // Auto-detect: if artifacts exist, use artifact; otherwise local
         if (this.artifactService.hasLocalArtifacts(this.sfpmPackage.projectDirectory, this.sfpmPackage.packageName)) {
-            return InstallationSourceType.BuiltArtifact;
+            return InstallationSource.Artifact;
         }
 
-        // Check if it's from npm (this would need more sophisticated detection)
-        // For now, default to local source
-        return InstallationSourceType.LocalSource;
+        return InstallationSource.Local;
     }
 
     public async connect(username: string): Promise<void> {
@@ -103,13 +106,22 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
 
     private async installPackage(): Promise<void> {
         // Find appropriate strategy
-        const strategy = this.strategies.find(s => 
-            s.canHandle(this.sourceType, this.sfpmPackage)
-        );
+        let strategy: InstallationStrategy | undefined;
+
+        // If forceMode is set, find strategy with matching mode
+        if (this.forceMode) {
+            strategy = this.strategies.find(s => s.getMode() === this.forceMode);
+            if (!strategy) {
+                throw new Error(`No strategy found for forced mode: ${this.forceMode}`);
+            }
+        } else {
+            // Auto-select based on source and package state
+            strategy = this.strategies.find(s => s.canHandle(this.source, this.sfpmPackage));
+        }
 
         if (!strategy) {
             throw new Error(
-                `No installation strategy found for source type: ${this.sourceType}, package: ${this.sfpmPackage.packageName}`
+                `No installation strategy found for source: ${this.source}, package: ${this.sfpmPackage.packageName}`
             );
         }
 

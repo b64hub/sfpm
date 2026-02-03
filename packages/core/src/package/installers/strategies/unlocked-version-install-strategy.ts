@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import { Org, Connection } from '@salesforce/core';
 import { EventEmitter } from 'node:events';
 import { InstallationStrategy } from '../installation-strategy.js';
-import { InstallationSourceType, InstallationMode, SfpmUnlockedPackageBuildOptions } from '../../../types/package.js';
+import { InstallationSource, InstallationMode, SfpmUnlockedPackageBuildOptions } from '../../../types/package.js';
 import SfpmPackage, { SfpmUnlockedPackage } from '../../sfpm-package.js';
 import { Logger } from '../../../types/logger.js';
 
@@ -15,7 +15,11 @@ type PackageInstallRequest = {
 };
 
 /**
- * Strategy for installing unlocked package by version ID from built artifact
+ * Strategy for installing unlocked package by version ID from built artifact.
+ * Only applicable when:
+ * - Package is an unlocked package
+ * - Source is 'artifact' (not local project source)
+ * - Package has a packageVersionId
  */
 export default class UnlockedVersionInstallStrategy implements InstallationStrategy {
     private logger?: Logger;
@@ -26,18 +30,16 @@ export default class UnlockedVersionInstallStrategy implements InstallationStrat
         this.eventEmitter = eventEmitter;
     }
 
-    public canHandle(sourceType: InstallationSourceType, sfpmPackage: SfpmPackage): boolean {
+    public canHandle(source: InstallationSource, sfpmPackage: SfpmPackage): boolean {
         if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
             return false;
         }
 
-        // Can handle built artifacts or remote NPM if version ID is available
+        // Version install requires: artifact source + packageVersionId
         const hasVersionId = !!sfpmPackage.packageVersionId;
-        const isValidSourceType = 
-            sourceType === InstallationSourceType.BuiltArtifact || 
-            sourceType === InstallationSourceType.RemoteNpm;
+        const isArtifactSource = source === InstallationSource.Artifact;
 
-        return hasVersionId && isValidSourceType;
+        return hasVersionId && isArtifactSource;
     }
 
     public getMode(): InstallationMode {

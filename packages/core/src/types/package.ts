@@ -4,12 +4,22 @@ import { DeploymentOptions } from "./project.js";
 
 export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff', Managed = 'managed' }
 
-export enum InstallationSourceType {
-    LocalSource = 'local',
-    BuiltArtifact = 'artifact',
-    RemoteNpm = 'npm'
+/**
+ * Where the package code comes from for installation.
+ * - `local`: Install directly from project source directory
+ * - `artifact`: Install from built artifact (local or fetched from npm - resolver abstracts this)
+ */
+export enum InstallationSource {
+    Local = 'local',
+    Artifact = 'artifact',
 }
 
+/**
+ * How an unlocked package will be installed.
+ * Source packages always use source-deploy; this enum only applies to unlocked packages.
+ * - `source-deploy`: Deploy source via metadata API
+ * - `version-install`: Install package version using packageVersionId
+ */
 export enum InstallationMode {
     SourceDeploy = 'source-deploy',
     VersionInstall = 'version-install'
@@ -136,6 +146,7 @@ export interface InstalledArtifact {
     version: string;
     tag?: string;
     commitId?: string;
+    checksum?: string;
     isInstalledBySfpm?: boolean;
     sourceVersion?: string;
     isOrgDependent?: boolean;

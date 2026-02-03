@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import SourceDeployStrategy from '../../../../src/package/installers/strategies/source-deploy-strategy.js';
-import { InstallationSourceType, InstallationMode, PackageType } from '../../../../src/types/package.js';
+import { InstallationSource, InstallationMode, PackageType } from '../../../../src/types/package.js';
 import { SfpmUnlockedPackage, SfpmSourcePackage } from '../../../../src/package/sfpm-package.js';
 import { Org } from '@salesforce/core';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
@@ -36,25 +36,31 @@ describe('SourceDeployStrategy', () => {
     });
 
     describe('canHandle', () => {
-        it('should handle source packages from any source type', () => {
-            const sourcePackage = Object.create(SfpmSourcePackage.prototype);
+        it('should handle source packages from any source', () => {
+            const sourcePackage = new SfpmSourcePackage('test-package', '/test/project');
             
-            expect(strategy.canHandle(InstallationSourceType.LocalSource, sourcePackage)).toBe(true);
-            expect(strategy.canHandle(InstallationSourceType.BuiltArtifact, sourcePackage)).toBe(true);
-            expect(strategy.canHandle(InstallationSourceType.RemoteNpm, sourcePackage)).toBe(true);
+            expect(strategy.canHandle(InstallationSource.Local, sourcePackage)).toBe(true);
+            expect(strategy.canHandle(InstallationSource.Artifact, sourcePackage)).toBe(true);
         });
 
         it('should handle unlocked packages from local source', () => {
-            const unlockedPackage = Object.create(SfpmUnlockedPackage.prototype);
+            const unlockedPackage = new SfpmUnlockedPackage('test-package', '/test/project');
             
-            expect(strategy.canHandle(InstallationSourceType.LocalSource, unlockedPackage)).toBe(true);
+            expect(strategy.canHandle(InstallationSource.Local, unlockedPackage)).toBe(true);
         });
 
-        it('should not handle unlocked packages from artifact or npm', () => {
-            const unlockedPackage = Object.create(SfpmUnlockedPackage.prototype);
+        it('should handle unlocked packages from artifact without packageVersionId', () => {
+            const unlockedPackage = new SfpmUnlockedPackage('test-package', '/test/project');
+            // No packageVersionId set - should fallback to source deploy
             
-            expect(strategy.canHandle(InstallationSourceType.BuiltArtifact, unlockedPackage)).toBe(false);
-            expect(strategy.canHandle(InstallationSourceType.RemoteNpm, unlockedPackage)).toBe(false);
+            expect(strategy.canHandle(InstallationSource.Artifact, unlockedPackage)).toBe(true);
+        });
+
+        it('should not handle unlocked packages from artifact with packageVersionId', () => {
+            const unlockedPackage = new SfpmUnlockedPackage('test-package', '/test/project');
+            unlockedPackage.packageVersionId = '04t...';
+            
+            expect(strategy.canHandle(InstallationSource.Artifact, unlockedPackage)).toBe(false);
         });
     });
 

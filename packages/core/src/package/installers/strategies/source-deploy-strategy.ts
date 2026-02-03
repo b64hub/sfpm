@@ -2,13 +2,19 @@ import { Org } from '@salesforce/core';
 import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import { EventEmitter } from 'node:events';
 import { InstallationStrategy } from '../installation-strategy.js';
-import { InstallationSourceType, InstallationMode } from '../../../types/package.js';
+import { InstallationSource, InstallationMode } from '../../../types/package.js';
 import SfpmPackage, { SfpmUnlockedPackage, SfpmSourcePackage } from '../../sfpm-package.js';
 import { Logger } from '../../../types/logger.js';
 
 /**
- * Unified strategy for deploying packages via source deployment
- * Handles both unlocked packages (from local source) and source packages (from any source type)
+ * Unified strategy for deploying packages via source deployment.
+ * 
+ * This strategy is used when:
+ * - Source packages (always use source deployment regardless of source)
+ * - Unlocked packages from local project source
+ * - Unlocked packages from artifact when version install is not desired (e.g., CI/CD source deploy)
+ * 
+ * Falls through as default strategy when UnlockedVersionInstallStrategy doesn't match.
  */
 export default class SourceDeployStrategy implements InstallationStrategy {
     private logger?: Logger;
@@ -19,15 +25,25 @@ export default class SourceDeployStrategy implements InstallationStrategy {
         this.eventEmitter = eventEmitter;
     }
 
-    public canHandle(sourceType: InstallationSourceType, sfpmPackage: SfpmPackage): boolean {
+    public canHandle(source: InstallationSource, sfpmPackage: SfpmPackage): boolean {
         // Source packages always use source deployment
         if (sfpmPackage instanceof SfpmSourcePackage) {
             return true;
         }
 
-        // Unlocked packages use source deployment when installing from local source
-        if (sfpmPackage instanceof SfpmUnlockedPackage && sourceType === InstallationSourceType.LocalSource) {
-            return true;
+        // Unlocked packages use source deployment when:
+        // - Installing from local project source (source === 'local')
+        // - Installing from artifact but no packageVersionId (fallback)
+        // - Installing from artifact with packageVersionId but forced to source deploy (handled by strategy order)
+        if (sfpmPackage instanceof SfpmUnlockedPackage) {
+            // Local source always uses source deploy
+            if (source === InstallationSource.Local) {
+                return true;
+            }
+            // Artifact source without packageVersionId falls back to source deploy
+            if (source === InstallationSource.Artifact && !sfpmPackage.packageVersionId) {
+                return true;
+            }
         }
 
         return false;

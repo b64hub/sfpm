@@ -1,5 +1,5 @@
 import { Args, Flags } from '@oclif/core'
-import { PackageInstaller, ProjectService, Logger } from '@b64/sfpm-core'
+import { PackageInstaller, ProjectService, Logger, InstallationSource, InstallationMode } from '@b64/sfpm-core'
 import { InstallProgressRenderer, OutputMode } from '../ui/install-progress-renderer.js'
 import SfpmCommand from '../sfpm-command.js'
 
@@ -23,10 +23,16 @@ export default class Install extends SfpmCommand {
   static override flags = {
     'target-org': Flags.string({ char: 'o', description: 'target org username', required: true }),
     'installation-key': Flags.string({ char: 'k', description: 'installation key for unlocked packages' }),
-    'source-type': Flags.string({ 
-      description: 'installation source type (artifact, npm, source)',
-      options: ['artifact', 'npm', 'source'],
+    'source': Flags.string({ 
+      char: 's',
+      description: 'installation source: local (project source) or artifact',
+      options: ['local', 'artifact'],
     }),
+    'force-mode': Flags.string({
+      description: 'force installation mode for unlocked packages (source-deploy or version-install)',
+      options: ['source-deploy', 'version-install'],
+    }),
+    force: Flags.boolean({ char: 'f', description: 'force reinstall even if already installed' }),
     quiet: Flags.boolean({ char: 'q', description: 'only show errors', exclusive: ['json'] }),
     json: Flags.boolean({ description: 'output as JSON for CI/CD', exclusive: ['quiet'] }),
   }
@@ -71,7 +77,9 @@ export default class Install extends SfpmCommand {
     const installer = new PackageInstaller(projectConfig, {
       targetOrg: flags['target-org'],
       installationKey: flags['installation-key'],
-      sourceType: flags['source-type'] as any,
+      source: flags['source'] as InstallationSource | undefined,
+      mode: flags['force-mode'] as InstallationMode | undefined,
+      force: flags.force,
     }, logger);
 
     // Create and attach progress renderer
