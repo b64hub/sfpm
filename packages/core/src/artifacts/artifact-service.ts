@@ -324,91 +324,12 @@ export class ArtifactService {
         return { needsInstall: false, installReason: 'already-installed' };
     }
 
-    // ========================================================================
-    // Local Artifact Management (delegates to ArtifactRepository)
-    // ========================================================================
-
     /**
      * Get an ArtifactRepository for the given project directory.
-     * Use this when you need direct access to repository methods.
+     * Use this for lower-level artifact operations like reading manifests,
+     * checking if artifacts exist, getting metadata, etc.
      */
     public getRepository(projectDirectory: string): ArtifactRepository {
         return new ArtifactRepository(projectDirectory, this.logger);
-    }
-
-    /**
-     * Get the path to the local artifacts directory for a package
-     * @param projectDirectory - Root project directory
-     * @param packageName - Name of the package
-     * @returns Path to the package's artifact directory
-     */
-    public getLocalArtifactPath(projectDirectory: string, packageName: string): string {
-        return this.getRepository(projectDirectory).getPackageArtifactPath(packageName);
-    }
-
-    /**
-     * Check if local artifacts exist for a package
-     * @param projectDirectory - Root project directory
-     * @param packageName - Name of the package
-     * @returns True if artifacts exist
-     */
-    public hasLocalArtifacts(projectDirectory: string, packageName: string): boolean {
-        return this.getRepository(projectDirectory).hasArtifacts(packageName);
-    }
-
-    /**
-     * Read the manifest for a local artifact
-     * @param projectDirectory - Root project directory
-     * @param packageName - Name of the package
-     * @returns Artifact manifest or undefined if not found
-     */
-    public getLocalArtifactManifest(projectDirectory: string, packageName: string): ArtifactManifest | undefined {
-        return this.getRepository(projectDirectory).getManifestSync(packageName);
-    }
-
-    /**
-     * Get the latest version from a local artifact
-     * @param projectDirectory - Root project directory
-     * @param packageName - Name of the package
-     * @returns Latest version or undefined if not found
-     */
-    public getLocalArtifactLatestVersion(projectDirectory: string, packageName: string): string | undefined {
-        return this.getRepository(projectDirectory).getLatestVersion(packageName);
-    }
-
-    /**
-     * Read artifact metadata for a specific version
-     * Extracts metadata from the artifact zip
-     * @param projectDirectory - Root project directory
-     * @param packageName - Name of the package
-     * @param version - Version to read (defaults to latest)
-     * @returns Package metadata or undefined if not found
-     */
-    public getLocalArtifactMetadata(
-        projectDirectory: string,
-        packageName: string,
-        version?: string,
-    ): SfpmPackageMetadata | undefined {
-        return this.getRepository(projectDirectory).getMetadata(packageName, version);
-    }
-
-    /**
-     * Get local artifact information including version and metadata
-     * @param projectDirectory - Root project directory
-     * @param packageName - Name of the package
-     * @param version - Optional specific version (defaults to latest)
-     * @returns Object with version, manifest, and metadata
-     */
-    public getLocalArtifactInfo(
-        projectDirectory: string,
-        packageName: string,
-        version?: string,
-    ): {
-        version?: string;
-        manifest?: ArtifactManifest;
-        metadata?: SfpmPackageMetadata;
-        versionInfo?: ArtifactVersionEntry;
-    } {
-        return this.getRepository(projectDirectory).getArtifactInfo(packageName, version);
     }
 }

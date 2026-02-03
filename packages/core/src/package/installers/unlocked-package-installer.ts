@@ -1,7 +1,5 @@
-import path from 'path';
-import fs from 'fs-extra';
-import EventEmitter from 'node:events';
 
+import EventEmitter from 'node:events';
 import { Org } from '@salesforce/core';
 import { Installer, RegisterInstaller } from './installer-registry.js';
 import { PackageType, InstallationSource, InstallationMode } from '../../types/package.js';
@@ -71,7 +69,8 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
         }
 
         // Auto-detect: if artifacts exist, use artifact; otherwise local
-        if (this.artifactService.hasLocalArtifacts(this.sfpmPackage.projectDirectory, this.sfpmPackage.packageName)) {
+        const repo = this.artifactService.getRepository(this.sfpmPackage.projectDirectory);
+        if (repo.hasArtifacts(this.sfpmPackage.packageName)) {
             return InstallationSource.Artifact;
         }
 

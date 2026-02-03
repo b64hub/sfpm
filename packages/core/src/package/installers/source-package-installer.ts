@@ -64,7 +64,8 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
         }
 
         // Auto-detect: if artifacts exist, use artifact; otherwise local
-        if (this.artifactService.hasLocalArtifacts(this.sfpmPackage.projectDirectory, this.sfpmPackage.packageName)) {
+        const repo = this.artifactService.getRepository(this.sfpmPackage.projectDirectory);
+        if (repo.hasArtifacts(this.sfpmPackage.packageName)) {
             return InstallationSource.Artifact;
         }
 

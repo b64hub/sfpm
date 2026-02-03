@@ -11,7 +11,9 @@ vi.mock('../../../src/package/sfpm-package.js');
 vi.mock('../../../src/artifacts/artifact-service.js', () => ({
     ArtifactService: function() {
         return {
-            getLocalArtifactInfo: vi.fn().mockReturnValue({ version: undefined, metadata: undefined }),
+            getRepository: vi.fn().mockReturnValue({
+                getArtifactInfo: vi.fn().mockReturnValue({ version: undefined, metadata: undefined }),
+            }),
         };
     }
 }));
