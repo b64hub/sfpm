@@ -58,7 +58,9 @@ export default class Install extends SfpmCommand {
 
     const packageName = packages[0]
 
-    const projectService = await ProjectService.getInstance(process.cwd());
+    // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
+    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getProjectConfig();
 
     // Determine output mode
