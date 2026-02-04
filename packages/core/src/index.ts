@@ -50,7 +50,17 @@ export { ArtifactService, type InstallTarget } from './artifacts/artifact-servic
 export { ArtifactRepository } from './artifacts/artifact-repository.js';
 export { ArtifactResolver } from './artifacts/artifact-resolver.js';
 export { default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider } from './artifacts/artifact-assembler.js';
-export { RegistryClient, NpmRegistryClient, type RegistryClientConfig, type RegistryPackageInfo, type RegistryVersionInfo, type DownloadResult } from './artifacts/registry/index.js';
+export { 
+    RegistryClient, 
+    NpmRegistryClient, 
+    readNpmConfig, 
+    readNpmConfigSync,
+    type RegistryClientConfig, 
+    type RegistryPackageInfo, 
+    type RegistryVersionInfo, 
+    type DownloadResult,
+    type NpmConfigResult,
+} from './artifacts/registry/index.js';
 export * from './types/artifact.js';
 export * from './types/npm.js';
 export * from './types/logger.js';
