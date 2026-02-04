@@ -12,7 +12,7 @@ export interface SfpmArtifact__c {
     Name: string;
     Tag__c: string;
     Version__c: string;
-    CommitId__c: string;
+    Commit_Id__c: string;
     Checksum__c: string;
 }
 
@@ -40,7 +40,7 @@ export interface InstallTarget {
     installReason: 'not-installed' | 'version-upgrade' | 'version-downgrade' | 'hash-mismatch' | 'already-installed';
 }
 
-const ARTIFACT_FIELDS = ['Id', 'Name', 'Tag__c', 'Version__c', 'CommitId__c', 'Checksum__c'];
+const ARTIFACT_FIELDS = ['Id', 'Name', 'Tag__c', 'Version__c', 'Commit_Id__c', 'Checksum__c'];
 
 export class ArtifactService {
     private org?: Org;
@@ -69,15 +69,15 @@ export class ArtifactService {
                     name: record.Name,
                     version: record.Version__c,
                     tag: record.Tag__c,
-                    commitId: record.CommitId__c,
+                    commitId: record.Commit_Id__c,
                     checksum: record.Checksum__c,
                     type: undefined,
                 };
             });
         } catch (error) {
             this.logger?.warn(
-                'Unable to fetch any sfp artifacts in the org\n' +
-                    '1. sfpowerscripts artifact package is not installed in the org\n' +
+                'Unable to fetch any sfpm artifacts in the org\n' +
+                    '1. sfpm artifact package is not installed in the org\n' +
                     '2. The required prerequisite object is not deployed to this org\n',
             );
             return [];
@@ -123,8 +123,8 @@ export class ArtifactService {
             }
         } catch (error) {
             this.logger?.warn(
-                'Unable to fetch sfp artifacts in the org\n' +
-                    '1. sfp package is not installed in the org\n' +
+                'Unable to fetch sfpm artifacts in the org\n' +
+                    '1. sfpm package is not installed in the org\n' +
                     '2. The required prerequisite object is not deployed to this org\n',
             );
         }
@@ -153,7 +153,7 @@ export class ArtifactService {
                 Name: sfpmPackage.name,
                 Tag__c: sfpmPackage.tag,
                 Version__c: sfpmPackage.version,
-                CommitId__c: sfpmPackage.commitId || '',
+                Commit_Id__c: sfpmPackage.commitId || '',
                 Checksum__c: sfpmPackage.sourceHash,
             };
 
@@ -192,8 +192,8 @@ export class ArtifactService {
             return resultId;
         } catch (error) {
             this.logger?.warn(
-                'Unable to update sfp artifacts in the org, skipping updates\n' +
-                    '1. sfp artifact package is not installed in the org\n' +
+                'Unable to update sfpm artifacts in the org, skipping updates\n' +
+                    '1. sfpm artifact package is not installed in the org\n' +
                     '2. The required prerequisite object is not deployed to this org',
             );
             return undefined;
@@ -240,6 +240,9 @@ export class ArtifactService {
      * 2. Checks what's currently installed in the target org
      * 3. Determines if installation is needed and why
      * 
+     * Uses npm config (.npmrc) for registry and auth token resolution,
+     * including support for scoped registries (e.g., @myorg packages).
+     * 
      * @param projectDirectory - Root project directory for artifact storage
      * @param packageName - Name of the package to resolve
      * @param options - Resolution options (version, forceRefresh, etc.)
@@ -250,10 +253,15 @@ export class ArtifactService {
         packageName: string,
         options?: ArtifactResolveOptions & { localOnly?: boolean }
     ): Promise<InstallTarget> {
-        // 1. Create resolver and resolve best artifact version
-        const resolver = ArtifactResolver.create(projectDirectory, this.logger, {
-            localOnly: options?.localOnly,
-        });
+        // 1. Create resolver for this specific package (handles scoped registries)
+        const resolver = await ArtifactResolver.createForPackage(
+            projectDirectory, 
+            packageName, 
+            this.logger, 
+            {
+                localOnly: options?.localOnly,
+            }
+        );
         
         const resolved = await resolver.resolve(packageName, options);
         this.logger?.debug(`Resolved ${packageName} to version ${resolved.version} from ${resolved.source}`);
