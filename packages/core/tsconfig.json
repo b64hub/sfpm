@@ -8,7 +8,8 @@
     "target": "es2022",
     "moduleResolution": "node16",
     "composite": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "sourceMap": true
   },
   "include": ["./src/**/*"],
   "exclude": ["node_modules", "dist"]

@@ -4,19 +4,14 @@
     {
       "type": "node",
       "request": "attach",
-      "name": "Attach",
+      "name": "Attach to SFPM",
       "port": 9229,
-      "skipFiles": ["<node_internals>/**"]
-    },
-    {
-      "type": "node",
-      "request": "launch",
-      "name": "Execute Command",
       "skipFiles": ["<node_internals>/**"],
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["--loader", "ts-node/esm", "--no-warnings=ExperimentalWarning"],
-      "program": "${workspaceFolder}/bin/dev.js",
-      "args": ["hello", "world"]
+      "sourceMaps": true,
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/**",
+        "!**/node_modules/**"
+      ]
     }
   ]
 }

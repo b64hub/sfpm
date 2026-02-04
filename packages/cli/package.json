@@ -66,6 +66,7 @@
   "repository": "b64hub/sfp",
   "scripts": {
     "build": "shx rm -rf dist && tsc -b",
+    "debug": "DEBUG=* node --inspect-brk --loader ts-node/esm --disable-warning=ExperimentalWarning bin/dev.js",
     "lint": "eslint",
     "postpack": "shx rm -f oclif.manifest.json",
     "posttest": "npm run lint",
