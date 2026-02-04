@@ -10,6 +10,7 @@ export default class Build extends SfpmCommand {
     '<%= config.bin %> <%= command.id %> my-package -v my-devhub',
     '<%= config.bin %> <%= command.id %> my-package -v my-devhub --quiet',
     '<%= config.bin %> <%= command.id %> my-package -v my-devhub --json',
+    '<%= config.bin %> <%= command.id %> my-package -v my-devhub --force',
     '<%= config.bin %> <%= command.id %> package-a package-b -v my-devhub',
   ]
 
@@ -26,6 +27,7 @@ export default class Build extends SfpmCommand {
     'installation-key': Flags.string({ char: 'k', description: 'installation key' }),
     'installation-key-bypass': Flags.boolean({ description: 'bypass installation key' }),
     'skip-validation': Flags.boolean({ description: 'skip validation' }),
+    force: Flags.boolean({ char: 'f', description: 'build even if no source changes detected' }),
     tag: Flags.string({ char: 't', description: 'tag for the build' }),
     quiet: Flags.boolean({ char: 'q', description: 'only show errors', exclusive: ['json'] }),
     json: Flags.boolean({ description: 'output as JSON for CI/CD', exclusive: ['quiet'] }),
@@ -75,6 +77,7 @@ export default class Build extends SfpmCommand {
       installationKey: flags['installation-key'],
       installationKeyBypass: flags['installation-key-bypass'],
       isSkipValidation: flags['skip-validation'],
+      force: flags.force,
     }, logger);
 
     // Create and attach progress renderer

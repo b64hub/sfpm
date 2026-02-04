@@ -182,6 +182,9 @@ export default class ArtifactAssembler extends EventEmitter {
         // Build keywords
         const keywords = ['sfpm', 'salesforce', String(pkg.type), ...(additionalKeywords || [])];
 
+        // Get the package source path (e.g., "force-app", "src", etc.)
+        const packageSourcePath = pkg.packageDefinition?.path || 'force-app';
+
         // Construct package.json
         const packageJson: NpmPackageJson = {
             name: `${npmScope}/${pkg.packageName}`,
@@ -191,7 +194,7 @@ export default class ArtifactAssembler extends EventEmitter {
             keywords,
             license: license || 'UNLICENSED',
             files: [
-                'force-app/**',
+                `${packageSourcePath}/**`,
                 'scripts/**',
                 'manifest/**',
                 'config/**',

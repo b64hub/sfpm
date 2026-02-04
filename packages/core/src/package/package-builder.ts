@@ -22,6 +22,8 @@ export interface BuildOptions {
     installationKey?: string;
     installationKeyBypass?: boolean;
     isSkipValidation?: boolean;
+    /** Force build even if no source changes detected */
+    force?: boolean;
 }
 
 export interface BuildTask { 
@@ -135,6 +137,12 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
             sfpmPackage,
             this.logger
         );
+
+        // Skip source hash check when force is enabled
+        if (this.options.force && 'preBuildTasks' in builderInstance) {
+            (builderInstance as any).preBuildTasks = [];
+            this.logger?.info('Force build enabled - skipping source change detection');
+        }
 
         // Connect to dev hub if needed
         if (this.options.devhubUsername) {
