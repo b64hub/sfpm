@@ -43,14 +43,12 @@ export default class Install extends SfpmCommand {
   public async execute(): Promise<void> {
     const { args, argv, flags } = await this.parse(Install)
 
-    // Get package names from arguments - use argv for multiple packages
     const packages = argv.length > 0 ? argv as string[] : [args.packages]
 
     if (!packages || packages.length === 0) {
       this.error('At least one package name is required')
     }
 
-    // Warn if multiple packages provided (not yet supported)
     if (packages.length > 1) {
       this.warn(`Multiple packages provided, but currently only installing the first: ${packages[0]}`)
       this.warn(`Future support will install: ${packages.join(', ')}`)
@@ -63,10 +61,8 @@ export default class Install extends SfpmCommand {
     const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getProjectConfig();
 
-    // Determine output mode
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
-    // Create logger for audit trail (separate from UI events)
     const logger: Logger = {
       log: (msg: string) => this.log(msg),
       info: (msg: string) => this.debug(msg),
@@ -76,7 +72,6 @@ export default class Install extends SfpmCommand {
       trace: (msg: string) => this.debug(msg),
     }
 
-    // Create package installer
     const installer = new PackageInstaller(projectConfig, {
       targetOrg: flags['target-org'],
       installationKey: flags['installation-key'],
@@ -85,7 +80,6 @@ export default class Install extends SfpmCommand {
       force: flags.force,
     }, logger);
 
-    // Create and attach progress renderer
     const renderer = new InstallProgressRenderer({
       logger: {
         log: (msg: string) => this.log(msg),
@@ -95,25 +89,18 @@ export default class Install extends SfpmCommand {
     });
     renderer.attachTo(installer);
 
-    // Execute installation
     try {
       await installer.installPackage(packageName);
 
-      // Output JSON if requested
       if (flags.json) {
         this.logJson(renderer.getJsonOutput());
       }
     } catch (error) {
-      renderer.handleError(error as Error);
-      
-      // Output JSON even on error if requested
       if (flags.json) {
         this.logJson(renderer.getJsonOutput());
       }
       
-      // Re-throw with original error for better debugging
       if (error instanceof Error) {
-        // Show the actual error message, not just the wrapper
         const errorMessage = error.message || String(error);
         this.log(`\nError details: ${errorMessage}`);
         if (error.stack) {

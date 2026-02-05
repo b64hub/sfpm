@@ -24,6 +24,7 @@ import type {
     TaskStartEvent,
     TaskCompleteEvent,
 } from '@b64/sfpm-core';
+import { infoBox } from './boxes.js';
 
 /**
  * Output modes for build progress rendering
@@ -408,50 +409,32 @@ export class BuildProgressRenderer {
             this.stopSpinner(true, chalk.green(`Package ${event.packageName}@${event.versionNumber} successfully created with Id: ${event.packageVersionId}`));
 
             // Build package details entries
-            const entries: Array<[string, string]> = [
-                ['Package Name', event.packageName],
-                ['Version Number', event.versionNumber],
-                ['Version ID', event.packageVersionId],
-            ];
+            const entries: Record<string, string> = {   
+                'Package Name': event.packageName,
+                'Version Number': event.versionNumber,
+                'Version ID': event.packageVersionId,
+            };
             
             if (event.packageId) {
-                entries.push(['Package ID', event.packageId]);
+                entries['Package ID'] = event.packageId;
             }
             if (event.status) {
-                entries.push(['Status', event.status]);
+                entries['Status'] = event.status;
             }
             if (event.totalNumberOfMetadataFiles !== undefined) {
-                entries.push(['Metadata Files', String(event.totalNumberOfMetadataFiles)]);
+                entries['Metadata Files'] = String(event.totalNumberOfMetadataFiles);
             }
             if (event.codeCoverage !== null && event.codeCoverage !== undefined) {
                 const coverageColor = event.hasPassedCodeCoverageCheck ? chalk.green : chalk.yellow;
-                entries.push(['Code Coverage', coverageColor(`${event.codeCoverage}%`)]);
+                entries['Code Coverage'] = coverageColor(`${event.codeCoverage}%`);
             }
             if (event.createdDate) {
-                entries.push(['Created', event.createdDate]);
+                entries['Created'] = event.createdDate;
             }
-
-            // Find the longest key for alignment
-            const maxKeyLength = Math.max(...entries.map(([key]) => key.length));
-
-            // Format as aligned key-value pairs
-            const formattedLines = entries.map(([key, value]) => {
-                const paddedKey = key.padEnd(maxKeyLength);
-                return `${chalk.cyan(paddedKey)} │ ${value}`;
-            });
-
-            const tableOutput = boxen(formattedLines.join('\n'), {
-                padding: 1,
-                margin: 0,
-                borderStyle: 'round',
-                borderColor: 'cyan',
-                title: 'Package Version Created',
-                titleAlignment: 'center',
-            });
 
             // Display the box
             this.logger.log('');
-            this.logger.log(tableOutput);
+            this.logger.log(infoBox('Package Version Details', entries));
             this.logger.log('');
         }
     }

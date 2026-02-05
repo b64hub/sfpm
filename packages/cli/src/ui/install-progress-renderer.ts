@@ -3,6 +3,7 @@ import ora, { Ora } from 'ora';
 import boxen from 'boxen';
 import { ux } from '@oclif/core';
 import type { PackageInstaller } from '@b64/sfpm-core';
+import { successBox } from './boxes.js';
 
 /**
  * Output modes for install progress rendering
@@ -172,23 +173,14 @@ export class InstallProgressRenderer {
             ? Date.now() - this.timings.installStart.getTime()
             : 0;
 
-        this.logger.log(
-            boxen(
-                chalk.green.bold('Installation Complete') +
-                    '\n\n' +
-                    chalk.gray(`Package: ${event.packageName}`) +
-                    '\n' +
-                    chalk.gray(`Target Org: ${event.targetOrg}`) +
-                    '\n' +
-                    chalk.gray(`Duration: ${this.formatDuration(duration)}`),
-                {
-                    padding: 1,
-                    margin: { top: 1, bottom: 1 },
-                    borderStyle: 'round',
-                    borderColor: 'green',
-                }
-            )
-        );
+        this.logger.log(successBox('Installation Complete', {
+            'Package Name': event.packageName,
+            'Version Number': event.versionNumber,
+            'Version ID': event.packageVersionId,
+            'Target Org': event.targetOrg,
+            'Source': event.source,
+            'Duration': this.formatDuration(duration),
+        }));
     }
 
     /**
