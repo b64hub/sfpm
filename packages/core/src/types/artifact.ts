@@ -31,15 +31,9 @@ export interface ArtifactManifest {
 export interface ResolvedArtifact {
     /** The resolved version string */
     version: string;
-    /** Path to the artifact zip file */
     artifactPath: string;
-    /** Whether the artifact was fetched from remote */
-    isRemote: boolean;
-    /** The source (local, npm) */
-    source: 'local' | 'npm';
-    /** Version entry metadata */
+    source: 'local' | 'remote';
     versionEntry: ArtifactVersionEntry;
-    /** Package version ID for unlocked packages (04t...) */
     packageVersionId?: string;
 }
 

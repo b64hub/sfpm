@@ -77,6 +77,38 @@ export class VersionManager extends EventEmitter {
     }
 
     /**
+     * Cleans a version string for semver comparison.
+     * Converts Salesforce 4-part format (1.0.0.16) to semver (1.0.0-16).
+     * Handles NEXT suffix by converting to 0 for comparison purposes.
+     * 
+     * Unlike normalizeVersion, this method does not throw on invalid versions
+     * and is optimized for version comparison rather than storage.
+     * 
+     * @param version - Version string in any supported format
+     * @returns Semver-compatible version string, or original if cannot be converted
+     */
+    public static cleanVersion(version: string): string {
+        // Already valid semver
+        if (semver.valid(version)) {
+            return version;
+        }
+
+        // Handle Salesforce format: 1.0.0.16 -> 1.0.0-16, 1.0.0.NEXT -> 1.0.0-0
+        const sfFormat = /^(\d+)\.(\d+)\.(\d+)\.(\d+|NEXT|LATEST)$/i;
+        const sfMatch = version.match(sfFormat);
+        if (sfMatch) {
+            const [, major, minor, patch, build] = sfMatch;
+            const buildNum = build.toUpperCase();
+            // Convert NEXT/LATEST to 0 for comparison (they represent unreleased versions)
+            const numericBuild = (buildNum === 'NEXT' || buildNum === 'LATEST') ? '0' : build;
+            return `${major}.${minor}.${patch}-${numericBuild}`;
+        }
+
+        // Return as-is if we can't parse it (let caller handle invalid versions)
+        return version;
+    }
+
+    /**
      * Normalizes and validates a version string. 
      * Converts 4-part Salesforce versions (major.minor.patch.build) 
      * to a semver compatible format (major.minor.patch-build).

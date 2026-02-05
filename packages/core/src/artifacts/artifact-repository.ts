@@ -67,10 +67,17 @@ export class ArtifactRepository {
     }
 
     /**
-     * Get the path to the artifact file
+     * Get the absolute path to the artifact file
      */
     public getArtifactPath(packageName: string, version: string): string {
         return path.join(this.getVersionPath(packageName, version), 'artifact.tgz');
+    }
+
+    /**
+     * Get the relative path to the artifact file (for storage in manifest)
+     */
+    public getRelativeArtifactPath(packageName: string, version: string): string {
+        return `${packageName}/${version}/artifact.tgz`;
     }
 
     /**

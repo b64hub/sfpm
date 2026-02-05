@@ -205,7 +205,7 @@ function expandEnvVars(value: string): string {
 /**
  * Normalize registry URL (ensure trailing slash removed, etc.)
  */
-function normalizeRegistryUrl(url: string): string {
+export function normalizeRegistryUrl(url: string): string {
     return url.replace(/\/+$/, '');
 }
 
@@ -267,4 +267,77 @@ export function readNpmConfigSync(
             isScopedRegistry: false,
         };
     }
+}
+
+// =========================================================================
+// Legacy .npmrc Reading (Simple File-Based)
+// =========================================================================
+
+/**
+ * Read registry URL from .npmrc files (legacy method).
+ * Checks project-level first, then user-level.
+ * 
+ * Note: This is a simpler fallback that doesn't support scoped registries.
+ * Prefer using readNpmConfig() for full scoped registry support.
+ * 
+ * @param projectDirectory - Project directory for .npmrc lookup
+ * @param logger - Optional logger
+ * @returns Registry URL if found, undefined otherwise
+ */
+export function readNpmrcRegistry(projectDirectory: string, logger?: Logger): string | undefined {
+    // Avoid importing at top-level to prevent circular dependencies
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs-extra');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pathModule = require('path');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const os = require('os');
+
+    const npmrcLocations = [
+        pathModule.join(projectDirectory, '.npmrc'),
+        pathModule.join(os.homedir(), '.npmrc'),
+    ];
+
+    for (const npmrcPath of npmrcLocations) {
+        try {
+            if (fs.existsSync(npmrcPath)) {
+                const content = fs.readFileSync(npmrcPath, 'utf-8');
+                const registry = parseNpmrcRegistry(content);
+                if (registry) {
+                    logger?.debug(`Using registry from ${npmrcPath}`);
+                    return registry;
+                }
+            }
+        } catch (error) {
+            logger?.debug(
+                `Failed to read .npmrc at ${npmrcPath}: ${error instanceof Error ? error.message : String(error)}`
+            );
+        }
+    }
+
+    return undefined;
+}
+
+/**
+ * Parse registry URL from .npmrc content.
+ * 
+ * @param content - Content of .npmrc file
+ * @returns Registry URL if found, undefined otherwise
+ */
+export function parseNpmrcRegistry(content: string): string | undefined {
+    const lines = content.split('\n');
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(';')) {
+            continue;
+        }
+
+        const registryMatch = trimmed.match(/^registry\s*=\s*(.+)$/i);
+        if (registryMatch) {
+            return registryMatch[1].trim();
+        }
+    }
+
+    return undefined;
 }

@@ -336,7 +336,7 @@ export default class ArtifactAssembler extends EventEmitter {
         this.logger?.debug(`Artifact hash: ${artifactHash}`);
 
         await this.repository.finalizeArtifact(this.sfpmPackage.packageName, this.packageVersionNumber, {
-            path: this.repository.getArtifactPath(this.sfpmPackage.packageName, this.packageVersionNumber),
+            path: this.repository.getRelativeArtifactPath(this.sfpmPackage.packageName, this.packageVersionNumber),
             sourceHash,
             artifactHash,
             generatedAt: Date.now(),

@@ -85,6 +85,9 @@ export default class PackageInstaller extends EventEmitter {
             this.org = await Org.create({ aliasOrUsername: this.options.targetOrg });
         }
 
+        // Get npm scope from project config for scoped registry lookup
+        const npmScope = this.projectConfig.getProjectDefinition()?.plugins?.sfpm?.npmScope;
+
         // Create artifact service with org for install target resolution
         const artifactService = new ArtifactService(this.logger, this.org);
 
@@ -95,6 +98,7 @@ export default class PackageInstaller extends EventEmitter {
             {
                 forceRefresh: this.options.forceRefresh,
                 localOnly: this.options.localOnly,
+                npmScope,
             }
         );
 

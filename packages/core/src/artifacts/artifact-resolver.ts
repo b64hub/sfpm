@@ -1,18 +1,21 @@
 import path from 'path';
-import os from 'os';
 import fs from 'fs-extra';
 import * as semver from 'semver';
 import { EventEmitter } from 'events';
 
 import { Logger } from '../types/logger.js';
-import { 
-    ArtifactManifest, 
-    ResolvedArtifact, 
-    ArtifactResolveOptions 
-} from '../types/artifact.js';
+import { ArtifactManifest, ResolvedArtifact, ArtifactResolveOptions } from '../types/artifact.js';
 import { ArtifactError } from '../types/errors.js';
 import { ArtifactRepository } from './artifact-repository.js';
-import { RegistryClient, NpmRegistryClient, readNpmConfig } from './registry/index.js';
+import { 
+    RegistryClient, 
+    NpmRegistryClient, 
+    readNpmConfig, 
+    readNpmConfigSync,
+    readNpmrcRegistry,
+    normalizeRegistryUrl 
+} from './registry/index.js';
+import { VersionManager } from '../project/version-manager.js';
 
 /**
  * Events emitted by the ArtifactResolver
@@ -46,13 +49,13 @@ const NPM_REGISTRY_ENV_VAR = 'SFPM_NPM_REGISTRY';
 /**
  * ArtifactResolver reconciles local manifest.json with remote NPM versions
  * to determine the best "Install Target" for a package.
- * 
+ *
  * Key behaviors:
  * - Trust the TTL: If lastCheckedRemote is within TTL and forceRefresh is false, use local manifest only
  * - Highest Wins: Uses semver (with includePrerelease: true) to compare versions
  * - Localize Remotes: If remote version is newer, download and add to local manifest
  * - Idempotency: If version exists locally with matching hashes, skip re-download
- * 
+ *
  * Can operate in two modes:
  * - Local-only: No registry client, only works with local artifacts
  * - Remote-enabled: With registry client, can fetch from npm/other registries
@@ -64,21 +67,17 @@ export class ArtifactResolver extends EventEmitter {
 
     /**
      * Create an ArtifactResolver.
-     * 
+     *
      * @param repository - The artifact repository for local storage operations
      * @param registryClient - Optional registry client for remote package operations (omit for local-only mode)
      * @param logger - Optional logger
      */
-    constructor(
-        repository: ArtifactRepository,
-        registryClient?: RegistryClient,
-        logger?: Logger
-    ) {
+    constructor(repository: ArtifactRepository, registryClient?: RegistryClient, logger?: Logger) {
         super();
         this.repository = repository;
         this.registryClient = registryClient;
         this.logger = logger;
-        
+
         if (this.registryClient) {
             this.logger?.debug(`Using registry: ${this.registryClient.getRegistryUrl()}`);
         } else {
@@ -88,18 +87,18 @@ export class ArtifactResolver extends EventEmitter {
 
     /**
      * Create a resolver with default npm registry client.
-     * 
+     *
      * Registry Resolution Order:
      * 1. Explicit registry URL if provided in options
      * 2. SFPM_NPM_REGISTRY environment variable
      * 3. npm config (.npmrc files) - supports scoped registries
      * 4. Default: https://registry.npmjs.org
-     * 
+     *
      * Auth Token Resolution (when using npm config):
      * - Reads from .npmrc (project, user, global)
      * - Supports environment variable expansion (${GITHUB_TOKEN})
      * - Handles scoped registry auth (//npm.pkg.github.com/:_authToken)
-     * 
+     *
      * @param projectDirectory - Project directory for artifact storage and .npmrc lookup
      * @param logger - Optional logger
      * @param options - Optional overrides for registry URL and auth token
@@ -118,21 +117,17 @@ export class ArtifactResolver extends EventEmitter {
             useNpmrc?: boolean;
             /** Local-only mode - no registry client */
             localOnly?: boolean;
-        }
+        },
     ): ArtifactResolver {
         const repository = new ArtifactRepository(projectDirectory, logger);
-        
+
         // Local-only mode: no registry client
         if (options?.localOnly) {
             return new ArtifactResolver(repository, undefined, logger);
         }
-        
-        const { registryUrl, authToken } = ArtifactResolver.resolveRegistryConfig(
-            projectDirectory, 
-            options, 
-            logger
-        );
-        
+
+        const { registryUrl, authToken } = ArtifactResolver.resolveRegistryConfig(projectDirectory, options, logger);
+
         const registryClient = new NpmRegistryClient({
             registryUrl,
             authToken,
@@ -144,10 +139,10 @@ export class ArtifactResolver extends EventEmitter {
 
     /**
      * Create a resolver configured for a specific package.
-     * 
+     *
      * This is the preferred method when you know the package name upfront,
      * as it properly resolves scoped registries (e.g., @myorg packages).
-     * 
+     *
      * @param projectDirectory - Project directory for artifact storage
      * @param packageName - Package name (used for scoped registry lookup)
      * @param logger - Optional logger
@@ -161,26 +156,26 @@ export class ArtifactResolver extends EventEmitter {
             registry?: string;
             authToken?: string;
             localOnly?: boolean;
-        }
+        },
     ): Promise<ArtifactResolver> {
         const repository = new ArtifactRepository(projectDirectory, logger);
-        
+
         // Local-only mode: no registry client
         if (options?.localOnly) {
             return new ArtifactResolver(repository, undefined, logger);
         }
-        
+
         // Read npm config for this specific package (handles scoped registries)
         const npmConfig = await readNpmConfig(packageName, projectDirectory, logger);
-        
+
         // Options override npm config
         const registryUrl = options?.registry || npmConfig.registry;
         const authToken = options?.authToken || npmConfig.authToken;
-        
+
         if (npmConfig.isScopedRegistry) {
             logger?.debug(`Using scoped registry for ${packageName}: ${registryUrl}`);
         }
-        
+
         const registryClient = new NpmRegistryClient({
             registryUrl,
             authToken,
@@ -220,30 +215,21 @@ export class ArtifactResolver extends EventEmitter {
         return this.repository;
     }
 
-
     /**
      * Resolve the best available artifact version for a package.
-     * 
+     *
      * Resolution logic:
      * 1. Try cache if TTL is valid (unless forceRefresh)
      * 2. Check remote registry for available versions
      * 3. Select best version from combined local + remote
      * 4. Return local artifact or download from remote
-     * 
+     *
      * @param packageName - Name of the package to resolve
      * @param options - Resolution options
      * @returns Resolved artifact information
      */
-    public async resolve(
-        packageName: string,
-        options: ArtifactResolveOptions = {}
-    ): Promise<ResolvedArtifact> {
-        const { 
-            forceRefresh = false, 
-            ttlMinutes = DEFAULT_TTL_MINUTES,
-            version,
-            includePrerelease = true 
-        } = options;
+    public async resolve(packageName: string, options: ArtifactResolveOptions = {}): Promise<ResolvedArtifact> {
+        const { forceRefresh = false, ttlMinutes = DEFAULT_TTL_MINUTES, version, includePrerelease = true } = options;
 
         this.emit('resolve:start', { packageName, version, timestamp: new Date() });
 
@@ -252,13 +238,18 @@ export class ArtifactResolver extends EventEmitter {
 
             // Try cache first if TTL is valid
             if (!forceRefresh) {
-                const cached = await this.tryResolveFromCache(packageName, manifest, version, includePrerelease, ttlMinutes);
+                const cached = await this.tryResolveFromCache(
+                    packageName,
+                    manifest,
+                    version,
+                    includePrerelease,
+                    ttlMinutes,
+                );
                 if (cached) return cached;
             }
 
             // Check remote and resolve
             return await this.resolveWithRemoteCheck(packageName, manifest, version, includePrerelease);
-
         } catch (error) {
             this.emitError(packageName, error);
             throw this.wrapError(packageName, error, version, { forceRefresh, ttlMinutes });
@@ -273,7 +264,7 @@ export class ArtifactResolver extends EventEmitter {
         manifest: ArtifactManifest | undefined,
         version: string | undefined,
         includePrerelease: boolean,
-        ttlMinutes: number
+        ttlMinutes: number,
     ): Promise<ResolvedArtifact | undefined> {
         if (this.isTTLExpired(manifest, ttlMinutes) || !manifest) {
             return undefined;
@@ -295,73 +286,161 @@ export class ArtifactResolver extends EventEmitter {
     private async resolveWithRemoteCheck(
         packageName: string,
         manifest: ArtifactManifest | undefined,
-        version: string | undefined,
-        includePrerelease: boolean
+        requestedVersion: string | undefined,
+        includePrerelease: boolean,
     ): Promise<ResolvedArtifact> {
+
         this.emit('resolve:remote-check', { packageName, timestamp: new Date() });
-        
         const remoteVersions = await this.fetchRemoteVersions(packageName);
         this.emit('resolve:remote-versions', { packageName, versions: remoteVersions, timestamp: new Date() });
 
-        const bestVersion = this.findBestVersion(packageName, manifest, remoteVersions, version, includePrerelease);
+        let localVersions;
+        if (!requestedVersion && manifest?.latest) {
+            localVersions = [manifest.latest];
+        } else {
+            localVersions = manifest ? Object.keys(manifest.versions) : [];
+        }
 
-        return await this.resolveOrDownload(packageName, manifest, bestVersion, includePrerelease);
+        let resolvedVersion: { version: string; source: 'local' | 'remote' };
+
+        try {
+            resolvedVersion = this.findBestVersion(localVersions, remoteVersions, requestedVersion, includePrerelease);
+            this.logger?.debug(`Best version for ${packageName}: ${resolvedVersion.version} (${resolvedVersion.source})`);
+        } catch (error) {
+            this.logger?.warn(`Failed to find best version for ${packageName}@${requestedVersion}: ${error}`);
+            throw new ArtifactError(packageName, 'resolve', `No matching version found for ${requestedVersion}`, {
+                version: requestedVersion,
+                context: {
+                    localVersions,
+                    remoteVersions,
+                }   
+            });
+        }
+
+        return await this.resolveOrDownload(packageName, manifest, resolvedVersion, includePrerelease);
     }
 
     /**
      * Find the best version from combined local and remote versions.
+     * 
+     * @param requestedVersion - Optional specific version or range to match
+     * @param localVersions - Versions available locally
+     * @param remoteVersions - Versions available on remote registry
+     * @param includePrerelease - Whether to include prerelease versions
+     * @returns The best matching version and its source location
      */
     private findBestVersion(
-        packageName: string,
-        manifest: ArtifactManifest | undefined,
+        localVersions: string[],
         remoteVersions: string[],
         requestedVersion: string | undefined,
-        includePrerelease: boolean
-    ): string {
-        const localVersions = manifest ? Object.keys(manifest.versions) : [];
-        const allVersions = [...new Set([...localVersions, ...remoteVersions])];
-        
-        const bestVersion = this.selectBestVersion(allVersions, requestedVersion, includePrerelease);
-        
-        if (!bestVersion) {
-            throw new ArtifactError(packageName, 'read', 'No matching version found', {
-                version: requestedVersion,
-                context: { localVersions, remoteVersions, requestedVersion },
-            });
+        includePrerelease: boolean = true,
+    ): { version: string; source: 'local' | 'remote' } {
+        if (localVersions.length === 0 && remoteVersions.length === 0) {
+            throw new Error('No versions available locally or remotely');
         }
 
-        return bestVersion;
+        const allVersions = [...new Set([...localVersions, ...remoteVersions])];
+        const bestVersion = this.selectBestVersion(allVersions, requestedVersion, includePrerelease);
+
+        if (!bestVersion) {
+            throw new Error(`No matching version found for ${requestedVersion ?? 'latest'}`);
+        }
+
+        // Prefer local if available, otherwise it must be remote
+        const source = localVersions.includes(bestVersion) ? 'local' : 'remote';
+
+        return { version: bestVersion, source };
     }
 
     /**
-     * Resolve from local if available, otherwise download from remote.
+     * Resolve artifact from local storage or download from remote.
+     * 
+     * Uses the pre-computed source from findBestVersion to determine whether
+     * to resolve locally or download from remote. Falls back to local if
+     * download fails.
+     * 
+     * @param packageName - Package name
+     * @param manifest - Local manifest (may be undefined)
+     * @param resolved - Result from findBestVersion with version and source
+     * @param includePrerelease - Whether to include prerelease versions for fallback
      */
     private async resolveOrDownload(
         packageName: string,
         manifest: ArtifactManifest | undefined,
-        version: string,
-        includePrerelease: boolean
+        resolved: { version: string; source: 'local' | 'remote' },
+        includePrerelease: boolean,
     ): Promise<ResolvedArtifact> {
-        const isLocalVersion = manifest?.versions[version] !== undefined;
-        
-        if (isLocalVersion) {
+        const { version, source } = resolved;
+
+        // Source is 'local' - resolve from local storage
+        if (source === 'local') {
             await this.repository.updateLastCheckedRemote(packageName);
             const result = this.resolveFromLocal(packageName, manifest!, version, includePrerelease);
             if (result) {
                 this.emitComplete(packageName, result.version, 'local');
                 return result;
             }
+            // Local artifact file might be missing (corrupt state)
+            this.logger?.warn(`Local artifact file missing for ${packageName}@${version}`);
         }
 
-        const result = await this.download(packageName, version);
-        this.emitComplete(packageName, result.version, 'npm');
+        // Source is 'remote' or local file missing - try download
+        if (source === 'remote' || manifest?.versions[version]) {
+            try {
+                const result = await this.download(packageName, version);
+                this.emitComplete(packageName, result.version, 'remote');
+                return result;
+            } catch (downloadError) {
+                this.logger?.warn(
+                    `Failed to download ${packageName}@${version} from registry: ${downloadError instanceof Error ? downloadError.message : String(downloadError)}`,
+                );
+            }
+        }
+
+        const fallbackResult = this.fallback(packageName, manifest, version, includePrerelease);
+        if (fallbackResult) {
+            return fallbackResult;
+        }
+
+        // No version available
+        throw new ArtifactError(packageName, 'read', `No available artifact for version ${version}`, {
+            version,
+            context: {
+                source,
+                hasLocalVersions: manifest ? Object.keys(manifest.versions).length > 0 : false,
+            },
+        });
+    }
+    
+    private fallback(
+        packageName: string,
+        manifest: ArtifactManifest | undefined,
+        requestedVersion: string | undefined,
+        includePrerelease: boolean,
+    ): ResolvedArtifact | undefined {
+        const localVersions = manifest ? Object.keys(manifest.versions) : [];
+        if (localVersions.length === 0) {
+            return undefined;
+        }
+
+        const fallbackVersion = manifest!.latest || this.findHighestVersion(localVersions, includePrerelease);
+        if (!fallbackVersion || fallbackVersion === requestedVersion) {
+            return undefined;
+        }
+
+        this.logger?.warn(`Falling back to local version: ${packageName}@${fallbackVersion}`);
+        const result = this.resolveFromLocal(packageName, manifest!, fallbackVersion, includePrerelease);
+        
+        if (result) {
+            this.emitComplete(packageName, result.version, 'local');
+        }
         return result;
     }
 
     /**
      * Emit resolve:complete event
      */
-    private emitComplete(packageName: string, version: string, source: 'local' | 'npm'): void {
+    private emitComplete(packageName: string, version: string, source: 'local' | 'remote'): void {
         this.emit('resolve:complete', { packageName, version, source, timestamp: new Date() });
     }
 
@@ -380,7 +459,7 @@ export class ArtifactResolver extends EventEmitter {
         packageName: string,
         error: unknown,
         version: string | undefined,
-        context: Record<string, unknown>
+        context: Record<string, unknown>,
     ): ArtifactError {
         if (error instanceof ArtifactError) {
             throw error;
@@ -393,11 +472,6 @@ export class ArtifactResolver extends EventEmitter {
         });
     }
 
-
-    // =========================================================================
-    // Static Methods - Registry Resolution
-    // =========================================================================
-
     /**
      * Resolve the NPM registry URL from various sources.
      * Resolution order:
@@ -408,18 +482,18 @@ export class ArtifactResolver extends EventEmitter {
      */
     private static resolveRegistryConfig(
         projectDirectory: string,
-        options?: { 
+        options?: {
             packageName?: string;
-            registry?: string; 
+            registry?: string;
             authToken?: string;
             useNpmrc?: boolean;
         },
-        logger?: Logger
+        logger?: Logger,
     ): { registryUrl: string; authToken?: string } {
         // 1. Explicit option (highest priority)
         if (options?.registry) {
             return {
-                registryUrl: ArtifactResolver.normalizeRegistryUrl(options.registry),
+                registryUrl: normalizeRegistryUrl(options.registry),
                 authToken: options.authToken,
             };
         }
@@ -429,7 +503,7 @@ export class ArtifactResolver extends EventEmitter {
         if (envRegistry) {
             logger?.debug(`Using registry from ${NPM_REGISTRY_ENV_VAR} env var`);
             return {
-                registryUrl: ArtifactResolver.normalizeRegistryUrl(envRegistry),
+                registryUrl: normalizeRegistryUrl(envRegistry),
                 authToken: options?.authToken,
             };
         }
@@ -437,9 +511,6 @@ export class ArtifactResolver extends EventEmitter {
         // 3. npm config with package name for scoped registry support
         if (options?.useNpmrc !== false && options?.packageName) {
             try {
-                // Use sync version here since create() is synchronous
-                // eslint-disable-next-line @typescript-eslint/no-require-imports
-                const { readNpmConfigSync } = require('./registry/npm-config-reader.js');
                 const npmConfig = readNpmConfigSync(options.packageName, projectDirectory, logger);
                 return {
                     registryUrl: npmConfig.registry,
@@ -452,10 +523,10 @@ export class ArtifactResolver extends EventEmitter {
 
         // 3b. Legacy: simple .npmrc reading (no scope support)
         if (options?.useNpmrc !== false) {
-            const npmrcRegistry = ArtifactResolver.readNpmrcRegistry(projectDirectory, logger);
+            const npmrcRegistry = readNpmrcRegistry(projectDirectory, logger);
             if (npmrcRegistry) {
                 return {
-                    registryUrl: ArtifactResolver.normalizeRegistryUrl(npmrcRegistry),
+                    registryUrl: normalizeRegistryUrl(npmrcRegistry),
                     authToken: options?.authToken,
                 };
             }
@@ -469,66 +540,6 @@ export class ArtifactResolver extends EventEmitter {
     }
 
     /**
-     * Read registry URL from .npmrc files.
-     * Checks project-level first, then user-level.
-     */
-    private static readNpmrcRegistry(projectDirectory: string, logger?: Logger): string | undefined {
-        const npmrcLocations = [
-            path.join(projectDirectory, '.npmrc'),
-            path.join(os.homedir(), '.npmrc'),
-        ];
-
-        for (const npmrcPath of npmrcLocations) {
-            try {
-                if (fs.existsSync(npmrcPath)) {
-                    const content = fs.readFileSync(npmrcPath, 'utf-8');
-                    const registry = ArtifactResolver.parseNpmrcRegistry(content);
-                    if (registry) {
-                        logger?.debug(`Using registry from ${npmrcPath}`);
-                        return registry;
-                    }
-                }
-            } catch (error) {
-                logger?.debug(`Failed to read .npmrc at ${npmrcPath}: ${error instanceof Error ? error.message : String(error)}`);
-            }
-        }
-
-        return undefined;
-    }
-
-    /**
-     * Parse registry URL from .npmrc content.
-     */
-    private static parseNpmrcRegistry(content: string): string | undefined {
-        const lines = content.split('\n');
-        
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(';')) {
-                continue;
-            }
-
-            const registryMatch = trimmed.match(/^registry\s*=\s*(.+)$/i);
-            if (registryMatch) {
-                return registryMatch[1].trim();
-            }
-        }
-
-        return undefined;
-    }
-
-    /**
-     * Normalize registry URL (ensure trailing slash is removed)
-     */
-    private static normalizeRegistryUrl(url: string): string {
-        return url.replace(/\/+$/, '');
-    }
-
-    // =========================================================================
-    // Private Methods - TTL & Cache Logic
-    // =========================================================================
-
-    /**
      * Check if the TTL has expired for remote checks
      */
     private isTTLExpired(manifest: ArtifactManifest | undefined, ttlMinutes: number): boolean {
@@ -538,13 +549,9 @@ export class ArtifactResolver extends EventEmitter {
 
         const ttlMs = ttlMinutes * 60 * 1000;
         const elapsed = Date.now() - manifest.lastCheckedRemote;
-        
+
         return elapsed > ttlMs;
     }
-
-    // =========================================================================
-    // Private Methods - Local Resolution
-    // =========================================================================
 
     /**
      * Resolve a version from the local manifest
@@ -553,10 +560,10 @@ export class ArtifactResolver extends EventEmitter {
         packageName: string,
         manifest: ArtifactManifest,
         version: string | undefined,
-        includePrerelease: boolean
+        includePrerelease: boolean,
     ): ResolvedArtifact | undefined {
         const versions = Object.keys(manifest.versions);
-        
+
         if (versions.length === 0) {
             return undefined;
         }
@@ -593,16 +600,11 @@ export class ArtifactResolver extends EventEmitter {
         return {
             version: targetVersion,
             artifactPath,
-            isRemote: false,
             source: 'local',
             versionEntry,
             packageVersionId,
         };
     }
-
-    // =========================================================================
-    // Private Methods - Version Selection
-    // =========================================================================
 
     /**
      * Select the best version from a list based on a version range or exact match
@@ -610,53 +612,45 @@ export class ArtifactResolver extends EventEmitter {
     private selectBestVersion(
         versions: string[],
         requestedVersion: string | undefined,
-        includePrerelease: boolean
+        includePrerelease: boolean,
     ): string | undefined {
         if (versions.length === 0) {
             return undefined;
         }
 
-        // Clean versions for semver comparison
         const cleanedVersions = versions
-            .map(v => ({ original: v, cleaned: this.cleanVersion(v) }))
-            .filter(v => semver.valid(v.cleaned));
+            .map((v) => ({ original: v, cleaned: VersionManager.cleanVersion(v) }))
+            .filter((v) => semver.valid(v.cleaned));
 
         if (cleanedVersions.length === 0) {
-            // Fallback: return first version if none are valid semver
             return versions[0];
         }
 
         if (!requestedVersion) {
-            // No version requested - find highest
             return this.findHighestVersion(versions, includePrerelease);
         }
 
-        const cleanedRequested = this.cleanVersion(requestedVersion);
+        const cleanedRequested = VersionManager.cleanVersion(requestedVersion);
 
-        // Check for exact match first
-        const exactMatch = cleanedVersions.find(v => v.cleaned === cleanedRequested);
+        const exactMatch = cleanedVersions.find((v) => v.cleaned === cleanedRequested);
         if (exactMatch) {
             return exactMatch.original;
         }
 
-        // Try semver range matching
         const semverOptions: semver.RangeOptions = { includePrerelease };
-        
-        // Check if it's a range (contains ^, ~, >, <, etc.)
         const isRange = /[\^~><= ]/.test(requestedVersion);
-        
+
         if (isRange) {
-            // Find highest version that satisfies the range
             const satisfying = cleanedVersions
-                .filter(v => semver.satisfies(v.cleaned, cleanedRequested, semverOptions))
+                .filter((v) => semver.satisfies(v.cleaned, cleanedRequested, semverOptions))
                 .sort((a, b) => semver.rcompare(a.cleaned, b.cleaned));
-            
+
             return satisfying[0]?.original;
         }
 
         // Try prefix matching (e.g., "1.0" matches "1.0.0-1")
         const prefixMatches = cleanedVersions
-            .filter(v => v.original.startsWith(requestedVersion) || v.cleaned.startsWith(cleanedRequested))
+            .filter((v) => v.original.startsWith(requestedVersion) || v.cleaned.startsWith(cleanedRequested))
             .sort((a, b) => semver.rcompare(a.cleaned, b.cleaned));
 
         return prefixMatches[0]?.original;
@@ -669,34 +663,13 @@ export class ArtifactResolver extends EventEmitter {
         if (versions.length === 0) {
             return undefined;
         }
-        
+
         const sorted = versions
-            .map(v => ({ original: v, cleaned: this.cleanVersion(v) }))
-            .filter(v => semver.valid(v.cleaned))
+            .map((v) => ({ original: v, cleaned: VersionManager.cleanVersion(v) }))
+            .filter((v) => semver.valid(v.cleaned))
             .sort((a, b) => semver.rcompare(a.cleaned, b.cleaned));
 
         return sorted[0]?.original;
-    }
-
-    /**
-     * Clean a version string for semver comparison
-     * Handles formats like "1.0.0-16" (npm) and "1.0.0.16" (Salesforce)
-     */
-    private cleanVersion(version: string): string {
-        // Already valid semver
-        if (semver.valid(version)) {
-            return version;
-        }
-
-        // Handle Salesforce format: 1.0.0.16 -> 1.0.0-16
-        const sfFormat = /^(\d+)\.(\d+)\.(\d+)\.(\d+|NEXT)$/;
-        const sfMatch = version.match(sfFormat);
-        if (sfMatch) {
-            const [, major, minor, patch, build] = sfMatch;
-            return build === 'NEXT' ? `${major}.${minor}.${patch}-0` : `${major}.${minor}.${patch}-${build}`;
-        }
-
-        return version;
     }
 
     // =========================================================================
@@ -712,7 +685,7 @@ export class ArtifactResolver extends EventEmitter {
             this.logger?.debug(`Skipping remote version check for ${packageName} (local-only mode)`);
             return [];
         }
-        
+
         try {
             this.logger?.debug(`Fetching versions for ${packageName} from registry`);
             const versions = await this.registryClient.getVersions(packageName);
@@ -720,7 +693,9 @@ export class ArtifactResolver extends EventEmitter {
             return versions;
         } catch (error) {
             // Package might not exist on registry - this is not an error for local-only packages
-            this.logger?.debug(`No remote versions found for ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger?.debug(
+                `No remote versions found for ${packageName}: ${error instanceof Error ? error.message : String(error)}`,
+            );
             return [];
         }
     }
@@ -729,17 +704,14 @@ export class ArtifactResolver extends EventEmitter {
      * Download a package from the registry.
      * Requires a registry client - throws if running in local-only mode.
      */
-    private async download(
-        packageName: string,
-        version: string
-    ): Promise<ResolvedArtifact> {
+    private async download(packageName: string, version: string): Promise<ResolvedArtifact> {
         if (!this.registryClient) {
             throw new ArtifactError(packageName, 'download', 'Cannot download package in local-only mode', {
                 version,
                 context: { reason: 'No registry client configured' },
             });
         }
-        
+
         this.emit('resolve:download:start', {
             packageName,
             version,
@@ -765,16 +737,16 @@ export class ArtifactResolver extends EventEmitter {
             return {
                 version,
                 artifactPath: localized.artifactPath,
-                isRemote: true,
-                source: 'npm',
+                source: 'remote',
                 versionEntry: localized.versionEntry,
                 packageVersionId: localized.packageVersionId,
             };
-
         } catch (error) {
             // Cleanup on failure
-            await this.repository.removeVersion(packageName, version).catch(() => { /* ignore cleanup errors */ });
-            
+            await this.repository.removeVersion(packageName, version).catch(() => {
+                /* ignore cleanup errors */
+            });
+
             throw new ArtifactError(packageName, 'extract', 'Failed to download and localize artifact', {
                 version,
                 context: { versionDir },
