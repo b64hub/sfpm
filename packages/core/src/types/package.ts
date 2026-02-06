@@ -64,11 +64,13 @@ export interface CategorizedMetadata {
 export interface SfpmPackageContent {
     metadataCount: number;
     payload?: PackageManifestObject;
-    apex?: CategorizedMetadata & {
-        classes?: string[];
-        tests?: string[];
+    apex?: {
+        all: string[];
+        classes?: MetadataFile[];
+        tests?: MetadataFile[];
+        [category: string]: string[] | MetadataFile[] | undefined;
     };
-    triggers?: string[];
+    triggers?: MetadataFile[];
     testSuites?: string[];
     fields?: CategorizedMetadata & {
         fht?: string[];

@@ -1,6 +1,6 @@
 import { ComponentSet, SourceComponent } from "@salesforce/source-deploy-retrieve";
 import { ProjectDefinition, PackageDefinition } from "../types/project.js";
-import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata, SfpmUnlockedPackageBuildOptions } from "../types/package.js";
+import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata, SfpmUnlockedPackageBuildOptions, MetadataFile } from "../types/package.js";
 import { NpmPackageSfpmMetadata } from "../types/npm.js";
 import ProjectConfig from "../project/project-config.js";
 import { SourceHasher } from "../utils/source-hasher.js";
@@ -210,7 +210,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
             .some(c => apexTypes.includes(c.type.id));
     }
 
-    get testClasses(): string[] {
+    get testClasses(): MetadataFile[] {
         return this._metadata.content?.apex?.tests || [];
     }
 
@@ -337,9 +337,11 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
                 continue;
             }
 
-            const validated = currentList.filter(name =>
-                cs.has({ fullName: name, type: metadataType })
-            );
+            const validated = currentList.filter(item => {
+                // Support both string[] and MetadataFile[] ({ name, path })
+                const name = typeof item === 'string' ? item : item.name;
+                return cs.has({ fullName: name, type: metadataType });
+            });
 
             set(this._metadata.content, jsonPath, validated);
         }
@@ -488,16 +490,12 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
     }
 
     /**
-     * Override to include unlocked-package-specific metadata.
+     * Override to ensure unlocked-package-specific identity fields are populated.
+     * Package identity (packageId, packageVersionId, isOrgDependent) is stored
+     * exclusively under sfpm.identity — no top-level duplicates.
      */
     override async toJson(): Promise<SfpmPackageMetadata> {
-        const baseMetadata = await super.toJson();
-        return {
-            ...baseMetadata,
-            packageId: this.packageId || undefined,
-            packageVersionId: this.packageVersionId,
-            isOrgDependent: this.isOrgDependent || undefined,
-        };
+        return super.toJson();
     }
 }
 

@@ -2,6 +2,23 @@ import { SfProject, SfProjectJson, ProjectJsonSchema, ProjectJson, Logger } from
 import { ProjectDefinition, PackageDefinition, ProjectDefinitionSchema, SfpmPluginConfig } from '../types/project.js';
 import { PackageType } from '../types/package.js';
 
+/**
+ * Dependency from sfdx-project.json packageDirectories[].dependencies
+ */
+type PackageDependency = { package: string; versionNumber?: string };
+
+/**
+ * Classified dependencies for a package as declared in sfdx-project.json.
+ * - `versioned`: internal SFPM packages → semver range derived from versionNumber
+ * - `managed`: pinned managed packages → subscriber packageVersionId (04t...)
+ *
+ * Keys are raw sfdx-project.json package names (no npm scope).
+ */
+export interface ClassifiedDependencies {
+    versioned: Record<string, string>;
+    managed: Record<string, string>;
+}
+
 
 
 /**
@@ -160,6 +177,61 @@ export default class ProjectConfig {
             .filter(dir => 'package' in dir && dir.package)
             .map(dir => dir.package as string);
     }
+
+    // =========================================================================
+    // Dependency Resolution
+    // =========================================================================
+
+    /**
+     * Returns the raw dependencies for a package from sfdx-project.json.
+     */
+    public getDependencies(packageName: string): PackageDependency[] {
+        return this.getPackageDefinition(packageName).dependencies ?? [];
+    }
+
+    /**
+     * Classifies a package's dependencies into versioned (internal) and managed (pinned)
+     * using raw sfdx-project.json names — no npm scope transformation.
+     *
+     * Versioned dependencies have a `versionNumber` and are mapped to a semver range.
+     * Managed dependencies have no `versionNumber` — they reference aliases in
+     * `packageAliases` that resolve to a subscriber packageVersionId (04t...).
+     *
+     * @example
+     * ```typescript
+     * const deps = projectConfig.classifyDependencies('my-package');
+     * // deps.versioned  → { "core-lib": "^1.2.0" }
+     * // deps.managed    → { "Nebula Logger@4.16.0": "04taA000005CtsHQAS" }
+     * ```
+     */
+    public classifyDependencies(packageName: string): ClassifiedDependencies {
+        const dependencies = this.getDependencies(packageName);
+        const aliases = this.getProjectDefinition().packageAliases ?? {};
+
+        const versioned: Record<string, string> = {};
+        const managed: Record<string, string> = {};
+
+        for (const dep of dependencies) {
+            if (dep.versionNumber) {
+                // Internal / versioned dependency → semver range from SF version number
+                const parts = dep.versionNumber.split('.');
+                const baseVersion = parts.length >= 3 ? parts.slice(0, 3).join('.') : dep.versionNumber;
+                versioned[dep.package] = `^${baseVersion}`;
+            } else {
+                // Managed / pinned dependency → alias resolved to 04t via packageAliases
+                const packageVersionId = aliases[dep.package];
+                if (packageVersionId) {
+                    managed[dep.package] = packageVersionId;
+                }
+            }
+        }
+
+        return { versioned, managed };
+    }
+
+    // =========================================================================
+    // Project Definition Pruning
+    // =========================================================================
 
     /**
      * Returns a deep copy of the project definition, pruned to contain only the specified package

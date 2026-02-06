@@ -2,6 +2,7 @@ import { SfpmMetadataPackage } from "../sfpm-package.js";
 import { PackageType, SfpmPackageContent } from "../../types/package.js";
 import { ApexParser } from "../../apex/apex-parser.js";
 import { PackageAnalyzer, RegisterAnalyzer } from "./analyzer-registry.js";
+import path from 'path';
 
 /**
  * To be implemented using Apex Language Server
@@ -15,28 +16,39 @@ export class ApexTypeAnalyzer implements PackageAnalyzer {
 
     public async analyze(sfpmPackage: SfpmMetadataPackage): Promise<Partial<SfpmPackageContent>> {
 
-        const files = sfpmPackage.apexClasses
-            .filter(ac => ac.content !== undefined)
-            .map(ac => ac.content as string);
+        const components = sfpmPackage.apexClasses
+            .filter(ac => ac.content !== undefined);
+
+        const filePaths = components.map(ac => ac.content as string);
 
         const parser = new ApexParser();
-        const classification = await parser.classifyBulk(files);
+        const classification = await parser.classifyBulk(filePaths);
 
-        const classes = classification
+        // Use SourceComponent.name for reliable names (parser returns "Unknown" on heuristic fallback)
+        // Use relative path from staging directory for portable artifact paths
+        const baseDir = sfpmPackage.stagingDirectory || sfpmPackage.projectDirectory;
+
+        const enriched = classification.map((info, index) => ({
+            ...info,
+            name: components[index].name || info.name,
+            path: path.relative(baseDir, components[index].content!),
+        }));
+
+        const classes = enriched
             .filter((info) => info.type === "Class" && !info.isTest)
             .map((info) => ({
                 name: info.name,
                 path: info.path,
             }));
 
-        const triggers = classification
+        const triggers = enriched
             .filter((info) => info.type === "Trigger")
             .map((info) => ({
                 name: info.name,
                 path: info.path,
             }));
 
-        const testClasses = classification
+        const testClasses = enriched
             .filter((info) => info.type === "Class" && info.isTest)
             .map((info) => ({
                 name: info.name,

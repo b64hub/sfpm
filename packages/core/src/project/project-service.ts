@@ -111,4 +111,16 @@ export default class ProjectService {
         const service = await ProjectService.getInstance(workingDirectory);
         return service.getProjectConfig().getPackageType(packageName);
     }
+
+    /**
+     * Static helper to classify a package's dependencies into versioned and managed.
+     * Returns raw sfdx-project.json names — callers apply npm scope as needed.
+     */
+    public static async classifyDependencies(
+        packageName: string,
+        workingDirectory?: string,
+    ): Promise<import('./project-config.js').ClassifiedDependencies> {
+        const service = await ProjectService.getInstance(workingDirectory);
+        return service.getProjectConfig().classifyDependencies(packageName);
+    }
 }
