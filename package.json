@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "description": "Salesforce Package Manager",
+  "lint-staged": {
+    "packages/*/src/**/*.ts": [
+      "prettier --write",
+      "eslint --fix"
+    ]
+  },
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
