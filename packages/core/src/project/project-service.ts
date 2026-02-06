@@ -1,26 +1,59 @@
 import { SfProject } from '@salesforce/core';
 import ProjectConfig from './project-config.js';
 import { ProjectGraph } from './project-graph.js';
-import { VersionManager, VersionManagerConfig } from './version-manager.js';
+import { VersionManager } from './version-manager.js';
 import { ProjectDefinition, PackageDefinition } from '../types/project.js';
 import { PackageType } from '../types/package.js';
 
 export default class ProjectService {
     private static instance: ProjectService | undefined;
-    private initialized = false;
 
-    private versionManager!: VersionManager;
-    private projectConfig!: ProjectConfig;
+    private readonly versionManager: VersionManager;
+    private readonly projectConfig: ProjectConfig;
 
-    constructor(private projectOrPath?: SfProject | string) {
+    private constructor(projectConfig: ProjectConfig, versionManager: VersionManager) {
+        this.projectConfig = projectConfig;
+        this.versionManager = versionManager;
     }
 
     /**
-     * Gets or creates the singleton ProjectService instance
+     * Creates and initializes a new ProjectService instance from a directory path.
+     * This is the recommended way to create a ProjectService.
+     * 
+     * @param projectPath - Path to project directory (defaults to current working directory)
+     * @returns Fully initialized ProjectService instance
      */
-    public static getInstance(projectOrPath?: SfProject | string): ProjectService {
+    public static async create(projectPath?: string): Promise<ProjectService> {
+        const sfProject = await SfProject.resolve(projectPath);
+        const projectConfig = new ProjectConfig(sfProject);
+        const versionManager = VersionManager.create(projectConfig);
+
+        return new ProjectService(projectConfig, versionManager);
+    }
+
+    /**
+     * Creates and initializes a new ProjectService instance from an existing SfProject.
+     * 
+     * @param project - SfProject instance
+     * @returns Fully initialized ProjectService instance
+     */
+    public static createFromProject(project: SfProject): ProjectService {
+        const projectConfig = new ProjectConfig(project);
+        const versionManager = VersionManager.create(projectConfig);
+
+        return new ProjectService(projectConfig, versionManager);
+    }
+
+    /**
+     * Gets or creates the singleton ProjectService instance.
+     * Note: First call must be awaited to ensure initialization.
+     * 
+     * @param projectPath - Path to project directory (defaults to current working directory)
+     * @returns Promise resolving to the singleton instance
+     */
+    public static async getInstance(projectPath?: string): Promise<ProjectService> {
         if (!ProjectService.instance) {
-            ProjectService.instance = new ProjectService(projectOrPath);
+            ProjectService.instance = await ProjectService.create(projectPath);
         }
         return ProjectService.instance;
     }
@@ -32,33 +65,11 @@ export default class ProjectService {
         ProjectService.instance = undefined;
     }
 
-    /**
-     * Initializes the service by loading the project configuration and building the graph
-     */
-    public async initialize(): Promise<void> {
-        if (this.initialized) return;
-
-        let sfProject: SfProject;
-        if (this.projectOrPath instanceof SfProject) {
-            sfProject = this.projectOrPath;
-        } else {
-            sfProject = await SfProject.resolve(this.projectOrPath);
-        }
-
-        this.projectConfig = new ProjectConfig(sfProject);
-        this.versionManager = new VersionManager({
-            projectConfig: this.projectConfig
-        });
-
-        await this.versionManager.load();
-        this.initialized = true;
-    }
-
     public getVersionManager(): VersionManager {
         return this.versionManager;
     }
 
-    public getProjectGraph(): ProjectGraph | undefined {
+    public getProjectGraph(): ProjectGraph {
         return this.versionManager.getGraph();
     }
 
@@ -73,8 +84,7 @@ export default class ProjectService {
      * Static helper to get the project definition
      */
     public static async getProjectDefinition(workingDirectory?: string): Promise<ProjectDefinition> {
-        const service = ProjectService.getInstance(workingDirectory);
-        await service.initialize();
+        const service = await ProjectService.getInstance(workingDirectory);
         return service.getProjectConfig().getProjectDefinition();
     }
 
@@ -82,8 +92,7 @@ export default class ProjectService {
      * Static helper to get a specific package definition
      */
     public static async getPackageDefinition(packageName: string, workingDirectory?: string): Promise<PackageDefinition> {
-        const service = ProjectService.getInstance(workingDirectory);
-        await service.initialize();
+        const service = await ProjectService.getInstance(workingDirectory);
         return service.getProjectConfig().getPackageDefinition(packageName);
     }
 
@@ -91,21 +100,15 @@ export default class ProjectService {
      * Static helper to get all transitive dependencies of a package
      */
     public static async getPackageDependencies(packageName: string, workingDirectory?: string): Promise<PackageDefinition[]> {
-        const service = ProjectService.getInstance(workingDirectory);
-        await service.initialize();
-        const graph = service.getProjectGraph();
-        if (!graph) {
-            throw new Error('Project graph not available');
-        }
-        return graph.getTransitiveDependencies(packageName);
+        const service = await ProjectService.getInstance(workingDirectory);
+        return service.getProjectGraph().getTransitiveDependencies(packageName);
     }
 
     /**
      * Static helper to get package type
      */
     public static async getPackageType(packageName: string, workingDirectory?: string): Promise<PackageType> {
-        const service = ProjectService.getInstance(workingDirectory);
-        await service.initialize();
+        const service = await ProjectService.getInstance(workingDirectory);
         return service.getProjectConfig().getPackageType(packageName);
     }
 }

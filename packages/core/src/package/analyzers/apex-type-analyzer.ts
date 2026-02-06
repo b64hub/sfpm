@@ -22,32 +22,26 @@ export class ApexTypeAnalyzer implements PackageAnalyzer {
         const parser = new ApexParser();
         const classification = await parser.classifyBulk(files);
 
-        const classes = classification.map((info) => {
-            if (info.type === "Class" && !info.isTest) {
-                return {
-                    name: info.name,
-                    path: info.path,
-                };
-            }
-        }) || [];
+        const classes = classification
+            .filter((info) => info.type === "Class" && !info.isTest)
+            .map((info) => ({
+                name: info.name,
+                path: info.path,
+            }));
 
-        const triggers = classification.map((info) => {
-            if (info.type === "Trigger") {
-                return {
-                    name: info.name,
-                    path: info.path,
-                };
-            }
-        }) || [];
+        const triggers = classification
+            .filter((info) => info.type === "Trigger")
+            .map((info) => ({
+                name: info.name,
+                path: info.path,
+            }));
 
-        const testClasses = classification.map((info) => {
-            if (info.type === "Class" && info.isTest) {
-                return {
-                    name: info.name,
-                    path: info.path,
-                };
-            }
-        }) || [];
+        const testClasses = classification
+            .filter((info) => info.type === "Class" && info.isTest)
+            .map((info) => ({
+                name: info.name,
+                path: info.path,
+            }));
 
         return {
             content: {

@@ -1,5 +1,5 @@
-import { SfProject, SfProjectJson, ProjectJsonSchema, ProjectJson } from '@salesforce/core';
-import { ProjectDefinition, PackageDefinition, ProjectDefinitionSchema } from '../types/project.js';
+import { SfProject, SfProjectJson, ProjectJsonSchema, ProjectJson, Logger } from '@salesforce/core';
+import { ProjectDefinition, PackageDefinition, ProjectDefinitionSchema, SfpmPluginConfig } from '../types/project.js';
 import { PackageType } from '../types/package.js';
 
 
@@ -9,52 +9,75 @@ import { PackageType } from '../types/package.js';
  */
 export default class ProjectConfig {
     private project: SfProject;
-    private projectJson: SfProjectJson;
-    private definition?: ProjectDefinition;
+    private logger: Logger;
+    private hasValidated = false;
 
     constructor(project: SfProject) {
         this.project = project;
-        this.projectJson = this.project.getSfProjectJson();
+        this.logger = Logger.childFromRoot('ProjectConfig');
     }
 
     /**
-     * Loads the project definition from the filesystem
+     * Validates custom SFPM properties (runs once, logs warnings only).
+     * This is called automatically by getProjectDefinition().
      */
-    public async load(): Promise<ProjectDefinition> {
-
-        const rawContents = this.projectJson!.getContents();
-
-        // Validate with Zod
+    private validateCustomProperties(): void {
+        if (this.hasValidated) return;
+        
+        const rawContents = this.project.getSfProjectJson().getContents();
         const result = ProjectDefinitionSchema.safeParse(rawContents);
+        
         if (!result.success) {
-            throw new Error(`Invalid sfdx-project.json: ${result.error.message}`);
+            this.logger.warn('SFPM custom properties validation failed:');
+            const zodError = result.error;
+            if (zodError && 'errors' in zodError && Array.isArray(zodError.errors)) {
+                zodError.errors.forEach((err: any) => {
+                    const path = err.path?.join('.') || 'unknown';
+                    this.logger.warn(`  - ${path}: ${err.message}`);
+                });
+            }
+            this.logger.warn('Continuing with potentially invalid custom properties...');
         }
-
-        this.definition = result.data as ProjectDefinition;
-        return this.definition;
+        
+        this.hasValidated = true;
     }
 
     /**
-     * Returns the validated project definition
+     * Returns the project definition with custom SFPM properties.
+     * Always gets fresh data from SfProject and validates on first access.
      */
     public getProjectDefinition(): ProjectDefinition {
-        if (!this.definition) {
-            throw new Error('ProjectConfig not loaded. Call load() first.');
-        }
-        return this.definition;
+        this.validateCustomProperties();
+        return this.project.getSfProjectJson().getContents() as ProjectDefinition;
     }
 
     /**
-     * Finds a package definition by name
+     * Finds a package definition by name.
+     * Searches through packageDirectories for a matching 'package' field.
      */
     public getPackageDefinition(packageName: string): PackageDefinition {
-        const def = this.getProjectDefinition();
-        const pkg = def.packageDirectories.find(
-            (p): p is PackageDefinition => 'package' in p && p.package === packageName
-        );
+        // Get all package directories and search for matching package name
+        const allPackages = this.getAllPackageDirectories();
+        const pkg = allPackages.find(p => p.package === packageName);
+        
         if (!pkg) {
             throw new Error(`Package ${packageName} not found in project definition`);
         }
+        
+        return pkg;
+    }
+
+    /**
+     * Finds a package definition by its path.
+     * Uses SfProject's native getPackage() method for efficient lookup.
+     */
+    public getPackageDefinitionByPath(packagePath: string): PackageDefinition {
+        const pkg = this.project.getPackage(packagePath) as PackageDefinition;
+        
+        if (!pkg || !pkg.package) {
+            throw new Error(`No package found with path: ${packagePath}`);
+        }
+        
         return pkg;
     }
 
@@ -69,10 +92,37 @@ export default class ProjectConfig {
      * Returns the project directory (root path)
      */
     public get projectDirectory(): string {
-        if (!this.project) {
-            throw new Error('ProjectConfig not loaded. Call load() first.');
-        }
         return this.project.getPath();
+    }
+
+    /**
+     * Returns the SFPM plugin configuration
+     */
+    public getSfpmConfig(): SfpmPluginConfig | undefined {
+        return this.getProjectDefinition().plugins?.sfpm;
+    }
+
+    /**
+     * Returns the npm scope for publishing packages.
+     * This is required for npm registry integration.
+     * @throws Error if npm scope is not configured
+     */
+    public getNpmScope(): string {
+        const config = this.getSfpmConfig();
+        if (!config?.npmScope) {
+            throw new Error(
+                'npm scope not configured. Add plugins.sfpm.npmScope to sfdx-project.json (e.g., "@myorg")'
+            );
+        }
+        return config.npmScope;
+    }
+
+    /**
+     * Returns the npm scope if configured, undefined otherwise.
+     * Use this for optional scope access without throwing.
+     */
+    public getNpmScopeOrUndefined(): string | undefined {
+        return this.getSfpmConfig()?.npmScope;
     }
 
     /**
@@ -83,20 +133,32 @@ export default class ProjectConfig {
         if (pkg.type) {
             return pkg.type as PackageType;
         }
-        return PackageType.Source;
+        return PackageType.Unlocked;
     }
 
     public getPackageId(packageAlias: string): string | undefined {
-        return this.definition?.packageAliases?.[packageAlias];
+        const aliases = this.project.getSfProjectJson().getContents().packageAliases;
+        return aliases?.[packageAlias];
     }
 
     /**
-     * Returns all package names
+     * Returns all package directories from the project.
+     * Uses raw project JSON to include all fields including 'package'.
+     */
+    public getAllPackageDirectories(): PackageDefinition[] {
+        const projectDef = this.getProjectDefinition();
+        return projectDef.packageDirectories as PackageDefinition[];
+    }
+
+    /**
+     * Returns all unique package names from the 'package' field.
+     * Filters out entries without a package name.
      */
     public getAllPackageNames(): string[] {
-        return this.getProjectDefinition().packageDirectories
-            .filter((p): p is PackageDefinition => 'package' in p)
-            .map(p => p.package);
+        const allDirs = this.getAllPackageDirectories();
+        return allDirs
+            .filter(dir => 'package' in dir && dir.package)
+            .map(dir => dir.package as string);
     }
 
     /**
@@ -153,24 +215,26 @@ export default class ProjectConfig {
     /**
      * Saves the project definition back to the file
      */
+    /**
+     * Saves the project definition back to the file.
+     * Note: After saving, validation state is reset since the file has changed.
+     */
     public async save(updatedDefinition?: ProjectDefinition): Promise<void> {
-        if (!this.projectJson) {
-            throw new Error('ProjectConfig not loaded. Call load() first.');
-        }
-
-        const dataToSave = updatedDefinition || this.definition;
-        if (!dataToSave) return;
+        const projectJson = this.project.getSfProjectJson();
+        const dataToSave = updatedDefinition || projectJson.getContents();
 
         // Use individual set calls to avoid protected setContents
-        this.projectJson.set('packageDirectories', dataToSave.packageDirectories);
+        projectJson.set('packageDirectories', dataToSave.packageDirectories);
         if (dataToSave.packageAliases) {
-            this.projectJson.set('packageAliases', dataToSave.packageAliases);
+            projectJson.set('packageAliases', dataToSave.packageAliases);
         }
         if (dataToSave.sourceApiVersion) {
-            this.projectJson.set('sourceApiVersion', dataToSave.sourceApiVersion);
+            projectJson.set('sourceApiVersion', dataToSave.sourceApiVersion);
         }
 
-        await this.projectJson.write();
-        this.definition = dataToSave;
+        await projectJson.write();
+        
+        // Reset validation flag since file has changed
+        this.hasValidated = false;
     }
 }

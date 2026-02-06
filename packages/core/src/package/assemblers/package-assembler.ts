@@ -139,8 +139,6 @@ export default class PackageAssembler {
         try {
             await this.ensureStagingDirectoryExists();
 
-            const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
-
             const output: AssemblyOutput = {
                 stagingDirectory: this.stagingDirectory,
                 projectDefinitionPath: path.join(this.stagingDirectory, 'sfdx-project.json')
@@ -158,8 +156,8 @@ export default class PackageAssembler {
                 steps.push(new DestructiveManifestStep(this.packageName, this.projectConfig, this.logger));
             }
 
+            // always final
             steps.push(new ProjectJsonAssemblyStep(this.packageName, this.projectConfig, this.logger));
-
 
             for (const step of steps) {
                 this.logger?.debug(`Executing step: ${step.constructor.name}`);

@@ -74,28 +74,25 @@ export default class ProjectVersionBump extends SfpmCommand {
     public async execute(): Promise<void> {
         const { args, flags } = await this.parse(ProjectVersionBump)
 
-        const projectFile = flags.projectfile;
+        // If projectfile is default or a file name (not a path), use current directory
+        // Otherwise use the directory containing the projectfile
+        const projectPath = flags.projectfile === 'sfdx-project.json' 
+            ? process.cwd() 
+            : flags.projectfile.includes('/') 
+                ? flags.projectfile.substring(0, flags.projectfile.lastIndexOf('/'))
+                : process.cwd();
 
         // 1. Initialize Core
-        const core = new SfpmCore({
+        const core = await SfpmCore.create({
             apiKey: 'unused',
             verbose: false,
-            projectPath: projectFile
+            projectPath: projectPath
         });
 
         const versionManager = core.project.getVersionManager();
-        const spinner = ora('Initializing...').start();
+        const spinner = ora('Initialized.').start();
 
         // 2. Setup Events
-        versionManager.on('loading', () => {
-            spinner.text = 'Loading project configuration...';
-        });
-
-        versionManager.on('loaded', () => {
-            spinner.succeed('Project loaded.');
-            spinner.start('Analyzing packages...');
-        });
-
         versionManager.on('checking', () => {
             spinner.text = 'Checking for updates...';
         });
@@ -105,7 +102,6 @@ export default class ProjectVersionBump extends SfpmCommand {
         });
 
         try {
-            await versionManager.load();
             const strategy = this.getStrategy(flags);
             const bumpType = this.getBumpType(flags);
 

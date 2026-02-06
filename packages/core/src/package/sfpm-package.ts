@@ -1,7 +1,10 @@
 import { ComponentSet, SourceComponent } from "@salesforce/source-deploy-retrieve";
 import { ProjectDefinition, PackageDefinition } from "../types/project.js";
-import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata } from "../types/package.js";
-import * as _ from "lodash";
+import { PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageMetadata, SfpmUnlockedPackageBuildOptions } from "../types/package.js";
+import { NpmPackageSfpmMetadata } from "../types/npm.js";
+import ProjectConfig from "../project/project-config.js";
+import { SourceHasher } from "../utils/source-hasher.js";
+import { omit, merge, get, set } from "lodash-es";
 import path from "path";
 
 const TEST_COVERAGE_THRESHOLD = 75;
@@ -59,7 +62,7 @@ export default abstract class SfpmPackage {
             content: { ...metadata?.content },
             validation: { ...metadata?.validation },
             orchestration: { ...metadata?.orchestration },
-            ..._.omit(metadata, ['identity', 'source', 'content', 'validation', 'orchestration'])
+            ...omit(metadata, ['identity', 'source', 'content', 'validation', 'orchestration'])
         } as SfpmPackageMetadata;
     }
 
@@ -82,6 +85,9 @@ export default abstract class SfpmPackage {
 
     get tag() { return this._metadata.source?.tag || `${this.name}@${this.version}`; }
     get commitId() { return this._metadata.source?.commitSHA; }
+
+    get sourceHash() { return this._metadata.source?.sourceHash; }
+    set sourceHash(val: string | undefined) { this._metadata.source = { ...this._metadata.source, sourceHash: val }; }
 
     get dependencies(): { package: string; versionNumber?: string }[] | undefined {
         return this.packageDefinition?.dependencies;
@@ -136,6 +142,25 @@ export default abstract class SfpmPackage {
         segments[3] = buildNumber;
         this.version = segments.join('.');
     }
+
+    /**
+     * Set orchestration options for the package build.
+     * Subclasses can override to handle type-specific options.
+     */
+    public setOrchestrationOptions(options: any): void {
+        // Base implementation does nothing - subclasses override as needed
+    }
+
+    /**
+     * This is the package-agnostic metadata that describes the SFPM package.
+     * The ArtifactAssembler is responsible for constructing the full package.json.
+     * 
+     * @param sourceHash - Optional source hash to include
+     * @returns SFPM metadata object for package.json
+     */
+    public async toJson(): Promise<SfpmPackageMetadata> {
+        return this.metadata
+    }
 }
 
 export abstract class SfpmMetadataPackage extends SfpmPackage {
@@ -148,7 +173,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
         }
 
         if (!this._componentSet) {
-            this._componentSet = ComponentSet.fromSource(path.join(this.stagingDirectory, this.packageDirectory));
+            this._componentSet = ComponentSet.fromSource(this.packageDirectory);
         }
 
         return this._componentSet;
@@ -159,6 +184,17 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
      */
     public async getManifestObject() {
         return await this.getComponentSet().getObject();
+    }
+
+    /**
+     * Calculate and set the source hash for this package.
+     * Uses ComponentSet to ensure consistency with .forceignore rules.
+     * @returns The calculated source hash
+     */
+    public async calculateSourceHash(): Promise<string> {
+        const hash = await SourceHasher.calculate(this);
+        this.sourceHash = hash;
+        return hash;
     }
 
     get apexClasses(): SourceComponent[] {
@@ -283,7 +319,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
     }
 
     public updateContent(newContent: Partial<SfpmPackageContent>) {
-        _.merge(this._metadata.content, newContent);
+        merge(this._metadata.content, newContent);
         this.enforceIntegrity();
     }
 
@@ -295,7 +331,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
         const cs = this.getComponentSet(); //
 
         for (const [jsonPath, metadataType] of Object.entries(CONTENT_METADATA_TYPE)) {
-            const currentList = _.get(this._metadata.content, jsonPath);
+            const currentList = get(this._metadata.content, jsonPath);
 
             if (!Array.isArray(currentList)) {
                 continue;
@@ -305,7 +341,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
                 cs.has({ fullName: name, type: metadataType })
             );
 
-            _.set(this._metadata.content, jsonPath, validated);
+            set(this._metadata.content, jsonPath, validated);
         }
     }
 
@@ -382,7 +418,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
         const content = await this.resolveContentMetadata();
         const orchestration = await this.resolveOrchestrationMetadata();
 
-        return _.merge({}, this._metadata, {
+        return merge({}, this._metadata, {
             content,
             identity: {
                 packageName: this.name || content.payload?.Package?.fullName,
@@ -398,8 +434,12 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
     }
 
     // Override toJSON to ensure serialization is always reconciled
-    public async toJSON() {
-        return await this.toPackageMetadata();
+    override async toJson(): Promise<SfpmPackageMetadata> {
+        const baseMetadata = await super.toJson();
+        return {
+            ...baseMetadata,
+            ...(await this.toPackageMetadata())
+        };
     }
 }
 
@@ -434,8 +474,115 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
     set isOrgDependent(val: boolean) {
         this.metadata.identity.isOrgDependent = val;
     }
+
+    override setOrchestrationOptions(options: Partial<SfpmUnlockedPackageBuildOptions>): void {
+        if (options.installationkey !== undefined) {
+            set(this.metadata, 'orchestration.buildOptions.installationkey', options.installationkey);
+        }
+        if (options.installationkeybypass !== undefined) {
+            set(this.metadata, 'orchestration.buildOptions.installationkeybypass', options.installationkeybypass);
+        }
+        if (options.isSkipValidation !== undefined) {
+            set(this.metadata, 'orchestration.buildOptions.isSkipValidation', options.isSkipValidation);
+        }
+    }
+
+    /**
+     * Override to include unlocked-package-specific metadata.
+     */
+    override async toJson(): Promise<SfpmPackageMetadata> {
+        const baseMetadata = await super.toJson();
+        return {
+            ...baseMetadata,
+            packageId: this.packageId || undefined,
+            packageVersionId: this.packageVersionId,
+            isOrgDependent: this.isOrgDependent || undefined,
+        };
+    }
 }
 
 export class SfpmSourcePackage extends SfpmMetadataPackage {
 
+}
+
+/**
+ * Factory for creating fully-configured SfpmPackage instances from ProjectConfig.
+ * Bridges ProjectConfig (sfdx-project.json abstraction) with package construction.
+ */
+export class PackageFactory {
+    private projectConfig: ProjectConfig;
+
+    constructor(projectConfig: ProjectConfig) {
+        this.projectConfig = projectConfig;
+    }
+
+    /**
+     * Low-level factory method to create the appropriate SfpmPackage instance based on package type
+     */
+    private createPackageInstance(
+        packageType: PackageType,
+        packageName: string,
+        projectDirectory: string
+    ): SfpmPackage {
+        switch (packageType) {
+            case PackageType.Unlocked:
+                return new SfpmUnlockedPackage(packageName, projectDirectory);
+            case PackageType.Source:
+                return new SfpmSourcePackage(packageName, projectDirectory);
+            case PackageType.Data:
+                return new SfpmDataPackage(packageName, projectDirectory);
+            default:
+                throw new Error(`Unsupported package type: ${packageType}`);
+        }
+    }
+
+    /**
+     * Create a package by name, automatically resolving its definition and type
+     */
+    createFromName(packageName: string): SfpmPackage {
+        const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+        const packageType = (packageDefinition.type?.toLowerCase() || 'unlocked') as PackageType;
+        const projectDirectory = this.projectConfig.projectDirectory;
+
+        const sfpmPackage = this.createPackageInstance(packageType, packageName, projectDirectory);
+        
+        // Populate from project config
+        sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();
+        sfpmPackage.packageDefinition = packageDefinition;
+        sfpmPackage.version = packageDefinition.versionNumber;
+
+        // Resolve package ID from aliases for unlocked packages
+        if (packageType === PackageType.Unlocked && sfpmPackage instanceof SfpmUnlockedPackage) {
+            const projectDef = this.projectConfig.getProjectDefinition();
+            const packageId = projectDef.packageAliases?.[packageName];
+            if (packageId) {
+                sfpmPackage.packageId = packageId;
+            }
+        }
+
+        return sfpmPackage;
+    }
+
+    /**
+     * Create a package by path, resolving which package it belongs to
+     */
+    createFromPath(packagePath: string): SfpmPackage {
+        const packageDefinition = this.projectConfig.getPackageDefinitionByPath(packagePath);
+        return this.createFromName(packageDefinition.package);
+    }
+
+    /**
+     * Create packages for all package directories in the project
+     */
+    createAll(): SfpmPackage[] {
+        const packageNames = this.projectConfig.getAllPackageNames();
+        return packageNames.map(name => this.createFromName(name));
+    }
+
+    /**
+     * Get the underlying ProjectConfig
+     */
+    getProjectConfig(): ProjectConfig {
+        return this.projectConfig;
+    }
 }

@@ -20,13 +20,12 @@ describe('VersionManager', () => {
 
         mockProjectConfig = {
             getProjectDefinition: vi.fn().mockReturnValue(mockProject),
-            load: vi.fn().mockResolvedValue(undefined),
             save: vi.fn().mockResolvedValue(undefined),
         };
     });
 
     test('should update single package (minor bump) and propagate to dependencies', async () => {
-        const vm = new VersionManager({ projectConfig: mockProjectConfig as any });
+        const vm = VersionManager.create(mockProjectConfig as any);
         const result = await vm.bump(
             'minor',
             { strategy: new SinglePackageStrategy('pkg-a') }
@@ -46,7 +45,7 @@ describe('VersionManager', () => {
     });
 
     test('should update all packages (patch bump)', async () => {
-        const vm = new VersionManager({ projectConfig: mockProjectConfig as any });
+        const vm = VersionManager.create(mockProjectConfig as any);
         const result = await vm.bump(
             'patch',
             { strategy: new AllPackagesStrategy() }
@@ -66,7 +65,7 @@ describe('VersionManager', () => {
             })
         };
 
-        const vm = new VersionManager({ projectConfig: mockProjectConfig as any });
+        const vm = VersionManager.create(mockProjectConfig as any);
         const result = await vm.bump(
             'patch',
             { strategy: new OrgDiffStrategy(mockFetcher) }
@@ -79,11 +78,11 @@ describe('VersionManager', () => {
         expect(pkgA?.newVersion).toBe('1.2.1-NEXT');
     });
 
-    test('should load and save project', async () => {
-        const vm = new VersionManager({ projectConfig: mockProjectConfig as any });
-        await vm.load();
+    test('should initialize and save project', async () => {
+        const vm = VersionManager.create(mockProjectConfig as any);
 
-        expect(mockProjectConfig.load).toHaveBeenCalled();
+        // Should have called getProjectDefinition during creation
+        expect(mockProjectConfig.getProjectDefinition).toHaveBeenCalled();
 
         await vm.bump('minor', { strategy: new SinglePackageStrategy('pkg-a') });
         await vm.save();

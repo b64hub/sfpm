@@ -1,8 +1,4 @@
 import { simpleGit, SimpleGit } from 'simple-git';
-import fs from 'fs-extra';
-import path from 'path';
-import ignore from 'ignore';
-import tmp from 'tmp';
 
 import { Logger } from '../types/logger.js';
 
@@ -129,56 +125,6 @@ export default class Git {
         return listOfBranches.all.find((elem) => elem.endsWith(branch)) ? true : false;
     }
 
-    static async initiateRepoAtTempLocation(logger: Logger, commitRef?: string, branch?: string): Promise<Git> {
-        let locationOfCopiedDirectory = tmp.dirSync({ unsafeCleanup: true });
-
-        logger.info(`Copying the repository to ${locationOfCopiedDirectory.name}`);
-        let repoDir = locationOfCopiedDirectory.name;
-
-        // Copy source directory to temp dir
-        const gitignore = ignore();
-        const gitignorePath = path.join(process.cwd(), '.gitignore');
-        if (fs.existsSync(gitignorePath)) {
-            const gitignoreContent = fs.readFileSync(gitignorePath).toString();
-            gitignore.add(gitignoreContent);
-        }
-
-        // Copy source directory to temp dir respecting .gitignore
-        fs.copySync(process.cwd(), repoDir, {
-            filter: (src) => {
-                const relativePath = path.relative(process.cwd(), src);
-
-                // Always include root directory
-                if (!relativePath) {
-                    return true;
-                }
-
-                // Check if file should be ignored
-                return !gitignore.ignores(relativePath);
-            },
-        });
-
-        //Initiate git on new repo on using the abstracted object
-        let git = new Git(repoDir, logger);
-        git._isATemporaryRepo = true;
-        git.tempRepoLocation = locationOfCopiedDirectory;
-
-        await git.addSafeConfig(repoDir);
-        await git.getRemoteOriginUrl();
-        await git.fetch();
-        if (branch) {
-            await git.createBranch(branch);
-        }
-        if (commitRef) {
-            await git.checkout(commitRef, true);
-        }
-
-        logger.info(
-            `Successfully created temporary repository at ${repoDir} with commit ${commitRef ? commitRef : 'HEAD'}`
-        );
-        return git;
-    }
-
     static async initiateRepo(logger?: Logger, projectDir?: string) {
         let git = new Git(projectDir, logger);
         if (projectDir) await git.addSafeConfig(projectDir);
@@ -197,7 +143,7 @@ export default class Git {
         return this.repositoryLocation;
     }
 
-    async deleteTempoRepoIfAny() {
+    async deleteTempRepoIfAny() {
         if (this.tempRepoLocation) this.tempRepoLocation.removeCallback();
     }
 
@@ -214,9 +160,9 @@ export default class Git {
     async pushToRemote(branch: string, isForce: boolean) {
         if (!branch) branch = (await this._git.branch()).current;
         this.logger?.info(`Pushing ${branch}`);
-        if (process.env.SFP_OVERRIDE_ORIGIN_URL) {
+        if (process.env.SFPM_OVERRIDE_ORIGIN_URL) {
             await this._git.removeRemote('origin');
-            await this._git.addRemote('origin', process.env.SFP_OVERRIDE_ORIGIN_URL);
+            await this._git.addRemote('origin', process.env.SFPM_OVERRIDE_ORIGIN_URL);
         }
 
         if (isForce) {
@@ -226,7 +172,7 @@ export default class Git {
         }
     }
 
-    isATemporaryRepo(): boolean {
+    isTempRepo(): boolean {
         return this._isATemporaryRepo;
     }
 

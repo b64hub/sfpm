@@ -1,6 +1,6 @@
 import { ApexAstSerializer } from "./apex-ast-serializer.js";
-import * as fs from "fs-extra";
-import * as path from "path";
+import fs from "fs-extra";
+import path from "path";
 import type * as jorje from "../types/jorje.js";
 
 export type ApexClassInfo = {

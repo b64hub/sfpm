@@ -1,9 +1,12 @@
+import EventEmitter from "node:events";
 import { Logger } from "../../types/logger.js";
 import { PackageType } from "../../types/package.js";
 import SfpmPackage from "../sfpm-package.js";
+import { UnlockedBuildEvents, SourceBuildEvents } from "../../types/events.js";
 
 /**
  * Interface for specific package builder implementations (Strategy Pattern)
+ * Builders can emit events by extending EventEmitter
  */
 export interface Builder {
     connect(username: string): Promise<void>;

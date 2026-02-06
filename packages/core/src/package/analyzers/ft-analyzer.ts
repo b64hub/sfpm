@@ -1,9 +1,9 @@
 import { PackageAnalyzer, RegisterAnalyzer } from "./analyzer-registry.js";
 import { PackageType, SfpmPackageContent } from "../../types/package.js";
-import SfpmPackage, { SfpmMetadataPackage } from "../sfpm-package.js";
-import * as path from 'path';
-import * as fs from 'fs-extra';
-import * as yaml from 'js-yaml';
+import { SfpmMetadataPackage } from "../sfpm-package.js";
+import path from 'path';
+import fs from 'fs-extra';
+import yaml from 'js-yaml';
 
 import { Logger } from "../../types/logger.js";
 import { MetadataComponent } from "@salesforce/source-deploy-retrieve";

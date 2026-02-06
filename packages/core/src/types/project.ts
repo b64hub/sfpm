@@ -53,20 +53,33 @@ export interface PackageDefinition extends Extract<PackageDir, { package: string
 }
 
 /**
+ * SFPM-specific configuration under plugins.sfpm
+ */
+export interface SfpmPluginConfig {
+    /**
+     * npm scope for publishing packages (e.g., '@myorg')
+     * This is required for npm registry integration.
+     */
+    npmScope: string;
+    /**
+     * Stage-specific .forceignore files
+     */
+    ignoreFiles?: {
+        prepare?: string;
+        validate?: string;
+        quickbuild?: string;
+        build?: string;
+    };
+}
+
+/**
  * Extension of the standard sfdx-project.json structure.
  */
 export interface ProjectDefinition extends ProjectJson {
     // Override standard array to use our PackageDefinition, while also allowing the base PackageDir type
     packageDirectories: (PackageDefinition | PackageDir)[];
     plugins?: {
-        sfpm?: {
-            ignoreFiles?: {
-                prepare?: string;
-                validate?: string;
-                quickbuild?: string;
-                build?: string;
-            };
-        };
+        sfpm?: SfpmPluginConfig;
     };
 }
 
@@ -108,6 +121,7 @@ export const ProjectDefinitionSchema = ProjectJsonSchema.extend({
     packageDirectories: z.array(PackageDefinitionSchema),
     plugins: z.object({
         sfpm: z.object({
+            npmScope: z.string().regex(/^@[a-z0-9-]+$/, 'npm scope must start with @ and contain only lowercase letters, numbers, and hyphens'),
             ignoreFiles: z.object({
                 prepare: z.string().optional(),
                 validate: z.string().optional(),
