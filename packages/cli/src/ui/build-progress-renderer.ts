@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import ora, { Ora } from 'ora';
 import boxen from 'boxen';
 import { ux } from '@oclif/core';
-import type { PackageBuilder } from '@b64/sfpm-core';
+import type { PackageBuilder, BuildOrchestrator } from '@b64/sfpm-core';
 import type {
     BuildStartEvent,
     BuildCompleteEvent,
@@ -23,8 +23,13 @@ import type {
     CreateCompleteEvent,
     TaskStartEvent,
     TaskCompleteEvent,
+    OrchestrationStartEvent,
+    OrchestrationLevelStartEvent,
+    OrchestrationPackageCompleteEvent,
+    OrchestrationLevelCompleteEvent,
+    OrchestrationCompleteEvent,
 } from '@b64/sfpm-core';
-import { infoBox } from './boxes.js';
+import { infoBox, successBox, warningBox } from './boxes.js';
 
 /**
  * Output modes for build progress rendering
@@ -117,18 +122,34 @@ export class BuildProgressRenderer {
         'task:complete': { handler: this.handleTaskComplete.bind(this), description: 'Task complete' },
     };
 
+    /**
+     * Event configuration for orchestration-level events
+     */
+    private orchestrationEventConfigs: Record<string, EventConfig> = {
+        'orchestration:start': { handler: this.handleOrchestrationStart.bind(this), description: 'Orchestration started' },
+        'orchestration:level:start': { handler: this.handleOrchestrationLevelStart.bind(this), description: 'Level started' },
+        'orchestration:package:complete': { handler: this.handleOrchestrationPackageComplete.bind(this), description: 'Package complete' },
+        'orchestration:level:complete': { handler: this.handleOrchestrationLevelComplete.bind(this), description: 'Level complete' },
+        'orchestration:complete': { handler: this.handleOrchestrationComplete.bind(this), description: 'Orchestration complete' },
+    };
+
     constructor(options: { logger: OutputLogger; mode: OutputMode }) {
         this.logger = options.logger;
         this.mode = options.mode;
     }
 
     /**
-     * Attach this renderer to a PackageBuilder instance
+     * Attach this renderer to a PackageBuilder or BuildOrchestrator instance
      */
-    public attachTo(builder: PackageBuilder): void {
-        // Attach all configured event handlers
+    public attachTo(emitter: PackageBuilder | BuildOrchestrator): void {
+        // Attach all configured build event handlers
         Object.entries(this.eventConfigs).forEach(([eventName, config]) => {
-            builder.on(eventName as any, config.handler as any);
+            (emitter as any).on(eventName, config.handler);
+        });
+
+        // Attach orchestration event handlers (no-ops if emitter is a plain PackageBuilder)
+        Object.entries(this.orchestrationEventConfigs).forEach(([eventName, config]) => {
+            (emitter as any).on(eventName, config.handler);
         });
     }
 
@@ -460,6 +481,100 @@ export class BuildProgressRenderer {
     }
 
     // ========================================================================
+    // Orchestration Event Handlers
+    // ========================================================================
+
+    private handleOrchestrationStart(event: OrchestrationStartEvent): void {
+        this.logEvent('orchestration:start', event);
+
+        if (!this.isInteractive()) return;
+
+        const levelText = event.totalLevels === 1 ? 'level' : 'levels';
+        const pkgText = event.totalPackages === 1 ? 'package' : 'packages';
+        this.logger.log(
+            chalk.bold(`\nBuilding ${chalk.cyan(String(event.totalPackages))} ${pkgText} in ${chalk.cyan(String(event.totalLevels))} ${levelText}\n`)
+        );
+
+        if (event.includeDependencies) {
+            this.logger.log(chalk.dim('  Dependencies auto-included\n'));
+        }
+    }
+
+    private handleOrchestrationLevelStart(event: OrchestrationLevelStartEvent): void {
+        this.logEvent('orchestration:level:start', event);
+
+        if (!this.isInteractive()) return;
+
+        const pkgList = event.packages.map((p) => chalk.cyan(p)).join(', ');
+        this.logger.log(
+            chalk.bold(`--- Level ${event.level + 1} ---`) + chalk.gray(` [${pkgList}]`)
+        );
+    }
+
+    private handleOrchestrationPackageComplete(event: OrchestrationPackageCompleteEvent): void {
+        this.logEvent('orchestration:package:complete', event);
+
+        if (!this.isInteractive()) return;
+
+        const duration = this.formatDuration(event.duration);
+
+        if (event.skipped) {
+            this.logger.log(
+                `  ${chalk.yellow('⊘')} ${chalk.yellow(event.packageName)} ${chalk.dim('skipped')} ${chalk.gray(`(${duration})`)}`
+            );
+        } else if (event.success) {
+            this.logger.log(
+                `  ${chalk.green('✓')} ${chalk.green(event.packageName)} ${chalk.gray(`(${duration})`)}`
+            );
+        } else {
+            this.logger.log(
+                `  ${chalk.red('✗')} ${chalk.red(event.packageName)} ${chalk.gray(`(${duration})`)}${event.error ? chalk.red(` - ${event.error}`) : ''}`
+            );
+        }
+    }
+
+    private handleOrchestrationLevelComplete(event: OrchestrationLevelCompleteEvent): void {
+        this.logEvent('orchestration:level:complete', event);
+
+        if (!this.isInteractive()) return;
+
+        const parts: string[] = [];
+        if (event.succeeded.length > 0) parts.push(chalk.green(`${event.succeeded.length} succeeded`));
+        if (event.failed.length > 0) parts.push(chalk.red(`${event.failed.length} failed`));
+        if (event.skipped.length > 0) parts.push(chalk.yellow(`${event.skipped.length} skipped`));
+
+        this.logger.log(chalk.dim(`  Level ${event.level + 1} complete: ${parts.join(', ')}\n`));
+    }
+
+    private handleOrchestrationComplete(event: OrchestrationCompleteEvent): void {
+        this.logEvent('orchestration:complete', event);
+
+        if (!this.isInteractive()) return;
+
+        const succeeded = event.results.filter((r) => r.success && !r.skipped).length;
+        const failed = event.results.filter((r) => !r.success && !r.skipped).length;
+        const skipped = event.results.filter((r) => r.skipped).length;
+        const duration = this.formatDuration(event.totalDuration);
+
+        const entries: Record<string, string> = {
+            'Total Packages': String(event.results.length),
+            'Succeeded': String(succeeded),
+        };
+        if (failed > 0) entries['Failed'] = chalk.red(String(failed));
+        if (skipped > 0) entries['Skipped'] = chalk.yellow(String(skipped));
+        entries['Duration'] = duration;
+
+        const allSucceeded = failed === 0;
+        const title = allSucceeded ? 'Build Orchestration Complete' : 'Build Orchestration Complete (with failures)';
+
+        if (allSucceeded) {
+            this.logger.log(successBox(title, entries));
+        } else {
+            this.logger.log(warningBox(title, entries));
+        }
+    }
+
+    // ========================================================================
     // Utility Methods
     // ========================================================================
 
@@ -469,7 +584,10 @@ export class BuildProgressRenderer {
 
     private calculateDuration(start: Date | undefined, end: Date): string {
         if (!start) return '';
-        const ms = end.getTime() - start.getTime();
+        return this.formatDuration(end.getTime() - start.getTime());
+    }
+
+    private formatDuration(ms: number): string {
         if (ms < 1000) return `${ms}ms`;
         if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
         const minutes = Math.floor(ms / 60000);

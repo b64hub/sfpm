@@ -1,0 +1,164 @@
+import {Org} from '@salesforce/core';
+import EventEmitter from 'node:events';
+
+import {ArtifactService} from '../artifacts/artifact-service.js';
+import ProjectConfig from '../project/project-config.js';
+import {
+  InstallEvents,
+  OrchestrationEvents,
+  OrchestrationResult,
+  PackageResult,
+} from '../types/events.js';
+import {Logger} from '../types/logger.js';
+import {
+  Orchestrator,
+  OrchestratorEmitter,
+  OrchestratorOptions,
+  OrchestrationTask,
+} from './orchestrator.js';
+import PackageInstaller, {InstallOptions} from './package-installer.js';
+
+export interface InstallOrchestratorOptions extends InstallOptions, OrchestratorOptions {}
+
+/**
+ * Shared context created once per orchestration run and threaded to each
+ * single-package install so they share a connection and cache.
+ */
+interface InstallContext {
+  org: Org;
+  artifactService: ArtifactService;
+}
+
+// ============================================================================
+// Task implementation
+// ============================================================================
+
+/**
+ * {@link OrchestrationTask} for package installations.
+ *
+ * Creates a shared Org connection and pre-cached ArtifactService, then
+ * delegates individual package installs to PackageInstaller.
+ */
+export class InstallOrchestrationTask implements OrchestrationTask<InstallContext> {
+  private readonly logger: Logger | undefined;
+  private readonly options: InstallOptions;
+  private readonly projectConfig: ProjectConfig;
+
+  constructor(
+    projectConfig: ProjectConfig,
+    options: InstallOptions,
+    logger?: Logger,
+  ) {
+    this.projectConfig = projectConfig;
+    this.options = options;
+    this.logger = logger;
+  }
+
+  async setup(): Promise<InstallContext> {
+    const org = await Org.create({aliasOrUsername: this.options.targetOrg});
+    const artifactService = new ArtifactService(this.logger, org);
+    await artifactService.preloadInstalledArtifacts();
+    return {artifactService, org};
+  }
+
+  async processSinglePackage(
+    packageName: string,
+    _level: number,
+    context: InstallContext,
+    emitter: OrchestratorEmitter,
+  ): Promise<PackageResult> {
+    const start = Date.now();
+
+    const installer = new PackageInstaller(
+      this.projectConfig,
+      this.options,
+      this.logger,
+      context.org,
+      context.artifactService,
+    );
+
+    this.forwardInstallerEvents(installer, emitter);
+
+    let success = true;
+    let skipped = false;
+    let error: string | undefined;
+
+    try {
+      const result = await installer.installPackage(packageName);
+      if (result.skipped) {
+        skipped = true;
+      }
+    } catch (error_) {
+      success = false;
+      error = error_ instanceof Error ? error_.message : String(error_);
+    }
+
+    installer.removeAllListeners();
+
+    const duration = Date.now() - start;
+    return {duration, error, packageName, skipped, success};
+  }
+
+  private forwardInstallerEvents(installer: PackageInstaller, emitter: OrchestratorEmitter): void {
+    const events = [
+      'install:start',
+      'install:skip',
+      'install:complete',
+      'install:error',
+      'connection:start',
+      'connection:complete',
+      'deployment:start',
+      'deployment:progress',
+      'deployment:complete',
+      'version-install:start',
+      'version-install:progress',
+      'version-install:complete',
+    ] as const;
+
+    for (const event of events) {
+      installer.on(event, (...args: any[]) => {
+        emitter.emit(event, ...args);
+      });
+    }
+  }
+}
+
+// ============================================================================
+// Orchestrator facade
+// ============================================================================
+
+/**
+ * Orchestrates installing multiple packages in parallel, respecting dependency order.
+ *
+ * Composes the shared {@link Orchestrator} engine with an {@link InstallOrchestrationTask}
+ * to handle install-specific setup and per-package processing.
+ *
+ * All installer and orchestration events are emitted through this instance,
+ * so callers can subscribe with `orchestrator.on(event, handler)`.
+ */
+export class InstallOrchestrator extends EventEmitter<InstallEvents & OrchestrationEvents> {
+  private readonly orchestrator: Orchestrator<InstallContext>;
+
+  constructor(
+    projectConfig: ProjectConfig,
+    options: InstallOrchestratorOptions,
+    logger?: Logger,
+    projectDirectory: string = process.cwd(),
+  ) {
+    super();
+    const task = new InstallOrchestrationTask(projectConfig, options, logger);
+    this.orchestrator = new Orchestrator(projectConfig, options, task, logger, projectDirectory, this);
+  }
+
+  /**
+   * Install multiple packages in dependency order.
+   *
+   * @param packageNames — Package names requested by the caller.
+   *   When `includeDependencies` is true (default) all transitive dependencies
+   *   are resolved and installed first.
+   * @returns OrchestrationResult with per-package outcomes.
+   */
+  public async installAll(packageNames: string[]): Promise<OrchestrationResult> {
+    return this.orchestrator.executeAll(packageNames);
+  }
+}

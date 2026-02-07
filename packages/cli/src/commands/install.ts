@@ -1,5 +1,5 @@
 import { Args, Flags } from '@oclif/core'
-import { PackageInstaller, ProjectService, Logger, InstallationSource, InstallationMode } from '@b64/sfpm-core'
+import { PackageInstaller, InstallOrchestrator, ProjectService, Logger, InstallationSource, InstallationMode } from '@b64/sfpm-core'
 import { InstallProgressRenderer, OutputMode } from '../ui/install-progress-renderer.js'
 import SfpmCommand from '../sfpm-command.js'
 
@@ -33,6 +33,7 @@ export default class Install extends SfpmCommand {
       description: 'installation mode for unlocked packages (source-deploy or version-install)',
       options: ['source-deploy', 'version-install'],
     }),
+    'no-dependencies': Flags.boolean({ description: 'only install the specified packages, skip transitive dependencies' }),
     force: Flags.boolean({ char: 'f', description: 'force reinstall even if already installed' }),
     quiet: Flags.boolean({ char: 'q', description: 'only show errors', exclusive: ['json'] }),
     json: Flags.boolean({ description: 'output as JSON for CI/CD', exclusive: ['quiet'] }),
@@ -48,13 +49,6 @@ export default class Install extends SfpmCommand {
     if (!packages || packages.length === 0) {
       this.error('At least one package name is required')
     }
-
-    if (packages.length > 1) {
-      this.warn(`Multiple packages provided, but currently only installing the first: ${packages[0]}`)
-      this.warn(`Future support will install: ${packages.join(', ')}`)
-    }
-
-    const packageName = packages[0]
 
     // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
@@ -72,13 +66,13 @@ export default class Install extends SfpmCommand {
       trace: (msg: string) => this.debug(msg),
     }
 
-    const installer = new PackageInstaller(projectConfig, {
+    const installOptions = {
       targetOrg: flags['target-org'],
       installationKey: flags['installation-key'],
       source: flags['source'] as InstallationSource | undefined,
       mode: flags['mode'] as InstallationMode | undefined,
       force: flags.force,
-    }, logger);
+    }
 
     const renderer = new InstallProgressRenderer({
       logger: {
@@ -87,6 +81,46 @@ export default class Install extends SfpmCommand {
       },
       mode,
     });
+
+    // Multi-package: use InstallOrchestrator
+    if (packages.length > 1) {
+      const orchestrator = new InstallOrchestrator(
+        projectConfig,
+        { ...installOptions, includeDependencies: !flags['no-dependencies'] },
+        logger,
+        projectDir,
+      )
+
+      // Attach renderer to orchestrator — it forwards all installer events
+      renderer.attachTo(orchestrator as any)
+
+      try {
+        const result = await orchestrator.installAll(packages)
+
+        if (flags.json) {
+          this.logJson(result)
+        }
+
+        if (!result.success) {
+          const failedNames = result.failedPackages.join(', ')
+          this.error(`Install failed for: ${failedNames}`, { exit: 2 })
+        }
+      } catch (error) {
+        renderer.handleError(error as Error)
+        if (flags.json) {
+          this.logJson({ success: false, error: (error as Error).message })
+        }
+        if (error instanceof Error) {
+          this.error(error.message, { exit: 2 })
+        }
+        throw error
+      }
+      return
+    }
+
+    // Single-package: use PackageInstaller directly (backwards-compatible)
+    const packageName = packages[0]
+    const installer = new PackageInstaller(projectConfig, installOptions, logger);
     renderer.attachTo(installer);
 
     try {

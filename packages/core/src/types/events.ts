@@ -286,3 +286,160 @@ export interface AssemblyEvents {
  * Combined event map for all build events
  */
 export type AllBuildEvents = BuildEvents & UnlockedBuildEvents & SourceBuildEvents & AssemblyEvents;
+
+// ============================================================================
+// Install Events (typed)
+// ============================================================================
+
+export interface InstallStartEvent extends BaseEvent {
+  packageType: PackageType;
+  targetOrg: string;
+  source?: string;
+  installReason?: string;
+}
+
+export interface InstallSkipEvent extends BaseEvent {
+  packageType: PackageType;
+  targetOrg: string;
+  reason: string;
+}
+
+export interface InstallCompleteEvent extends BaseEvent {
+  packageType: PackageType;
+  targetOrg: string;
+  source?: string;
+  success: boolean;
+}
+
+export interface InstallErrorEvent extends BaseEvent {
+  packageType: PackageType;
+  targetOrg: string;
+  error: string;
+}
+
+export interface DeploymentStartEvent extends BaseEvent {
+  targetOrg: string;
+}
+
+export interface DeploymentProgressEvent extends BaseEvent {
+  status: string;
+  numberComponentsDeployed?: number;
+  numberComponentsTotal?: number;
+}
+
+export interface DeploymentCompleteEvent extends BaseEvent {
+  targetOrg: string;
+  numberComponentsDeployed?: number;
+}
+
+export interface VersionInstallStartEvent extends BaseEvent {
+  packageVersionId: string;
+}
+
+export interface VersionInstallProgressEvent extends BaseEvent {
+  status: string;
+}
+
+export interface VersionInstallCompleteEvent extends BaseEvent {
+  packageVersionId: string;
+}
+
+/**
+ * Install event map for type-safe EventEmitter usage
+ */
+export interface InstallEvents {
+  'install:start': [InstallStartEvent];
+  'install:skip': [InstallSkipEvent];
+  'install:complete': [InstallCompleteEvent];
+  'install:error': [InstallErrorEvent];
+  'connection:start': [ConnectionStartEvent];
+  'connection:complete': [ConnectionCompleteEvent];
+  'deployment:start': [DeploymentStartEvent];
+  'deployment:progress': [DeploymentProgressEvent];
+  'deployment:complete': [DeploymentCompleteEvent];
+  'version-install:start': [VersionInstallStartEvent];
+  'version-install:progress': [VersionInstallProgressEvent];
+  'version-install:complete': [VersionInstallCompleteEvent];
+}
+
+// ============================================================================
+// Orchestration Events
+// ============================================================================
+
+/**
+ * Result of a single package build/install within an orchestration run
+ */
+export interface PackageResult {
+  packageName: string;
+  success: boolean;
+  skipped: boolean;
+  error?: string;
+  duration: number;
+}
+
+export interface OrchestrationStartEvent {
+  timestamp: Date;
+  packageNames: string[];
+  totalPackages: number;
+  totalLevels: number;
+  includeDependencies: boolean;
+}
+
+export interface OrchestrationLevelStartEvent {
+  timestamp: Date;
+  level: number;
+  packages: string[];
+}
+
+export interface OrchestrationPackageCompleteEvent {
+  timestamp: Date;
+  packageName: string;
+  level: number;
+  success: boolean;
+  skipped: boolean;
+  error?: string;
+  duration: number;
+}
+
+export interface OrchestrationLevelCompleteEvent {
+  timestamp: Date;
+  level: number;
+  succeeded: string[];
+  failed: string[];
+  skipped: string[];
+}
+
+export interface OrchestrationCompleteEvent {
+  timestamp: Date;
+  totalDuration: number;
+  results: PackageResult[];
+}
+
+export interface OrchestrationErrorEvent {
+  timestamp: Date;
+  error: Error;
+  packageName?: string;
+}
+
+/**
+ * Event map for orchestration-level events
+ */
+export interface OrchestrationEvents {
+  'orchestration:start': [OrchestrationStartEvent];
+  'orchestration:level:start': [OrchestrationLevelStartEvent];
+  'orchestration:package:complete': [OrchestrationPackageCompleteEvent];
+  'orchestration:level:complete': [OrchestrationLevelCompleteEvent];
+  'orchestration:complete': [OrchestrationCompleteEvent];
+  'orchestration:error': [OrchestrationErrorEvent];
+}
+
+/**
+ * Aggregated result of a multi-package orchestration run
+ */
+export interface OrchestrationResult {
+  success: boolean;
+  results: PackageResult[];
+  failedPackages: string[];
+  skippedPackages: string[];
+  duration: number;
+}

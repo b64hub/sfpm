@@ -2,8 +2,15 @@ import chalk from 'chalk';
 import ora, { Ora } from 'ora';
 import boxen from 'boxen';
 import { ux } from '@oclif/core';
-import type { PackageInstaller } from '@b64/sfpm-core';
-import { successBox } from './boxes.js';
+import type { PackageInstaller, InstallOrchestrator } from '@b64/sfpm-core';
+import type {
+    OrchestrationStartEvent,
+    OrchestrationLevelStartEvent,
+    OrchestrationPackageCompleteEvent,
+    OrchestrationLevelCompleteEvent,
+    OrchestrationCompleteEvent,
+} from '@b64/sfpm-core';
+import { successBox, warningBox } from './boxes.js';
 
 /**
  * Output modes for install progress rendering
@@ -80,18 +87,36 @@ export class InstallProgressRenderer {
         'version-install:complete': { handler: this.handleVersionInstallComplete.bind(this), description: 'Version install completed' },
     };
 
+    /**
+     * Event configuration for orchestration-level events
+     */
+    private orchestrationEventConfigs: Record<string, EventConfig> = {
+        'orchestration:start': { handler: this.handleOrchestrationStart.bind(this), description: 'Orchestration started' },
+        'orchestration:level:start': { handler: this.handleOrchestrationLevelStart.bind(this), description: 'Level started' },
+        'orchestration:package:complete': { handler: this.handleOrchestrationPackageComplete.bind(this), description: 'Package complete' },
+        'orchestration:level:complete': { handler: this.handleOrchestrationLevelComplete.bind(this), description: 'Level complete' },
+        'orchestration:complete': { handler: this.handleOrchestrationComplete.bind(this), description: 'Orchestration complete' },
+    };
+
     constructor(options: { logger: OutputLogger; mode: OutputMode }) {
         this.logger = options.logger;
         this.mode = options.mode;
     }
 
     /**
-     * Attach renderer to package installer
+     * Attach renderer to a PackageInstaller or InstallOrchestrator instance
      */
-    public attachTo(installer: PackageInstaller): void {
+    public attachTo(emitter: PackageInstaller | InstallOrchestrator): void {
         Object.entries(this.eventConfigs).forEach(([event, config]) => {
-            installer.on(event, (data: any) => {
+            (emitter as any).on(event, (data: any) => {
                 this.logEvent(event, data);
+                config.handler(data);
+            });
+        });
+
+        // Attach orchestration event handlers (no-ops if emitter is a plain PackageInstaller)
+        Object.entries(this.orchestrationEventConfigs).forEach(([event, config]) => {
+            (emitter as any).on(event, (data: any) => {
                 config.handler(data);
             });
         });
@@ -356,6 +381,100 @@ export class InstallProgressRenderer {
                 }
             )
         );
+    }
+
+    // ========================================================================
+    // Orchestration Event Handlers
+    // ========================================================================
+
+    private handleOrchestrationStart(event: OrchestrationStartEvent): void {
+        this.logEvent('orchestration:start', event);
+
+        if (!this.isInteractive()) return;
+
+        const levelText = event.totalLevels === 1 ? 'level' : 'levels';
+        const pkgText = event.totalPackages === 1 ? 'package' : 'packages';
+        this.logger.log(
+            chalk.bold(`\nInstalling ${chalk.cyan(String(event.totalPackages))} ${pkgText} in ${chalk.cyan(String(event.totalLevels))} ${levelText}\n`)
+        );
+
+        if (event.includeDependencies) {
+            this.logger.log(chalk.dim('  Dependencies auto-included\n'));
+        }
+    }
+
+    private handleOrchestrationLevelStart(event: OrchestrationLevelStartEvent): void {
+        this.logEvent('orchestration:level:start', event);
+
+        if (!this.isInteractive()) return;
+
+        const pkgList = event.packages.map((p) => chalk.cyan(p)).join(', ');
+        this.logger.log(
+            chalk.bold(`--- Level ${event.level + 1} ---`) + chalk.gray(` [${pkgList}]`)
+        );
+    }
+
+    private handleOrchestrationPackageComplete(event: OrchestrationPackageCompleteEvent): void {
+        this.logEvent('orchestration:package:complete', event);
+
+        if (!this.isInteractive()) return;
+
+        const duration = this.formatDuration(event.duration);
+
+        if (event.skipped) {
+            this.logger.log(
+                `  ${chalk.yellow('⊘')} ${chalk.yellow(event.packageName)} ${chalk.dim('skipped')} ${chalk.gray(`(${duration})`)}`
+            );
+        } else if (event.success) {
+            this.logger.log(
+                `  ${chalk.green('✓')} ${chalk.green(event.packageName)} ${chalk.gray(`(${duration})`)}`
+            );
+        } else {
+            this.logger.log(
+                `  ${chalk.red('✗')} ${chalk.red(event.packageName)} ${chalk.gray(`(${duration})`)}${event.error ? chalk.red(` - ${event.error}`) : ''}`
+            );
+        }
+    }
+
+    private handleOrchestrationLevelComplete(event: OrchestrationLevelCompleteEvent): void {
+        this.logEvent('orchestration:level:complete', event);
+
+        if (!this.isInteractive()) return;
+
+        const parts: string[] = [];
+        if (event.succeeded.length > 0) parts.push(chalk.green(`${event.succeeded.length} succeeded`));
+        if (event.failed.length > 0) parts.push(chalk.red(`${event.failed.length} failed`));
+        if (event.skipped.length > 0) parts.push(chalk.yellow(`${event.skipped.length} skipped`));
+
+        this.logger.log(chalk.dim(`  Level ${event.level + 1} complete: ${parts.join(', ')}\n`));
+    }
+
+    private handleOrchestrationComplete(event: OrchestrationCompleteEvent): void {
+        this.logEvent('orchestration:complete', event);
+
+        if (!this.isInteractive()) return;
+
+        const succeeded = event.results.filter((r) => r.success && !r.skipped).length;
+        const failed = event.results.filter((r) => !r.success && !r.skipped).length;
+        const skipped = event.results.filter((r) => r.skipped).length;
+        const duration = this.formatDuration(event.totalDuration);
+
+        const entries: Record<string, string> = {
+            'Total Packages': String(event.results.length),
+            'Succeeded': String(succeeded),
+        };
+        if (failed > 0) entries['Failed'] = chalk.red(String(failed));
+        if (skipped > 0) entries['Skipped'] = chalk.yellow(String(skipped));
+        entries['Duration'] = duration;
+
+        const allSucceeded = failed === 0;
+        const title = allSucceeded ? 'Install Orchestration Complete' : 'Install Orchestration Complete (with failures)';
+
+        if (allSucceeded) {
+            this.logger.log(successBox(title, entries));
+        } else {
+            this.logger.log(warningBox(title, entries));
+        }
     }
 
     /**

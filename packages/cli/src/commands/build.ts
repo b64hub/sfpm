@@ -1,5 +1,5 @@
 import { Command, Flags, ux, Args } from '@oclif/core'
-import { PackageBuilder, ProjectService, Logger } from '@b64/sfpm-core'
+import { PackageBuilder, BuildOrchestrator, ProjectService, Logger } from '@b64/sfpm-core'
 import { BuildProgressRenderer, OutputMode } from '../ui/build-progress-renderer.js'
 import SfpmCommand from '../sfpm-command.js'
 
@@ -27,6 +27,7 @@ export default class Build extends SfpmCommand {
     'installation-key': Flags.string({ char: 'k', description: 'installation key' }),
     'installation-key-bypass': Flags.boolean({ description: 'bypass installation key' }),
     'skip-validation': Flags.boolean({ description: 'skip validation' }),
+    'no-dependencies': Flags.boolean({ description: 'only build the specified packages, skip transitive dependencies' }),
     force: Flags.boolean({ char: 'f', description: 'build even if no source changes detected' }),
     tag: Flags.string({ char: 't', description: 'tag for the build' }),
     quiet: Flags.boolean({ char: 'q', description: 'only show errors', exclusive: ['json'] }),
@@ -45,14 +46,6 @@ export default class Build extends SfpmCommand {
       this.error('At least one package name is required')
     }
 
-    // Warn if multiple packages provided (not yet supported)
-    if (packages.length > 1) {
-      this.warn(`Multiple packages provided, but currently only building the first: ${packages[0]}`)
-      this.warn(`Future support will build: ${packages.join(', ')}`)
-    }
-
-    const packageName = packages[0]
-
     const projectService = await ProjectService.getInstance(process.cwd());
 
     const projectConfig = projectService.getProjectConfig();
@@ -70,15 +63,14 @@ export default class Build extends SfpmCommand {
       trace: (msg: string) => this.debug(msg),
     }
 
-    // Create package builder
-    const builder = new PackageBuilder(projectConfig, {
+    const buildOptions = {
       buildNumber: flags['build-number'],
       devhubUsername: flags['target-dev-hub'],
       installationKey: flags['installation-key'],
       installationKeyBypass: flags['installation-key-bypass'],
       isSkipValidation: flags['skip-validation'],
       force: flags.force,
-    }, logger);
+    }
 
     // Create and attach progress renderer
     const renderer = new BuildProgressRenderer({
@@ -88,20 +80,53 @@ export default class Build extends SfpmCommand {
       },
       mode,
     });
+
+    // Multi-package: use BuildOrchestrator
+    if (packages.length > 1) {
+      const orchestrator = new BuildOrchestrator(
+        projectConfig,
+        { ...buildOptions, includeDependencies: !flags['no-dependencies'] },
+        logger,
+      )
+
+      // Attach renderer to orchestrator — it forwards all builder events
+      renderer.attachTo(orchestrator as any)
+
+      try {
+        const result = await orchestrator.buildAll(packages)
+
+        if (flags.json) {
+          this.logJson(result)
+        }
+
+        if (!result.success) {
+          const failedNames = result.failedPackages.join(', ')
+          this.error(`Build failed for: ${failedNames}`, { exit: 1 })
+        }
+      } catch (error) {
+        renderer.handleError(error as Error)
+        if (flags.json) {
+          this.logJson({ success: false, error: (error as Error).message })
+        }
+        throw error
+      }
+      return
+    }
+
+    // Single-package: use PackageBuilder directly (backwards-compatible)
+    const packageName = packages[0]
+    const builder = new PackageBuilder(projectConfig, buildOptions, logger);
     renderer.attachTo(builder);
 
-    // Execute build
     try {
       await builder.buildPackage(packageName);
 
-      // Output JSON if requested
       if (flags.json) {
         this.logJson(renderer.getJsonOutput());
       }
     } catch (error) {
       renderer.handleError(error as Error);
       
-      // Output JSON even on error if requested
       if (flags.json) {
         this.logJson(renderer.getJsonOutput());
       }

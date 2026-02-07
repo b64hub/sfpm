@@ -103,7 +103,7 @@ export class PackageService {
       return this.installed2GPCache;
     }
 
-    return await this.queryInstalledSubscriberPackages();
+    return this.queryInstalledSubscriberPackages();
   }
 
   /**
@@ -113,10 +113,10 @@ export class PackageService {
    */
   public async getAllInstalledManagedPackages(): Promise<SubscriberPackage[]> {
     if (this.installed2GPCache) {
-      return this.installed2GPCache.filter(pkg => pkg.namespacePrefix != null && pkg.namespacePrefix !== '');
+      return this.installed2GPCache.filter(pkg => pkg.namespacePrefix !== null && pkg.namespacePrefix !== '');
     }
 
-    return await this.queryInstalledSubscriberPackages('WHERE SubscriberPackage.NamespacePrefix != null');
+    return this.queryInstalledSubscriberPackages('WHERE SubscriberPackage.NamespacePrefix != null');
   }
 
   /**
@@ -161,7 +161,7 @@ export class PackageService {
         whereClauses.push(`PatchVersion = ${patch}`);
       }
 
-      if (build && !isNaN(Number(build))) {
+      if (build && !Number.isNaN(Number(build))) {
         whereClauses.push(`BuildNumber = ${build}`);
       }
     }
@@ -268,10 +268,7 @@ export class PackageService {
    */
   private async query<T>(query: string, isTooling: boolean): Promise<T[]> {
     const conn = this.org.getConnection();
-    let records;
-
-    records = isTooling ? (await conn.tooling.query(query)).records : (await conn.query(query)).records;
-
+    const records = isTooling ? (await conn.tooling.query(query)).records : (await conn.query(query)).records;
     return records as T[];
   }
 

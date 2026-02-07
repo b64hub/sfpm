@@ -44,7 +44,10 @@ export * from './types/project.js';
 export * from './project/project-graph.js';
 export * from './types/package.js';
 export { PackageBuilder } from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
+export { BuildOrchestrator, BuildOrchestrationTask, type BuildOrchestratorOptions } from './package/build-orchestrator.js';
 export { default as PackageInstaller, type InstallOptions, type InstallResult } from './package/package-installer.js';
+export { InstallOrchestrator, InstallOrchestrationTask, type InstallOrchestratorOptions } from './package/install-orchestrator.js';
+export { Orchestrator, type OrchestratorOptions, type OrchestratorEmitter, type OrchestrationTask } from './package/orchestrator.js';
 export { InstallerRegistry } from './package/installers/installer-registry.js';
 export { ArtifactService, type InstallTarget } from './artifacts/artifact-service.js';
 export { ArtifactRepository } from './artifacts/artifact-repository.js';
