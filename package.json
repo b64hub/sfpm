@@ -5,7 +5,6 @@
   "description": "Salesforce Package Manager",
   "lint-staged": {
     "packages/*/src/**/*.ts": [
-      "prettier --write",
       "eslint --fix"
     ]
   },

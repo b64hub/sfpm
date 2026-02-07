@@ -24,6 +24,8 @@ export default [
         },
       ],
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'unicorn/prefer-event-target': 'off', // EventEmitter is more appropriate for Node.js
+      '@typescript-eslint/no-explicit-any': 'warn', // Allow any but warn about it
     },
   },
 ];
