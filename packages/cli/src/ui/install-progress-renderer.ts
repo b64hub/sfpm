@@ -95,6 +95,7 @@ export class InstallProgressRenderer {
     'orchestration:package:complete': {description: 'Package complete', handler: this.handleOrchestrationPackageComplete.bind(this)},
     'orchestration:start': {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
   };
+  private orchestrationSpinner?: Ora;
   private spinner?: Ora;
   private timings: TimingInfo = {};
 
@@ -358,12 +359,15 @@ export class InstallProgressRenderer {
 
     if (!this.isInteractive()) return;
 
-    const parts: string[] = [];
-    if (event.succeeded.length > 0) parts.push(chalk.green(`${event.succeeded.length} succeeded`));
-    if (event.failed.length > 0) parts.push(chalk.red(`${event.failed.length} failed`));
-    if (event.skipped.length > 0) parts.push(chalk.yellow(`${event.skipped.length} skipped`));
+    const hasFailures = event.failed.length > 0;
+    if (hasFailures) {
+      this.orchestrationSpinner?.fail(chalk.red(`${event.failed.length} failed`));
+    } else {
+      this.orchestrationSpinner?.succeed(chalk.green('Done'));
+    }
 
-    this.logger.log(chalk.dim(`  Level ${event.level + 1} complete: ${parts.join(', ')}\n`));
+    this.orchestrationSpinner = undefined;
+    this.logger.log('');
   }
 
   private handleOrchestrationLevelStart(event: OrchestrationLevelStartEvent): void {
@@ -371,8 +375,11 @@ export class InstallProgressRenderer {
 
     if (!this.isInteractive()) return;
 
-    const pkgList = event.packages.map(p => chalk.cyan(p)).join(', ');
-    this.logger.log(chalk.bold(`--- Level ${event.level + 1} ---`) + chalk.gray(` [${pkgList}]`));
+    const pkgText = event.packages.length === 1 ? 'package' : 'packages';
+    this.orchestrationSpinner = ora({
+      color: 'cyan',
+      text: `Installing ${chalk.cyan(String(event.packages.length))} ${pkgText}`,
+    }).start();
   }
 
   private handleOrchestrationPackageComplete(event: OrchestrationPackageCompleteEvent): void {
@@ -382,13 +389,17 @@ export class InstallProgressRenderer {
 
     const duration = this.formatDuration(event.duration);
 
+    this.orchestrationSpinner?.stop();
+
     if (event.skipped) {
-      this.logger.log(`  ${chalk.yellow('⊘')} ${chalk.yellow(event.packageName)} ${chalk.dim('skipped')} ${chalk.gray(`(${duration})`)}`);
+      this.logger.log(`  ${chalk.yellow('\u2298')} ${chalk.yellow(event.packageName)} ${chalk.dim('skipped')} ${chalk.gray(`(${duration})`)}`);
     } else if (event.success) {
-      this.logger.log(`  ${chalk.green('✓')} ${chalk.green(event.packageName)} ${chalk.gray(`(${duration})`)}`);
+      this.logger.log(`  ${chalk.green('\u2713')} ${chalk.green(event.packageName)} ${chalk.gray(`(${duration})`)}`);
     } else {
-      this.logger.log(`  ${chalk.red('✗')} ${chalk.red(event.packageName)} ${chalk.gray(`(${duration})`)}${event.error ? chalk.red(` - ${event.error}`) : ''}`);
+      this.logger.log(`  ${chalk.red('\u2717')} ${chalk.red(event.packageName)} ${chalk.gray(`(${duration})`)}${event.error ? chalk.red(` - ${event.error}`) : ''}`);
     }
+
+    this.orchestrationSpinner?.start();
   }
 
   // ========================================================================
