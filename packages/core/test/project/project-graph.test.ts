@@ -428,4 +428,240 @@ describe('ProjectGraph', () => {
             expect(cycles!.length).toBeGreaterThan(0);
         });
     });
+
+    describe('Managed Dependencies', () => {
+        test('should create managed nodes from packageAliases with 04t prefix', () => {
+            const mockProject: ProjectDefinition = {
+                packageDirectories: [
+                    {
+                        package: 'apex-utils',
+                        versionName: 'ver 0.1',
+                        versionNumber: '0.1.1.NEXT',
+                        path: 'src/apex/utils',
+                        default: true,
+                        dependencies: [
+                            { package: 'Nebula Logger@4.16.0' }
+                        ]
+                    }
+                ],
+                packageAliases: {
+                    'apex-utils': '0Ho09000000oMKJCA2',
+                    'Nebula Logger@4.16.0': '04t5Y0000015pGyQAI'
+                }
+            };
+
+            const graph = new ProjectGraph(mockProject);
+            expect(graph.getAllNodes().length).toBe(2);
+
+            const managedNode = graph.getNode('Nebula Logger@4.16.0');
+            expect(managedNode).toBeDefined();
+            expect(managedNode!.isManaged).toBe(true);
+            expect(managedNode!.packageVersionId).toBe('04t5Y0000015pGyQAI');
+            expect(managedNode!.path).toBeUndefined();
+            expect(managedNode!.version).toBeUndefined();
+        });
+
+        test('should not create managed nodes for aliases without 04t prefix', () => {
+            const mockProject: ProjectDefinition = {
+                packageDirectories: [
+                    {
+                        package: 'apex-utils',
+                        versionNumber: '0.1.1.NEXT',
+                        path: 'src/apex/utils',
+                        default: true,
+                        dependencies: [
+                            { package: 'unknown-dep' }
+                        ]
+                    }
+                ],
+                packageAliases: {
+                    'apex-utils': '0Ho09000000oMKJCA2',
+                    'unknown-dep': '0Ho09000000oABCDE2'
+                }
+            };
+
+            const graph = new ProjectGraph(mockProject);
+            expect(graph.getAllNodes().length).toBe(1);
+            expect(graph.getNode('unknown-dep')).toBeUndefined();
+        });
+
+        test('should wire managed dependency edges correctly', () => {
+            const mockProject: ProjectDefinition = {
+                packageDirectories: [
+                    {
+                        package: 'apex-utils',
+                        versionNumber: '0.1.1.NEXT',
+                        path: 'src/apex/utils',
+                        default: true,
+                        dependencies: [
+                            { package: 'Nebula Logger@4.16.0' }
+                        ]
+                    }
+                ],
+                packageAliases: {
+                    'apex-utils': '0Ho09000000oMKJCA2',
+                    'Nebula Logger@4.16.0': '04t5Y0000015pGyQAI'
+                }
+            };
+
+            const graph = new ProjectGraph(mockProject);
+            const apexUtils = graph.getNode('apex-utils');
+            const nebulaLogger = graph.getNode('Nebula Logger@4.16.0');
+
+            expect(apexUtils!.dependencies.has(nebulaLogger!)).toBe(true);
+            expect(nebulaLogger!.dependents.has(apexUtils!)).toBe(true);
+            expect(nebulaLogger!.dependencies.size).toBe(0);
+        });
+
+        test('should mark project-local packages as not managed', () => {
+            const mockProject: ProjectDefinition = {
+                packageDirectories: [
+                    { package: 'pkg-a', path: 'packages/pkg-a', default: false },
+                    {
+                        package: 'pkg-b',
+                        path: 'packages/pkg-b',
+                        default: false,
+                        dependencies: [{ package: 'pkg-a' }]
+                    }
+                ]
+            };
+
+            const graph = new ProjectGraph(mockProject);
+            expect(graph.getNode('pkg-a')!.isManaged).toBe(false);
+            expect(graph.getNode('pkg-b')!.isManaged).toBe(false);
+            expect(graph.getNode('pkg-a')!.path).toBe('packages/pkg-a');
+        });
+
+        test('should include managed dependencies in dependency resolution levels', () => {
+            const mockProject: ProjectDefinition = {
+                packageDirectories: [
+                    {
+                        package: 'apex-utils',
+                        versionNumber: '0.1.1.NEXT',
+                        path: 'src/apex/utils',
+                        default: true,
+                        dependencies: [
+                            { package: 'Nebula Logger@4.16.0' }
+                        ]
+                    }
+                ],
+                packageAliases: {
+                    'apex-utils': '0Ho09000000oMKJCA2',
+                    'Nebula Logger@4.16.0': '04t5Y0000015pGyQAI'
+                }
+            };
+
+            const graph = new ProjectGraph(mockProject);
+            const resolution = graph.resolveDependencies(['apex-utils']);
+
+            expect(resolution.allPackages.length).toBe(2);
+            expect(resolution.levels.length).toBe(2);
+
+            // Level 0: managed dependency (no deps of its own)
+            expect(resolution.levels[0].length).toBe(1);
+            expect(resolution.levels[0][0].name).toBe('Nebula Logger@4.16.0');
+            expect(resolution.levels[0][0].isManaged).toBe(true);
+
+            // Level 1: the local package
+            expect(resolution.levels[1].length).toBe(1);
+            expect(resolution.levels[1][0].name).toBe('apex-utils');
+        });
+
+        test('should include managed dependencies in transitive dependency resolution', () => {
+            const mockProject: ProjectDefinition = {
+                packageDirectories: [
+                    { package: 'pkg-a', path: 'packages/pkg-a', default: false },
+                    {
+                        package: 'pkg-b',
+                        path: 'packages/pkg-b',
+                        default: false,
+                        dependencies: [
+                            { package: 'pkg-a' },
+                            { package: 'Nebula Logger@4.16.0' }
+                        ]
+                    }
+                ],
+                packageAliases: {
+                    'Nebula Logger@4.16.0': '04t5Y0000015pGyQAI'
+                }
+            };
+
+            const graph = new ProjectGraph(mockProject);
+            const deps = graph.getTransitiveDependencies('pkg-b');
+
+            expect(deps.length).toBe(2);
+
+            const managedDep = deps.find(d => d.package === 'Nebula Logger@4.16.0');
+            expect(managedDep).toBeDefined();
+            expect('packageVersionId' in managedDep!).toBe(true);
+        });
+
+        test('should handle multiple managed dependencies', () => {
+            const mockProject: ProjectDefinition = {
+                packageDirectories: [
+                    {
+                        package: 'my-app',
+                        versionNumber: '1.0.0.NEXT',
+                        path: 'src/app',
+                        default: true,
+                        dependencies: [
+                            { package: 'Nebula Logger@4.16.0' },
+                            { package: 'nCino@2.0.0' }
+                        ]
+                    }
+                ],
+                packageAliases: {
+                    'my-app': '0Ho09000000oMKJCA2',
+                    'Nebula Logger@4.16.0': '04t5Y0000015pGyQAI',
+                    'nCino@2.0.0': '04t000000000XXXYYY'
+                }
+            };
+
+            const graph = new ProjectGraph(mockProject);
+            expect(graph.getAllNodes().length).toBe(3);
+
+            const resolution = graph.resolveDependencies(['my-app']);
+            expect(resolution.levels.length).toBe(2);
+
+            // Both managed packages at level 0 (can install in parallel)
+            expect(resolution.levels[0].length).toBe(2);
+            expect(resolution.levels[0].every(n => n.isManaged)).toBe(true);
+        });
+
+        test('should handle mixed managed and project dependencies', () => {
+            // my-app depends on core-lib (project) and Nebula Logger (managed)
+            // core-lib has no dependencies
+            const mockProject: ProjectDefinition = {
+                packageDirectories: [
+                    { package: 'core-lib', path: 'src/core', default: false },
+                    {
+                        package: 'my-app',
+                        versionNumber: '1.0.0.NEXT',
+                        path: 'src/app',
+                        default: true,
+                        dependencies: [
+                            { package: 'core-lib', versionNumber: '1.0.0.NEXT' },
+                            { package: 'Nebula Logger@4.16.0' }
+                        ]
+                    }
+                ],
+                packageAliases: {
+                    'Nebula Logger@4.16.0': '04t5Y0000015pGyQAI'
+                }
+            };
+
+            const graph = new ProjectGraph(mockProject);
+            expect(graph.getAllNodes().length).toBe(3);
+
+            const resolution = graph.resolveDependencies(['my-app']);
+            expect(resolution.levels.length).toBe(2);
+
+            // Level 0: core-lib and Nebula Logger (both are deps with no deps of their own)
+            const level0Names = resolution.levels[0].map(n => n.name).sort();
+            expect(level0Names).toEqual(['Nebula Logger@4.16.0', 'core-lib']);
+
+            // Level 1: my-app
+            expect(resolution.levels[1].map(n => n.name)).toEqual(['my-app']);
+        });
+    });
 });
