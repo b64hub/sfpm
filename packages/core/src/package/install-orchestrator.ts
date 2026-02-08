@@ -11,10 +11,10 @@ import {
 } from '../types/events.js';
 import {Logger} from '../types/logger.js';
 import {
+  OrchestrationTask,
   Orchestrator,
   OrchestratorEmitter,
   OrchestratorOptions,
-  OrchestrationTask,
 } from './orchestrator.js';
 import PackageInstaller, {InstallOptions} from './package-installer.js';
 
@@ -25,8 +25,8 @@ export interface InstallOrchestratorOptions extends InstallOptions, Orchestrator
  * single-package install so they share a connection and cache.
  */
 interface InstallContext {
-  org: Org;
   artifactService: ArtifactService;
+  org: Org;
 }
 
 // ============================================================================
@@ -52,13 +52,6 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     this.projectConfig = projectConfig;
     this.options = options;
     this.logger = logger;
-  }
-
-  async setup(): Promise<InstallContext> {
-    const org = await Org.create({aliasOrUsername: this.options.targetOrg});
-    const artifactService = new ArtifactService(this.logger, org);
-    await artifactService.preloadInstalledArtifacts();
-    return {artifactService, org};
   }
 
   async processSinglePackage(
@@ -96,7 +89,16 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     installer.removeAllListeners();
 
     const duration = Date.now() - start;
-    return {duration, error, packageName, skipped, success};
+    return {
+      duration, error, packageName, skipped, success,
+    };
+  }
+
+  async setup(): Promise<InstallContext> {
+    const org = await Org.create({aliasOrUsername: this.options.targetOrg});
+    const artifactService = new ArtifactService(this.logger, org);
+    await artifactService.preloadInstalledArtifacts();
+    return {artifactService, org};
   }
 
   private forwardInstallerEvents(installer: PackageInstaller, emitter: OrchestratorEmitter): void {

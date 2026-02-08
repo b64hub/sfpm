@@ -153,6 +153,7 @@ export class Orchestrator<TContext = void> {
     };
 
     for (const [levelIndex, level] of levels.entries()) {
+      // eslint-disable-next-line no-await-in-loop
       await this.processLevel(level, levelIndex, tracker, context);
     }
 
@@ -300,6 +301,7 @@ export class Orchestrator<TContext = void> {
 
     this.emitter.emit('orchestration:level:start', {
       level: levelIndex,
+      packageDetails: eligible.map(n => ({isManaged: n.isManaged, name: n.name, version: n.version})),
       packages: eligible.map(n => n.name),
       timestamp: new Date(),
     });
