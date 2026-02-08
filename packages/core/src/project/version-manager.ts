@@ -328,7 +328,7 @@ export class VersionTracker {
     return this.node.version;
   }
 
-  get isUpdated() {
+  get isUpdated(): boolean {
     return this.newVersion !== null;
   }
 
@@ -341,7 +341,7 @@ export class VersionTracker {
     return this.node.path ?? '';
   }
 
-  bump(type: VersionBumpType, customVersion?: string) {
+  bump(type: VersionBumpType, customVersion?: string): void {
     if (!this.currentVersion) return; // Can't bump if no version
 
     if (type === 'custom') {
@@ -395,7 +395,7 @@ export class VersionTracker {
     }
   }
 
-  setBaseVersionForBump(version: string) {
+  setBaseVersionForBump(version: string): void {
     this.baseVersionOverride = version;
   }
 
@@ -417,7 +417,7 @@ export class VersionTracker {
     return out;
   }
 
-  updateDependencyVersion(pkgName: string, newVersion: string) {
+  updateDependencyVersion(pkgName: string, newVersion: string): void {
     if (this.dependencies.has(pkgName)) {
       // Check if it's already updated to this?
       this.dependencies.set(pkgName, newVersion);
