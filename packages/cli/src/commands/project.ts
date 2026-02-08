@@ -1,5 +1,5 @@
 import {
-  PackageNode, PackageType, ProjectGraph, ProjectService,
+  PackageDefinition, PackageNode, PackageType, ProjectGraph, ProjectService,
 } from '@b64/sfpm-core'
 import {Flags} from '@oclif/core'
 import boxen from 'boxen'
@@ -76,7 +76,7 @@ export default class Project extends SfpmCommand {
 
     if (node.isManaged) {
       colorFn = chalk.green
-    } else switch (node.definition.type) {
+    } else switch ((node.definition as PackageDefinition).type) {
     case PackageType.Data: {
       colorFn = chalk.magenta
 

@@ -315,13 +315,18 @@ export class VersionTracker {
 
     // Initialize mutable state from node original definition
     this.dependencies = new Map();
-    if (node.definition.dependencies) {
-      for (const d of node.definition.dependencies) {
-        this.dependencies.set(d.package, d.versionNumber);
-      }
+    this.updatedDependencies = new Set();
+
+    if (this.node.isManaged) {
+      return;
     }
 
-    this.updatedDependencies = new Set();
+    const def = node.definition as PackageDefinition;
+    if (def.dependencies) {
+      for (const d of def.dependencies) {
+        this.dependencies.set(d.package, d.versionNumber ?? '');
+      }
+    }
   }
 
   get currentVersion(): string | undefined {
@@ -382,15 +387,20 @@ export class VersionTracker {
     return this.dependencies.get(pkgName);
   }
 
-  reset() {
+  reset(): void {
     this.newVersion = null;
     this.updatedDependencies.clear();
     this.baseVersionOverride = null;
     // Revert dependencies to original
     this.dependencies.clear();
-    if (this.node.definition.dependencies) {
-      for (const d of this.node.definition.dependencies) {
-        this.dependencies.set(d.package, d.versionNumber);
+    if (this.node.isManaged) {
+      return;
+    }
+
+    const def = this.node.definition as PackageDefinition;
+    if (def.dependencies) {
+      for (const d of def.dependencies) {
+        this.dependencies.set(d.package, d.versionNumber ?? '');
       }
     }
   }

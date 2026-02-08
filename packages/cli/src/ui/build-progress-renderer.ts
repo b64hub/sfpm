@@ -163,7 +163,7 @@ export class BuildProgressRenderer {
    */
   public getJsonOutput(): any {
     const duration = this.timings.buildStart && this.events.length > 0
-      ? this.events.at(-1).timestamp.getTime() - this.timings.buildStart.getTime()
+      ? this.events.at(-1)!.timestamp.getTime() - this.timings.buildStart.getTime()
       : 0;
 
     return {
