@@ -180,7 +180,7 @@ export default abstract class SfpmPackage {
   }
 
   /**
-   * Set orchestration options for the package build.
+   * @description Set orchestration options for the package build.
    * Subclasses can override to handle type-specific options.
    */
   public setOrchestrationOptions(options: any): void {
@@ -188,7 +188,7 @@ export default abstract class SfpmPackage {
   }
 
   /**
-   * This is the package-agnostic metadata that describes the SFPM package.
+   * @description This is the package-agnostic metadata that describes the SFPM package.
    * The ArtifactAssembler is responsible for constructing the full package.json.
    *
    * @param sourceHash - Optional source hash to include
@@ -396,8 +396,8 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
   }
 
   /**
-   * @description: Converts the package to a package metadata object.
-   * @returns: A promise that resolves to the package metadata object.
+   * @description Converts the package to a package metadata object.
+   * @returns A promise that resolves to the package metadata object.
    */
   public async toPackageMetadata(): Promise<SfpmPackageMetadata> {
     const content = await this.resolveContentMetadata();
@@ -418,7 +418,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
     });
   }
 
-  public updateContent(newContent: Partial<SfpmPackageContent>) {
+  public updateContent(newContent: Partial<SfpmPackageContent>): void {
     merge(this._metadata.content, newContent);
     this.enforceIntegrity();
   }
@@ -427,7 +427,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
    * Ensures every name in our categorized metadata actually
    * exists as a physical component in the directory.
    */
-  private enforceIntegrity() {
+  private enforceIntegrity(): void {
     const cs = this.getComponentSet(); //
 
     for (const [jsonPath, metadataType] of Object.entries(CONTENT_METADATA_TYPE)) {
@@ -448,8 +448,8 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
   }
 
   /**
-   * @description: Resolves the content of the package from the component set.
-   * @returns: A promise that resolves to the content of the package.
+   * @description Resolves the content of the package from the component set.
+   * @returns A promise that resolves to the content of the package.
    */
   private async resolveContentMetadata(): Promise<SfpmPackageContent> {
     const cs = this.getComponentSet();
