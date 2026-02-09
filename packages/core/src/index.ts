@@ -54,11 +54,14 @@ export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions
 export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './package/install-orchestrator.js';
 export {InstallerRegistry} from './package/installers/installer-registry.js';
 export {
+  ManagedPackageRef, type SourceDeployable, type VersionInstallable,
+} from './package/installers/types.js';
+export {
   type OrchestrationTask, Orchestrator, type OrchestratorEmitter, type OrchestratorOptions,
 } from './package/orchestrator.js';
 export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
-export {PackageFactory, SfpmManagedPackage, default as SfpmPackage} from './package/sfpm-package.js';
+export {PackageFactory, default as SfpmPackage} from './package/sfpm-package.js';
 export {default as ProjectConfig} from './project/project-config.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';

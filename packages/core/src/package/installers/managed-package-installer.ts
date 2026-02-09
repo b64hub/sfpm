@@ -2,36 +2,31 @@ import {Org} from '@salesforce/core';
 import EventEmitter from 'node:events';
 
 import {Logger} from '../../types/logger.js';
-import {InstallationMode, InstallationSource, PackageType} from '../../types/package.js';
-import SfpmPackage, {SfpmManagedPackage} from '../sfpm-package.js';
+import {PackageType} from '../../types/package.js';
 import {Installer, RegisterInstaller} from './installer-registry.js';
-import VersionInstallStrategy from './strategies/version-install-strategy.js';
+import VersionInstaller from './strategies/version-installer.js';
+import {ManagedPackageRef, type VersionInstallable} from './types.js';
 
 /**
- * Installer for managed (external/subscriber) packages.
+ * Adapter for managed (external/subscriber) packages.
  *
  * Managed packages always use version-install via the Tooling API — there
- * is no local source to deploy.  The only strategy is
- * {@link VersionInstallStrategy}.
+ * is no local source to deploy. The adapter simply forwards the
+ * {@link VersionInstallable} payload (typically a {@link ManagedPackageRef})
+ * to the {@link VersionInstaller}.
  */
 @RegisterInstaller(PackageType.Managed)
 export default class ManagedPackageInstaller extends EventEmitter implements Installer {
+  private readonly installable: VersionInstallable;
   private readonly logger?: Logger;
   private org?: Org;
-  private readonly sfpmPackage: SfpmManagedPackage;
-  private readonly strategy: VersionInstallStrategy;
   private readonly targetOrg: string;
 
-  constructor(targetOrg: string, sfpmPackage: SfpmPackage, logger?: Logger) {
+  constructor(targetOrg: string, managedPackage: ManagedPackageRef, logger?: Logger) {
     super();
-    if (!(sfpmPackage instanceof SfpmManagedPackage)) {
-      throw new TypeError(`ManagedPackageInstaller received incompatible package type: ${sfpmPackage.constructor.name}`);
-    }
-
     this.targetOrg = targetOrg;
-    this.sfpmPackage = sfpmPackage;
+    this.installable = managedPackage;
     this.logger = logger;
-    this.strategy = new VersionInstallStrategy(logger, this);
   }
 
   public async connect(username: string): Promise<void> {
@@ -53,7 +48,7 @@ export default class ManagedPackageInstaller extends EventEmitter implements Ins
   }
 
   public async exec(): Promise<void> {
-    this.logger?.info(`Installing managed package: ${this.sfpmPackage.packageName}`);
-    await this.strategy.install(this.sfpmPackage, this.targetOrg);
+    this.logger?.info(`Installing managed package: ${this.installable.packageName}`);
+    await new VersionInstaller(this.logger, this).install(this.installable, this.targetOrg);
   }
 }

@@ -34,7 +34,7 @@ export type MetadataFile = string | {
 export interface SfpmPackageIdentity {
   apiVersion?: string;
   packageName: string;
-  packageType: PackageType;
+  packageType: Omit<PackageType, 'managed'>; // Managed packages are only for subscriber orgs, not sfpm artifacts
   versionNumber?: string;
 }
 

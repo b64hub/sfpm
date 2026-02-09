@@ -2,9 +2,7 @@ import {Connection, Org} from '@salesforce/core';
 import {EventEmitter} from 'node:events';
 
 import {Logger} from '../../../types/logger.js';
-import {InstallationMode, InstallationSource, SfpmUnlockedPackageBuildOptions} from '../../../types/package.js';
-import SfpmPackage, {SfpmManagedPackage, SfpmUnlockedPackage} from '../../sfpm-package.js';
-import {InstallationStrategy} from '../installation-strategy.js';
+import {type VersionInstallable} from '../types.js';
 
 type PackageInstallRequest = {
   Errors?: {errors: Array<{message: string}>};
@@ -14,12 +12,13 @@ type PackageInstallRequest = {
 };
 
 /**
- * Strategy for installing a package by subscriber version ID (04t) via the Tooling API.
- * Applicable for:
- * - Unlocked packages with a packageVersionId from a built artifact
- * - Managed packages (always have a packageVersionId from packageAliases)
+ * Installs a package by subscriber version ID (04t) via the Tooling API.
+ *
+ * This is a pure strategy — it knows nothing about SfpmPackage or routing.
+ * The caller (an installer acting as adapter) is responsible for building the
+ * {@link VersionInstallable} payload and deciding when this strategy applies.
  */
-export default class VersionInstallStrategy implements InstallationStrategy {
+export default class VersionInstaller {
   private eventEmitter?: EventEmitter;
   private logger?: Logger;
 
@@ -28,49 +27,15 @@ export default class VersionInstallStrategy implements InstallationStrategy {
     this.eventEmitter = eventEmitter;
   }
 
-  public canHandle(source: InstallationSource, sfpmPackage: SfpmPackage): boolean {
-    // Managed packages always use version install
-    if (sfpmPackage instanceof SfpmManagedPackage) {
-      return true;
+  public async install(installable: VersionInstallable, targetOrg: string): Promise<void> {
+    const {installationKey, packageName, packageVersionId} = installable;
+
+    if (!packageVersionId) {
+      throw new Error(`Package version ID not found for: ${packageName}`);
     }
 
-    // Unlocked packages: requires artifact source + packageVersionId
-    if (sfpmPackage instanceof SfpmUnlockedPackage) {
-      const hasVersionId = Boolean(sfpmPackage.packageVersionId);
-      const isArtifactSource = source === InstallationSource.Artifact;
-      return hasVersionId && isArtifactSource;
-    }
-
-    return false;
-  }
-
-  public getMode(): InstallationMode {
-    return InstallationMode.VersionInstall;
-  }
-
-  public async install(sfpmPackage: SfpmPackage, targetOrg: string): Promise<void> {
-    // Extract versionId from either SfpmUnlockedPackage or SfpmManagedPackage
-    let versionId: string | undefined;
-    if (sfpmPackage instanceof SfpmManagedPackage) {
-      versionId = sfpmPackage.packageVersionId;
-    } else if (sfpmPackage instanceof SfpmUnlockedPackage) {
-      versionId = sfpmPackage.packageVersionId;
-    }
-
-    if (!versionId) {
-      throw new Error(`Package version ID not found for: ${sfpmPackage.packageName}`);
-    }
-
-    this.logger?.info(`Using version install strategy for package: ${sfpmPackage.packageName}`);
-
-    // Get installation key from package metadata if available (unlocked packages only)
-    let installationKey: string | undefined;
-    if (sfpmPackage instanceof SfpmUnlockedPackage) {
-      const buildOptions = sfpmPackage.metadata?.orchestration?.buildOptions as SfpmUnlockedPackageBuildOptions | undefined;
-      installationKey = buildOptions?.installationkey;
-    }
-
-    this.logger?.info(`Installing package version ${versionId} to ${targetOrg}`);
+    this.logger?.info(`Using version install strategy for package: ${packageName}`);
+    this.logger?.info(`Installing package version ${packageVersionId} to ${targetOrg}`);
 
     // Connect to target org
     const org = await Org.create({aliasOrUsername: targetOrg});
@@ -85,9 +50,9 @@ export default class VersionInstallStrategy implements InstallationStrategy {
 
     // Emit version-install start event
     this.eventEmitter?.emit('version-install:start', {
-      packageName: sfpmPackage.packageName,
+      packageName,
       timestamp: new Date(),
-      versionId,
+      versionId: packageVersionId,
     });
 
     const installRequest = {
@@ -95,7 +60,7 @@ export default class VersionInstallStrategy implements InstallationStrategy {
       NameConflictResolution: 'Block',
       Password: installationKey || '',
       SecurityType: 'Full',
-      SubscriberPackageVersionKey: versionId,
+      SubscriberPackageVersionKey: packageVersionId,
     };
 
     const result = await connection.tooling.create('PackageInstallRequest', installRequest);
@@ -107,7 +72,7 @@ export default class VersionInstallStrategy implements InstallationStrategy {
     const requestId = result.id as string;
 
     // Poll for installation status
-    const installStatus = await this.pollInstallStatus(connection, requestId, sfpmPackage.packageName);
+    const installStatus = await this.pollInstallStatus(connection, requestId, packageName);
 
     if (installStatus.Status !== 'SUCCESS') {
       const errors = installStatus.Errors?.errors?.map(e => e.message).join('\n') || 'Unknown installation error';
@@ -116,7 +81,7 @@ export default class VersionInstallStrategy implements InstallationStrategy {
 
     // Emit version-install complete event
     this.eventEmitter?.emit('version-install:complete', {
-      packageName: sfpmPackage.packageName,
+      packageName,
       success: true,
       timestamp: new Date(),
     });

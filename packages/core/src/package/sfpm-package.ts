@@ -10,6 +10,7 @@ import {
 } from '../types/package.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {SourceHasher} from '../utils/source-hasher.js';
+import {ManagedPackageRef, type SourceDeployable} from './installers/types.js';
 
 const TEST_COVERAGE_THRESHOLD = 75;
 const DEFAULT_API_VERSION = '65.0';
@@ -137,7 +138,7 @@ export default abstract class SfpmPackage {
     return this._metadata.source?.tag || `${this.name}@${this.version}`;
   }
 
-  get type(): PackageType {
+  get type(): Omit<PackageType, 'managed'> {
     return this._metadata.identity.packageType;
   }
 
@@ -199,13 +200,21 @@ export default abstract class SfpmPackage {
   }
 }
 
-export abstract class SfpmMetadataPackage extends SfpmPackage {
+export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceDeployable {
   protected _componentSet?: ComponentSet;
 
   get apexClasses(): SourceComponent[] {
     return this.getComponentSet()
     .getSourceComponents().toArray()
     .filter(c => c.type.id === 'apexclass');
+  }
+
+  /**
+   * Getter exposing the cached ComponentSet for the SourceDeployable interface.
+   * Delegates to getComponentSet() which initialises on first access.
+   */
+  get componentSet(): ComponentSet {
+    return this.getComponentSet();
   }
 
   get customFields(): SourceComponent[] {
@@ -324,6 +333,13 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
   get triggers(): SourceComponent[] {
     return this.getComponentSet().getSourceComponents().toArray()
     .filter(c => c.type.id === 'apextrigger');
+  }
+
+  /**
+   * Alias for the version property, satisfying the SourceDeployable interface.
+   */
+  get versionNumber(): string | undefined {
+    return this.version;
   }
 
   /**
@@ -503,7 +519,7 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
     return this._metadata as SfpmUnlockedPackageMetadata;
   }
 
-  get packageId() {
+  get packageId(): string {
     return this.metadata.identity.packageId || '';
   }
 
@@ -548,33 +564,6 @@ export class SfpmSourcePackage extends SfpmMetadataPackage {
 }
 
 /**
- * Lightweight package representing an external managed/subscriber package.
- * These packages have no local source — only a name and a packageVersionId
- * (04t subscriber package version ID) resolved from packageAliases.
- *
- * Managed packages are installed via version-install (Tooling API), never deployed as source.
- */
-export class SfpmManagedPackage extends SfpmPackage {
-  constructor(packageName: string, projectDirectory: string, packageVersionId?: string) {
-    super(packageName, projectDirectory, {
-      identity: {
-        packageName,
-        packageType: PackageType.Managed,
-        packageVersionId,
-      },
-    } as Partial<SfpmPackageMetadata>);
-  }
-
-  get packageVersionId(): string | undefined {
-    return this.metadata.identity.packageVersionId;
-  }
-
-  set packageVersionId(versionId: string) {
-    this.metadata.identity.packageVersionId = versionId;
-  }
-}
-
-/**
  * Factory for creating fully-configured SfpmPackage instances from ProjectConfig.
  * Bridges ProjectConfig (sfdx-project.json abstraction) with package construction.
  */
@@ -594,8 +583,11 @@ export class PackageFactory {
   }
 
   /**
-   * Create a package by name, automatically resolving its definition and type.
-   * Falls back to managed packages if not found in packageDirectories.
+   * Create a local package by name, automatically resolving its definition and type.
+   * Only creates packages that exist in packageDirectories (local source packages).
+   * For managed/subscriber packages, use {@link createManagedRef} instead.
+   *
+   * @throws Error if the package is not found in packageDirectories or managed dependencies
    */
   createFromName(packageName: string): SfpmPackage {
     // First, try to find in packageDirectories (local packages)
@@ -603,7 +595,14 @@ export class PackageFactory {
     const packageDefinition = allPackages.find(p => p.package === packageName);
 
     if (!packageDefinition) {
-      return this.createManagedPackage(packageName);
+      // Check if it's a managed dependency — if so, guide the caller
+      const managedRef = this.createManagedRef(packageName);
+      if (managedRef) {
+        throw new Error(`Package "${packageName}" is a managed dependency, not a local package. `
+        	+ 'Use createManagedRef() instead.');
+      }
+
+      throw new Error(`Package ${packageName} not found in project definition`);
     }
 
     const packageType = (packageDefinition.type?.toLowerCase() || 'unlocked') as PackageType;
@@ -637,6 +636,21 @@ export class PackageFactory {
   }
 
   /**
+   * Create a lightweight ManagedPackageRef for a managed/subscriber dependency.
+   * Returns undefined if the package is not found as a managed dependency.
+   */
+  createManagedRef(packageName: string): ManagedPackageRef | undefined {
+    const managedPackages = this.projectConfig.getManagedPackages();
+    const managedDef = managedPackages.find(m => m.package === packageName);
+
+    if (!managedDef) {
+      return undefined;
+    }
+
+    return new ManagedPackageRef(packageName, managedDef.packageVersionId);
+  }
+
+  /**
    * Get the underlying ProjectConfig
    */
   getProjectConfig(): ProjectConfig {
@@ -644,26 +658,17 @@ export class PackageFactory {
   }
 
   /**
-   * Create a managed package from the project's managed package definitions.
-   * @throws Error if the package is not found as a managed dependency
+   * Check whether a package name refers to a managed (subscriber) dependency
+   * rather than a local package directory.
    */
-  private createManagedPackage(packageName: string): SfpmManagedPackage {
-    const managedPackages = this.projectConfig.getManagedPackages();
-    const managedDef = managedPackages.find(m => m.package === packageName);
-
-    if (!managedDef) {
-      throw new Error(`Package ${packageName} not found in project definition or managed dependencies`);
+  isManagedPackage(packageName: string): boolean {
+    const allPackages = this.projectConfig.getAllPackageDirectories();
+    if (allPackages.some(p => p.package === packageName)) {
+      return false;
     }
 
-    const {projectDirectory} = this.projectConfig;
-    const sfpmPackage = this.createPackageInstance(
-      PackageType.Managed,
-      packageName,
-      projectDirectory,
-    ) as SfpmManagedPackage;
-
-    sfpmPackage.packageVersionId = managedDef.packageVersionId;
-    return sfpmPackage;
+    const managedPackages = this.projectConfig.getManagedPackages();
+    return managedPackages.some(m => m.package === packageName);
   }
 
   /**
@@ -677,10 +682,6 @@ export class PackageFactory {
     switch (packageType) {
     case PackageType.Data: {
       return new SfpmDataPackage(packageName, projectDirectory);
-    }
-
-    case PackageType.Managed: {
-      return new SfpmManagedPackage(packageName, projectDirectory);
     }
 
     case PackageType.Source: {
