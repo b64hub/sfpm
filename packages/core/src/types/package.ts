@@ -34,7 +34,7 @@ export type MetadataFile = string | {
 export interface SfpmPackageIdentity {
   apiVersion?: string;
   packageName: string;
-  packageType: Omit<PackageType, 'managed'>;
+  packageType: PackageType;
   versionNumber?: string;
 }
 

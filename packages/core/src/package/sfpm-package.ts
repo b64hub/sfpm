@@ -5,11 +5,10 @@ import {
 import path from 'node:path';
 
 import ProjectConfig from '../project/project-config.js';
-import {NpmPackageSfpmMetadata} from '../types/npm.js';
 import {
   MetadataFile, PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageBuildOptions, SfpmUnlockedPackageMetadata,
 } from '../types/package.js';
-import {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 
 const TEST_COVERAGE_THRESHOLD = 75;
@@ -66,7 +65,7 @@ export default abstract class SfpmPackage {
     } as SfpmPackageMetadata;
   }
 
-  get apiVersion() {
+  get apiVersion(): string {
     return this._metadata.identity.apiVersion || this.projectDefinition?.sourceApiVersion || process.env.SFPM_API_VERSION || DEFAULT_API_VERSION;
   }
 
@@ -74,7 +73,7 @@ export default abstract class SfpmPackage {
     this._metadata.identity.apiVersion = val;
   }
 
-  get commitId() {
+  get commitId(): string | undefined {
     return this._metadata.source?.commitSHA;
   }
 
@@ -86,12 +85,16 @@ export default abstract class SfpmPackage {
     return this._metadata;
   }
 
-  get name() {
+  get name(): string {
     return this._metadata.identity.packageName;
   }
 
   set name(val: string) {
     this._metadata.identity.packageName = val;
+  }
+
+  get packageDefinition(): PackageDefinition | undefined {
+    return this._packageDefinition;
   }
 
   set packageDefinition(packageDefinition: PackageDefinition) {
@@ -106,10 +109,6 @@ export default abstract class SfpmPackage {
     this._packageDefinition = packageDefinition;
   }
 
-  get packageDefinition(): PackageDefinition | undefined {
-    return this._packageDefinition;
-  }
-
   get packageDirectory(): string | undefined {
     if (!this.packageDefinition?.path || !this.stagingDirectory) {
       return undefined;
@@ -118,7 +117,7 @@ export default abstract class SfpmPackage {
     return path.join(this.stagingDirectory, this.packageDefinition?.path);
   }
 
-  get packageName() {
+  get packageName(): string {
     return this._metadata.identity.packageName;
   }
 
@@ -126,7 +125,7 @@ export default abstract class SfpmPackage {
     this._metadata.identity.packageName = val;
   }
 
-  get sourceHash() {
+  get sourceHash(): string | undefined {
     return this._metadata.source?.sourceHash;
   }
 
@@ -134,11 +133,11 @@ export default abstract class SfpmPackage {
     this._metadata.source = {...this._metadata.source, sourceHash: val};
   }
 
-  get tag() {
+  get tag(): string {
     return this._metadata.source?.tag || `${this.name}@${this.version}`;
   }
 
-  get type() {
+  get type(): PackageType {
     return this._metadata.identity.packageType;
   }
 
@@ -146,7 +145,7 @@ export default abstract class SfpmPackage {
     this._metadata.identity.packageType = val;
   }
 
-  get version() {
+  get version(): string | undefined {
     return this._metadata.identity.versionNumber;
   }
 
@@ -170,9 +169,9 @@ export default abstract class SfpmPackage {
     }
 
     const segments = version.split('.');
-    const numberToBeAppended = Number.parseInt(buildNumber);
+    const numberToBeAppended = Number.parseInt(buildNumber, 10);
 
-    if (isNaN(numberToBeAppended)) {
+    if (Number.isNaN(numberToBeAppended)) {
       throw new TypeError('BuildNumber should be a number');
     }
 
@@ -220,7 +219,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
   }
 
   /**
-   * @description: Gets the list of fields configured for Field Tracking History in the package
+   * Gets the list of fields configured for Field Tracking History in the package
    */
   get fhtFields(): string[] {
     return this._metadata.content?.fhtFields || [];
@@ -232,7 +231,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
   }
 
   /**
-   * @description: Gets the list of fields configured for Feed Tracking in the package
+   * Gets the list of fields configured for Feed Tracking in the package
    */
   get ftFields(): string[] {
     return this._metadata.content?.ftFields || [];
@@ -290,7 +289,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
     .filter(c => c.type.id === 'permissionset');
   }
 
-  get picklists() {
+  get picklists(): string[] {
     return this._metadata.content?.picklists || [];
   }
 
@@ -306,6 +305,10 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
 
   get testClasses(): MetadataFile[] {
     return this._metadata.content?.apex?.tests || [];
+  }
+
+  get testCoverage(): number | undefined {
+    return this._metadata.validation?.testCoverage;
   }
 
   set testCoverage(coverage: number) {
@@ -350,13 +353,13 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
    * Returns the logical manifest of the package as a JSON-compatible object.
    */
   public async getManifestObject() {
-    return await this.getComponentSet().getObject();
+    return this.getComponentSet().getObject();
   }
 
   /**
-   * @description: Sets the list of fields configured for Field Tracking History in the package
+   * Sets the list of fields configured for Field Tracking History in the package
    */
-  public setFhtFields(names: string[]) {
+  public setFhtFields(names: string[]): void {
     this.updateContent({
       fields: {
         fht: names,
@@ -367,7 +370,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
   /**
    * @description: Sets the list of fields configured for Feed Tracking in the package
    */
-  public setFtFields(names: string[]) {
+  public setFtFields(names: string[]): void {
     this.updateContent({
       fields: {
         ft: names,
@@ -375,7 +378,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage {
     } as Partial<SfpmPackageContent>);
   }
 
-  public setPicklists(picklists: string[]) {
+  public setPicklists(picklists: string[]): void {
     this.updateContent({
       fields: {
         picklists,
@@ -500,12 +503,12 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
     return this._metadata as SfpmUnlockedPackageMetadata;
   }
 
-  set packageId(val: string) {
-    this.metadata.identity.packageId = val;
-  }
-
   get packageId() {
     return this.metadata.identity.packageId || '';
+  }
+
+  set packageId(val: string) {
+    this.metadata.identity.packageId = val;
   }
 
   get packageVersionId(): string | undefined {
@@ -552,20 +555,22 @@ export class SfpmSourcePackage extends SfpmMetadataPackage {
  * Managed packages are installed via version-install (Tooling API), never deployed as source.
  */
 export class SfpmManagedPackage extends SfpmPackage {
-  private readonly _packageVersionId: string;
-
-  constructor(packageName: string, projectDirectory: string, packageVersionId: string) {
+  constructor(packageName: string, projectDirectory: string, packageVersionId?: string) {
     super(packageName, projectDirectory, {
       identity: {
         packageName,
-        packageType: PackageType.Managed as any,
+        packageType: PackageType.Managed,
+        packageVersionId,
       },
     } as Partial<SfpmPackageMetadata>);
-    this._packageVersionId = packageVersionId;
   }
 
-  get packageVersionId(): string {
-    return this._packageVersionId;
+  get packageVersionId(): string | undefined {
+    return this.metadata.identity.packageVersionId;
+  }
+
+  set packageVersionId(versionId: string) {
+    this.metadata.identity.packageVersionId = versionId;
   }
 }
 
@@ -598,7 +603,6 @@ export class PackageFactory {
     const packageDefinition = allPackages.find(p => p.package === packageName);
 
     if (!packageDefinition) {
-      // Fallback: check managed packages
       return this.createManagedPackage(packageName);
     }
 
@@ -652,12 +656,14 @@ export class PackageFactory {
     }
 
     const {projectDirectory} = this.projectConfig;
-    return this.createPackageInstance(
+    const sfpmPackage = this.createPackageInstance(
       PackageType.Managed,
       packageName,
       projectDirectory,
-      managedDef,
     ) as SfpmManagedPackage;
+
+    sfpmPackage.packageVersionId = managedDef.packageVersionId;
+    return sfpmPackage;
   }
 
   /**
@@ -667,7 +673,6 @@ export class PackageFactory {
     packageType: PackageType,
     packageName: string,
     projectDirectory: string,
-    managedDef?: ManagedPackageDefinition,
   ): SfpmPackage {
     switch (packageType) {
     case PackageType.Data: {
@@ -675,11 +680,7 @@ export class PackageFactory {
     }
 
     case PackageType.Managed: {
-      if (!managedDef) {
-        throw new Error(`Managed package definition required for: ${packageName}`);
-      }
-
-      return new SfpmManagedPackage(packageName, projectDirectory, managedDef.packageVersionId);
+      return new SfpmManagedPackage(packageName, projectDirectory);
     }
 
     case PackageType.Source: {
