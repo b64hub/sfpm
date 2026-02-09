@@ -10,7 +10,7 @@ import { ArtifactService } from '../../artifacts/artifact-service.js';
 
 // Import strategies
 import SourceDeployStrategy from './strategies/source-deploy-strategy.js';
-import UnlockedVersionInstallStrategy from './strategies/unlocked-version-install-strategy.js';
+import VersionInstallStrategy from './strategies/version-install-strategy.js';
 
 export interface UnlockedPackageInstallerOptions {
     installationKey?: string;
@@ -55,7 +55,7 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
 
         // Initialize strategies (order matters: version install first, source deploy as fallback)
         this.strategies = [
-            new UnlockedVersionInstallStrategy(logger, this),
+            new VersionInstallStrategy(logger, this),
             new SourceDeployStrategy(logger, this),
         ];
 
