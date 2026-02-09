@@ -8,14 +8,11 @@ import type {OrchestrationResult, PackageResult} from '../../src/types/events.js
 import {GitService} from '../../src/git/git-service.js';
 import {BuildOrchestrator} from '../../src/package/build-orchestrator.js';
 import {PackageBuilder} from '../../src/package/package-builder.js';
-import {ProjectGraph} from '../../src/project/project-graph.js';
-import {VersionManager} from '../../src/project/version-manager.js';
 import {DependencyError} from '../../src/types/errors.js';
 
 // Mock external dependencies
 vi.mock('../../src/package/package-builder.js');
 vi.mock('../../src/git/git-service.js');
-vi.mock('../../src/project/version-manager.js');
 
 const mockLogger = {
   debug: vi.fn(),
@@ -87,14 +84,6 @@ describe('BuildOrchestrator', () => {
     // Default: single-level resolution with two packages
     mockResolution = createResolution([['pkg-a', 'pkg-b']]);
 
-    // Mock VersionManager to return a ProjectGraph with our resolution
-    const mockGraph = {
-      resolveDependencies: vi.fn().mockReturnValue(mockResolution),
-    };
-    vi.mocked(VersionManager.create).mockReturnValue({
-      getGraph: () => mockGraph,
-    } as any);
-
     // Mock GitService
     vi.mocked(GitService.initialize).mockResolvedValue({} as any);
 
@@ -110,6 +99,7 @@ describe('BuildOrchestrator', () => {
 
     orchestrator = new BuildOrchestrator(
       mockProjectConfig,
+      {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
       {devHub: 'test-hub'},
       mockLogger,
       '/test/project',
@@ -138,12 +128,13 @@ describe('BuildOrchestrator', () => {
         {'pkg-b': ['pkg-a']},
       );
 
-      const mockGraph = {
-        resolveDependencies: vi.fn().mockReturnValue(mockResolution),
-      };
-      vi.mocked(VersionManager.create).mockReturnValue({
-        getGraph: () => mockGraph,
-      } as any);
+      orchestrator = new BuildOrchestrator(
+        mockProjectConfig,
+        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
+        {devHub: 'test-hub'},
+        mockLogger,
+        '/test/project',
+      );
 
       const result = await orchestrator.buildAll(['pkg-b']);
 
@@ -160,12 +151,13 @@ describe('BuildOrchestrator', () => {
         {'pkg-b': ['pkg-a']},
       );
 
-      const mockGraph = {
-        resolveDependencies: vi.fn().mockReturnValue(mockResolution),
-      };
-      vi.mocked(VersionManager.create).mockReturnValue({
-        getGraph: () => mockGraph,
-      } as any);
+      orchestrator = new BuildOrchestrator(
+        mockProjectConfig,
+        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
+        {devHub: 'test-hub'},
+        mockLogger,
+        '/test/project',
+      );
 
       // Make pkg-a fail
       mockBuildPackage.mockRejectedValue(new Error('Build failed'));
@@ -187,14 +179,15 @@ describe('BuildOrchestrator', () => {
         levels: [],
       };
 
-      const mockGraph = {
-        resolveDependencies: vi.fn().mockReturnValue(circularResolution),
-      };
-      vi.mocked(VersionManager.create).mockReturnValue({
-        getGraph: () => mockGraph,
-      } as any);
+      const circularOrchestrator = new BuildOrchestrator(
+        mockProjectConfig,
+        {resolveDependencies: vi.fn().mockReturnValue(circularResolution)} as any,
+        {devHub: 'test-hub'},
+        mockLogger,
+        '/test/project',
+      );
 
-      await expect(orchestrator.buildAll(['pkg-a'])).rejects.toThrow(DependencyError);
+      await expect(circularOrchestrator.buildAll(['pkg-a'])).rejects.toThrow(DependencyError);
     });
 
     it('should filter to requested packages when includeDependencies is false', async () => {
@@ -204,15 +197,9 @@ describe('BuildOrchestrator', () => {
         {'pkg-b': ['pkg-a']},
       );
 
-      const mockGraph = {
-        resolveDependencies: vi.fn().mockReturnValue(mockResolution),
-      };
-      vi.mocked(VersionManager.create).mockReturnValue({
-        getGraph: () => mockGraph,
-      } as any);
-
       const noDepsOrchestrator = new BuildOrchestrator(
         mockProjectConfig,
+        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {devHub: 'test-hub', includeDependencies: false},
         mockLogger,
         '/test/project',

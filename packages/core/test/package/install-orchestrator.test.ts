@@ -7,13 +7,11 @@ import type {DependencyResolution} from '../../src/project/project-graph.js';
 import {ArtifactService} from '../../src/artifacts/artifact-service.js';
 import {InstallOrchestrator} from '../../src/package/install-orchestrator.js';
 import PackageInstaller from '../../src/package/package-installer.js';
-import {VersionManager} from '../../src/project/version-manager.js';
 import {DependencyError} from '../../src/types/errors.js';
 
 // Mock external dependencies
 vi.mock('../../src/package/package-installer.js');
 vi.mock('../../src/artifacts/artifact-service.js');
-vi.mock('../../src/project/version-manager.js');
 vi.mock('@salesforce/core', () => ({
   Org: {
     create: vi.fn().mockResolvedValue({
@@ -89,13 +87,6 @@ describe('InstallOrchestrator', () => {
     // Default: single level, two packages
     mockResolution = createResolution([['pkg-a', 'pkg-b']]);
 
-    const mockGraph = {
-      resolveDependencies: vi.fn().mockReturnValue(mockResolution),
-    };
-    vi.mocked(VersionManager.create).mockReturnValue({
-      getGraph: () => mockGraph,
-    } as any);
-
     // Mock ArtifactService
     vi.mocked(ArtifactService).mockImplementation(function (this: any) {
       this.preloadInstalledArtifacts = vi.fn().mockResolvedValue();
@@ -115,9 +106,9 @@ describe('InstallOrchestrator', () => {
 
     orchestrator = new InstallOrchestrator(
       mockProjectConfig,
+      {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
       {targetOrg: 'test@example.com'},
       mockLogger,
-      '/test/project',
     );
   });
 
@@ -142,12 +133,12 @@ describe('InstallOrchestrator', () => {
         {'pkg-b': ['pkg-a']},
       );
 
-      const mockGraph = {
-        resolveDependencies: vi.fn().mockReturnValue(mockResolution),
-      };
-      vi.mocked(VersionManager.create).mockReturnValue({
-        getGraph: () => mockGraph,
-      } as any);
+      orchestrator = new InstallOrchestrator(
+        mockProjectConfig,
+        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
+        {targetOrg: 'test@example.com'},
+        mockLogger,
+      );
 
       const result = await orchestrator.installAll(['pkg-b']);
 
@@ -162,12 +153,12 @@ describe('InstallOrchestrator', () => {
         {'pkg-b': ['pkg-a']},
       );
 
-      const mockGraph = {
-        resolveDependencies: vi.fn().mockReturnValue(mockResolution),
-      };
-      vi.mocked(VersionManager.create).mockReturnValue({
-        getGraph: () => mockGraph,
-      } as any);
+      orchestrator = new InstallOrchestrator(
+        mockProjectConfig,
+        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
+        {targetOrg: 'test@example.com'},
+        mockLogger,
+      );
 
       // Make pkg-a fail
       mockInstallPackage.mockRejectedValue(new Error('Install failed'));
@@ -189,14 +180,14 @@ describe('InstallOrchestrator', () => {
         levels: [],
       };
 
-      const mockGraph = {
-        resolveDependencies: vi.fn().mockReturnValue(circularResolution),
-      };
-      vi.mocked(VersionManager.create).mockReturnValue({
-        getGraph: () => mockGraph,
-      } as any);
+      const circularOrchestrator = new InstallOrchestrator(
+        mockProjectConfig,
+        {resolveDependencies: vi.fn().mockReturnValue(circularResolution)} as any,
+        {targetOrg: 'test@example.com'},
+        mockLogger,
+      );
 
-      await expect(orchestrator.installAll(['pkg-a'])).rejects.toThrow(DependencyError);
+      await expect(circularOrchestrator.installAll(['pkg-a'])).rejects.toThrow(DependencyError);
     });
 
     it('should filter to requested packages when includeDependencies is false', async () => {
@@ -205,18 +196,11 @@ describe('InstallOrchestrator', () => {
         {'pkg-b': ['pkg-a']},
       );
 
-      const mockGraph = {
-        resolveDependencies: vi.fn().mockReturnValue(mockResolution),
-      };
-      vi.mocked(VersionManager.create).mockReturnValue({
-        getGraph: () => mockGraph,
-      } as any);
-
       const noDepsOrchestrator = new InstallOrchestrator(
         mockProjectConfig,
+        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {includeDependencies: false, targetOrg: 'test@example.com'},
         mockLogger,
-        '/test/project',
       );
 
       const result = await noDepsOrchestrator.installAll(['pkg-b']);

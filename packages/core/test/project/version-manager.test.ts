@@ -2,11 +2,10 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { VersionManager, SinglePackageStrategy, AllPackagesStrategy, OrgDiffStrategy } from '../../src/project/version-manager.js';
 import { ProjectDefinition } from '../../src/types/project.js';
 import { OrgPackageVersionFetcher } from '../../src/types/org.js';
-import ProjectConfig from '../../src/project/project-config.js';
+import { ProjectGraph } from '../../src/project/project-graph.js';
 
 describe('VersionManager', () => {
     let mockProject: ProjectDefinition;
-    let mockProjectConfig: any;
 
     beforeEach(() => {
         mockProject = {
@@ -17,15 +16,11 @@ describe('VersionManager', () => {
             ],
             packageAliases: {}
         } as any;
-
-        mockProjectConfig = {
-            getProjectDefinition: vi.fn().mockReturnValue(mockProject),
-            save: vi.fn().mockResolvedValue(undefined),
-        };
     });
 
     test('should update single package (minor bump) and propagate to dependencies', async () => {
-        const vm = VersionManager.create(mockProjectConfig as any);
+        const graph = new ProjectGraph(mockProject);
+        const vm = VersionManager.create(graph, mockProject);
         const result = await vm.bump(
             'minor',
             { strategy: new SinglePackageStrategy('pkg-a') }
@@ -45,7 +40,8 @@ describe('VersionManager', () => {
     });
 
     test('should update all packages (patch bump)', async () => {
-        const vm = VersionManager.create(mockProjectConfig as any);
+        const graph = new ProjectGraph(mockProject);
+        const vm = VersionManager.create(graph, mockProject);
         const result = await vm.bump(
             'patch',
             { strategy: new AllPackagesStrategy() }
@@ -65,7 +61,8 @@ describe('VersionManager', () => {
             })
         };
 
-        const vm = VersionManager.create(mockProjectConfig as any);
+        const graph = new ProjectGraph(mockProject);
+        const vm = VersionManager.create(graph, mockProject);
         const result = await vm.bump(
             'patch',
             { strategy: new OrgDiffStrategy(mockFetcher) }
@@ -78,16 +75,14 @@ describe('VersionManager', () => {
         expect(pkgA?.newVersion).toBe('1.2.1-NEXT');
     });
 
-    test('should initialize and save project', async () => {
-        const vm = VersionManager.create(mockProjectConfig as any);
-
-        // Should have called getProjectDefinition during creation
-        expect(mockProjectConfig.getProjectDefinition).toHaveBeenCalled();
+    test('should return updated definition after bump', async () => {
+        const graph = new ProjectGraph(mockProject);
+        const vm = VersionManager.create(graph, mockProject);
 
         await vm.bump('minor', { strategy: new SinglePackageStrategy('pkg-a') });
-        await vm.save();
+        const updatedDefinition = vm.getUpdatedDefinition();
 
-        expect(mockProjectConfig.save).toHaveBeenCalled();
+        expect(updatedDefinition).toBeDefined();
+        expect(updatedDefinition.packageDirectories).toBeDefined();
     });
 });
-
