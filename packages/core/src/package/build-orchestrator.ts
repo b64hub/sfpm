@@ -2,6 +2,7 @@ import EventEmitter from 'node:events';
 
 import {GitService} from '../git/git-service.js';
 import ProjectConfig from '../project/project-config.js';
+import {ProjectGraph} from '../project/project-graph.js';
 import {
   AllBuildEvents,
   OrchestrationEvents,
@@ -146,13 +147,14 @@ export class BuildOrchestrator extends EventEmitter<AllBuildEvents & Orchestrati
 
   constructor(
     projectConfig: ProjectConfig,
+    graph: ProjectGraph,
     options: BuildOrchestratorOptions,
     logger?: Logger,
     projectDirectory: string = process.cwd(),
   ) {
     super();
     const task = new BuildOrchestrationTask(projectConfig, options, logger, projectDirectory);
-    this.orchestrator = new Orchestrator(projectConfig, options, task, logger, projectDirectory, this);
+    this.orchestrator = new Orchestrator(graph, options, task, logger, this);
   }
 
   /**

@@ -8,12 +8,12 @@ import {VersionManager} from './version-manager.js';
 
 export default class ProjectService {
   private static instance: ProjectService | undefined;
+  private readonly graph: ProjectGraph;
   private readonly projectConfig: ProjectConfig;
-  private readonly versionManager: VersionManager;
 
-  private constructor(projectConfig: ProjectConfig, versionManager: VersionManager) {
+  private constructor(projectConfig: ProjectConfig, graph: ProjectGraph) {
     this.projectConfig = projectConfig;
-    this.versionManager = versionManager;
+    this.graph = graph;
   }
 
   /**
@@ -38,9 +38,10 @@ export default class ProjectService {
   public static async create(projectPath?: string): Promise<ProjectService> {
     const sfProject = await SfProject.resolve(projectPath);
     const projectConfig = new ProjectConfig(sfProject);
-    const versionManager = VersionManager.create(projectConfig);
+    const definition = projectConfig.getProjectDefinition();
+    const graph = new ProjectGraph(definition);
 
-    return new ProjectService(projectConfig, versionManager);
+    return new ProjectService(projectConfig, graph);
   }
 
   /**
@@ -51,9 +52,10 @@ export default class ProjectService {
    */
   public static createFromProject(project: SfProject): ProjectService {
     const projectConfig = new ProjectConfig(project);
-    const versionManager = VersionManager.create(projectConfig);
+    const definition = projectConfig.getProjectDefinition();
+    const graph = new ProjectGraph(definition);
 
-    return new ProjectService(projectConfig, versionManager);
+    return new ProjectService(projectConfig, graph);
   }
 
   /**
@@ -111,17 +113,32 @@ export default class ProjectService {
   }
 
   /**
+   * Creates a VersionManager backed by this service's graph and definition.
+   */
+  public createVersionManager(): VersionManager {
+    const definition = this.projectConfig.getProjectDefinition();
+    return VersionManager.create(this.graph, definition);
+  }
+
+  /**
    * Returns the ProjectConfig instance managed by this service
    */
   public getProjectConfig(): ProjectConfig {
     return this.projectConfig;
   }
 
+  /**
+   * Returns the shared ProjectGraph instance built once during service creation.
+   */
   public getProjectGraph(): ProjectGraph {
-    return this.versionManager.getGraph();
+    return this.graph;
   }
 
-  public getVersionManager(): VersionManager {
-    return this.versionManager;
+  /**
+   * Persists an updated ProjectDefinition to sfdx-project.json.
+   * Typically called after VersionManager.getUpdatedDefinition().
+   */
+  public async saveProjectDefinition(definition: ProjectDefinition): Promise<void> {
+    await this.projectConfig.save(definition);
   }
 }

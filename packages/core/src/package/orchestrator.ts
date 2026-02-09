@@ -1,8 +1,6 @@
 import EventEmitter from 'node:events';
 
-import ProjectConfig from '../project/project-config.js';
 import {DependencyResolution, PackageNode, ProjectGraph} from '../project/project-graph.js';
-import {VersionManager} from '../project/version-manager.js';
 import {DependencyError} from '../types/errors.js';
 import {
   OrchestrationResult,
@@ -103,25 +101,22 @@ interface LevelOutcome {
  */
 export class Orchestrator<TContext = void> {
   private readonly emitter: OrchestratorEmitter;
+  private readonly graph: ProjectGraph;
   private readonly logger: Logger | undefined;
   private readonly options: OrchestratorOptions;
-  private readonly projectConfig: ProjectConfig;
-  private readonly projectDirectory: string;
   private readonly task: OrchestrationTask<TContext>;
 
   constructor(
-    projectConfig: ProjectConfig,
+    graph: ProjectGraph,
     options: OrchestratorOptions,
     task: OrchestrationTask<TContext>,
     logger?: Logger,
-    projectDirectory: string = process.cwd(),
     emitter: OrchestratorEmitter = new EventEmitter(),
   ) {
-    this.projectConfig = projectConfig;
+    this.graph = graph;
     this.options = options;
     this.task = task;
     this.logger = logger;
-    this.projectDirectory = projectDirectory;
     this.emitter = emitter;
   }
 
@@ -187,14 +182,6 @@ export class Orchestrator<TContext = void> {
     });
 
     return result;
-  }
-
-  /**
-   * Build the ProjectGraph from the current ProjectConfig via VersionManager.
-   */
-  private buildProjectGraph(): ProjectGraph {
-    const versionManager = VersionManager.create(this.projectConfig);
-    return versionManager.getGraph();
   }
 
   /**
@@ -362,8 +349,7 @@ export class Orchestrator<TContext = void> {
    * Filters out unrequested packages when `includeDependencies` is false.
    */
   private resolveLevels(packageNames: string[]): PackageNode[][] {
-    const graph = this.buildProjectGraph();
-    const resolution = graph.resolveDependencies(packageNames);
+    const resolution = this.graph.resolveDependencies(packageNames);
 
     this.checkCircularDependencies(resolution, packageNames);
 

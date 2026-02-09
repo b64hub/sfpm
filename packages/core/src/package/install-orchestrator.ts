@@ -3,6 +3,7 @@ import EventEmitter from 'node:events';
 
 import {ArtifactService} from '../artifacts/artifact-service.js';
 import ProjectConfig from '../project/project-config.js';
+import {ProjectGraph} from '../project/project-graph.js';
 import {
   InstallEvents,
   OrchestrationEvents,
@@ -143,13 +144,13 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
 
   constructor(
     projectConfig: ProjectConfig,
+    graph: ProjectGraph,
     options: InstallOrchestratorOptions,
     logger?: Logger,
-    projectDirectory: string = process.cwd(),
   ) {
     super();
     const task = new InstallOrchestrationTask(projectConfig, options, logger);
-    this.orchestrator = new Orchestrator(projectConfig, options, task, logger, projectDirectory, this);
+    this.orchestrator = new Orchestrator(graph, options, task, logger, this);
   }
 
   /**
