@@ -53,6 +53,7 @@ export default class Install extends SfpmCommand {
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
     const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getProjectConfig();
+    const projectGraph = projectService.getProjectGraph();
 
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
@@ -83,9 +84,9 @@ export default class Install extends SfpmCommand {
 
     const orchestrator = new InstallOrchestrator(
       projectConfig,
+      projectGraph,
       {...installOptions, includeDependencies: !flags['no-dependencies']},
       logger,
-      projectDir,
     )
 
     // Attach renderer to orchestrator — it forwards all installer events

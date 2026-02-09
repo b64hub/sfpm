@@ -4,7 +4,6 @@ import {simpleGit} from 'simple-git';
 
 import {OrgPackageVersionFetcher} from '../types/org.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
-import ProjectConfig from './project-config.js';
 import {PackageNode, ProjectGraph} from './project-graph.js';
 
 const NEXT_SUFFIX = '.NEXT';
@@ -30,31 +29,23 @@ export interface UpdateStrategy {
 }
 
 export declare interface VersionManagerEvents {
-  on(event: 'loading', listener: () => void): this;
-  on(event: 'loaded', listener: (graph: ProjectGraph) => void): this;
   on(event: 'checking', listener: () => void): this;
   on(event: 'checked', listener: (result: VersionUpdateResult) => void): this;
-  on(event: 'saving', listener: () => void): this;
-  on(event: 'saved', listener: () => void): this;
 }
 
 export class VersionManager extends EventEmitter implements VersionManagerEvents {
+  private readonly definition: ProjectDefinition;
   private readonly graph: ProjectGraph;
-  private readonly projectConfig: ProjectConfig;
   private readonly trackers: Map<string, VersionTracker> = new Map();
 
-  private constructor(projectConfig: ProjectConfig) {
+  constructor(graph: ProjectGraph, definition: ProjectDefinition) {
     super();
-    this.projectConfig = projectConfig;
-    this.emit('loading');
-    const definition = this.projectConfig.getProjectDefinition();
-    this.graph = new ProjectGraph(definition);
+    this.graph = graph;
+    this.definition = definition;
     for (const node of this.graph.getAllNodes()
     .filter(node => !node.isManaged)) {
       this.trackers.set(node.name, new VersionTracker(node));
     }
-
-    this.emit('loaded', this.graph);
   }
 
   /**
@@ -91,13 +82,13 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
 
   /**
    * Creates and initializes a new VersionManager instance.
-   * This is the recommended way to create a VersionManager.
    *
-   * @param projectConfig - The ProjectConfig instance to manage versions for
+   * @param graph - A pre-built ProjectGraph
+   * @param definition - The ProjectDefinition used to build the graph
    * @returns Fully initialized VersionManager instance
    */
-  public static create(projectConfig: ProjectConfig): VersionManager {
-    return new VersionManager(projectConfig);
+  public static create(graph: ProjectGraph, definition: ProjectDefinition): VersionManager {
+    return new VersionManager(graph, definition);
   }
 
   public static formatVersion(major: number, minor: number, patch: number, build: number): string {
@@ -174,15 +165,11 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
   }
 
   /**
-   * Returns the modified ProjectDefinition
+   * Returns a copy of the ProjectDefinition with bumped versions applied.
+   * The caller is responsible for persisting the result.
    */
-  getUpdatedProjectConfig(): ProjectDefinition {
-    if (!this.projectConfig) {
-      throw new Error('Project not loaded');
-    }
-
-    const definition = this.projectConfig.getProjectDefinition();
-    const newConfig = {...definition};
+  getUpdatedDefinition(): ProjectDefinition {
+    const newConfig = {...this.definition};
     newConfig.packageDirectories = (newConfig.packageDirectories as PackageDefinition[]).map((pkgDef: PackageDefinition) => {
       const tracker = this.trackers.get(pkgDef.package);
       if (tracker && tracker.isUpdated) {
@@ -193,13 +180,6 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
     });
 
     return newConfig;
-  }
-
-  public async save(): Promise<void> {
-    this.emit('saving');
-    const updatedDefinition = this.getUpdatedProjectConfig();
-    await this.projectConfig.save(updatedDefinition);
-    this.emit('saved');
   }
 
   private updateDependencies(updatedPackages: VersionTracker[]): VersionTracker[] {

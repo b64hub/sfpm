@@ -1,15 +1,14 @@
-import { EventEmitter } from "node:events";
-import ProjectService from "./project/project-service.js";
-import { AllBuildEvents } from "./types/events.js";
+import {EventEmitter} from 'node:events';
 
+import ProjectService from './project/project-service.js';
+import {AllBuildEvents} from './types/events.js';
 // Import builders to trigger decorator registration
 import './package/builders/unlocked-package-builder.js';
 import './package/builders/source-package-builder.js';
-
 // Import installers to trigger decorator registration
 import './package/installers/unlocked-package-installer.js';
 import './package/installers/source-package-installer.js';
-
+import './package/installers/managed-package-installer.js';
 // Import analyzers to trigger decorator registration
 import './package/analyzers/apex-type-analyzer.js';
 import './package/analyzers/fht-analyzer.js';
@@ -28,44 +27,46 @@ export class SfpmCore extends EventEmitter<AllBuildEvents> {
    * Creates and initializes a new SfpmCore instance.
    * This is the recommended way to create an SfpmCore instance.
    */
-  static async create(options: { apiKey: string; verbose?: boolean; projectPath?: string }): Promise<SfpmCore> {
+  static async create(options: {apiKey: string; projectPath?: string; verbose?: boolean;}): Promise<SfpmCore> {
     const core = new SfpmCore();
     core.project = await ProjectService.create(options.projectPath);
     return core;
   }
 }
-export * from './project/version-manager.js';
-export { default as ProjectService } from './project/project-service.js';
-export { default as ProjectConfig } from './project/project-config.js';
-export { default as SfpmPackage, PackageFactory } from './package/sfpm-package.js';
-export * from './types/events.js';
-export * from './types/errors.js';
-export * from './types/project.js';
-export * from './project/project-graph.js';
-export * from './types/package.js';
-export { PackageBuilder } from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
-export { BuildOrchestrator, BuildOrchestrationTask, type BuildOrchestratorOptions } from './package/build-orchestrator.js';
-export { default as PackageInstaller, type InstallOptions, type InstallResult } from './package/package-installer.js';
-export { InstallOrchestrator, InstallOrchestrationTask, type InstallOrchestratorOptions } from './package/install-orchestrator.js';
-export { Orchestrator, type OrchestratorOptions, type OrchestratorEmitter, type OrchestrationTask } from './package/orchestrator.js';
-export { InstallerRegistry } from './package/installers/installer-registry.js';
-export { ArtifactService, type InstallTarget } from './artifacts/artifact-service.js';
-export { ArtifactRepository } from './artifacts/artifact-repository.js';
-export { ArtifactResolver } from './artifacts/artifact-resolver.js';
-export { default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider } from './artifacts/artifact-assembler.js';
-export { 
-    RegistryClient, 
-    NpmRegistryClient, 
-    readNpmConfig, 
-    readNpmConfigSync,
-    type RegistryClientConfig, 
-    type RegistryPackageInfo, 
-    type RegistryVersionInfo, 
-    type DownloadResult,
-    type NpmConfigResult,
+export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
+export {ArtifactRepository} from './artifacts/artifact-repository.js';
+export {ArtifactResolver} from './artifacts/artifact-resolver.js';
+export {ArtifactService, type InstallTarget} from './artifacts/artifact-service.js';
+export {
+  type DownloadResult,
+  type NpmConfigResult,
+  NpmRegistryClient,
+  readNpmConfig,
+  readNpmConfigSync,
+  RegistryClient,
+  type RegistryClientConfig,
+  type RegistryPackageInfo,
+  type RegistryVersionInfo,
 } from './artifacts/registry/index.js';
+export {GitService} from './git/git-service.js';
+export {default as Git} from './git/git.js';
+export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions} from './package/build-orchestrator.js';
+export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './package/install-orchestrator.js';
+export {InstallerRegistry} from './package/installers/installer-registry.js';
+export {
+  type OrchestrationTask, Orchestrator, type OrchestratorEmitter, type OrchestratorOptions,
+} from './package/orchestrator.js';
+export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
+export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
+export {PackageFactory, SfpmManagedPackage, default as SfpmPackage} from './package/sfpm-package.js';
+export {default as ProjectConfig} from './project/project-config.js';
+export * from './project/project-graph.js';
+export {default as ProjectService} from './project/project-service.js';
+export * from './project/version-manager.js';
 export * from './types/artifact.js';
-export * from './types/npm.js';
+export * from './types/errors.js';
+export * from './types/events.js';
 export * from './types/logger.js';
-export { GitService } from './git/git-service.js';
-export { default as Git } from './git/git.js';
+export * from './types/npm.js';
+export * from './types/package.js';
+export * from './types/project.js';
