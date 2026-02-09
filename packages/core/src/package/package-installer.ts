@@ -6,10 +6,11 @@ import ProjectConfig from '../project/project-config.js';
 import {Logger} from '../types/logger.js';
 import {InstallationMode, InstallationSource, PackageType} from '../types/package.js';
 import {InstallerRegistry} from './installers/installer-registry.js';
-import SfpmPackage, {PackageFactory, SfpmUnlockedPackage} from './sfpm-package.js';
+import SfpmPackage, {PackageFactory, SfpmManagedPackage, SfpmUnlockedPackage} from './sfpm-package.js';
 // Import installers to trigger registration
 import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
+import './installers/managed-package-installer.js';
 
 export interface InstallOptions {
   /** Force reinstall even if already installed with matching version/hash */
@@ -90,6 +91,11 @@ export default class PackageInstaller extends EventEmitter {
   public async installPackage(packageName: string): Promise<InstallResult> {
     // Create base package from project config
     const sfpmPackage = new PackageFactory(this.projectConfig).createFromName(packageName);
+
+    // Managed packages: skip artifact resolution, go straight to version install
+    if (sfpmPackage instanceof SfpmManagedPackage) {
+      return this.installManagedPackage(sfpmPackage);
+    }
 
     // Ensure we have an org connection
     if (!this.org) {
@@ -210,6 +216,58 @@ export default class PackageInstaller extends EventEmitter {
       targetOrg: this.options.targetOrg,
       timestamp: new Date(),
     });
+  }
+
+  /**
+   * Fast path for managed packages — no artifact resolution needed.
+   * Uses the packageVersionId already known from packageAliases.
+   */
+  private async installManagedPackage(sfpmPackage: SfpmManagedPackage): Promise<InstallResult> {
+    const {packageName} = sfpmPackage;
+
+    this.emit('install:start', {
+      installReason: 'managed dependency',
+      packageName,
+      packageType: PackageType.Managed,
+      packageVersion: sfpmPackage.packageVersionId,
+      source: 'managed',
+      targetOrg: this.options.targetOrg,
+      timestamp: new Date(),
+    });
+
+    try {
+      const InstallerConstructor = InstallerRegistry.getInstaller(PackageType.Managed as any);
+      if (!InstallerConstructor) {
+        throw new Error('No installer registered for package type: managed');
+      }
+
+      const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger);
+      await installer.connect(this.options.targetOrg);
+      await installer.exec();
+
+      this.emit('install:complete', {
+        packageName,
+        packageType: PackageType.Managed,
+        packageVersion: sfpmPackage.packageVersionId,
+        source: 'managed',
+        success: true,
+        targetOrg: this.options.targetOrg,
+        timestamp: new Date(),
+      });
+
+      this.logger?.info(`Successfully installed managed package ${packageName}`);
+
+      return {
+        installed: true,
+        packageName,
+        skipped: false,
+        version: sfpmPackage.packageVersionId,
+      };
+    } catch (error) {
+      this.emitError(sfpmPackage, error as Error);
+      this.logger?.error(`Failed to install managed package ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
   }
 
   /**
