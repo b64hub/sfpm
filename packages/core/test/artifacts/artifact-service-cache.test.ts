@@ -58,9 +58,10 @@ describe('ArtifactService caching', () => {
     vi.restoreAllMocks();
   });
 
-  describe('preloadInstalledArtifacts', () => {
-    it('should query all artifacts and populate cache', async () => {
-      await service.preloadInstalledArtifacts();
+  describe('lazy-loading cache', () => {
+    it('should query all artifacts and populate cache on first access', async () => {
+      // First access triggers lazy load
+      await service.getInstalledPackages();
 
       expect(queryFn).toHaveBeenCalledTimes(1);
       expect(queryFn.mock.calls[0][0]).toContain('SfpmArtifact__c');
@@ -69,23 +70,29 @@ describe('ArtifactService caching', () => {
     it('should handle query failure gracefully', async () => {
       queryFn.mockRejectedValue(new Error('SOQL error'));
 
-      await service.preloadInstalledArtifacts();
+      // Should not throw; cache remains null and logs debug message
+      await service.getInstalledPackages();
 
-      // Should not throw; cache remains null
-      expect(mockLogger.warn).toHaveBeenCalled();
+      expect(mockLogger.debug).toHaveBeenCalled();
+      expect(mockLogger.debug.mock.calls.some(call =>
+        call[0].includes('Unable to load installed artifacts cache'))).toBe(true);
     });
 
-    it('should throw if no org is present', async () => {
+    it('should require org connection for cache-dependent operations', async () => {
       const serviceNoOrg = new ArtifactService(mockLogger);
 
-      await expect(serviceNoOrg.preloadInstalledArtifacts()).rejects.toThrow('Org connection required');
+      // Methods that need cache require org
+      await expect(serviceNoOrg.getInstalledPackages()).rejects.toThrow('Org connection required for getInstalledPackages');
+
+      await expect(serviceNoOrg.isArtifactInstalled('test-pkg')).rejects.toThrow('Org connection required for isArtifactInstalled');
     });
   });
 
   describe('isArtifactInstalled (cached)', () => {
     beforeEach(async () => {
-      await service.preloadInstalledArtifacts();
-      queryFn.mockClear(); // reset count after preload
+      // Trigger lazy load by accessing cache
+      await service.getInstalledPackages();
+      queryFn.mockClear(); // reset count after cache load
     });
 
     it('should return cached result without additional SOQL', async () => {
@@ -121,8 +128,8 @@ describe('ArtifactService caching', () => {
      * For direct verification, we rely on the SOQL query count.
      */
     it('should use cache for record ID lookup during upsert flow', async () => {
-      // Preload
-      await service.preloadInstalledArtifacts();
+      // Trigger lazy load
+      await service.getInstalledPackages();
       queryFn.mockClear();
 
       // Mock the connection.sobject().upsert() path used by upsertArtifact
@@ -142,7 +149,8 @@ describe('ArtifactService caching', () => {
 
   describe('clearCache', () => {
     it('should force subsequent calls to query the org', async () => {
-      await service.preloadInstalledArtifacts();
+      // Trigger lazy load
+      await service.getInstalledPackages();
       queryFn.mockClear();
 
       service.clearCache();
@@ -155,7 +163,8 @@ describe('ArtifactService caching', () => {
 
   describe('invalidatePackage', () => {
     it('should remove a single package from cache', async () => {
-      await service.preloadInstalledArtifacts();
+      // Trigger lazy load
+      await service.getInstalledPackages();
       queryFn.mockClear();
 
       service.invalidatePackage('pkg-a');

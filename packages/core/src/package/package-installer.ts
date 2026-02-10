@@ -5,8 +5,9 @@ import {ArtifactService, InstallTarget} from '../artifacts/artifact-service.js';
 import ProjectConfig from '../project/project-config.js';
 import {Logger} from '../types/logger.js';
 import {InstallationMode, InstallationSource, PackageType} from '../types/package.js';
-import {InstallerRegistry} from './installers/installer-registry.js';
+import {Installer, InstallerRegistry} from './installers/installer-registry.js';
 import {ManagedPackageRef} from './installers/types.js';
+import {PackageService} from './package-service.js';
 import SfpmPackage, {PackageFactory, SfpmUnlockedPackage} from './sfpm-package.js';
 // Import installers to trigger registration
 import './installers/unlocked-package-installer.js';
@@ -200,11 +201,69 @@ export default class PackageInstaller extends EventEmitter {
   }
 
   /**
+   * Forward sub-events from a concrete installer (e.g. ManagedPackageInstaller)
+   * through this PackageInstaller so they propagate to the orchestrator/renderer.
+   * Injects `packageName` into each event payload since concrete installers may omit it.
+   */
+  private forwardInstallerEvents(installer: EventEmitter | Installer, packageName: string): void {
+    // Guard: concrete installers extend EventEmitter, but the Installer interface
+    // does not require it. Only forward when the installer actually emits events.
+    if (typeof (installer as any).on !== 'function') return;
+
+    const emitter = installer as EventEmitter;
+    const events = [
+      'connection:start',
+      'connection:complete',
+      'version-install:start',
+      'version-install:progress',
+      'version-install:complete',
+      'deployment:start',
+      'deployment:progress',
+      'deployment:complete',
+    ];
+
+    for (const event of events) {
+      emitter.on(event, (data: any) => {
+        this.emit(event, {...data, packageName});
+      });
+    }
+  }
+
+  /**
    * Fast path for managed packages — no artifact resolution needed.
    * Uses the packageVersionId already known from packageAliases.
+   * Checks if the version is already installed before attempting installation.
    */
   private async installManagedPackage(managedRef: ManagedPackageRef): Promise<InstallResult> {
     const {packageName} = managedRef;
+
+    // Check if the managed package version is already installed (unless forced)
+    if (!this.options.force) {
+      if (!this.org) {
+        this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
+      }
+
+      try {
+        const packageService = PackageService.getInstance()
+        .setOrg(this.org);
+        if (this.logger) packageService.setLogger(this.logger);
+        const isInstalled = await packageService.isSubscriberVersionInstalled(managedRef.packageVersionId);
+        if (isInstalled) {
+          const reason = `Version ${managedRef.packageVersionId} already installed`;
+          this.logger?.info(`Skipping managed package ${packageName}: ${reason}`);
+          this.emitManagedSkip(packageName, managedRef.packageVersionId, reason);
+          return {
+            installed: false,
+            packageName,
+            skipped: true,
+            skipReason: reason,
+            version: managedRef.packageVersionId,
+          };
+        }
+      } catch (error) {
+        this.logger?.warn(`Unable to check if ${packageName} is installed, proceeding with install: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
 
     this.emitManagedStart(packageName, managedRef.packageVersionId);
 
@@ -215,6 +274,12 @@ export default class PackageInstaller extends EventEmitter {
       }
 
       const installer = new InstallerConstructor(this.options.targetOrg, managedRef, this.logger);
+
+      // Forward sub-events (connection:*, version-install:*) from the managed
+      // installer through this PackageInstaller so they reach the renderer.
+      // Inject packageName into payloads since ManagedPackageInstaller omits it.
+      this.forwardInstallerEvents(installer, packageName);
+
       await installer.connect(this.options.targetOrg);
       await installer.exec();
 
@@ -290,6 +355,11 @@ export default class PackageInstaller extends EventEmitter {
       }
 
       const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger);
+
+      // Forward sub-events (connection:*, deployment:*, version-install:*) from the
+      // concrete installer through this PackageInstaller so they reach the renderer.
+      this.forwardInstallerEvents(installer, packageName);
+
       await installer.connect(this.options.targetOrg);
       await installer.exec();
 

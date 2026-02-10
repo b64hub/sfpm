@@ -55,6 +55,8 @@ export class PackageService {
     'SubscriberPackageVersion.Package2ContainerOptions',
     'SubscriberPackageVersion.IsOrgDependent',
   ];
+  /** Singleton instance for shared cache across operations */
+  private static instance?: PackageService;
   private static readonly PACKAGE2_FIELDS = [
     'Id',
     'Name',
@@ -79,12 +81,38 @@ export class PackageService {
   ];
   /** Cached list of all installed 2GP packages. Populated by preload or first getAllInstalled2GPPackages() call with caching. */
   private installed2GPCache: null | SubscriberPackage[] = null;
-  private logger: Logger;
-  private org: Org;
+  private logger?: Logger;
+  private org?: Org;
 
-  constructor(org: Org, logger: Logger) {
-    this.org = org;
-    this.logger = logger;
+  constructor(org?: Org, logger?: Logger) {
+    if (org) this.org = org;
+    if (logger) this.logger = logger;
+  }
+
+  /**
+   * Get the singleton instance of PackageService.
+   * Use this to share cached subscriber package data across multiple operations.
+   *
+   * @example
+   * ```typescript
+   * const service = PackageService.getInstance()
+   *   .setOrg(org)
+   *   .setLogger(logger);
+   * ```
+   */
+  public static getInstance(): PackageService {
+    if (!PackageService.instance) {
+      PackageService.instance = new PackageService();
+    }
+
+    return PackageService.instance;
+  }
+
+  /**
+   * Reset the singleton instance (primarily for testing).
+   */
+  public static resetInstance(): void {
+    PackageService.instance = undefined;
   }
 
   /**
@@ -133,7 +161,7 @@ export class PackageService {
     isValidatedPackages?: boolean,
     isReleased?: boolean,
   ): Promise<Package2Version[]> {
-    if (!(await this.org.determineIfDevHubOrg())) {
+    if (!(await this.getOrg().determineIfDevHubOrg())) {
       throw new Error('Package2Version Information can only be fetched from a DevHub');
     }
 
@@ -194,7 +222,7 @@ export class PackageService {
       return records;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Unable to fetch package versions for package id: ${package2Id}. Error: ${message}`);
+      this.logger?.error(`Unable to fetch package versions for package id: ${package2Id}. Error: ${message}`);
       throw error;
     }
   }
@@ -211,8 +239,40 @@ export class PackageService {
       return records[0];
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Unable to fetch package version for subscriber id: ${subscriberPackageVersionId}. Error: ${message}`);
+      this.logger?.error(`Unable to fetch package version for subscriber id: ${subscriberPackageVersionId}. Error: ${message}`);
       throw error;
+    }
+  }
+
+  /**
+   * Check whether a specific subscriber package version (04t ID) is already installed.
+   *
+   * Uses the cache when available, otherwise performs a targeted SOQL query
+   * against InstalledSubscriberPackage filtered by SubscriberPackageVersion.Id.
+   *
+   * @param subscriberPackageVersionId - The 04t subscriber package version ID
+   * @returns True if the exact version is installed in the org
+   */
+  public async isSubscriberVersionInstalled(subscriberPackageVersionId: string): Promise<boolean> {
+    // Check cache first if available
+    if (this.installed2GPCache) {
+      return this.installed2GPCache.some(pkg => pkg.subscriberPackageVersionId === subscriberPackageVersionId);
+    }
+
+    // Targeted query for the specific version
+    try {
+      const query = soql`
+        SELECT Id
+        FROM InstalledSubscriberPackage
+        WHERE SubscriberPackageVersion.Id = '${subscriberPackageVersionId}'
+        LIMIT 1
+      `.trim();
+
+      const records = await this.query<any>(query, true);
+      return records.length > 0;
+    } catch {
+      this.logger?.warn(`Unable to check if subscriber version ${subscriberPackageVersionId} is installed`);
+      return false;
     }
   }
 
@@ -222,7 +282,7 @@ export class PackageService {
    */
   public async listAllPackages(): Promise<Package2[]> {
     try {
-      if (!await this.org.determineIfDevHubOrg()) {
+      if (!await this.getOrg().determineIfDevHubOrg()) {
         throw new Error('Package Type Information can only be fetched from a DevHub');
       }
 
@@ -247,7 +307,7 @@ export class PackageService {
         throw error;
       }
 
-      this.logger.warn('Unable to list packages from DevHub');
+      this.logger?.warn('Unable to list packages from DevHub');
       return [];
     }
   }
@@ -260,14 +320,41 @@ export class PackageService {
    */
   public async preloadInstalled2GPPackages(): Promise<void> {
     this.installed2GPCache = await this.queryInstalledSubscriberPackages();
-    this.logger.debug(`Preloaded ${this.installed2GPCache.length} installed 2GP package(s) into cache`);
+    this.logger?.debug(`Preloaded ${this.installed2GPCache.length} installed 2GP package(s) into cache`);
+  }
+
+  /**
+   * Set the logger for this instance. Chainable.
+   */
+  public setLogger(logger: Logger): this {
+    this.logger = logger;
+    return this;
+  }
+
+  /**
+   * Set the org connection for this instance. Chainable.
+   */
+  public setOrg(org: Org): this {
+    this.org = org;
+    return this;
+  }
+
+  /**
+   * Private helper to get the org, throwing if not set.
+   */
+  private getOrg(): Org {
+    if (!this.org) {
+      throw new Error('Org connection required for PackageService');
+    }
+
+    return this.org;
   }
 
   /**
    * Private query helper method for package queries
    */
   private async query<T>(query: string, isTooling: boolean): Promise<T[]> {
-    const conn = this.org.getConnection();
+    const conn = this.getOrg().getConnection();
     const records = isTooling ? (await conn.tooling.query(query)).records : (await conn.query(query)).records;
     return records as T[];
   }
@@ -311,37 +398,11 @@ export class PackageService {
 
       return packages;
     } catch {
-      this.logger.warn('Unable to fetch installed subscriber packages from org');
+      this.logger?.warn('Unable to fetch installed subscriber packages from org');
       return [];
     }
   }
 }
 
 export default PackageService;
-
-// async fetchByPackageBranchAndName(
-//     packageBranch: string,
-//     packageName: string,
-//     versionNumber?: string,
-//     ): Promise<Package2Version[]> {
-
-//     let query = this.query;
-
-//     let whereClause: string = `where Branch='${packageBranch}' and Package2.Name ='${packageName}' `;
-//     if (versionNumber) {
-//         // TODO: validate version number
-//         const versions = versionNumber.split('.');
-//         if (versions[0]) whereClause += `and MajorVersion=${versions[0]} `;
-//         if (versions[1]) whereClause += `and MinorVersion=${versions[1]} `;
-//         if (versions[2]) whereClause += `and PatchVersion=${versions[2]} `;
-//     }
-//     query += whereClause;
-
-//     let orderByClause: string = `order by CreatedDate desc`;
-//     query += orderByClause;
-
-//     const records = await QueryHelper.query<Package2Version>(query, this.conn, true);
-//     return records;
-
-// }
 

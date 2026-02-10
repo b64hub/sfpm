@@ -294,8 +294,10 @@ export type AllBuildEvents = AssemblyEvents & BuildEvents & SourceBuildEvents & 
 export interface InstallStartEvent extends BaseEvent {
   installReason?: string;
   packageType: PackageType;
+  packageVersionId?: string;
   source?: string;
   targetOrg: string;
+  versionNumber?: string;
 }
 
 export interface InstallSkipEvent extends BaseEvent {
@@ -306,15 +308,19 @@ export interface InstallSkipEvent extends BaseEvent {
 
 export interface InstallCompleteEvent extends BaseEvent {
   packageType: PackageType;
+  packageVersionId?: string;
   source?: string;
   success: boolean;
   targetOrg: string;
+  versionNumber?: string;
 }
 
 export interface InstallErrorEvent extends BaseEvent {
   error: string;
   packageType: PackageType;
+  packageVersionId?: string;
   targetOrg: string;
+  versionNumber?: string;
 }
 
 export interface DeploymentStartEvent extends BaseEvent {

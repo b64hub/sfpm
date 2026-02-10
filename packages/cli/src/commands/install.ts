@@ -80,6 +80,7 @@ export default class Install extends SfpmCommand {
         log: (msg: string) => this.log(msg),
       },
       mode,
+      targetOrg: flags['target-org'],
     });
 
     const orchestrator = new InstallOrchestrator(

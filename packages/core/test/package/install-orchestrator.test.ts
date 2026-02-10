@@ -78,6 +78,7 @@ describe('InstallOrchestrator', () => {
   let mockProjectConfig: any;
   let mockResolution: DependencyResolution;
   let mockInstallPackage: ReturnType<typeof vi.fn>;
+  let mockArtifactInstance: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -87,12 +88,20 @@ describe('InstallOrchestrator', () => {
     // Default: single level, two packages
     mockResolution = createResolution([['pkg-a', 'pkg-b']]);
 
-    // Mock ArtifactService
+    // Mock ArtifactService with singleton pattern
+    mockArtifactInstance = {
+      clearCache: vi.fn(),
+      setLogger: vi.fn().mockReturnThis(),
+      setOrg: vi.fn().mockReturnThis(),
+    };
+    
     vi.mocked(ArtifactService).mockImplementation(function (this: any) {
-      this.preloadInstalledArtifacts = vi.fn().mockResolvedValue();
-      this.clearCache = vi.fn();
+      Object.assign(this, mockArtifactInstance);
       return this;
     } as any);
+    
+    // Mock the static getInstance method
+    (ArtifactService as any).getInstance = vi.fn().mockReturnValue(mockArtifactInstance);
 
     // Mock PackageInstaller
     mockInstallPackage = vi.fn().mockResolvedValue({skipped: false});
@@ -210,19 +219,22 @@ describe('InstallOrchestrator', () => {
       expect(mockInstallPackage).toHaveBeenCalledTimes(1);
     });
 
-    it('should preload artifact cache before installing', async () => {
+    it('should create and share artifact service with lazy-loaded cache', async () => {
       await orchestrator.installAll(['pkg-a']);
 
-      // ArtifactService should have been created and preloaded
-      const artifactInstance = vi.mocked(ArtifactService).mock.results[0]?.value;
-      expect(artifactInstance.preloadInstalledArtifacts).toHaveBeenCalledTimes(1);
+      // getInstance should have been called to get the singleton
+      expect(ArtifactService.getInstance).toHaveBeenCalled();
+      // setOrg and setLogger should be called to configure the singleton
+      expect(mockArtifactInstance.setOrg).toHaveBeenCalled();
+      expect(mockArtifactInstance.setLogger).toHaveBeenCalled();
+      // Note: Cache is now lazy-loaded on first access, not preloaded explicitly
     });
 
     it('should share org and artifact service across all installers', async () => {
       await orchestrator.installAll(['pkg-a', 'pkg-b']);
 
-      // A single ArtifactService should be created
-      expect(ArtifactService).toHaveBeenCalledTimes(1);
+      // getInstance should be called once (singleton pattern)
+      expect(ArtifactService.getInstance).toHaveBeenCalledTimes(1);
       // Two installers created, both receiving the same org and artifact service
       expect(PackageInstaller).toHaveBeenCalledTimes(2);
     });
