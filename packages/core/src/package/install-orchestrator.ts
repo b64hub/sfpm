@@ -68,7 +68,6 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
       this.options,
       this.logger,
       context.org,
-      context.artifactService,
     );
 
     this.forwardInstallerEvents(installer, emitter);
@@ -97,8 +96,12 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
 
   async setup(): Promise<InstallContext> {
     const org = await Org.create({aliasOrUsername: this.options.targetOrg});
-    const artifactService = new ArtifactService(this.logger, org);
-    await artifactService.preloadInstalledArtifacts();
+    
+    // Use singleton instance - cache is lazy-loaded automatically on first access
+    const artifactService = ArtifactService.getInstance()
+      .setOrg(org)
+      .setLogger(this.logger);
+    
     return {artifactService, org};
   }
 

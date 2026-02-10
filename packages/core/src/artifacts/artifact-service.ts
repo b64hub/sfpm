@@ -58,7 +58,11 @@ interface CachedArtifact {
 }
 
 export class ArtifactService {
-  /** In-memory cache of installed artifacts keyed by package name. Populated by preloadInstalledArtifacts(). */
+  /** Singleton instance for shared cache across operations */
+  private static instance?: ArtifactService;
+  /** Track if we've attempted to load the cache (even if it failed) to avoid repeated attempts */
+  private cacheLoadAttempted = false;
+  /** In-memory cache of installed artifacts keyed by package name. Lazy-loaded on first access. */
   private installedArtifactsCache: Map<string, CachedArtifact> | null = null;
   private logger?: Logger;
   private org?: Org;
@@ -69,11 +73,42 @@ export class ArtifactService {
   }
 
   /**
+   * Get the singleton instance of ArtifactService.
+   * Use this to share the preloaded cache across multiple operations.
+   *
+   * @example
+   * ```typescript
+   * const service = ArtifactService.getInstance();
+   * service.setOrg(org);
+   * service.setLogger(logger);
+   *
+   * // Later, in other classes:
+   * const service = ArtifactService.getInstance(); // Same instance with cache
+   * ```
+   */
+  public static getInstance(): ArtifactService {
+    if (!ArtifactService.instance) {
+      ArtifactService.instance = new ArtifactService();
+    }
+
+    return ArtifactService.instance;
+  }
+
+  /**
+   * Reset the singleton instance (primarily for testing).
+   * This clears the cached instance, allowing a fresh start.
+   */
+  public static resetInstance(): void {
+    ArtifactService.instance = undefined;
+  }
+
+  /**
    * Clear the installed artifacts cache.
-   * Subsequent calls will query the org directly until preloadInstalledArtifacts() is called again.
+   * The cache will be reloaded on next access (lazy loading).
    */
   public clearCache(): void {
     this.installedArtifactsCache = null;
+    this.cacheLoadAttempted = false;
   }
 
   public async getInstalledPackages(orderBy: string = 'Name'): Promise<InstalledArtifact[]> {
@@ -81,28 +116,32 @@ export class ArtifactService {
       throw new Error('Org connection required for getInstalledPackages');
     }
 
-    try {
-      const records = await this.query<SfpmArtifact__c>(
-        soql`SELECT ${ARTIFACT_FIELDS.join(', ')} FROM SfpmArtifact__c ORDER BY ${orderBy} ASC`,
-        this.org.getConnection(),
-        false,
-      );
+    // Use cache if available (lazy-loaded)
+    await this.ensureCacheLoaded();
 
-      // Map SfpmArtifact__c records to InstalledArtifact instances
-      return records.map(record => ({
-        checksum: record.Checksum__c,
-        commitId: record.Commit_Id__c,
-        name: record.Name,
-        tag: record.Tag__c,
+    if (this.installedArtifactsCache) {
+      // Convert cache to InstalledArtifact array and sort
+      // Filter out entries without version (shouldn't happen but be defensive)
+      const packages = [...this.installedArtifactsCache.values()]
+      .filter(cached => cached.version !== undefined)
+      .map(cached => ({
+        checksum: cached.checksum,
+        commitId: cached.commitId,
+        name: cached.name,
+        tag: cached.tag,
         type: undefined,
-        version: record.Version__c,
+        version: cached.version!,
       }));
-    } catch {
-      this.logger?.warn('Unable to fetch any sfpm artifacts in the org\n'
-      	+ '1. sfpm artifact package is not installed in the org\n'
-      	+ '2. The required prerequisite object is not deployed to this org\n');
-      return [];
+
+      // Sort by requested field
+      if (orderBy === 'Name') {
+        packages.sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      return packages;
     }
+
+    return [];
   }
 
   /**
@@ -116,8 +155,8 @@ export class ArtifactService {
 
   /**
    * Invalidate a single package from the cache.
-   * The next lookup for this package will fall through to a direct query
-   * (or use the remaining cached entries for other packages).
+   * The package will be removed from cache but cache remains active.
+   * Use clearCache() to force a full cache reload.
    */
   public invalidatePackage(packageName: string): void {
     this.installedArtifactsCache?.delete(packageName);
@@ -137,6 +176,9 @@ export class ArtifactService {
       throw new Error('Org connection required for isArtifactInstalled');
     }
 
+    // Ensure cache is loaded (lazy loading)
+    await this.ensureCacheLoaded();
+
     // Use cache if available
     if (this.installedArtifactsCache) {
       const cached = this.installedArtifactsCache.get(packageName);
@@ -151,71 +193,8 @@ export class ArtifactService {
       return {isInstalled: true, versionNumber: cached.version};
     }
 
-    const result: {isInstalled: boolean; versionNumber?: string} = {
-      isInstalled: false,
-    };
-
-    try {
-      this.logger?.debug(`Querying for version of ${packageName} in the Org.`);
-
-      const installedArtifacts = await this.query<SfpmArtifact__c>(
-        soql`SELECT ${ARTIFACT_FIELDS.join(', ')} FROM SfpmArtifact__c WHERE Name = '${packageName}'`,
-        this.org!.getConnection(),
-        false,
-      );
-
-      if (installedArtifacts.length > 0) {
-        const artifact = installedArtifacts[0];
-        result.versionNumber = artifact.Version__c;
-
-        result.isInstalled = version ? artifact.Version__c === version : true;
-      }
-    } catch {
-      this.logger?.warn('Unable to fetch sfpm artifacts in the org\n'
-      	+ '1. sfpm package is not installed in the org\n'
-      	+ '2. The required prerequisite object is not deployed to this org\n');
-    }
-
-    return result;
-  }
-
-  /**
-   * Preload all installed artifact records from the org into an in-memory cache.
-   * Call this once before performing multiple package operations to avoid
-   * redundant SOQL queries. The cache is keyed by package name for O(1) lookups.
-   *
-   * Subsequent calls to isArtifactInstalled(), getArtifactRecordId(), and
-   * resolveInstallTarget() will use the cached data instead of querying the org.
-   */
-  public async preloadInstalledArtifacts(): Promise<void> {
-    if (!this.org) {
-      throw new Error('Org connection required for preloadInstalledArtifacts');
-    }
-
-    try {
-      const records = await this.query<SfpmArtifact__c>(
-        soql`SELECT ${ARTIFACT_FIELDS.join(', ')} FROM SfpmArtifact__c ORDER BY Name ASC`,
-        this.org.getConnection(),
-        false,
-      );
-
-      this.installedArtifactsCache = new Map();
-      for (const record of records) {
-        this.installedArtifactsCache.set(record.Name, {
-          checksum: record.Checksum__c,
-          commitId: record.Commit_Id__c,
-          id: record.Id,
-          name: record.Name,
-          tag: record.Tag__c,
-          version: record.Version__c,
-        });
-      }
-
-      this.logger?.debug(`Preloaded ${records.length} installed artifact(s) into cache`);
-    } catch {
-      this.logger?.warn('Unable to preload installed artifacts — cache will not be used');
-      this.installedArtifactsCache = null;
-    }
+    // Cache load failed or not available
+    return {isInstalled: false};
   }
 
   /**
@@ -269,6 +248,9 @@ export class ArtifactService {
     };
 
     if (this.org) {
+      // Ensure cache is loaded (lazy loading)
+      await this.ensureCacheLoaded();
+
       // When cache is available, a single map lookup replaces 2+ SOQL queries
       if (this.installedArtifactsCache) {
         const cached = this.installedArtifactsCache.get(packageName);
@@ -276,19 +258,6 @@ export class ArtifactService {
           orgStatus = {
             installedSourceHash: cached.checksum,
             installedVersion: cached.version,
-            isInstalled: true,
-          };
-        }
-      } else {
-        const installed = await this.isArtifactInstalled(packageName);
-        if (installed.isInstalled) {
-          // Get more details about the installed version
-          const installedPackages = await this.getInstalledPackages();
-          const installedPkg = installedPackages.find(p => p.name === packageName);
-
-          orgStatus = {
-            installedSourceHash: installedPkg?.checksum, // Checksum__c stores sourceHash
-            installedVersion: installed.versionNumber,
             isInstalled: true,
           };
         }
@@ -308,6 +277,24 @@ export class ArtifactService {
       packageName,
       resolved,
     };
+  }
+
+  /**
+   * Set the logger for this service instance.
+   * Useful when using the singleton pattern to configure after getInstance().
+   */
+  public setLogger(logger: Logger | undefined): this {
+    this.logger = logger;
+    return this;
+  }
+
+  /**
+   * Set the org for this service instance.
+   * Useful when using the singleton pattern to configure after getInstance().
+   */
+  public setOrg(org: Org | undefined): this {
+    this.org = org;
+    return this;
   }
 
   /**
@@ -409,27 +396,65 @@ export class ArtifactService {
   }
 
   /**
+   * Ensure the artifact cache is loaded.
+   * This implements lazy loading - loads cache on first access and caches result.
+   * Subsequent calls are no-ops unless cache is cleared.
+   */
+  private async ensureCacheLoaded(): Promise<void> {
+    // Already loaded or already attempted
+    if (this.installedArtifactsCache !== null || this.cacheLoadAttempted) {
+      return;
+    }
+
+    // Mark as attempted to prevent repeated failures
+    this.cacheLoadAttempted = true;
+
+    if (!this.org) {
+      this.logger?.debug('No org connection available - skipping cache load');
+      return;
+    }
+
+    try {
+      const records = await this.query<SfpmArtifact__c>(
+        soql`SELECT ${ARTIFACT_FIELDS.join(', ')} FROM SfpmArtifact__c ORDER BY Name ASC`,
+        this.org.getConnection(),
+        false,
+      );
+
+      this.installedArtifactsCache = new Map();
+      for (const record of records) {
+        this.installedArtifactsCache.set(record.Name, {
+          checksum: record.Checksum__c,
+          commitId: record.Commit_Id__c,
+          id: record.Id,
+          name: record.Name,
+          tag: record.Tag__c,
+          version: record.Version__c,
+        });
+      }
+
+      this.logger?.debug(`Lazy-loaded ${records.length} installed artifact(s) into cache`);
+    } catch {
+      this.logger?.debug('Unable to load installed artifacts cache - queries will not be cached');
+      this.installedArtifactsCache = null;
+    }
+  }
+
+  /**
    * Get the Salesforce record ID for an artifact by package name
    * @param packageName - Name of the package
    * @returns Record ID or undefined if not found
    */
   private async getArtifactRecordId(packageName: string): Promise<string | undefined> {
+    // Ensure cache is loaded (lazy loading)
+    await this.ensureCacheLoaded();
+
     // Use cache if available
     if (this.installedArtifactsCache) {
       return this.installedArtifactsCache.get(packageName)?.id;
     }
 
-    try {
-      const artifacts = await this.query<SfpmArtifact__c>(
-        soql`SELECT ${ARTIFACT_FIELDS.join(', ')} FROM SfpmArtifact__c WHERE Name = '${packageName}' LIMIT 1`,
-        this.org!.getConnection(),
-        false,
-      );
-
-      return artifacts.length > 0 ? artifacts[0].Id : undefined;
-    } catch {
-      return undefined;
-    }
+    return undefined;
   }
 
   /**
