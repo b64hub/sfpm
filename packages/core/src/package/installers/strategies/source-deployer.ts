@@ -34,15 +34,8 @@ export default class SourceDeployer {
       throw new Error(`Unable to connect to org: ${targetOrg}`);
     }
 
-    // Use the componentSet from the SourceDeployable
     const componentCount = componentSet.size;
-
-    // Emit deployment start event
-    this.eventEmitter?.emit('deployment:start', {
-      componentCount,
-      packageName,
-      timestamp: new Date(),
-    });
+    this.emitStart(packageName);
 
     // Deploy to org
     const deploy = await componentSet.deploy({
@@ -58,14 +51,7 @@ export default class SourceDeployer {
         ? Math.round((numberComponentsDeployed / numberComponentsTotal) * 100)
         : 0;
 
-      this.eventEmitter?.emit('deployment:progress', {
-        componentsDeployed: numberComponentsDeployed,
-        componentsTotal: numberComponentsTotal,
-        packageName,
-        percentComplete,
-        status,
-        timestamp: new Date(),
-      });
+      this.emitProgress(packageName, status, percentComplete);
     });
 
     // Wait for deployment to complete
@@ -81,14 +67,32 @@ export default class SourceDeployer {
       throw new Error(`Source deployment failed:\n${errorMessages}`);
     }
 
-    // Emit deployment complete event
-    this.eventEmitter?.emit('deployment:complete', {
-      componentsDeployed: result.response.numberComponentsDeployed || 0,
-      packageName,
-      success: true,
-      timestamp: new Date(),
-    });
-
+    this.emitComplete(packageName, true);
     this.logger?.info('Source deployment completed successfully');
   }
+
+  private emitComplete(packageName: string, success: boolean): void {
+    this.eventEmitter?.emit('deployment:complete', {
+      packageName,
+      success,
+      timestamp: new Date(),
+    });
+  }
+
+  private emitProgress(packageName: string, status: string, percentComplete: number): void {
+    this.eventEmitter?.emit('deployment:progress', {
+      packageName,
+      percentComplete,
+      status,
+      timestamp: new Date(),
+    });
+  }
+
+  private emitStart(packageName: string): void {
+    this.eventEmitter?.emit('deployment:start', {
+      packageName,
+      timestamp: new Date(),
+    });
+  }
 }
+
