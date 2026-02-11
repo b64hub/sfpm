@@ -92,14 +92,22 @@ describe('ArtifactAssembler', () => {
             stagingDirectory: '/tmp/staging',
             packageDirectory: '/project/force-app',
             dependencies: [],
+            metadata: {
+                identity: { packageName, packageType: PackageType.Unlocked, versionNumber: version },
+                source: { branch: 'main' },
+                content: {},
+                validation: {},
+                orchestration: {},
+            },
+            projectDefinition: { packageAliases: {} },
             packageDefinition: { versionDescription: 'Test package' },
-            toSfpmMetadata: vi.fn().mockReturnValue({
-                packageType: PackageType.Unlocked,
-                packageName,
-                versionNumber: version,
-                generatedAt: Date.now(),
-                source: { branch: 'main' }
-            })
+            toJson: vi.fn().mockResolvedValue({
+                identity: { packageName, packageType: PackageType.Unlocked, versionNumber: version },
+                source: { branch: 'main' },
+                content: {},
+                validation: {},
+                orchestration: {},
+            }),
         };
 
         mockLogger = {
@@ -210,7 +218,7 @@ describe('ArtifactAssembler', () => {
         it('should generate package.json with sfpm metadata', async () => {
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
 
-            await (assembler as any).generatePackageJson('/tmp/staging', 'sourcehash123');
+            await (assembler as any).generatePackageJson('/tmp/staging');
 
             expect(fs.writeJson).toHaveBeenCalledWith(
                 '/tmp/staging/package.json',
@@ -228,16 +236,16 @@ describe('ArtifactAssembler', () => {
             );
 
             // Verify sfpm metadata was retrieved from package
-            expect(mockSfpmPackage.toSfpmMetadata).toHaveBeenCalledWith('sourcehash123');
+            expect(mockSfpmPackage.toJson).toHaveBeenCalled();
         });
 
-        it('should include optionalDependencies when package has dependencies', async () => {
+        it('should include optionalDependencies for versioned dependencies', async () => {
             mockSfpmPackage.dependencies = [
                 { package: 'dep-package', versionNumber: '1.0.0.1' }
             ];
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
 
-            await (assembler as any).generatePackageJson('/tmp/staging', 'sourcehash123');
+            await (assembler as any).generatePackageJson('/tmp/staging');
 
             expect(fs.writeJson).toHaveBeenCalledWith(
                 '/tmp/staging/package.json',
@@ -248,6 +256,59 @@ describe('ArtifactAssembler', () => {
                 }),
                 { spaces: 2 }
             );
+        });
+
+        it('should include managedDependencies for pinned dependencies without versionNumber', async () => {
+            mockSfpmPackage.dependencies = [
+                { package: 'Nebula Logger@4.16.0' }
+            ];
+            mockSfpmPackage.projectDefinition = {
+                packageAliases: {
+                    'Nebula Logger@4.16.0': '04taA000005CtsHQAS'
+                }
+            };
+            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
+
+            await (assembler as any).generatePackageJson('/tmp/staging');
+
+            expect(fs.writeJson).toHaveBeenCalledWith(
+                '/tmp/staging/package.json',
+                expect.objectContaining({
+                    managedDependencies: {
+                        'Nebula Logger@4.16.0': '04taA000005CtsHQAS'
+                    }
+                }),
+                { spaces: 2 }
+            );
+
+            // Should NOT include managed deps in optionalDependencies
+            const writtenJson = vi.mocked(fs.writeJson).mock.calls[0][1] as any;
+            expect(writtenJson.optionalDependencies).toBeUndefined();
+        });
+
+        it('should filter empty values from sfpm metadata', async () => {
+            mockSfpmPackage.toJson.mockResolvedValue({
+                identity: { packageName, packageType: PackageType.Unlocked },
+                source: {},
+                content: { triggers: [], flows: [], profiles: [], fields: { all: [] } },
+                validation: {},
+                orchestration: {},
+            });
+            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
+
+            await (assembler as any).generatePackageJson('/tmp/staging');
+
+            const writtenJson = vi.mocked(fs.writeJson).mock.calls[0][1] as any;
+            const sfpm = writtenJson.sfpm;
+
+            // Empty arrays and objects should be removed
+            expect(sfpm.content?.triggers).toBeUndefined();
+            expect(sfpm.content?.flows).toBeUndefined();
+            expect(sfpm.content?.profiles).toBeUndefined();
+            expect(sfpm.content?.fields).toBeUndefined();
+            expect(sfpm.source).toBeUndefined();
+            expect(sfpm.validation).toBeUndefined();
+            expect(sfpm.orchestration).toBeUndefined();
         });
     });
 

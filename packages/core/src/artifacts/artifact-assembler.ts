@@ -7,7 +7,7 @@ import { Logger } from '../types/logger.js';
 import SfpmPackage, { SfpmMetadataPackage } from '../package/sfpm-package.js';
 import { VersionManager } from '../project/version-manager.js';
 import { ArtifactRepository } from './artifact-repository.js';
-import { NpmPackageJson, convertDependencyToNpm } from '../types/npm.js';
+import { NpmPackageJson } from '../types/npm.js';
 import { ArtifactError } from '../types/errors.js';
 
 /**
@@ -44,6 +44,12 @@ export interface ArtifactAssemblerOptions {
     author?: string;
     /** License identifier for package.json */
     license?: string;
+    /** Homepage URL (e.g., AppExchange listing, project docs) */
+    homepage?: string;
+    /** Pre-classified versioned dependencies (scoped npm name → semver range) */
+    versionedDependencies?: Record<string, string>;
+    /** Pre-classified managed dependencies (alias → packageVersionId 04t...) */
+    managedDependencies?: Record<string, string>;
 }
 
 /**
@@ -164,20 +170,15 @@ export default class ArtifactAssembler extends EventEmitter {
      * Constructs the full npm package.json with sfpm metadata from the package.
      */
     private async generatePackageJson(stagingDir: string): Promise<void> {
-        const { npmScope, additionalKeywords, author, license } = this.options;
+        const { npmScope, additionalKeywords, author, license, homepage } = this.options;
         const pkg = this.sfpmPackage;
 
-        // Get sfpm metadata from the package
-        const sfpmMeta = await pkg.toJson();
+        // Get sfpm metadata from the package and strip empty properties
+        const sfpmMeta = removeEmptyValues(await pkg.toJson());
 
-        // Build optional dependencies from sfdx-project.json dependencies
-        const optionalDependencies: Record<string, string> = {};
-        if (pkg.dependencies) {
-            for (const dep of pkg.dependencies) {
-                const [name, versionRange] = convertDependencyToNpm(dep, npmScope);
-                optionalDependencies[name] = versionRange;
-            }
-        }
+        // Use pre-classified dependency maps (resolved by caller via ProjectConfig)
+        const optionalDependencies = this.options.versionedDependencies ?? {};
+        const managedDependencies = this.options.managedDependencies ?? {};
 
         // Build keywords
         const keywords = ['sfpm', 'salesforce', String(pkg.type), ...(additionalKeywords || [])];
@@ -210,8 +211,16 @@ export default class ArtifactAssembler extends EventEmitter {
             packageJson.author = author;
         }
 
+        if (homepage) {
+            packageJson.homepage = homepage;
+        }
+
         if (Object.keys(optionalDependencies).length > 0) {
             packageJson.optionalDependencies = optionalDependencies;
+        }
+
+        if (Object.keys(managedDependencies).length > 0) {
+            packageJson.managedDependencies = managedDependencies;
         }
 
         // Add repository if available
@@ -381,4 +390,44 @@ export default class ArtifactAssembler extends EventEmitter {
             error: error instanceof Error ? error : new Error(String(error)),
         });
     }
+}
+
+/**
+ * Recursively removes empty values from an object to simplify the output.
+ * Removes: empty arrays [], empty objects {}, null, and undefined.
+ * Preserves: non-empty values, booleans, numbers (including 0), and non-empty strings.
+ */
+function removeEmptyValues<T>(obj: T): T {
+    if (obj === null || obj === undefined) {
+        return obj;
+    }
+
+    if (Array.isArray(obj)) {
+        return obj.length === 0 ? undefined as unknown as T : obj;
+    }
+
+    if (typeof obj === 'object') {
+        const cleaned: Record<string, any> = {};
+
+        for (const [key, value] of Object.entries(obj as Record<string, any>)) {
+            const cleanedValue = removeEmptyValues(value);
+
+            // Skip undefined, null, empty arrays, and empty objects
+            if (cleanedValue === undefined || cleanedValue === null) {
+                continue;
+            }
+            if (Array.isArray(cleanedValue) && cleanedValue.length === 0) {
+                continue;
+            }
+            if (typeof cleanedValue === 'object' && !Array.isArray(cleanedValue) && Object.keys(cleanedValue).length === 0) {
+                continue;
+            }
+
+            cleaned[key] = cleanedValue;
+        }
+
+        return (Object.keys(cleaned).length === 0 ? {} : cleaned) as T;
+    }
+
+    return obj;
 }

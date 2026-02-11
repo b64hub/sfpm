@@ -1,34 +1,31 @@
-import { includeIgnoreFile } from '@eslint/compat'
-import oclif from 'eslint-config-oclif'
-import prettier from 'eslint-config-prettier'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import unicorn from 'eslint-plugin-unicorn'
+import {includeIgnoreFile} from '@eslint/compat';
+import stylistic from '@stylistic/eslint-plugin';
+import oclif from 'eslint-config-oclif';
+import prettier from 'eslint-config-prettier';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const gitignorePath = path.resolve(__dirname, '.gitignore')
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const gitignorePath = path.resolve(__dirname, '.gitignore');
 
 export default [
   includeIgnoreFile(gitignorePath),
   ...oclif,
   prettier,
-  
-  // Optional: Add any monorepo-wide rule overrides
   {
     files: ['packages/*/src/**/*.ts'],
-    plugins: {
-      unicorn,
-    },
     rules: {
+      '@typescript-eslint/no-explicit-any': 'warn', // Allow any but warn about it
+      '@typescript-eslint/no-unused-vars': ['warn', {argsIgnorePattern: '^_'}],
       'unicorn/filename-case': [
         'error',
         {
-          'case': 'kebabCase'
-        }
+          case: 'kebabCase',
+        },
       ],
-      // Example of other helpful monorepo overrides:
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
-    }
-  }
-]
+      'unicorn/prefer-event-target': 'off', // EventEmitter is more appropriate for Node.js
+      'unicorn/prefer-ternary': 'off', // Ternary can reduce readability in some cases
+    },
+  },
+];

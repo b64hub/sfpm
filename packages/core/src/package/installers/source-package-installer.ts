@@ -1,134 +1,123 @@
-import path from 'path';
-import fs from 'fs-extra';
+import {Org} from '@salesforce/core';
 import EventEmitter from 'node:events';
 
-import { Org } from '@salesforce/core';
-import { Installer, RegisterInstaller } from './installer-registry.js';
-import { PackageType, InstallationSource } from '../../types/package.js';
-import SfpmPackage, { SfpmSourcePackage } from '../sfpm-package.js';
-import { Logger } from '../../types/logger.js';
-import { InstallationStrategy } from './installation-strategy.js';
-import { ArtifactService } from '../../artifacts/artifact-service.js';
-
-// Import strategies
-import SourceDeployStrategy from './strategies/source-deploy-strategy.js';
+import {ArtifactService} from '../../artifacts/artifact-service.js';
+import {Logger} from '../../types/logger.js';
+import {InstallationSource, PackageType} from '../../types/package.js';
+import {SfpmSourcePackage} from '../sfpm-package.js';
+import {Installer, RegisterInstaller} from './installer-registry.js';
+// Import strategy implementation
+import SourceDeployer from './strategies/source-deployer.js';
 
 export interface SourcePackageInstallerOptions {
-    /** Where the code comes from: 'local' (project source) or 'artifact' */
-    source?: InstallationSource;
+  /** Where the code comes from: 'local' (project source) or 'artifact' */
+  source?: InstallationSource;
 }
 
 export interface InstallTask {
-    exec(): Promise<void>;
+  exec(): Promise<void>;
 }
 
+/**
+ * Adapter that bridges {@link SfpmSourcePackage} with the
+ * {@link SourceDeployStrategy}. Source packages always use source
+ * deployment — there is no version-install path.
+ */
 @RegisterInstaller(PackageType.Source)
 export default class SourcePackageInstaller extends EventEmitter implements Installer {
-    private targetOrg: string;
-    private sfpmPackage: SfpmSourcePackage;
-    private logger?: Logger;
-    private org?: Org;
-    private strategies: InstallationStrategy[];
-    private source: InstallationSource;
-    private artifactService: ArtifactService;
+  public postInstallTasks: InstallTask[] = [];
+  public preInstallTasks: InstallTask[] = [];
+  private readonly artifactService: ArtifactService;
+  private readonly logger?: Logger;
+  private org?: Org;
+  private readonly sfpmPackage: SfpmSourcePackage;
+  private readonly source: InstallationSource;
+  private readonly sourceDeployer: SourceDeployer;
+  private readonly targetOrg: string;
 
-    public preInstallTasks: InstallTask[] = [];
-    public postInstallTasks: InstallTask[] = [];
-
-    constructor(targetOrg: string, sfpmPackage: SfpmPackage, logger?: Logger, options?: SourcePackageInstallerOptions) {
-        super();
-        if (!(sfpmPackage instanceof SfpmSourcePackage)) {
-            throw new Error(
-                `SourcePackageInstaller received incompatible package type: ${sfpmPackage.constructor.name}`
-            );
-        }
-        this.targetOrg = targetOrg;
-        this.sfpmPackage = sfpmPackage;
-        this.logger = logger;
-
-        // Initialize artifact service
-        this.artifactService = new ArtifactService(logger);
-
-        // Initialize strategies - source packages only use source deployment (pass this as event emitter)
-        this.strategies = [
-            new SourceDeployStrategy(logger, this),
-        ];
-
-        // Determine source
-        this.source = this.determineSource(options);
+  constructor(targetOrg: string, sfpmPackage: SfpmSourcePackage, logger?: Logger, options?: SourcePackageInstallerOptions) {
+    super();
+    if (!(sfpmPackage instanceof SfpmSourcePackage)) {
+      throw new TypeError(`SourcePackageInstaller received incompatible package type: ${(sfpmPackage as any).constructor.name}`);
     }
 
-    private determineSource(options?: SourcePackageInstallerOptions): InstallationSource {
-        if (options?.source) {
-            return options.source;
-        }
+    this.targetOrg = targetOrg;
+    this.sfpmPackage = sfpmPackage;
+    this.logger = logger;
 
-        // Auto-detect: if artifacts exist, use artifact; otherwise local
-        const repo = this.artifactService.getRepository(this.sfpmPackage.projectDirectory);
-        if (repo.hasArtifacts(this.sfpmPackage.packageName)) {
-            return InstallationSource.Artifact;
-        }
+    // Initialize artifact service
+    this.artifactService = new ArtifactService(logger);
 
-        return InstallationSource.Local;
+    // Source packages always use source deployment
+    this.sourceDeployer = new SourceDeployer(logger, this);
+
+    // Determine source
+    this.source = this.determineSource(options);
+  }
+
+  public async connect(username: string): Promise<void> {
+    this.emit('connection:start', {
+      targetOrg: username,
+      timestamp: new Date(),
+    });
+
+    this.org = await Org.create({aliasOrUsername: username});
+
+    if (!this.org.getConnection()) {
+      throw new Error('Unable to connect to org');
     }
 
-    public async connect(username: string): Promise<void> {
-        this.emit('connection:start', {
-            timestamp: new Date(),
-            targetOrg: username,
-        });
+    this.emit('connection:complete', {
+      targetOrg: username,
+      timestamp: new Date(),
+    });
+  }
 
-        this.org = await Org.create({ aliasOrUsername: username });
-        
-        if (!this.org.getConnection()) {
-            throw new Error('Unable to connect to org');
-        }
+  public async exec(): Promise<void> {
+    this.logger?.info(`Installing source package: ${this.sfpmPackage.packageName}`);
 
-        this.emit('connection:complete', {
-            timestamp: new Date(),
-            targetOrg: username,
-        });
+    await this.runPreInstallTasks();
+    await this.installPackage();
+    await this.runPostInstallTasks();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private
+  // ---------------------------------------------------------------------------
+
+  private determineSource(options?: SourcePackageInstallerOptions): InstallationSource {
+    if (options?.source) {
+      return options.source;
     }
 
-    public async exec(): Promise<void> {
-        this.logger?.info(`Installing source package: ${this.sfpmPackage.packageName}`);
-
-        await this.runPreInstallTasks();
-        await this.installPackage();
-        await this.runPostInstallTasks();
+    // Auto-detect: if artifacts exist, use artifact; otherwise local
+    const repo = this.artifactService.getRepository(this.sfpmPackage.projectDirectory);
+    if (repo.hasArtifacts(this.sfpmPackage.packageName)) {
+      return InstallationSource.Artifact;
     }
 
-    private async installPackage(): Promise<void> {
-        // Find appropriate strategy (for source packages, there's only one)
-        const strategy = this.strategies.find(s => 
-            s.canHandle(this.source, this.sfpmPackage)
-        );
+    return InstallationSource.Local;
+  }
 
-        if (!strategy) {
-            throw new Error(
-                `No installation strategy found for source: ${this.source}, package: ${this.sfpmPackage.packageName}`
-            );
-        }
+  private async installPackage(): Promise<void> {
+    this.logger?.info('Using installation mode: source-deploy');
+    // SfpmSourcePackage implements SourceDeployable via SfpmMetadataPackage
+    await this.sourceDeployer.install(this.sfpmPackage, this.targetOrg);
+  }
 
-        this.logger?.info(`Using installation mode: ${strategy.getMode()}`);
-
-        // Execute installation using selected strategy
-        await strategy.install(this.sfpmPackage, this.targetOrg);
+  private async runPostInstallTasks(): Promise<void> {
+    for (const task of this.postInstallTasks) {
+      const taskName = task.constructor.name;
+      this.logger?.info(`Running post-install task: ${taskName}`);
+      await task.exec();
     }
+  }
 
-    private async runPreInstallTasks(): Promise<void> {
-        for (const task of this.preInstallTasks) {
-            const taskName = task.constructor.name;
-            this.logger?.info(`Running pre-install task: ${taskName}`);
-            await task.exec();
-        }
+  private async runPreInstallTasks(): Promise<void> {
+    for (const task of this.preInstallTasks) {
+      const taskName = task.constructor.name;
+      this.logger?.info(`Running pre-install task: ${taskName}`);
+      await task.exec();
     }
-
-    private async runPostInstallTasks(): Promise<void> {
-        for (const task of this.postInstallTasks) {
-            const taskName = task.constructor.name;
-            this.logger?.info(`Running post-install task: ${taskName}`);
-            await task.exec();
-        }
-    }
+  }
 }

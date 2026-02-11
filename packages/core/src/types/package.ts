@@ -1,8 +1,9 @@
-import { PackageManifestObject } from "@salesforce/source-deploy-retrieve";
-import { ApexClasses, ApexSortedByType } from "./apex.js";
-import { DeploymentOptions } from "./project.js";
+import {PackageManifestObject} from '@salesforce/source-deploy-retrieve';
 
-export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data', Diff = 'diff', Managed = 'managed' }
+import {ApexClasses, ApexSortedByType} from './apex.js';
+import {DeploymentOptions} from './project.js';
+
+export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked'}
 
 /**
  * Where the package code comes from for installation.
@@ -10,8 +11,8 @@ export enum PackageType { Unlocked = 'unlocked', Source = 'source', Data = 'data
  * - `artifact`: Install from built artifact (local or fetched from npm - resolver abstracts this)
  */
 export enum InstallationSource {
-    Local = 'local',
-    Artifact = 'artifact',
+  Artifact = 'artifact',
+  Local = 'local',
 }
 
 /**
@@ -21,35 +22,35 @@ export enum InstallationSource {
  * - `version-install`: Install package version using packageVersionId
  */
 export enum InstallationMode {
-    SourceDeploy = 'source-deploy',
-    VersionInstall = 'version-install'
+  SourceDeploy = 'source-deploy',
+  VersionInstall = 'version-install',
 }
 
 export type MetadataFile = string | {
-    name: string;
-    path?: string;
+  name: string;
+  path?: string;
 }
 
 export interface SfpmPackageIdentity {
-    packageName: string;
-    versionNumber?: string;
-    packageType: Omit<PackageType, 'managed'>;
-    apiVersion?: string;
+  apiVersion?: string;
+  packageName: string;
+  packageType: Omit<PackageType, 'managed'>; // Managed packages are only for subscriber orgs, not sfpm artifacts
+  versionNumber?: string;
 }
 
 export interface SfpmUnlockedPackageIdentity extends SfpmPackageIdentity {
-    isOrgDependent: boolean;
-    packageVersionId?: string;
-    packageId?: string;
-    packageType: PackageType.Unlocked;
+  isOrgDependent: boolean;
+  packageId?: string;
+  packageType: PackageType.Unlocked;
+  packageVersionId?: string;
 }
 
 export interface SfpmPackageSource {
-    repositoryUrl?: string;
-    branch?: string;
-    commitSHA?: string;
-    tag?: string;
-    sourceHash?: string;
+  branch?: string;
+  commitSHA?: string;
+  repositoryUrl?: string;
+  sourceHash?: string;
+  tag?: string;
 }
 
 /**
@@ -57,68 +58,70 @@ export interface SfpmPackageSource {
  * and optional specialized categorizations found by analyzers.
  */
 export interface CategorizedMetadata {
-    all: string[]; // The physical truth from ComponentSet
-    [category: string]: string[] | undefined;
+  [category: string]: string[] | undefined;
+  all: string[]; // The physical truth from ComponentSet
 }
 
 export interface SfpmPackageContent {
-    metadataCount: number;
-    payload?: PackageManifestObject;
-    apex?: CategorizedMetadata & {
-        classes?: string[];
-        tests?: string[];
-    };
-    triggers?: string[];
-    testSuites?: string[];
-    fields?: CategorizedMetadata & {
-        fht?: string[];
-        ft?: string[];
-        picklists?: string[];
-    };
-    profiles?: string[];
-    permissionSetGroups?: string[];
-    permissionSets?: string[];
-    standardValueSets?: string[];
-    flows?: string[];
-    [key: string]: any;
+  [key: string]: any;
+  apex?: {
+    [category: string]: MetadataFile[] | string[] | undefined;
+    all: string[];
+    classes?: MetadataFile[];
+    tests?: MetadataFile[];
+  };
+  fields?: CategorizedMetadata & {
+    fht?: string[];
+    ft?: string[];
+    picklists?: string[];
+  };
+  flows?: string[];
+  metadataCount: number;
+  payload?: PackageManifestObject;
+  permissionSetGroups?: string[];
+  permissionSets?: string[];
+  profiles?: string[];
+  standardValueSets?: string[];
+  testSuites?: string[];
+  triggers?: MetadataFile[];
 }
 
 export interface SfpmPackageValidation {
-    testCoverage?: number;
-    isCoverageCheckPassed?: boolean;
-    isTriggerAllTests?: boolean;
+  isCoverageCheckPassed?: boolean;
+  isTriggerAllTests?: boolean;
+  testCoverage?: number;
 }
 
 export interface SfpmPackageOrchestration {
-    creationDetails?: { duration?: number; timestamp?: number };
-    deployments?: {
-        targetOrg: string;
-        subDirectory?: string;
-        installationTime?: number;
-        timestamp?: number
-    }[];
-    deploymentOptions?: DeploymentOptions;
-    buildOptions?: SfpmPackageBuildOptions;
+  buildOptions?: SfpmPackageBuildOptions;
+  creationDetails?: {duration?: number; timestamp?: number};
+  deploymentOptions?: DeploymentOptions;
+  deployments?: {
+    installationTime?: number;
+    subDirectory?: string;
+    targetOrg: string;
+    timestamp?: number
+  }[];
 }
 
 export interface SfpmPackageBuildOptions {
-    isCoverageEnabled?: boolean;
-    waitTime?: number;
+  isCoverageEnabled?: boolean;
+  waitTime?: number;
 }
 
 export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions {
-    installationkey?: string;
-    installationkeybypass?: boolean;
-    isSkipValidation?: boolean;
-    isAsyncValidation?: boolean;
-    postInstallScript?: string;
-    configFilePath?: string;
+  configFilePath?: string;
+  installationkey?: string;
+  installationkeybypass?: boolean;
+  isAsyncValidation?: boolean;
+  isSkipValidation?: boolean;
+  postInstallScript?: string;
 }
 
 export interface SfpmDataPackageMetadata {
-    identity: SfpmPackageIdentity;
-    source: SfpmPackageSource;
-    [key: string]: any;
+  [key: string]: any;
+  identity: SfpmPackageIdentity;
+  source: SfpmPackageSource;
 }
 
 /**
@@ -126,82 +129,82 @@ export interface SfpmDataPackageMetadata {
  * This represents the metadata file stored in the artifact.
  */
 export interface SfpmPackageMetadata {
-    identity: SfpmPackageIdentity;
-    source: SfpmPackageSource;
-    content: SfpmPackageContent;
-    validation: SfpmPackageValidation;
-    orchestration: SfpmPackageOrchestration;
-    [key: string]: any;
+  [key: string]: any;
+  content: SfpmPackageContent;
+  identity: SfpmPackageIdentity;
+  orchestration: SfpmPackageOrchestration;
+  source: SfpmPackageSource;
+  validation: SfpmPackageValidation;
 }
 
 export interface SfpmUnlockedPackageMetadata extends SfpmPackageMetadata {
-    identity: SfpmUnlockedPackageIdentity;
+  identity: SfpmUnlockedPackageIdentity;
 }
 
 /**
  * Represents merged view of sfpm artifacts + subscriber packages
  */
 export interface InstalledArtifact {
-    name: string;
-    version: string;
-    tag?: string;
-    commitId?: string;
-    checksum?: string;
-    isInstalledBySfpm?: boolean;
-    sourceVersion?: string;
-    isOrgDependent?: boolean;
-    subscriberVersionId?: string;
-    type?: PackageType
+  checksum?: string;
+  commitId?: string;
+  isInstalledBySfpm?: boolean;
+  isOrgDependent?: boolean;
+  name: string;
+  sourceVersion?: string;
+  subscriberVersionId?: string;
+  tag?: string;
+  type?: PackageType
+  version: string;
 }
 
 /**
  * @deprecated
  */
 export interface PackageInfo {
-    id?: string;
-    package_name: string;
-    package_version_number?: string;
-    package_version_id?: string;
-    package_type?: string;
-    test_coverage?: number;
-    has_passed_coverage_check?: boolean;
-    repository_url?: string;
-    sourceVersion?: string;
-    branch?: string;
-    apextestsuite?: string;
-    isApexFound?: boolean;
-    assignPermSetsPreDeployment?: string[];
-    assignPermSetsPostDeployment?: string[];
-    apexTestClassses?: string[];
-    isPickListsFound?: boolean;
-    isTriggerAllTests?: boolean;
-    isProfilesFound?: boolean;
-    isPermissionSetGroupFound?: boolean;
-    isPromoted?: boolean;
-    tag?: string;
-    isDependencyValidated?: boolean;
-    destructiveChanges?: any;
-    destructiveChangesPath?: string;
-    payload?: any;
-    metadataCount?: number;
-    sourceDir?: string;
-    dependencies?: any;
-    reconcileProfiles?: boolean;
-    isPayLoadContainTypesSupportedByProfiles?: boolean;
-    creation_details?: { creation_time?: number; timestamp?: number };
-    deployments?: { target_org: string; sub_directory?: string; installation_time?: number; timestamp?: number }[];
-    apiVersion?: string;
-    postDeploymentScript?: string;
-    preDeploymentScript?: string;
-    apexClassWithOutTestClasses?: ApexClasses;
-    triggers?: ApexClasses;
-    configFilePath?: string;
-    packageDescriptor?: any;
-    commitSHAFrom?: string;
-    commitSHATo?: string;
-    packageDirectory?: string;
-    apexClassesSortedByTypes?: ApexSortedByType;
-    projectConfig?: any;
-    changelogFilePath?: string;
+  apexClassesSortedByTypes?: ApexSortedByType;
+  apexClassWithOutTestClasses?: ApexClasses;
+  apexTestClassses?: string[];
+  apextestsuite?: string;
+  apiVersion?: string;
+  assignPermSetsPostDeployment?: string[];
+  assignPermSetsPreDeployment?: string[];
+  branch?: string;
+  changelogFilePath?: string;
+  commitSHAFrom?: string;
+  commitSHATo?: string;
+  configFilePath?: string;
+  creation_details?: {creation_time?: number; timestamp?: number};
+  dependencies?: any;
+  deployments?: {installation_time?: number; sub_directory?: string; target_org: string; timestamp?: number}[];
+  destructiveChanges?: any;
+  destructiveChangesPath?: string;
+  has_passed_coverage_check?: boolean;
+  id?: string;
+  isApexFound?: boolean;
+  isDependencyValidated?: boolean;
+  isPayLoadContainTypesSupportedByProfiles?: boolean;
+  isPermissionSetGroupFound?: boolean;
+  isPickListsFound?: boolean;
+  isProfilesFound?: boolean;
+  isPromoted?: boolean;
+  isTriggerAllTests?: boolean;
+  metadataCount?: number;
+  package_name: string;
+  package_type?: string;
+  package_version_id?: string;
+  package_version_number?: string;
+  packageDescriptor?: any;
+  packageDirectory?: string;
+  payload?: any;
+  postDeploymentScript?: string;
+  preDeploymentScript?: string;
+  projectConfig?: any;
+  reconcileProfiles?: boolean;
+  repository_url?: string;
+  sourceDir?: string;
+  sourceVersion?: string;
+  tag?: string;
+  test_coverage?: number;
+  triggers?: ApexClasses;
 }
 

@@ -1,504 +1,763 @@
-import chalk from 'chalk';
-import ora, { Ora } from 'ora';
-import boxen from 'boxen';
-import { ux } from '@oclif/core';
-import type { PackageBuilder } from '@b64/sfpm-core';
 import type {
-    BuildStartEvent,
-    BuildCompleteEvent,
-    BuildSkippedEvent,
-    BuildErrorEvent,
-    StageStartEvent,
-    StageCompleteEvent,
-    AnalyzersStartEvent,
-    AnalyzerStartEvent,
-    AnalyzerCompleteEvent,
-    AnalyzersCompleteEvent,
-    ConnectionStartEvent,
-    ConnectionCompleteEvent,
-    BuilderStartEvent,
-    BuilderCompleteEvent,
-    CreateStartEvent,
-    CreateProgressEvent,
-    CreateCompleteEvent,
-    TaskStartEvent,
-    TaskCompleteEvent,
+  AnalyzerCompleteEvent, AnalyzersCompleteEvent,
+  AnalyzersStartEvent,
+  AnalyzerStartEvent,
+  BuildCompleteEvent,
+  BuilderCompleteEvent,
+  BuildErrorEvent,
+  BuilderStartEvent,
+  BuildOrchestrator,
+  BuildSkippedEvent,
+  BuildStartEvent,
+  ConnectionCompleteEvent,
+  ConnectionStartEvent,
+  CreateCompleteEvent,
+  CreateProgressEvent,
+  CreateStartEvent,
+  OrchestrationCompleteEvent,
+  OrchestrationLevelCompleteEvent,
+  OrchestrationLevelStartEvent,
+  OrchestrationPackageCompleteEvent,
+  OrchestrationStartEvent,
+  PackageBuilder,
+  StageCompleteEvent,
+  StageStartEvent,
+  TaskCompleteEvent,
+  TaskStartEvent,
 } from '@b64/sfpm-core';
-import { infoBox } from './boxes.js';
 
-/**
- * Output modes for build progress rendering
- */
-export type OutputMode = 'interactive' | 'quiet' | 'json';
+import chalk from 'chalk';
+import ora, {Ora} from 'ora';
 
-/**
- * Logger interface for rendering output
- */
-interface OutputLogger {
-    log: (message: string) => void;
-    error: (message: string | Error) => void;
-}
+import type {
+  EventConfig, EventLog, OutputLogger, OutputMode,
+} from './renderer-utils.js';
 
-/**
- * Collected event data for JSON output
- */
-interface EventLog {
-    type: string;
-    timestamp: Date;
-    data: any;
-}
+import {infoBox, successBox, warningBox} from './boxes.js';
+import {OrchestrationListrManager} from './orchestration-listr.js';
+import {calculateDuration, formatDuration, NameAligner} from './renderer-utils.js';
+
+export type {OutputMode} from './renderer-utils.js';
 
 /**
  * Timing information tracked internally
  */
 interface TimingInfo {
-    buildStart?: Date;
-    stageStart?: Date;
-    analyzersStart?: Date;
-    analyzerStarts: Map<string, Date>;
-    connectionStart?: Date;
-    builderStart?: Date;
-}
-
-/**
- * Event handler function type
- */
-type EventHandler<T = any> = (event: T) => void;
-
-/**
- * Event configuration for systematic handling
- */
-interface EventConfig {
-    handler: EventHandler;
-    description: string;
+  analyzersStart?: Date;
+  analyzerStarts: Map<string, Date>;
+  builderStart?: Date;
+  buildStart?: Date;
+  connectionStart?: Date;
+  stageStart?: Date;
 }
 
 /**
  * Renders build progress in different output modes
  */
 export class BuildProgressRenderer {
-    private mode: OutputMode;
-    private logger: OutputLogger;
-    private spinner?: Ora;
-    private events: EventLog[] = [];
-    private timings: TimingInfo = {
-        analyzerStarts: new Map(),
+  private analyzerNameAligner = new NameAligner();
+  private buildResult?: {
+    error?: Error;
+    packageVersionId?: string;
+    success: boolean;
+  };
+  /**
+   * Event configuration mapping events to handlers
+   */
+  private eventConfigs: Record<string, EventConfig> = {
+    'analyzer:complete': {description: 'Analyzer complete', handler: this.handleAnalyzerComplete.bind(this)},
+    'analyzer:start': {description: 'Analyzer started', handler: this.handleAnalyzerStart.bind(this)},
+    'analyzers:complete': {description: 'All analyzers complete', handler: this.handleAnalyzersComplete.bind(this)},
+    'analyzers:start': {description: 'Analyzers started', handler: this.handleAnalyzersStart.bind(this)},
+    'build:complete': {description: 'Build completed', handler: this.handleBuildComplete.bind(this)},
+    'build:error': {description: 'Build failed', handler: this.handleBuildError.bind(this)},
+    'build:skipped': {description: 'Build skipped', handler: this.handleBuildSkipped.bind(this)},
+    'build:start': {description: 'Build started', handler: this.handleBuildStart.bind(this)},
+    'builder:complete': {description: 'Builder complete', handler: this.handleBuilderComplete.bind(this)},
+    'builder:start': {description: 'Builder started', handler: this.handleBuilderStart.bind(this)},
+    'connection:complete': {description: 'Connection complete', handler: this.handleConnectionComplete.bind(this)},
+    'connection:start': {description: 'Connection started', handler: this.handleConnectionStart.bind(this)},
+    'stage:complete': {description: 'Staging complete', handler: this.handleStageComplete.bind(this)},
+    'stage:start': {description: 'Staging package', handler: this.handleStageStart.bind(this)},
+    'task:complete': {description: 'Task complete', handler: this.handleTaskComplete.bind(this)},
+    'task:start': {description: 'Task started', handler: this.handleTaskStart.bind(this)},
+    'unlocked:create:complete': {description: 'Package creation complete', handler: this.handleCreateComplete.bind(this)},
+    'unlocked:create:progress': {description: 'Package creation progress', handler: this.handleCreateProgress.bind(this)},
+    'unlocked:create:start': {description: 'Package creation started', handler: this.handleCreateStart.bind(this)},
+  };
+  private events: EventLog[] = [];
+  private listr: OrchestrationListrManager;
+  private logger: OutputLogger;
+  private mode: OutputMode;
+  /**
+   * Event configuration for orchestration-level events
+   */
+  private orchestrationEventConfigs: Record<string, EventConfig> = {
+    'orchestration:complete': {description: 'Orchestration complete', handler: this.handleOrchestrationComplete.bind(this)},
+    'orchestration:level:complete': {description: 'Level complete', handler: this.handleOrchestrationLevelComplete.bind(this)},
+    'orchestration:level:start': {description: 'Level started', handler: this.handleOrchestrationLevelStart.bind(this)},
+    'orchestration:package:complete': {description: 'Package complete', handler: this.handleOrchestrationPackageComplete.bind(this)},
+    'orchestration:start': {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
+  };
+  /**
+   * Tracks pending analyzer names during collection.
+   * Once all `analyzer:start` events arrive, subtasks are created.
+   */
+  private pendingAnalyzers: Map<string, {count: number; names: string[]}> = new Map();
+  private spinner?: Ora;
+  private timings: TimingInfo = {
+    analyzerStarts: new Map(),
+  };
+
+  constructor(options: {logger: OutputLogger; mode: OutputMode}) {
+    this.logger = options.logger;
+    this.mode = options.mode;
+    this.listr = new OrchestrationListrManager(event => {
+      const count = event.packages.length;
+      const pkgText = count === 1 ? 'package' : 'packages';
+      return `Building ${chalk.cyan(String(count))} ${pkgText}`;
+    }, {enableSubtasks: true});
+  }
+
+  /**
+   * Attach this renderer to a PackageBuilder or BuildOrchestrator instance
+   */
+  public attachTo(emitter: BuildOrchestrator | PackageBuilder): void {
+    // Attach all configured build event handlers
+    for (const [eventName, config] of Object.entries(this.eventConfigs)) {
+      (emitter as any).on(eventName, (data: any) => {
+        this.logEvent(eventName, data);
+        config.handler(data);
+      });
+    }
+
+    // Attach orchestration event handlers (no-ops if emitter is a plain PackageBuilder)
+    for (const [eventName, config] of Object.entries(this.orchestrationEventConfigs)) {
+      (emitter as any).on(eventName, (data: any) => {
+        config.handler(data);
+      });
+    }
+  }
+
+  // ========================================================================
+  // Spinner Management
+  // ========================================================================
+
+  /**
+   * Get JSON output for --json flag
+   */
+  public getJsonOutput(): any {
+    const duration = this.timings.buildStart && this.events.length > 0
+      ? this.events.at(-1)!.timestamp.getTime() - this.timings.buildStart.getTime()
+      : 0;
+
+    return {
+      duration,
+      events: this.events,
+      result: this.buildResult,
+      status: this.buildResult?.success ? 'success' : 'error',
     };
-    private buildResult?: {
-        success: boolean;
-        packageVersionId?: string;
-        error?: Error;
-    };
-    private analyzerNames: string[] = [];
-    private maxAnalyzerNameLength: number = 0;
-    
-    /**
-     * Event configuration mapping events to handlers
-     */
-    private eventConfigs: Record<string, EventConfig> = {
-        'build:start': { handler: this.handleBuildStart.bind(this), description: 'Build started' },
-        'build:complete': { handler: this.handleBuildComplete.bind(this), description: 'Build completed' },
-        'build:skipped': { handler: this.handleBuildSkipped.bind(this), description: 'Build skipped' },
-        'build:error': { handler: this.handleBuildError.bind(this), description: 'Build failed' },
-        'stage:start': { handler: this.handleStageStart.bind(this), description: 'Staging package' },
-        'stage:complete': { handler: this.handleStageComplete.bind(this), description: 'Staging complete' },
-        'analyzers:start': { handler: this.handleAnalyzersStart.bind(this), description: 'Analyzers started' },
-        'analyzer:start': { handler: this.handleAnalyzerStart.bind(this), description: 'Analyzer started' },
-        'analyzer:complete': { handler: this.handleAnalyzerComplete.bind(this), description: 'Analyzer complete' },
-        'analyzers:complete': { handler: this.handleAnalyzersComplete.bind(this), description: 'All analyzers complete' },
-        'connection:start': { handler: this.handleConnectionStart.bind(this), description: 'Connection started' },
-        'connection:complete': { handler: this.handleConnectionComplete.bind(this), description: 'Connection complete' },
-        'builder:start': { handler: this.handleBuilderStart.bind(this), description: 'Builder started' },
-        'builder:complete': { handler: this.handleBuilderComplete.bind(this), description: 'Builder complete' },
-        'unlocked:create:start': { handler: this.handleCreateStart.bind(this), description: 'Package creation started' },
-        'unlocked:create:progress': { handler: this.handleCreateProgress.bind(this), description: 'Package creation progress' },
-        'unlocked:create:complete': { handler: this.handleCreateComplete.bind(this), description: 'Package creation complete' },
-        'task:start': { handler: this.handleTaskStart.bind(this), description: 'Task started' },
-        'task:complete': { handler: this.handleTaskComplete.bind(this), description: 'Task complete' },
-    };
+  }
 
-    constructor(options: { logger: OutputLogger; mode: OutputMode }) {
-        this.logger = options.logger;
-        this.mode = options.mode;
-    }
+  /**
+   * Handle error display
+   */
+  public handleError(error: Error): void {
+    if (!this.isInteractive()) return;
 
-    /**
-     * Attach this renderer to a PackageBuilder instance
-     */
-    public attachTo(builder: PackageBuilder): void {
-        // Attach all configured event handlers
-        Object.entries(this.eventConfigs).forEach(([eventName, config]) => {
-            builder.on(eventName as any, config.handler as any);
-        });
-    }
+    this.stopSpinner(false);
+  }
 
-    // ========================================================================
-    // Spinner Management
-    // ========================================================================
+  // ========================================================================
+  // Event Handlers
+  // ========================================================================
 
-    /**
-     * Start a spinner with the given text
-     */
-    private startSpinner(text: string): void {
-        if (this.spinner) {
-            this.spinner.stop();
-        }
-        this.spinner = ora(text).start();
-    }
+  /**
+   * Look up the Listr sub-task for a package within the active orchestration level.
+   * Returns undefined when running in standalone (non-orchestration) mode.
+   */
+  private getPackageTask(packageName: string): any | undefined {
+    return this.listr.getPackageTask(packageName);
+  }
 
-    /**
-     * Stop the active spinner
-     */
-    private stopSpinner(success: boolean, text?: string): void {
-        if (this.spinner) {
-            if (success) {
-                this.spinner.succeed(text);
-            } else {
-                this.spinner.fail(text);
-            }
-            this.spinner = undefined;
-        }
-    }
+  private handleAnalyzerComplete(event: AnalyzerCompleteEvent): void {
+    if (!this.isInteractive()) return;
 
-    /**
-     * Check if renderer is in interactive mode
-     */
-    private isInteractive(): boolean {
-        return this.mode === 'interactive';
-    }
+    const startTime = this.timings.analyzerStarts.get(event.analyzerName);
+    const duration = calculateDuration(startTime, event.timestamp);
 
-    // ========================================================================
-    // Event Handlers
-    // ========================================================================
-
-    private handleBuildStart(event: BuildStartEvent): void {
-        this.logEvent('build:start', event);
-        this.timings.buildStart = event.timestamp;
-
-        if (!this.isInteractive()) return;
-
-        this.logger.log(
-            chalk.bold(`\nBuilding package: ${chalk.cyan(event.packageName)} (${event.packageType})\n`)
-        );
-    }
-
-    private handleBuildComplete(event: BuildCompleteEvent): void {
-        this.logEvent('build:complete', event);
-        this.buildResult = {
-            success: true,
-            packageVersionId: event.packageVersionId,
-        };
-
-        if (!this.isInteractive()) return;
-
-        const duration = this.calculateDuration(this.timings.buildStart, event.timestamp);
-        this.logger.log(
-            chalk.green.bold(`\n✓ Build complete!`) + chalk.gray(` (${duration})`)
-        );
-    }
-
-    private handleBuildSkipped(event: BuildSkippedEvent): void {
-        this.logEvent('build:skipped', event);
-        this.buildResult = {
-            success: true,
-        };
-
-        if (!this.isInteractive()) return;
-
-        const duration = this.calculateDuration(this.timings.buildStart, event.timestamp);
-        
-        // Build the info box
-        const entries: Array<[string, string]> = [
-            ['Status', chalk.yellow('No source changes detected')],
-            ['Latest version', event.latestVersion],
-            ['Source hash', event.sourceHash],
-        ];
-
-        if (event.artifactPath) {
-            entries.push(['Artifact', event.artifactPath]);
-        }
-
-        const maxKeyLength = Math.max(...entries.map(([key]) => key.length));
-        const formattedLines = entries.map(([key, value]) => {
-            const paddedKey = key.padEnd(maxKeyLength);
-            return `${chalk.cyan(paddedKey)} │ ${value}`;
-        });
-
-        const boxOutput = boxen(formattedLines.join('\n'), {
-            padding: 1,
-            margin: 0,
-            borderStyle: 'round',
-            borderColor: 'yellow',
-            title: 'Build Skipped',
-            titleAlignment: 'center',
-        });
-
-        this.logger.log('');
-        this.logger.log(boxOutput);
-        this.logger.log('');
-        this.logger.log(chalk.dim(`  Build skipped in ${duration}\n`));
-    }
-
-    private handleBuildError(event: BuildErrorEvent): void {
-        this.logEvent('build:error', event);
-        this.buildResult = {
-            success: false,
-            error: event.error,
-        };
-
-        // Stop any active spinner
-        if (this.isInteractive()) {
-            this.stopSpinner(false);
-        }
-
-        // Always show errors, even in quiet mode
-        this.logger.error(
-            chalk.red.bold(`✗ Build failed in ${event.phase} phase: `) + event.error.message
-        );
-    }
-
-    private handleStageStart(event: StageStartEvent): void {
-        this.logEvent('stage:start', event);
-        this.timings.stageStart = event.timestamp;
-
-        if (!this.isInteractive()) return;
-
-        this.startSpinner(`Staging package`);
-    }
-
-    private handleStageComplete(event: StageCompleteEvent): void {
-        this.logEvent('stage:complete', event);
-
-        if (!this.isInteractive()) return;
-
-        const duration = this.calculateDuration(this.timings.stageStart, event.timestamp);
-        this.stopSpinner(
-            true,
-            chalk.gray(`Successfully staged ${event.packageName} with ${event.componentCount} component(s) (${duration})`)
-        );
-    }
-
-    private handleAnalyzersStart(event: AnalyzersStartEvent): void {
-        this.logEvent('analyzers:start', event);
-        this.timings.analyzersStart = event.timestamp;
-
-        if (!this.isInteractive() || event.analyzerCount === 0) return;
-
-        // Log a static message instead of spinner for parallel analyzers
-        const analyzerText = event.analyzerCount === 1 ? 'analyzer' : 'analyzers';
-        this.logger.log(chalk.dim(`Running ${event.analyzerCount} ${analyzerText}...`));
-    }
-
-    private handleAnalyzerStart(event: AnalyzerStartEvent): void {
-        this.logEvent('analyzer:start', event);
-        this.timings.analyzerStarts.set(event.analyzerName, event.timestamp);
-
-        // Track analyzer names for alignment
-        if (!this.analyzerNames.includes(event.analyzerName)) {
-            this.analyzerNames.push(event.analyzerName);
-            this.maxAnalyzerNameLength = Math.max(
-                this.maxAnalyzerNameLength,
-                event.analyzerName.length
-            );
-        }
-    }
-
-    private handleAnalyzerComplete(event: AnalyzerCompleteEvent): void {
-        this.logEvent('analyzer:complete', event);
-
-        if (!this.isInteractive()) return;
-
-        const startTime = this.timings.analyzerStarts.get(event.analyzerName);
-        const duration = this.calculateDuration(startTime, event.timestamp);
-        
-        // Build findings summary
-        let findingsSummary = '';
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      if (this.listr.hasSubtasks(event.packageName)) {
+        // Build findings suffix for the subtask title
+        let findingsSuffix = '';
         if (event.findings && Object.keys(event.findings).length > 0) {
-            const findings = Object.entries(event.findings)
-                .filter(([_, value]) => value && (Array.isArray(value) ? value.length > 0 : true))
-                .map(([key, value]) => {
-                    if (Array.isArray(value)) {
-                        return `${key}: ${value.length}`;
-                    }
-                    return key;
-                })
-                .join(', ');
-            
-            if (findings) {
-                findingsSummary = `: ${findings}`;
-            }
+          const findings = Object.entries(event.findings)
+          .filter(([_, value]) => value && (Array.isArray(value) ? value.length > 0 : true))
+          .map(([key, value]) => (Array.isArray(value) ? `${key}: ${value.length}` : key))
+          .join(', ');
+          if (findings) findingsSuffix = ` ${chalk.gray(`- ${findings}`)}`;
         }
-        
-        // Pad duration and analyzer name for alignment
-        const paddedDuration = duration.padStart(6); // Pad duration to 6 chars (e.g., "  31ms")
-        const paddedName = event.analyzerName.padEnd(this.maxAnalyzerNameLength);
-        
-        // Log completion with aligned duration and analyzer name
-        console.log(`  ${chalk.green('✓')} ${chalk.gray(paddedDuration)} - ${chalk.cyan(paddedName)}${chalk.gray(findingsSummary)}`);
-    }
 
-    private handleAnalyzersComplete(event: AnalyzersCompleteEvent): void {
-        this.logEvent('analyzers:complete', event);
+        this.listr.updateSubtaskTitle(
+          event.packageName,
+          event.analyzerName,
+          `${chalk.green(event.analyzerName)} ${chalk.gray(`(${duration})`)}${findingsSuffix}`,
+        );
+        this.listr.resolveSubtask(event.packageName, event.analyzerName);
+      } else {
+        this.listr.updatePackageTitle(
+          event.packageName,
+          `${chalk.cyan(event.packageName)} - Analyzer: ${event.analyzerName} ${chalk.gray(`(${duration})`)}`,
+        );
+      }
+    } else if (!this.isOrchestrating()) {
+      // Build findings summary
+      let findingsSummary = '';
+      if (event.findings && Object.keys(event.findings).length > 0) {
+        const findings = Object.entries(event.findings)
+        .filter(([_, value]) => value && (Array.isArray(value) ? value.length > 0 : true))
+        .map(([key, value]) => {
+          if (Array.isArray(value)) {
+            return `${key}: ${value.length}`;
+          }
 
-        if (!this.isInteractive() || event.completedCount === 0) return;
+          return key;
+        })
+        .join(', ');
 
-        // Show completion summary
-        const duration = this.calculateDuration(this.timings.analyzersStart, event.timestamp);
-        const analyzerText = event.completedCount === 1 ? 'analyzer' : 'analyzers';
-        this.logger.log(chalk.green(`✔ Completed ${event.completedCount} ${analyzerText} in ${duration}`));
-        this.logger.log('');
-        
-        // Reset analyzer tracking for next build
-        this.analyzerNames = [];
-        this.maxAnalyzerNameLength = 0;
-    }
-
-    private handleConnectionStart(event: ConnectionStartEvent): void {
-        this.logEvent('connection:start', event);
-        this.timings.connectionStart = event.timestamp;
-
-        if (!this.isInteractive()) return;
-
-        this.startSpinner(`Connecting to ${event.orgType}: ${event.username}`);
-    }
-
-    private handleConnectionComplete(event: ConnectionCompleteEvent): void {
-        this.logEvent('connection:complete', event);
-
-        if (!this.isInteractive()) return;
-
-        const duration = this.calculateDuration(this.timings.connectionStart, event.timestamp);
-        this.stopSpinner(true, chalk.gray(`Successfully connected to: ${event.username} (${duration})`));
-    }
-
-    private handleBuilderStart(event: BuilderStartEvent): void {
-        this.logEvent('builder:start', event);
-        this.timings.builderStart = event.timestamp;
-
-        if (!this.isInteractive()) return;
-
-        this.logger.log(chalk.dim(`Executing ${event.packageType} package builder...\n`));
-    }
-
-    private handleBuilderComplete(event: BuilderCompleteEvent): void {
-        this.logEvent('builder:complete', event);
-    }
-
-    private handleCreateStart(event: CreateStartEvent): void {
-        this.logEvent('unlocked:create:start', event);
-
-        if (!this.isInteractive()) return;
-
-        this.startSpinner(`Creating package version ${event.packageName}@${event.versionNumber}`);
-    }
-
-    private handleCreateProgress(event: CreateProgressEvent): void {
-        this.logEvent('unlocked:create:progress', event);
-
-        if (!this.isInteractive() || !event.message) return;
-
-        if (this.spinner) {
-            this.spinner.text = `Creating package version ${event.packageName}@${event.message}`;
+        if (findings) {
+          findingsSummary = `: ${findings}`;
         }
+      }
+
+      // Pad duration and analyzer name for alignment
+      const paddedDuration = duration.padStart(6);
+      const paddedName = this.analyzerNameAligner.pad(event.analyzerName);
+
+      // Log completion with aligned duration and analyzer name
+      console.log(`  ${chalk.green('✓')} ${chalk.gray(paddedDuration)} - ${chalk.cyan(paddedName)}${chalk.gray(findingsSummary)}`);
+    }
+  }
+
+  private handleAnalyzersComplete(event: AnalyzersCompleteEvent): void {
+    if (!this.isInteractive() || event.completedCount === 0) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      // With subtasks the individual analyzer tasks already show completion;
+      // only update the parent title when NOT using subtask mode.
+      if (!this.listr.hasSubtasks(event.packageName)) {
+        this.listr.updatePackageTitle(
+          event.packageName,
+          `${chalk.cyan(event.packageName)} - Analyzed (${event.completedCount} analyzers)`,
+        );
+      }
+    } else if (!this.isOrchestrating()) {
+      // Show completion summary
+      const duration = calculateDuration(this.timings.analyzersStart, event.timestamp);
+      const analyzerText = event.completedCount === 1 ? 'analyzer' : 'analyzers';
+      this.logger.log(chalk.green(`✔ Completed ${event.completedCount} ${analyzerText} in ${duration}`));
+      this.logger.log('');
     }
 
-    private handleCreateComplete(event: CreateCompleteEvent): void {
-        this.logEvent('unlocked:create:complete', event);
+    // Reset analyzer tracking for next build
+    this.analyzerNameAligner.reset();
+  }
 
-        if (this.isInteractive()) {
-            this.stopSpinner(true, chalk.green(`Package ${event.packageName}@${event.versionNumber} successfully created with Id: ${event.packageVersionId}`));
+  private handleAnalyzersStart(event: AnalyzersStartEvent): void {
+    this.timings.analyzersStart = event.timestamp;
 
-            // Build package details entries
-            const entries: Record<string, string> = {   
-                'Package Name': event.packageName,
-                'Version Number': event.versionNumber,
-                'Version ID': event.packageVersionId,
-            };
-            
-            if (event.packageId) {
-                entries['Package ID'] = event.packageId;
-            }
-            if (event.status) {
-                entries['Status'] = event.status;
-            }
-            if (event.totalNumberOfMetadataFiles !== undefined) {
-                entries['Metadata Files'] = String(event.totalNumberOfMetadataFiles);
-            }
-            if (event.codeCoverage !== null && event.codeCoverage !== undefined) {
-                const coverageColor = event.hasPassedCodeCoverageCheck ? chalk.green : chalk.yellow;
-                entries['Code Coverage'] = coverageColor(`${event.codeCoverage}%`);
-            }
-            if (event.createdDate) {
-                entries['Created'] = event.createdDate;
-            }
+    if (!this.isInteractive()) return;
 
-            // Display the box
-            this.logger.log('');
-            this.logger.log(infoBox('Package Version Details', entries));
-            this.logger.log('');
+    // In orchestration mode, set up subtask collection or skip
+    if (this.isOrchestrating()) {
+      if (event.analyzerCount === 0) {
+        this.listr.skipPackageSubtasks(event.packageName);
+      } else {
+        this.pendingAnalyzers.set(event.packageName, {count: event.analyzerCount, names: []});
+      }
+    }
+
+    if (event.analyzerCount === 0) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      const analyzerText = event.analyzerCount === 1 ? 'analyzer' : 'analyzers';
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Running ${event.analyzerCount} ${analyzerText}...`,
+      );
+    } else if (!this.isOrchestrating()) {
+      // Log a static message instead of spinner for parallel analyzers
+      const analyzerText = event.analyzerCount === 1 ? 'analyzer' : 'analyzers';
+      this.logger.log(chalk.dim(`Running ${event.analyzerCount} ${analyzerText}...`));
+    }
+  }
+
+  private handleAnalyzerStart(event: AnalyzerStartEvent): void {
+    this.timings.analyzerStarts.set(event.analyzerName, event.timestamp);
+
+    // Track analyzer names for alignment
+    this.analyzerNameAligner.add(event.analyzerName);
+
+    // In orchestration mode, collect names then create subtasks
+    if (this.isOrchestrating()) {
+      const pending = this.pendingAnalyzers.get(event.packageName);
+      if (pending) {
+        pending.names.push(event.analyzerName);
+        if (pending.names.length === pending.count) {
+          // All analyzer names collected — declare subtask structure
+          this.listr.setPackageSubtasks(
+            event.packageName,
+            pending.names.map(name => ({name, title: chalk.cyan(name)})),
+          );
+          this.pendingAnalyzers.delete(event.packageName);
         }
+      }
     }
+  }
 
-    private handleTaskStart(event: TaskStartEvent): void {
-        this.logEvent('task:start', event);
+  private handleBuildComplete(event: BuildCompleteEvent): void {
+    this.buildResult = {
+      packageVersionId: event.packageVersionId,
+      success: true,
+    };
 
-        if (!this.isInteractive()) return;
+    if (!this.isInteractive()) return;
 
-        this.startSpinner(`  ${chalk.cyan(event.taskType)}: ${event.taskName}`);
+    const duration = calculateDuration(this.timings.buildStart, event.timestamp);
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.green('Built')} ${chalk.cyan(event.packageName)} ${chalk.gray(`(${duration})`)}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.logger.log(chalk.green.bold('\n✓ Build complete!') + chalk.gray(` (${duration})`));
     }
+  }
 
-    private handleTaskComplete(event: TaskCompleteEvent): void {
-        this.logEvent('task:complete', event);
+  private handleBuilderComplete(event: BuilderCompleteEvent): void {
+    // No UI update needed — subsequent events (build:complete, etc.) handle display
+  }
 
-        if (!this.isInteractive()) return;
+  private handleBuildError(event: BuildErrorEvent): void {
+    this.buildResult = {
+      error: event.error,
+      success: false,
+    };
 
-        if (event.success) {
-            this.stopSpinner(true, chalk.gray(event.taskName));
-        } else {
-            this.stopSpinner(false, chalk.red(`${event.taskName} failed`));
-        }
-    }
-
-    // ========================================================================
-    // Utility Methods
-    // ========================================================================
-
-    private logEvent(type: string, data: any): void {
-        this.events.push({ type, timestamp: data.timestamp, data });
-    }
-
-    private calculateDuration(start: Date | undefined, end: Date): string {
-        if (!start) return '';
-        const ms = end.getTime() - start.getTime();
-        if (ms < 1000) return `${ms}ms`;
-        if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-        const minutes = Math.floor(ms / 60000);
-        const seconds = Math.floor((ms % 60000) / 1000);
-        return `${minutes}m ${seconds}s`;
-    }
-
-    /**
-     * Get JSON output for --json flag
-     */
-    public getJsonOutput(): any {
-        const duration = this.timings.buildStart && this.events.length > 0
-            ? this.events[this.events.length - 1].timestamp.getTime() - this.timings.buildStart.getTime()
-            : 0;
-
-        return {
-            status: this.buildResult?.success ? 'success' : 'error',
-            duration,
-            events: this.events,
-            result: this.buildResult,
-        };
-    }
-
-    /**
-     * Handle error display
-     */
-    public handleError(error: Error): void {
-        if (!this.isInteractive()) return;
-
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.red('Failed')} ${chalk.cyan(event.packageName)} - ${event.phase}`,
+      );
+    } else if (this.isOrchestrating()) {
+      // During orchestration, error display is handled by orchestration:package:complete
+    } else {
+      // Stop any active spinner
+      if (this.isInteractive()) {
         this.stopSpinner(false);
+      }
+
+      // Always show errors, even in quiet mode
+      this.logger.error(chalk.red.bold(`✗ Build failed in ${event.phase} phase: `) + event.error.message);
     }
+  }
+
+  private handleBuilderStart(event: BuilderStartEvent): void {
+    this.timings.builderStart = event.timestamp;
+
+    if (!this.isInteractive()) return;
+
+    // If subtasks haven't been set for this package yet (e.g. Data packages
+    // that skip analyzers entirely), resolve with empty subtasks now.
+    if (this.isOrchestrating()) {
+      this.listr.skipPackageSubtasks(event.packageName);
+    }
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Executing ${event.packageType} builder...`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.logger.log(chalk.dim(`Executing ${event.packageType} package builder...\n`));
+    }
+  }
+
+  private handleBuildSkipped(event: BuildSkippedEvent): void {
+    this.buildResult = {
+      success: true,
+    };
+
+    if (!this.isInteractive()) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.yellow('Skipped')} ${chalk.cyan(event.packageName)} - ${event.reason === 'no-changes' ? 'no source changes' : event.reason}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      const duration = calculateDuration(this.timings.buildStart, event.timestamp);
+
+      const entries: Record<string, string> = {
+        'Latest version': event.latestVersion,
+        'Source hash': event.sourceHash,
+        Status: chalk.yellow('No source changes detected'),
+      };
+
+      if (event.artifactPath) {
+        entries.Artifact = event.artifactPath;
+      }
+
+      this.logger.log(warningBox('Build Skipped', entries));
+      this.logger.log(chalk.dim(`  Build skipped in ${duration}\n`));
+    }
+  }
+
+  private handleBuildStart(event: BuildStartEvent): void {
+    this.timings.buildStart = event.timestamp;
+
+    if (!this.isInteractive()) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Building (${event.packageType})...`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.logger.log(chalk.bold(`\nBuilding package: ${chalk.cyan(event.packageName)} (${event.packageType})\n`));
+    }
+  }
+
+  private handleConnectionComplete(event: ConnectionCompleteEvent): void {
+    if (!this.isInteractive()) return;
+
+    const duration = calculateDuration(this.timings.connectionStart, event.timestamp);
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Connected to ${chalk.yellow(event.username)} ${chalk.gray(`(${duration})`)}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.stopSpinner(true, chalk.gray(`Successfully connected to: ${event.username} (${duration})`));
+    }
+  }
+
+  private handleConnectionStart(event: ConnectionStartEvent): void {
+    this.timings.connectionStart = event.timestamp;
+
+    if (!this.isInteractive()) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Connecting to ${event.orgType}: ${chalk.yellow(event.username)}...`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.startSpinner(`Connecting to ${event.orgType}: ${event.username}`);
+    }
+  }
+
+  private handleCreateComplete(event: CreateCompleteEvent): void {
+    if (!this.isInteractive()) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Created ${event.versionNumber}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.stopSpinner(true, chalk.green(`Package ${event.packageName}@${event.versionNumber} successfully created with Id: ${event.packageVersionId}`));
+
+      // Build package details entries
+      const entries: Record<string, string> = {
+        'Package Name': event.packageName,
+        'Version ID': event.packageVersionId,
+        'Version Number': event.versionNumber,
+      };
+
+      if (event.packageId) {
+        entries['Package ID'] = event.packageId;
+      }
+
+      if (event.status) {
+        entries.Status = event.status;
+      }
+
+      if (event.totalNumberOfMetadataFiles !== undefined) {
+        entries['Metadata Files'] = String(event.totalNumberOfMetadataFiles);
+      }
+
+      if (event.codeCoverage !== null && event.codeCoverage !== undefined) {
+        const coverageColor = event.hasPassedCodeCoverageCheck ? chalk.green : chalk.yellow;
+        entries['Code Coverage'] = coverageColor(`${event.codeCoverage}%`);
+      }
+
+      if (event.createdDate) {
+        entries.Created = event.createdDate;
+      }
+
+      // Display the box
+      this.logger.log('');
+      this.logger.log(infoBox('Package Version Details', entries));
+      this.logger.log('');
+    }
+  }
+
+  private handleCreateProgress(event: CreateProgressEvent): void {
+    if (!this.isInteractive() || !event.message) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Creating: ${event.message}`,
+      );
+    } else if (!this.isOrchestrating() && this.spinner) {
+      this.spinner.text = `Creating package version ${event.packageName}@${event.message}`;
+    }
+  }
+
+  private handleCreateStart(event: CreateStartEvent): void {
+    if (!this.isInteractive()) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Creating version ${event.versionNumber}...`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.startSpinner(`Creating package version ${event.packageName}@${event.versionNumber}`);
+    }
+  }
+
+  private handleOrchestrationComplete(event: OrchestrationCompleteEvent): void {
+    this.logEvent('orchestration:complete', event);
+
+    if (!this.isInteractive()) return;
+
+    // Cleanup — Listr rendering is done
+    this.listr.destroy();
+
+    this.logger.log('');
+
+    const succeeded = event.results.filter(r => r.success && !r.skipped).length;
+    const failed = event.results.filter(r => !r.success && !r.skipped).length;
+    const skipped = event.results.filter(r => r.skipped).length;
+    const duration = formatDuration(event.totalDuration);
+
+    const entries: Record<string, string> = {
+      Succeeded: String(succeeded),
+      'Total Packages': String(event.results.length),
+    };
+    if (failed > 0) entries.Failed = chalk.red(String(failed));
+    if (skipped > 0) entries.Skipped = chalk.yellow(String(skipped));
+    entries.Duration = duration;
+
+    const allSucceeded = failed === 0;
+    const title = allSucceeded ? 'Build Orchestration Complete' : 'Build Orchestration Complete (with failures)';
+
+    if (allSucceeded) {
+      this.logger.log(successBox(title, entries));
+    } else {
+      this.logger.log(warningBox(title, entries));
+    }
+  }
+
+  private handleOrchestrationLevelComplete(event: OrchestrationLevelCompleteEvent): void {
+    this.logEvent('orchestration:level:complete', event);
+    // No cleanup needed — Listr keeps completed level tasks visible
+    // and the next level task starts automatically (sequential root).
+  }
+
+  private handleOrchestrationLevelStart(event: OrchestrationLevelStartEvent): void {
+    this.logEvent('orchestration:level:start', event);
+
+    if (!this.isInteractive()) return;
+
+    this.listr.onLevelStart(event);
+  }
+
+  // ========================================================================
+  // Orchestration Event Handlers
+  // ========================================================================
+
+  private handleOrchestrationPackageComplete(event: OrchestrationPackageCompleteEvent): void {
+    this.logEvent('orchestration:package:complete', event);
+
+    if (!this.isInteractive()) return;
+
+    const duration = formatDuration(event.duration);
+
+    if (event.skipped) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.yellow('Skipped')} ${chalk.cyan(event.packageName)} ${chalk.gray(`(${duration})`)}`,
+      );
+      this.listr.resolvePackage(event.packageName);
+    } else if (event.success) {
+      // Title may already be set by build:complete — update with duration if not
+      const task = this.getPackageTask(event.packageName);
+      if (task && !task.title?.startsWith(chalk.green('Built'))) {
+        this.listr.updatePackageTitle(
+          event.packageName,
+          `${chalk.green('Built')} ${chalk.cyan(event.packageName)} ${chalk.gray(`(${duration})`)}`,
+        );
+      }
+
+      this.listr.resolvePackage(event.packageName);
+    } else {
+      const errorMsg = event.error || 'Build failed';
+      this.listr.rejectPackage(event.packageName, errorMsg);
+    }
+  }
+
+  private handleOrchestrationStart(event: OrchestrationStartEvent): void {
+    this.logEvent('orchestration:start', event);
+
+    if (!this.isInteractive()) return;
+
+    const levelText = event.totalLevels === 1 ? 'level' : 'levels';
+    const pkgText = event.totalPackages === 1 ? 'package' : 'packages';
+    this.logger.log(chalk.bold(`\nBuilding ${chalk.cyan(String(event.totalPackages))} ${pkgText} in ${chalk.cyan(String(event.totalLevels))} ${levelText}`));
+
+    if (event.includeDependencies) {
+      this.logger.log(chalk.dim('  Dependencies auto-included'));
+    }
+
+    this.logger.log('');
+
+    this.listr.start(event.totalLevels);
+  }
+
+  private handleStageComplete(event: StageCompleteEvent): void {
+    if (!this.isInteractive()) return;
+
+    const duration = calculateDuration(this.timings.stageStart, event.timestamp);
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Staged ${event.componentCount} components ${chalk.gray(`(${duration})`)}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.stopSpinner(
+        true,
+        chalk.gray(`Successfully staged ${event.packageName} with ${event.componentCount} component(s) (${duration})`),
+      );
+    }
+  }
+
+  private handleStageStart(event: StageStartEvent): void {
+    this.timings.stageStart = event.timestamp;
+
+    if (!this.isInteractive()) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Staging...`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.startSpinner('Staging package');
+    }
+  }
+
+  private handleTaskComplete(event: TaskCompleteEvent): void {
+    if (!this.isInteractive()) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      const status = event.success ? chalk.green('✓') : chalk.red('✗');
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${status} ${event.taskName}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      if (event.success) {
+        this.stopSpinner(true, chalk.gray(event.taskName));
+      } else {
+        this.stopSpinner(false, chalk.red(`${event.taskName} failed`));
+      }
+    }
+  }
+
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
+
+  private handleTaskStart(event: TaskStartEvent): void {
+    if (!this.isInteractive()) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${event.taskType}: ${event.taskName}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.startSpinner(`  ${chalk.cyan(event.taskType)}: ${event.taskName}`);
+    }
+  }
+
+  /**
+   * Check if renderer is in interactive mode
+   */
+  private isInteractive(): boolean {
+    return this.mode === 'interactive';
+  }
+
+  /**
+   * Check if an orchestration level is currently active.
+   * Used to prevent standalone spinner creation during orchestration —
+   * all output should flow through Listr sub-tasks instead.
+   */
+  private isOrchestrating(): boolean {
+    return this.listr.isActive();
+  }
+
+  private logEvent(type: string, data: any): void {
+    this.events.push({data, timestamp: data.timestamp ?? new Date(), type});
+  }
+
+  /**
+   * Start a spinner with the given text
+   */
+  private startSpinner(text: string): void {
+    if (this.spinner) {
+      this.spinner.stop();
+    }
+
+    this.spinner = ora(text).start();
+  }
+
+  /**
+   * Stop the active spinner
+   */
+  private stopSpinner(success: boolean, text?: string): void {
+    if (this.spinner) {
+      if (success) {
+        this.spinner.succeed(text);
+      } else {
+        this.spinner.fail(text);
+      }
+
+      this.spinner = undefined;
+    }
+  }
 }

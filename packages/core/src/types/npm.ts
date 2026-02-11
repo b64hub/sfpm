@@ -59,11 +59,23 @@ export interface NpmPackageJson {
         type: string;
         url: string;
     };
+    /** Homepage URL (e.g., AppExchange listing or project docs) */
+    homepage?: string;
+    /** Issue/bug tracker URL */
+    bugs?: {
+        url: string;
+    };
     /**
-     * Optional dependencies - used for SFPM package dependencies.
-     * These are "optional" because we can't guarantee they exist on npm.
+     * Optional dependencies - used for versioned SFPM package dependencies.
+     * "Optional" because they may not yet be published to the npm registry.
      */
     optionalDependencies?: Record<string, string>;
+    /**
+     * Managed package dependencies pinned to a subscriber packageVersionId (04t...).
+     * These are Salesforce managed packages identified by their alias in
+     * sfdx-project.json (e.g., "Nebula Logger@4.16.0") and cannot be resolved via npm.
+     */
+    managedDependencies?: Record<string, string>;
     /**
      * Files to include in the package.
      * SFPM includes source, scripts, manifests, and sfdx-project.json.

@@ -7,15 +7,31 @@ import { PackageType } from '../../../src/types/package.js';
 // Mocks
 vi.mock('../../../src/project/project-config.js');
 vi.mock('../../../src/package/sfpm-package.js');
-// Mock the ArtifactService module to return empty artifact info
+vi.mock('@salesforce/core', () => ({
+    Org: {
+        create: vi.fn().mockResolvedValue({
+            getUsername: vi.fn().mockReturnValue('test@org.com'),
+        }),
+    },
+}));
+// Mock the ArtifactService singleton
 vi.mock('../../../src/artifacts/artifact-service.js', () => ({
-    ArtifactService: function() {
-        return {
-            getRepository: vi.fn().mockReturnValue({
-                getArtifactInfo: vi.fn().mockReturnValue({ version: undefined, metadata: undefined }),
+    ArtifactService: {
+        getInstance: vi.fn().mockReturnValue({
+            setOrg: vi.fn().mockReturnThis(),
+            setLogger: vi.fn().mockReturnThis(),
+            resolveInstallTarget: vi.fn().mockResolvedValue({
+                needsInstall: true,
+                installReason: 'New installation',
+                resolved: {
+                    source: 'local',
+                    version: '1.0.0',
+                    versionEntry: { sourceHash: 'abc123' },
+                },
             }),
-        };
-    }
+            upsertArtifact: vi.fn().mockResolvedValue(undefined),
+        }),
+    },
 }));
 
 describe('PackageInstaller', () => {
@@ -36,12 +52,16 @@ describe('PackageInstaller', () => {
 
         mockProjectConfig = {
             projectPath: '/test/project',
+            getNpmScope: vi.fn().mockReturnValue('@test'),
         };
 
         mockPackage = {
+            name: 'test-package',
             packageName: 'test-package',
             type: PackageType.Unlocked,
             projectDirectory: '/test/project',
+            version: '1.0.0',
+            sourceHash: 'abc123',
         };
 
         mockInstallerInstance = {
@@ -57,6 +77,8 @@ describe('PackageInstaller', () => {
         // Create package factory instance that will be returned from constructor
         mockPackageFactoryInstance = {
             createFromName: vi.fn().mockReturnValue(mockPackage),
+            isManagedPackage: vi.fn().mockReturnValue(false),
+            createManagedRef: vi.fn().mockReturnValue(null),
         };
 
         // Create a proper constructor mock
@@ -88,7 +110,7 @@ describe('PackageInstaller', () => {
             expect(InstallerRegistry.getInstaller).toHaveBeenCalledWith(PackageType.Unlocked);
             expect(mockInstallerInstance.connect).toHaveBeenCalledWith('testOrg');
             expect(mockInstallerInstance.exec).toHaveBeenCalled();
-            expect(mockLogger.info).toHaveBeenCalledWith('Successfully installed package: test-package');
+            expect(mockLogger.info).toHaveBeenCalledWith('Successfully installed test-package@1.0.0');
         });
 
         it('should emit install:start event', async () => {
@@ -156,7 +178,7 @@ describe('PackageInstaller', () => {
             await expect(installer.installPackage('test-package')).rejects.toThrow('Connection failed');
 
             expect(mockLogger.error).toHaveBeenCalledWith(
-                expect.stringContaining('Failed to install package: test-package')
+                expect.stringContaining('Failed to install test-package')
             );
         });
 
@@ -196,13 +218,6 @@ describe('PackageInstaller', () => {
                     error: 'String error',
                 })
             );
-        });
-    });
-
-    describe('install', () => {
-        it('should be defined for future implementation', () => {
-            expect(installer.install).toBeDefined();
-            expect(typeof installer.install).toBe('function');
         });
     });
 });

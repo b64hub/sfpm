@@ -107,7 +107,7 @@ describe('ProjectService', () => {
 
             expect(SfProject.resolve).toHaveBeenCalledWith('/mock/path');
             expect(service.getProjectConfig()).toBeDefined();
-            expect(service.getVersionManager()).toBeDefined();
+            expect(service.getProjectGraph()).toBeDefined();
         });
     });
 

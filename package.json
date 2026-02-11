@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "description": "Salesforce Package Manager",
+  "lint-staged": {
+    "packages/*/src/**/*.ts": [
+      "eslint --fix"
+    ]
+  },
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
@@ -21,7 +26,7 @@
     "@types/node": "^20.10.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
-    "eslint": "^8.55.0",
+    "eslint": "^9.0.0",
     "eslint-config-oclif": "^6.0.130",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.0.1",
