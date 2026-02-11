@@ -1,113 +1,103 @@
-import { Args, Flags } from '@oclif/core'
-import { PackageInstaller, ProjectService, Logger, InstallationSource, InstallationMode } from '@b64/sfpm-core'
-import { InstallProgressRenderer, OutputMode } from '../../ui/install-progress-renderer.js'
+import {
+  InstallOrchestrator, Logger, ProjectService,
+} from '@b64/sfpm-core'
+import {Args, Flags} from '@oclif/core'
+
 import SfpmCommand from '../../sfpm-command.js'
+import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
 
 export default class InstallSource extends SfpmCommand {
-  static override description = 'install one or more packages'
-
+  static override args = {
+    packages: Args.string({
+      description: 'package(s) to install',
+      required: true,
+    }),
+  }
+  static override description = 'install one or more packages from project source'
   static override examples = [
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox',
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --quiet',
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --json',
     '<%= config.bin %> <%= command.id %> package-a package-b -o my-sandbox',
   ]
-
-  static override args = {
-    packages: Args.string({
-      required: true,
-      description: 'package(s) to install',
-    }),
-  }
-
   static override flags = {
-    'target-org': Flags.string({ char: 'o', description: 'target org username', required: true }),
-    force: Flags.boolean({ char: 'f', description: 'force reinstall even if already installed' }),
-    quiet: Flags.boolean({ char: 'q', description: 'only show errors', exclusive: ['json'] }),
-    json: Flags.boolean({ description: 'output as JSON for CI/CD', exclusive: ['quiet'] }),
+    force: Flags.boolean({char: 'f', description: 'force reinstall even if already installed'}),
+    json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
+    'no-dependencies': Flags.boolean({description: 'only install the specified packages, skip transitive dependencies'}),
+    quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
+    'target-org': Flags.string({char: 'o', description: 'target org username', required: true}),
   }
-
   static override strict = false
 
   public async execute(): Promise<void> {
-    const { args, argv, flags } = await this.parse(InstallSource)
+    const {args, argv, flags} = await this.parse(InstallSource)
 
-    // Get package names from arguments - use argv for multiple packages
     const packages = argv.length > 0 ? argv as string[] : [args.packages]
 
     if (!packages || packages.length === 0) {
       this.error('At least one package name is required')
     }
 
-    // Warn if multiple packages provided (not yet supported)
-    if (packages.length > 1) {
-      this.warn(`Multiple packages provided, but currently only installing the first: ${packages[0]}`)
-      this.warn(`Future support will install: ${packages.join(', ')}`)
-    }
-
-    const packageName = packages[0]
-
-    const projectService = await ProjectService.getInstance(process.cwd());
+    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getProjectConfig();
+    const projectGraph = projectService.getProjectGraph();
 
-    // Determine output mode
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
-    // Create logger for audit trail (separate from UI events)
     const logger: Logger = {
-      log: (msg: string) => this.log(msg),
-      info: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-      error: (msg: string) => this.error(msg),
       debug: (msg: string) => this.debug(msg),
+      error: (msg: string) => this.error(msg),
+      info: (msg: string) => this.debug(msg),
+      log: (msg: string) => this.log(msg),
       trace: (msg: string) => this.debug(msg),
+      warn: (msg: string) => this.warn(msg),
     }
 
-    // Create package installer
-    const installer = new PackageInstaller(projectConfig, {
-      targetOrg: flags['target-org'],
-      source: InstallationSource.Local,
-      force: flags.force,
-    }, logger);
-
-    // Create and attach progress renderer
     const renderer = new InstallProgressRenderer({
       logger: {
+        error: (msgOrError: Error | string) => this.error(msgOrError),
         log: (msg: string) => this.log(msg),
-        error: (msgOrError: string | Error) => this.error(msgOrError),
       },
       mode,
+      targetOrg: flags['target-org'],
     });
-    renderer.attachTo(installer);
 
-    // Execute installation
+    const orchestrator = InstallOrchestrator.forSource(
+      projectConfig,
+      projectGraph,
+      {
+        force: flags.force,
+        includeDependencies: !flags['no-dependencies'],
+        targetOrg: flags['target-org'],
+      },
+      logger,
+    )
+
+    renderer.attachTo(orchestrator as any)
+
     try {
-      await installer.installPackage(packageName);
+      const result = await orchestrator.installAll(packages)
 
-      // Output JSON if requested
       if (flags.json) {
-        this.logJson(renderer.getJsonOutput());
+        this.logJson(result)
+      }
+
+      if (!result.success) {
+        const failedNames = result.failedPackages.join(', ')
+        this.error(`Install failed for: ${failedNames}`, {exit: 2})
       }
     } catch (error) {
-      renderer.handleError(error as Error);
-      
-      // Output JSON even on error if requested
+      renderer.handleError(error as Error)
       if (flags.json) {
-        this.logJson(renderer.getJsonOutput());
+        this.logJson({error: (error as Error).message, success: false})
       }
-      
-      // Re-throw with original error for better debugging
+
       if (error instanceof Error) {
-        // Show the actual error message, not just the wrapper
-        const errorMessage = error.message || String(error);
-        this.log(`\nError details: ${errorMessage}`);
-        if (error.stack) {
-          this.debug(`Stack trace: ${error.stack}`);
-        }
-        this.error(errorMessage, { exit: 2 });
-      } else {
-        throw error;
+        this.error(error.message, {exit: 2})
       }
+
+      throw error
     }
   }
 }

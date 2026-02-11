@@ -15,6 +15,8 @@ import {Logger} from '../types/logger.js';
 export interface OrchestratorOptions {
   /** Include transitive dependencies. Defaults to true. */
   includeDependencies?: boolean;
+  /** Include managed (external) packages in orchestration. Defaults to true. */
+  includeManagedPackages?: boolean;
 }
 
 /**
@@ -264,6 +266,15 @@ export class Orchestrator<TContext = void> {
   }
 
   /**
+   * Remove managed packages from the levels, then drop any empty levels.
+   */
+  private filterOutManagedPackages(levels: PackageNode[][]): PackageNode[][] {
+    return levels
+    .map(level => level.filter(node => !node.isManaged))
+    .filter(level => level.length > 0);
+  }
+
+  /**
    * Remove packages not explicitly requested, then drop any empty levels.
    */
   private filterToRequestedPackages(levels: PackageNode[][], packageNames: string[]): PackageNode[][] {
@@ -353,11 +364,17 @@ export class Orchestrator<TContext = void> {
 
     this.checkCircularDependencies(resolution, packageNames);
 
+    let {levels} = resolution;
+
     if (this.options.includeDependencies === false) {
-      return this.filterToRequestedPackages(resolution.levels, packageNames);
+      levels = this.filterToRequestedPackages(levels, packageNames);
     }
 
-    return resolution.levels;
+    if (this.options.includeManagedPackages === false) {
+      levels = this.filterOutManagedPackages(levels);
+    }
+
+    return levels;
   }
 
   // ========================================================================

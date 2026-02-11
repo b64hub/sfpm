@@ -11,6 +11,7 @@ import {
   PackageResult,
 } from '../types/events.js';
 import {Logger} from '../types/logger.js';
+import {InstallationSource} from '../types/package.js';
 import {
   OrchestrationTask,
   Orchestrator,
@@ -96,12 +97,12 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
 
   async setup(): Promise<InstallContext> {
     const org = await Org.create({aliasOrUsername: this.options.targetOrg});
-    
+
     // Use singleton instance - cache is lazy-loaded automatically on first access
     const artifactService = ArtifactService.getInstance()
-      .setOrg(org)
-      .setLogger(this.logger);
-    
+    .setOrg(org)
+    .setLogger(this.logger);
+
     return {artifactService, org};
   }
 
@@ -153,8 +154,52 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
   ) {
     super();
     const task = new InstallOrchestrationTask(projectConfig, options, logger);
-    this.orchestrator = new Orchestrator(graph, options, task, logger, this);
+    this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: true}, task, logger, this);
   }
+
+  // ========================================================================
+  // Static factory methods
+  // ========================================================================
+
+  /**
+   * Create an orchestrator for installing from built artifacts.
+   * Uses artifact resolution (local or npm) to find the best version.
+   */
+  static forArtifact(
+    projectConfig: ProjectConfig,
+    graph: ProjectGraph,
+    options: Omit<InstallOrchestratorOptions, 'source'> & {source?: never},
+    logger?: Logger,
+  ): InstallOrchestrator {
+    return new InstallOrchestrator(
+      projectConfig,
+      graph,
+      {...options, source: InstallationSource.Artifact},
+      logger,
+    );
+  }
+
+  /**
+   * Create an orchestrator for installing directly from project source.
+   * Deploys source metadata via the metadata API without artifact resolution.
+   */
+  static forSource(
+    projectConfig: ProjectConfig,
+    graph: ProjectGraph,
+    options: Omit<InstallOrchestratorOptions, 'mode' | 'source'> & {mode?: never; source?: never},
+    logger?: Logger,
+  ): InstallOrchestrator {
+    return new InstallOrchestrator(
+      projectConfig,
+      graph,
+      {...options, source: InstallationSource.Local},
+      logger,
+    );
+  }
+
+  // ========================================================================
+  // Public entry point
+  // ========================================================================
 
   /**
    * Install multiple packages in dependency order.
