@@ -1,8 +1,8 @@
 import {
-  BuildOrchestrator, Logger, PackageBuilder, ProjectService,
+  BuildOrchestrator, Logger, ProjectService,
 } from '@b64/sfpm-core'
 import {
-  Args, Command, Flags, ux,
+  Args, Flags
 } from '@oclif/core'
 
 import SfpmCommand from '../sfpm-command.js'
@@ -26,10 +26,10 @@ export default class Build extends SfpmCommand {
   static override flags = {
     'build-number': Flags.string({char: 'b', description: 'build number'}),
     force: Flags.boolean({char: 'f', description: 'build even if no source changes detected'}),
+    'include-dependencies': Flags.boolean({description: 'build the specified packages and their transitive dependencies'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key'}),
     'installation-key-bypass': Flags.boolean({description: 'bypass installation key'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
-    'no-dependencies': Flags.boolean({description: 'only build the specified packages, skip transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'skip-validation': Flags.boolean({description: 'skip validation'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
@@ -83,60 +83,57 @@ export default class Build extends SfpmCommand {
       mode,
     });
 
-    // Multi-package: use BuildOrchestrator
-    if (packages.length > 1) {
-      const orchestrator = new BuildOrchestrator(
-        projectConfig,
-        projectGraph,
-        {...buildOptions, includeDependencies: !flags['no-dependencies']},
-        logger,
-      )
+    // // Single-package: use PackageBuilder directly (backwards-compatible)
+    // if (packages.length == 1) {
+    // const packageName = packages[0]
+    // const builder = new PackageBuilder(projectConfig, buildOptions, logger);
+    // renderer.attachTo(builder);
 
-      // Attach renderer to orchestrator — it forwards all builder events
-      renderer.attachTo(orchestrator as any)
+    // try {
+    //   await builder.buildPackage(packageName);
 
-      try {
-        const result = await orchestrator.buildAll(packages)
+    //   if (flags.json) {
+    //     this.logJson(renderer.getJsonOutput());
+    //   }
+    // } catch (error) {
+    //   renderer.handleError(error as Error);
 
-        if (flags.json) {
-          this.logJson(result)
-        }
+    //   if (flags.json) {
+    //     this.logJson(renderer.getJsonOutput());
+    //   }
 
-        if (!result.success) {
-          const failedNames = result.failedPackages.join(', ')
-          this.error(`Build failed for: ${failedNames}`, {exit: 1})
-        }
-      } catch (error) {
-        renderer.handleError(error as Error)
-        if (flags.json) {
-          this.logJson({error: (error as Error).message, success: false})
-        }
+    //   throw error;
+    // }
+    // }
 
-        throw error
-      }
+    const orchestrator = new BuildOrchestrator(
+      projectConfig,
+      projectGraph,
+      {...buildOptions, includeDependencies: flags['include-dependencies']},
+      logger,
+    )
 
-      return
-    }
-
-    // Single-package: use PackageBuilder directly (backwards-compatible)
-    const packageName = packages[0]
-    const builder = new PackageBuilder(projectConfig, buildOptions, logger);
-    renderer.attachTo(builder);
+    // Attach renderer to orchestrator — it forwards all builder events
+    renderer.attachTo(orchestrator as any)
 
     try {
-      await builder.buildPackage(packageName);
+      const result = await orchestrator.buildAll(packages)
 
       if (flags.json) {
-        this.logJson(renderer.getJsonOutput());
+        this.logJson(result)
+      }
+
+      if (!result.success) {
+        const failedNames = result.failedPackages.join(', ')
+        this.error(`Build failed for: ${failedNames}`, {exit: 1})
       }
     } catch (error) {
-      renderer.handleError(error as Error);
-
+      renderer.handleError(error as Error)
       if (flags.json) {
-        this.logJson(renderer.getJsonOutput());
+        this.logJson({error: (error as Error).message, success: false})
       }
 
-      throw error;
+      throw error
     }
   }
 }

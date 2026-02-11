@@ -8,32 +8,17 @@ import type {
 
 import boxen from 'boxen';
 import chalk from 'chalk';
-import {Listr} from 'listr2';
 import ora, {Ora} from 'ora';
 
+import type {
+  EventConfig, EventLog, OutputLogger, OutputMode,
+} from './renderer-utils.js';
+
 import {successBox, warningBox} from './boxes.js';
+import {OrchestrationListrManager} from './orchestration-listr.js';
+import {formatDuration} from './renderer-utils.js';
 
-/**
- * Output modes for install progress rendering
- */
-export type OutputMode = 'interactive' | 'json' | 'quiet';
-
-/**
- * Logger interface for rendering output
- */
-interface OutputLogger {
-  error: (message: Error | string) => void;
-  log: (message: string) => void;
-}
-
-/**
- * Collected event data for JSON output
- */
-interface EventLog {
-  data: any;
-  timestamp: Date;
-  type: string;
-}
+export type {OutputMode} from './renderer-utils.js';
 
 /**
  * Timing information tracked internally
@@ -42,41 +27,6 @@ interface TimingInfo {
   connectionStart?: Date;
   deploymentStart?: Date;
   installStart?: Date;
-}
-
-/**
- * Event handler function type
- */
-type EventHandler<T = any> = (event: T) => void;
-
-/**
- * Event configuration for systematic handling
- */
-interface EventConfig {
-  description: string;
-  handler: EventHandler;
-}
-
-/**
- * Renders install progress in different output modes
- */
-/**
- * Deferred promise holder for level or package tasks.
- */
-interface Deferred {
-  promise: Promise<void>;
-  reject: (err: Error) => void;
-  resolve: () => void;
-}
-
-function createDeferred(): Deferred {
-  let resolve!: () => void;
-  let reject!: (err: Error) => void;
-  const promise = new Promise<void>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return {promise, reject, resolve};
 }
 
 /**
@@ -105,11 +55,7 @@ export class InstallProgressRenderer {
     error?: Error;
     success: boolean;
   };
-  /**
-   * Deferred promises for each orchestration level.
-   * Created at orchestration:start, resolved at each orchestration:level:start.
-   */
-  private levelDeferreds: Deferred[] = [];
+  private listr: OrchestrationListrManager;
   private logger: OutputLogger;
   private mode: OutputMode;
   /**
@@ -121,18 +67,6 @@ export class InstallProgressRenderer {
     'orchestration:level:start': {description: 'Level started', handler: this.handleOrchestrationLevelStart.bind(this)},
     'orchestration:start': {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
   };
-  /**
-   * Pre-created deferred promises for each package in the current orchestration level.
-   * Populated synchronously in handleOrchestrationLevelStart so resolve/reject are
-   * available even before Listr sub-tasks populate packageTasks.
-   */
-  private packageDeferreds: Map<string, Deferred> = new Map();
-  private packageTasks: Map<string, any> = new Map();
-  /**
-   * Single root Listr instance that persists across all orchestration levels.
-   * Created once at orchestration:start, replaced per-level instances.
-   */
-  private rootListr?: Listr;
   private spinner?: Ora;
   private targetOrg?: string;
   private timings: TimingInfo = {};
@@ -141,6 +75,11 @@ export class InstallProgressRenderer {
     this.logger = options.logger;
     this.mode = options.mode;
     this.targetOrg = options.targetOrg;
+    this.listr = new OrchestrationListrManager(event => {
+      const count = event.packages.length;
+      const pkgText = count === 1 ? 'package' : 'packages';
+      return `Installing ${chalk.cyan(String(count))} ${pkgText} to ${chalk.yellow(this.targetOrg)}`;
+    });
   }
 
   /**
@@ -211,22 +150,11 @@ export class InstallProgressRenderer {
   }
 
   /**
-   * Format duration in human-readable format
-   */
-  private formatDuration(ms: number): string {
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-    const minutes = Math.floor(ms / 60_000);
-    const seconds = Math.floor((ms % 60_000) / 1000);
-    return `${minutes}m ${seconds}s`;
-  }
-
-  /**
    * Look up the Listr sub-task for a package within the active orchestration level.
    * Returns undefined when running in standalone (non-orchestration) mode.
    */
   private getPackageTask(packageName: string): any | undefined {
-    return this.packageTasks.get(packageName);
+    return this.listr.getPackageTask(packageName);
   }
 
   /**
@@ -237,7 +165,7 @@ export class InstallProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.cyan(event.packageName)} - Connected to ${chalk.yellow(event.username)}`,
       );
@@ -257,7 +185,7 @@ export class InstallProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.cyan(event.packageName)} - Connecting to org...`,
       );
@@ -275,7 +203,7 @@ export class InstallProgressRenderer {
     const task = this.getPackageTask(event.packageName);
     if (task) {
       const components = event.numberComponentsDeployed ? ` (${event.numberComponentsDeployed} components)` : '';
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.cyan(event.packageName)} - Deployed${components}`,
       );
@@ -311,7 +239,7 @@ export class InstallProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.cyan(event.packageName)} - ${progressText}`,
       );
@@ -329,7 +257,7 @@ export class InstallProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.cyan(event.packageName)} - Deploying metadata...`,
       );
@@ -355,14 +283,14 @@ export class InstallProgressRenderer {
     const task = this.getPackageTask(event.packageName);
     if (task) {
       const version = event.versionNumber ? `@${event.versionNumber}` : '';
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.green('Installed')} ${chalk.cyan(`${event.packageName}${version}`)}`,
       );
-      this.resolvePackageTask(event.packageName);
+      this.listr.resolvePackage(event.packageName);
     } else if (this.isOrchestrating()) {
       // Listr task not ready yet — resolve via deferred directly
-      this.resolvePackageTask(event.packageName);
+      this.listr.resolvePackage(event.packageName);
     } else {
       this.spinner?.succeed(chalk.green(`Successfully installed ${chalk.bold(event.packageName)}`));
 
@@ -371,7 +299,7 @@ export class InstallProgressRenderer {
         : 0;
 
       this.logger.log(successBox('Installation Complete', {
-        Duration: this.formatDuration(duration),
+        Duration: formatDuration(duration),
         'Package Name': event.packageName,
         Source: event.source,
         'Target Org': event.targetOrg,
@@ -401,11 +329,11 @@ export class InstallProgressRenderer {
     const task = this.getPackageTask(event.packageName);
     if (task) {
       const errorMsg = typeof event.error === 'string' ? event.error : event.error?.message ?? 'Installation failed';
-      this.rejectPackageTask(event.packageName, errorMsg);
+      this.listr.rejectPackage(event.packageName, errorMsg);
     } else if (this.isOrchestrating()) {
       // Listr task not ready yet — reject via deferred directly
       const errorMsg = typeof event.error === 'string' ? event.error : event.error?.message ?? 'Installation failed';
-      this.rejectPackageTask(event.packageName, errorMsg);
+      this.listr.rejectPackage(event.packageName, errorMsg);
     } else {
       this.spinner?.fail(chalk.red(`Failed to install ${chalk.bold(event.packageName)}`));
     }
@@ -420,13 +348,13 @@ export class InstallProgressRenderer {
     const reason = event.reason || 'Already installed';
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.yellow('Skipped')} ${chalk.cyan(event.packageName)} - ${reason}`,
       );
-      this.resolvePackageTask(event.packageName);
+      this.listr.resolvePackage(event.packageName);
     } else if (this.isOrchestrating()) {
-      this.resolvePackageTask(event.packageName);
+      this.listr.resolvePackage(event.packageName);
     } else {
       this.spinner?.info(chalk.yellow(`Skipped ${chalk.bold(event.packageName)}: ${reason}`));
     }
@@ -442,7 +370,7 @@ export class InstallProgressRenderer {
     const task = this.getPackageTask(event.packageName);
     if (task) {
       const version = event.versionNumber ? `@${event.versionNumber}` : '';
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.cyan(`${event.packageName}${version}`)} - Starting installation...`,
       );
@@ -466,17 +394,14 @@ export class InstallProgressRenderer {
     if (!this.isInteractive()) return;
 
     // Cleanup \u2014 Listr rendering is done
-    this.rootListr = undefined;
-    this.levelDeferreds = [];
-    this.packageDeferreds.clear();
-    this.packageTasks.clear();
+    this.listr.destroy();
 
     this.logger.log('');
 
     const succeeded = event.results.filter(r => r.success && !r.skipped).length;
     const failed = event.results.filter(r => !r.success && !r.skipped).length;
     const skipped = event.results.filter(r => r.skipped).length;
-    const duration = this.formatDuration(event.totalDuration);
+    const duration = formatDuration(event.totalDuration);
 
     const entries: Record<string, string> = {
       Succeeded: String(succeeded),
@@ -507,22 +432,7 @@ export class InstallProgressRenderer {
 
     if (!this.isInteractive()) return;
 
-    // Pre-create package deferreds SYNCHRONOUSLY so resolve/reject are
-    // available immediately, even if install events fire before Listr
-    // sub-tasks populate the packageTasks map.
-    this.packageDeferreds.clear();
-    this.packageTasks.clear();
-    for (const name of event.packages) {
-      this.packageDeferreds.set(name, createDeferred());
-    }
-
-    // Resolve the level deferred to unblock the corresponding Listr level task.
-    // The task function was waiting on this promise before creating subtasks.
-    const levelDeferred = this.levelDeferreds[event.level];
-    if (levelDeferred) {
-      (levelDeferred as any).data = event;
-      levelDeferred.resolve();
-    }
+    this.listr.onLevelStart(event);
   }
 
   // ========================================================================
@@ -543,62 +453,7 @@ export class InstallProgressRenderer {
 
     this.logger.log('');
 
-    // Create one deferred per level — resolved when orchestration:level:start fires.
-    this.levelDeferreds = [];
-    for (let i = 0; i < event.totalLevels; i++) {
-      this.levelDeferreds.push(createDeferred());
-    }
-
-    // Build a single root Listr with one sequential task per level.
-    // Each level task awaits its deferred, then creates concurrent package subtasks.
-    this.rootListr = new Listr(
-      this.levelDeferreds.map((deferred, i) => ({
-        task: async (_ctx: any, task: any): Promise<Listr> => {
-          // Block until orchestration:level:start resolves this deferred
-          await deferred.promise;
-          const levelEvent = (deferred as any).data as OrchestrationLevelStartEvent;
-
-          // Update the level title with actual data
-          const count = levelEvent.packages.length;
-          const levelPkgText = count === 1 ? 'package' : 'packages';
-          task.title = `Installing ${chalk.cyan(String(count))} ${levelPkgText} to ${chalk.yellow(this.targetOrg)}`;
-
-          // Build subtasks — packageDeferreds are already populated synchronously
-          // in handleOrchestrationLevelStart before the level deferred was resolved.
-          return task.newListr(
-            levelEvent.packages.map((name: string) => {
-              const detail = levelEvent.packageDetails?.find((d: any) => d.name === name);
-              const version = detail?.version ? `@${detail.version}` : '';
-              return {
-                task: (_c: any, _t: any) => {
-                  this.packageTasks.set(name, _t);
-                  return this.packageDeferreds.get(name)!.promise;
-                },
-                title: `${chalk.cyan(`${name}${version}`)}`,
-              };
-            }),
-            {
-              concurrent: true,
-              exitOnError: false,
-              rendererOptions: {
-                collapseErrors: false,
-              },
-            },
-          );
-        },
-        title: chalk.dim(`Level ${i + 1} - waiting...`),
-      })),
-      {
-        concurrent: false,
-        rendererOptions: {
-          collapseSubtasks: false,
-        },
-      },
-    );
-
-    this.rootListr.run().catch(() => {
-      // Errors are handled by individual task handlers
-    });
+    this.listr.start(event.totalLevels);
   }
 
   /**
@@ -609,7 +464,7 @@ export class InstallProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.cyan(event.packageName)} - Version installed`,
       );
@@ -628,7 +483,7 @@ export class InstallProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.cyan(event.packageName)} - Installing version: ${status}`,
       );
@@ -645,7 +500,7 @@ export class InstallProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      this.updatePackageTaskTitle(
+      this.listr.updatePackageTitle(
         event.packageName,
         `${chalk.cyan(event.packageName)} - Installing package version...`,
       );
@@ -670,7 +525,7 @@ export class InstallProgressRenderer {
    * all output should flow through Listr sub-tasks instead.
    */
   private isOrchestrating(): boolean {
-    return this.rootListr !== undefined;
+    return this.listr.isActive();
   }
 
   /**
@@ -682,35 +537,5 @@ export class InstallProgressRenderer {
       timestamp: new Date(),
       type,
     });
-  }
-
-  /**
-   * Reject the Listr sub-task promise for a package (marks it as failed).
-   * Uses the pre-created deferred from packageDeferreds — safe to call even
-   * before Listr has populated the packageTasks map.
-   */
-  private rejectPackageTask(packageName: string, error: string): void {
-    const deferred = this.packageDeferreds.get(packageName);
-    if (deferred) deferred.reject(new Error(error));
-  }
-
-  /**
-   * Resolve the Listr sub-task promise for a package (marks it as done).
-   * Uses the pre-created deferred from packageDeferreds — safe to call even
-   * before Listr has populated the packageTasks map.
-   */
-  private resolvePackageTask(packageName: string): void {
-    const deferred = this.packageDeferreds.get(packageName);
-    if (deferred) deferred.resolve();
-  }
-
-  /**
-   * Update the title of a package's Listr sub-task.
-   */
-  private updatePackageTaskTitle(packageName: string, title: string): void {
-    const task = this.getPackageTask(packageName);
-    if (task) {
-      task.title = title;
-    }
   }
 }
