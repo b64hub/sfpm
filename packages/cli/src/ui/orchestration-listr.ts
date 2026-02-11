@@ -86,11 +86,7 @@ export class OrchestrationListrManager {
   private readonly enableSubtasks: boolean;
   private levelDeferreds: Deferred[] = [];
   private readonly levelTitleFn: LevelTitleFn;
-  /**
-   * Listr sub-task refs for the "main" (non-analyzer) subtask per package.
-   * When subtasks are active, `updatePackageTitle` redirects here.
-   */
-  private mainSubtaskTasks: Map<string, any> = new Map();
+
   /**
    * Pre-created deferreds for each package in the *current* level.
    * Populated synchronously in `onLevelStart` so resolve/reject are
@@ -146,7 +142,6 @@ export class OrchestrationListrManager {
     this.packageStructureDeferreds.clear();
     this.subtaskDeferreds.clear();
     this.subtaskTasks.clear();
-    this.mainSubtaskTasks.clear();
   }
 
   /**
@@ -203,7 +198,6 @@ export class OrchestrationListrManager {
     this.packageStructureDeferreds.clear();
     this.subtaskDeferreds.clear();
     this.subtaskTasks.clear();
-    this.mainSubtaskTasks.clear();
     for (const name of event.packages) {
       this.packageDeferreds.set(name, createDeferred());
       if (this.enableSubtasks) {
@@ -374,11 +368,11 @@ export class OrchestrationListrManager {
                               title: st.title,
                             })),
                             {
-                              task: (_c2: any, _t2: any) => {
-                                this.mainSubtaskTasks.set(name, _t2);
-                                return this.packageDeferreds.get(name)!.promise;
-                              },
-                              title: chalk.dim('Building...'),
+                              // Sentinel task — keeps the sub-Listr alive until the
+                              // package fully completes. Title-less tasks are not
+                              // rendered by listr2's default renderer.
+                              task: () => this.packageDeferreds.get(name)!.promise,
+                              title: '' as any,
                             },
                           ],
                           {concurrent: true, exitOnError: false},
@@ -421,15 +415,6 @@ export class OrchestrationListrManager {
    * No-op if the task hasn't been registered.
    */
   public updatePackageTitle(packageName: string, title: string): void {
-    // If package has an active main subtask, redirect title updates there
-    // so that non-analyzer events (builder, create, etc.) update the
-    // correct nested task instead of the parent.
-    const mainTask = this.mainSubtaskTasks.get(packageName);
-    if (mainTask) {
-      mainTask.title = title;
-      return;
-    }
-
     const task = this.packageTasks.get(packageName);
     if (task) {
       task.title = title;

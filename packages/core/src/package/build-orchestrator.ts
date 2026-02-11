@@ -11,10 +11,10 @@ import {
 } from '../types/events.js';
 import {Logger} from '../types/logger.js';
 import {
+  OrchestrationTask,
   Orchestrator,
   OrchestratorEmitter,
   OrchestratorOptions,
-  OrchestrationTask,
 } from './orchestrator.js';
 import {BuildOptions, PackageBuilder} from './package-builder.js';
 
@@ -48,10 +48,6 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     this.projectDirectory = projectDirectory;
   }
 
-  async setup(): Promise<GitService | undefined> {
-    return GitService.initialize(this.projectDirectory, this.logger);
-  }
-
   async processSinglePackage(
     packageName: string,
     _level: number,
@@ -83,7 +79,13 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     builder.removeAllListeners();
 
     const duration = Date.now() - start;
-    return {duration, error, packageName, skipped, success};
+    return {
+      duration, error, packageName, skipped, success,
+    };
+  }
+
+  async setup(): Promise<GitService | undefined> {
+    return GitService.initialize(this.projectDirectory, this.logger);
   }
 
   private forwardBuilderEvents(builder: PackageBuilder, emitter: OrchestratorEmitter): void {
@@ -154,7 +156,7 @@ export class BuildOrchestrator extends EventEmitter<AllBuildEvents & Orchestrati
   ) {
     super();
     const task = new BuildOrchestrationTask(projectConfig, options, logger, projectDirectory);
-    this.orchestrator = new Orchestrator(graph, options, task, logger, this);
+    this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: false}, task, logger, this);
   }
 
   /**

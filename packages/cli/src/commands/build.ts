@@ -2,7 +2,7 @@ import {
   BuildOrchestrator, Logger, ProjectService,
 } from '@b64/sfpm-core'
 import {
-  Args, Flags
+  Args, Flags,
 } from '@oclif/core'
 
 import SfpmCommand from '../sfpm-command.js'
