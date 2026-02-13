@@ -13,3 +13,5 @@ pnpm-lock.yaml
 .turbo
 
 **/tsconfig.tsbuildinfo
+**/node_modules
+**/dist
