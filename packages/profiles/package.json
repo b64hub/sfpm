@@ -1,0 +1,35 @@
+{
+  "name": "@b64/sfpm-profiles",
+  "version": "0.1.0",
+  "description": "Profile cleaning and reconciliation plugin for SFPM",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "sfpm",
+    "salesforce",
+    "profiles"
+  ],
+  "author": "b64",
+  "license": "MIT",
+  "dependencies": {
+    "@b64/sfpm-core": "workspace:^0.1.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "devDependencies": {
+    "vitest": "^4.0.17"
+  }
+}
