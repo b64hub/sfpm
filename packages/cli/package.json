@@ -7,7 +7,7 @@
   "bin": {
     "sfpm": "./bin/run.js"
   },
-  "bugs": "https://github.com/b64hub/sfp/issues",
+  "bugs": "https://github.com/b64hub/sfpm/issues",
   "dependencies": {
     "@b64/sfpm-core": "workspace:^0.1.0",
     "@oclif/core": "^4",
@@ -41,7 +41,7 @@
     "./oclif.manifest.json",
     "./theme.json"
   ],
-  "homepage": "https://github.com/b64hub/sfp",
+  "homepage": "https://github.com/b64hub/sfpm",
   "keywords": [
     "oclif"
   ],
@@ -64,7 +64,7 @@
     },
     "theme": "theme.json"
   },
-  "repository": "b64hub/sfp",
+  "repository": "b64hub/sfpm",
   "scripts": {
     "build": "shx rm -rf dist && tsc -b",
     "debug": "DEBUG=* node --inspect-brk --loader ts-node/esm --disable-warning=ExperimentalWarning bin/dev.js",

@@ -7,6 +7,9 @@
   ███████║██║     ██║     ██║ ╚═╝ ██║
   ╚══════╝╚═╝     ╚═╝     ╚═╝     ╚═╝
 ```
+
+by developers for developers
+
 ## Development Context
 
 This project uses **pnpm** for package management. Please do not use `npm` or `yarn`.
