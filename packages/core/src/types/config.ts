@@ -12,20 +12,35 @@ import {LifecycleHooks} from './lifecycle.js';
  * The config file is for SFPM tooling concerns: lifecycle hooks, task
  * configuration, and settings that benefit from programmatic control.
  *
+ * The index signature allows module packages (orgs, profiles, etc.) to
+ * register their own config sections without core depending on them.
+ * Each module provides a typed `define*Config()` helper for type safety.
+ *
  * @example
  * ```typescript
  * // sfpm.config.ts
  * import { defineConfig } from '@b64/sfpm-core';
+ * import { defineOrgConfig } from '@b64/sfpm-orgs';
  * import { profileHooks } from '@b64/sfpm-profiles';
  *
  * export default defineConfig({
  *   hooks: [
  *     profileHooks({ reconcile: true }),
  *   ],
+ *   orgs: defineOrgConfig({
+ *     scratchOrg: { definitionFile: 'config/project-scratch-def.json' },
+ *   }),
  * });
  * ```
  */
 export interface SfpmConfig {
+  /**
+   * Module-specific configuration sections.
+   * Modules like `@b64/sfpm-orgs` register their config under a named key
+   * (e.g., `orgs`). Use the module's `define*Config()` helper for type safety.
+   */
+  [key: string]: unknown;
+
   /**
    * Lifecycle hooks to activate.
    * Hooks participate in lifecycle phases (build, install, etc.) to add
