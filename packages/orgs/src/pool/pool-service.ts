@@ -1,6 +1,6 @@
 import type {Logger} from '@b64/sfpm-core';
 
-import type {ScratchOrg} from '../scratch/types.js';
+import type {ScratchOrg} from '../org/scratch/types.js';
 import type {
   PoolConfig,
   PoolFetchAllOptions,

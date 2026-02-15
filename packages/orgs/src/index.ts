@@ -1,4 +1,6 @@
-export {default as OrgService} from './org-service.js';
+export {default as OrgService} from './org/org-service.js';
+export {type ScratchOrg} from './org/scratch/types.js';
+
 export {
   ORG_PHASES,
   type OrgPhase,
@@ -24,8 +26,6 @@ export {
 
 // Pool service
 export {default as PoolService} from './pool/pool-service.js';
-
-export {type ScratchOrg} from './scratch/types.js';
 
 // Types and config
 export {

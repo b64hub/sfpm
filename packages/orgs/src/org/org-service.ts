@@ -11,7 +11,7 @@ import {
   OrgError,
   type OrgServiceEvents,
   type ShareScratchOrgOptions,
-} from './types.js';
+} from '../types.js';
 
 // ============================================================================
 // OrgService

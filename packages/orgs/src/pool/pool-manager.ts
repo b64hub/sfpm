@@ -2,8 +2,8 @@ import type {Logger} from '@b64/sfpm-core';
 
 import {EventEmitter} from 'node:events';
 
-import type OrgService from '../org-service.js';
-import type {ScratchOrg} from '../scratch/types.js';
+import type OrgService from '../org/org-service.js';
+import type {ScratchOrg} from '../org/scratch/types.js';
 
 import {
   DEFAULT_POOL_SIZING,
