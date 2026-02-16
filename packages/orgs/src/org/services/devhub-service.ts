@@ -2,7 +2,6 @@ import {escapeSOQL, soql} from '@b64/sfpm-core';
 import {AuthInfo, Org, StateAggregator} from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
 
-import type {ScratchOrg} from '../org/scratch/types.js';
 import type {
   AllocationStatus,
   DevHub,
@@ -16,7 +15,8 @@ import type {
   ScratchOrgCreateResult,
   ScratchOrgUsage,
   SendEmailOptions,
-} from '../types.js';
+} from '../../types.js';
+import type {ScratchOrg} from '../scratch/types.js';
 
 // ============================================================================
 // Record types – raw Salesforce SObject shapes
@@ -175,7 +175,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
   }
 
   async generatePassword(username: string): Promise<PasswordResult> {
-    const password = await (await import('../utils/password-generator.js')).generatePassword();
+    const password = await (await import('../../utils/password-generator.js')).generatePassword();
     await this.setUserPassword(username, password);
     return {password};
   }
@@ -297,7 +297,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
       const result = await this.conn.query<{Email: string}>(query);
 
       if (result.records.length === 0) {
-        throw new (await import('../types.js')).OrgError(
+        throw new (await import('../../types.js')).OrgError(
           'fetch',
           `No user found with username ${username} in the DevHub.`,
         );
@@ -352,7 +352,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
     const result = await scratchOrgConnection.getConnection().query<{Id: string}>(query);
 
     if (result.records.length === 0) {
-      throw new (await import('../types.js')).OrgError(
+      throw new (await import('../../types.js')).OrgError(
         'password',
         `No user found with username ${username}`,
       );
@@ -389,7 +389,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
     const allocationField = describe.fields.find(f => f.name === 'Allocation_status__c');
 
     if (!allocationField) {
-      throw new (await import('../types.js')).OrgError(
+      throw new (await import('../../types.js')).OrgError(
         'prerequisite',
         'ScratchOrgInfo is missing the "Allocation_status__c" custom field. '
         + 'Deploy the sfpm pool custom fields to your DevHub before running pool operations.',
@@ -401,7 +401,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
     const missing = REQUIRED_ALLOCATION_STATUSES.filter(s => !picklistValues.has(s));
 
     if (missing.length > 0) {
-      throw new (await import('../types.js')).OrgError(
+      throw new (await import('../../types.js')).OrgError(
         'prerequisite',
         `Allocation_status__c is missing required picklist values: ${missing.join(', ')}. `
         + 'Update the picklist on ScratchOrgInfo in your DevHub.',

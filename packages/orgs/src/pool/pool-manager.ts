@@ -10,8 +10,13 @@ import {
   DEFAULT_SCRATCH_ORG,
   OrgError,
   type PoolConfig,
+  type PoolDeleteOptions,
   type PoolInfoProvider,
+  type PoolOrgLoggerFactory,
   type PoolOrgRecord,
+  type PoolOrgSource,
+  type PoolOrgTask,
+  type PoolOrgTaskResult,
   type PoolSizingConfig,
 } from '../types.js';
 
@@ -39,6 +44,20 @@ export interface OrgProvisionResult {
 }
 
 /**
+ * Result from deleting scratch orgs from a pool.
+ */
+export interface PoolDeleteResult {
+  /** Orgs that were successfully deleted */
+  deleted: ScratchOrg[];
+  /** Total elapsed time in milliseconds */
+  elapsedMs: number;
+  /** Individual deletion error messages */
+  errors: string[];
+  /** The pool tag */
+  tag: string;
+}
+
+/**
  * Final result returned by `PoolManager.provision()`.
  */
 export interface PoolProvisionResult {
@@ -52,6 +71,20 @@ export interface PoolProvisionResult {
   succeeded: ScratchOrg[];
   /** The pool tag */
   tag: string;
+  /** Per-org task execution results (omitted when no tasks configured) */
+  taskResults?: OrgTaskSummary[];
+}
+
+/**
+ * Summary of all task results for a single scratch org.
+ */
+export interface OrgTaskSummary {
+  /** Individual task results in execution order */
+  results: Array<{error?: string; success: boolean; task: string}>;
+  /** Whether all tasks succeeded */
+  success: boolean;
+  /** The org these tasks ran against */
+  username: string;
 }
 
 /**
@@ -60,17 +93,41 @@ export interface PoolProvisionResult {
  */
 export interface PoolManagerEvents {
   'pool:allocation:computed': [payload: {currentAllocation: number; remaining: number; tag: string; toAllocate: number}];
+  'pool:delete:complete': [payload: PoolDeleteResult];
+  'pool:delete:start': [payload: {count: number; tag: string; timestamp: Date}];
   'pool:org:created': [payload: {alias: string; index: number; timestamp: Date; total: number}];
+  'pool:org:deleted': [payload: {timestamp: Date; username: string}];
   'pool:org:discarded': [payload: {reason: string; timestamp: Date; username: string}];
   'pool:org:failed': [payload: {alias: string; error: string; index: number; timedOut: boolean; timestamp: Date}];
   'pool:org:validated': [payload: {timestamp: Date; username: string}];
   'pool:provision:complete': [payload: PoolProvisionResult];
   'pool:provision:start': [payload: {tag: string; timestamp: Date; toAllocate: number}];
+  'pool:task:complete': [payload: {success: boolean; task: string; timestamp: Date; username: string}];
+  'pool:task:error': [payload: {error: string; task: string; timestamp: Date; username: string}];
+  'pool:task:start': [payload: {task: string; timestamp: Date; username: string}];
 }
 
 // ============================================================================
 // PoolManager
 // ============================================================================
+
+/**
+ * Options for constructing a `PoolManager`.
+ */
+export interface PoolManagerOptions {
+  /** Logger for the pool manager itself */
+  logger?: Logger;
+  /** Factory for creating per-org scoped loggers during task execution */
+  loggerFactory?: PoolOrgLoggerFactory;
+  /** Service for creating scratch orgs */
+  orgService: OrgService;
+  /** Provider for pool state queries */
+  poolInfo: PoolInfoProvider;
+  /** Data source for querying pool scratch orgs (required for `delete()`) */
+  poolOrgSource?: PoolOrgSource;
+  /** Tasks to run on each provisioned org (executed in order) */
+  tasks?: PoolOrgTask[];
+}
 
 /**
  * Manages the lifecycle of a scratch org pool.
@@ -95,7 +152,12 @@ export interface PoolManagerEvents {
  *
  * @example
  * ```ts
- * const manager = new PoolManager(orgService, poolInfoProvider, logger);
+ * const manager = new PoolManager({
+ *   loggerFactory: fileLoggerFactory,
+ *   orgService,
+ *   poolInfo: poolInfoProvider,
+ *   tasks: [deployTask, scriptTask],
+ * });
  * manager.on('pool:org:created', (p) => console.log(`Created ${p.alias}`));
  *
  * const result = await manager.provision(poolConfig);
@@ -103,12 +165,21 @@ export interface PoolManagerEvents {
  * ```
  */
 export default class PoolManager extends EventEmitter<PoolManagerEvents> {
-  constructor(
-    private readonly orgService: OrgService,
-    private readonly poolInfo: PoolInfoProvider,
-    private readonly logger?: Logger,
-  ) {
+  private readonly logger?: Logger;
+  private readonly loggerFactory?: PoolOrgLoggerFactory;
+  private readonly orgService: OrgService;
+  private readonly poolInfo: PoolInfoProvider;
+  private readonly poolOrgSource?: PoolOrgSource;
+  private readonly tasks: PoolOrgTask[];
+
+  constructor(options: PoolManagerOptions) {
     super();
+    this.loggerFactory = options.loggerFactory;
+    this.logger = options.logger;
+    this.orgService = options.orgService;
+    this.poolInfo = options.poolInfo;
+    this.poolOrgSource = options.poolOrgSource;
+    this.tasks = options.tasks ?? [];
   }
 
   // --------------------------------------------------------------------------
@@ -139,6 +210,94 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     this.logger?.info(`Pool "${config.tag}": current=${activeCount}, remaining=${remaining}, toAllocate=${allocation.toAllocate}`);
 
     return allocation;
+  }
+
+  /**
+   * Delete scratch orgs from a pool.
+   *
+   * Queries all orgs matching the pool tag, optionally filtering to
+   * only 'In Progress' orgs or orgs owned by the current user. Each
+   * matching org with a valid `recordId` is deleted via `OrgService`.
+   *
+   * @param options - Tag, filter, and ownership options
+   * @returns Summary of deleted orgs and any errors
+   * @throws {OrgError} When `poolOrgSource` was not provided at construction
+   */
+  public async delete(options: PoolDeleteOptions): Promise<PoolDeleteResult> {
+    if (!this.poolOrgSource) {
+      throw new OrgError('delete', 'PoolOrgSource is required for delete operations — provide it in PoolManagerOptions');
+    }
+
+    const startTime = Date.now();
+    const {inProgressOnly, myPool, tag} = options;
+
+    this.logger?.info(`Querying pool "${tag}" for orgs to delete...`);
+
+    // 1. Query orgs from the pool
+    let orgs = await this.poolOrgSource.getOrgsByTag(tag, myPool);
+
+    // 2. Apply status filter
+    if (inProgressOnly) {
+      orgs = orgs.filter(org => org.status === 'In Progress');
+    }
+
+    if (orgs.length === 0) {
+      this.logger?.info(`No orgs found in pool "${tag}" matching the specified criteria`);
+      return {
+        deleted: [],
+        elapsedMs: Date.now() - startTime,
+        errors: [],
+        tag,
+      };
+    }
+
+    this.emit('pool:delete:start', {
+      count: orgs.length,
+      tag,
+      timestamp: new Date(),
+    });
+
+    this.logger?.info(`Deleting ${orgs.length} org(s) from pool "${tag}"...`);
+
+    // 3. Delete each org individually (some may lack recordIds or fail)
+    const deleted: ScratchOrg[] = [];
+    const errors: string[] = [];
+
+    for (const org of orgs) {
+      if (!org.recordId) {
+        errors.push(`Org ${org.username ?? 'unknown'} has no recordId — skipping`);
+        continue;
+      }
+
+      try {
+        // eslint-disable-next-line no-await-in-loop -- sequential deletion avoids overwhelming the DevHub API
+        await this.orgService.deleteScratchOrgs([org.recordId]);
+        org.status = 'Deleted';
+        deleted.push(org);
+
+        this.emit('pool:org:deleted', {
+          timestamp: new Date(),
+          username: org.username!,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`Failed to delete org ${org.username ?? org.recordId}: ${message}`);
+        this.logger?.warn(`Failed to delete org ${org.username ?? org.recordId}: ${message}`);
+      }
+    }
+
+    const elapsedMs = Date.now() - startTime;
+    const result: PoolDeleteResult = {
+      deleted,
+      elapsedMs,
+      errors,
+      tag,
+    };
+
+    this.emit('pool:delete:complete', result);
+    this.logger?.info(`Deleted ${deleted.length} org(s) from pool "${tag}" in ${elapsedMs}ms`);
+
+    return result;
   }
 
   /**
@@ -204,6 +363,12 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     // 4. Fetch record IDs and register in pool
     const registeredOrgs = await this.registerInPool(validOrgs, config.tag);
 
+    // 5. Run preparation tasks on provisioned orgs
+    let taskResults: OrgTaskSummary[] | undefined;
+    if (this.tasks.length > 0) {
+      taskResults = await this.runTasksOnOrgs(registeredOrgs, concurrency);
+    }
+
     const elapsedMs = Date.now() - startTime;
     const result: PoolProvisionResult = {
       elapsedMs,
@@ -211,6 +376,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       failed: allocation.toAllocate - registeredOrgs.length,
       succeeded: registeredOrgs,
       tag: config.tag,
+      taskResults,
     };
 
     this.emit('pool:provision:complete', result);
@@ -316,8 +482,26 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   }
 
   // --------------------------------------------------------------------------
-  // Private — Validation and registration
+  // Private helpers
   // --------------------------------------------------------------------------
+
+  /**
+   * Execute a single task, catching errors so one task can't crash
+   * the entire provisioning run.
+   */
+  private async executeSingleTask(
+    task: PoolOrgTask,
+    org: ScratchOrg,
+    orgLogger?: Logger,
+  ): Promise<PoolOrgTaskResult> {
+    try {
+      return await task.execute(org, orgLogger ?? noopLogger);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      orgLogger?.error(`Task "${task.name}" failed: ${message}`);
+      return {error: message, success: false};
+    }
+  }
 
   private handleZeroAllocation(
     config: PoolConfig,
@@ -338,6 +522,10 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       tag: config.tag,
     };
   }
+
+  // --------------------------------------------------------------------------
+  // Private — Task execution
+  // --------------------------------------------------------------------------
 
   /**
    * Fetch record IDs from the DevHub and update pool metadata.
@@ -363,9 +551,96 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     return enrichedOrgs.filter(org => org.recordId);
   }
 
-  // --------------------------------------------------------------------------
-  // Private — Allocation helpers
-  // --------------------------------------------------------------------------
+  /**
+   * Run preparation tasks on provisioned orgs with concurrency control.
+   *
+   * Each org gets a scoped logger from the `PoolOrgLoggerFactory`.
+   * Tasks run sequentially per org (order matters — deploy before
+   * scripts), but multiple orgs are processed in parallel up to
+   * `concurrency`.
+   */
+  private async runTasksOnOrgs(
+    orgs: ScratchOrg[],
+    concurrency: number,
+  ): Promise<OrgTaskSummary[]> {
+    this.logger?.info(`Running ${this.tasks.length} task(s) on ${orgs.length} org(s)...`);
+
+    const summaries: OrgTaskSummary[] = [];
+
+    // Process orgs in batches (same pattern as org creation)
+    for (let i = 0; i < orgs.length; i += concurrency) {
+      const batch = orgs.slice(i, i + concurrency);
+      // eslint-disable-next-line no-await-in-loop -- intentional sequential batching for API rate limits
+      const batchResults = await Promise.all(batch.map(org => this.runTasksOnSingleOrg(org)));
+      summaries.push(...batchResults);
+    }
+
+    // Clean up logger factory resources
+    if (this.loggerFactory?.dispose) {
+      await this.loggerFactory.dispose();
+    }
+
+    const succeeded = summaries.filter(s => s.success).length;
+    this.logger?.info(`Tasks complete: ${succeeded}/${summaries.length} org(s) fully prepared`);
+
+    return summaries;
+  }
+
+  /**
+   * Run all registered tasks sequentially on a single scratch org.
+   *
+   * Creates a scoped logger for the org, then executes each task in
+   * order. If a task fails and `continueOnError` is false, remaining
+   * tasks are skipped.
+   */
+  private async runTasksOnSingleOrg(org: ScratchOrg): Promise<OrgTaskSummary> {
+    const orgLogger = this.loggerFactory?.create(org) ?? this.logger;
+    const results: Array<{error?: string; success: boolean; task: string}> = [];
+    let aborted = false;
+
+    for (const task of this.tasks) {
+      if (aborted) {
+        results.push({error: 'Skipped (previous task failed)', success: false, task: task.name});
+        continue;
+      }
+
+      this.emit('pool:task:start', {
+        task: task.name,
+        timestamp: new Date(),
+        username: org.username!,
+      });
+
+      // eslint-disable-next-line no-await-in-loop -- tasks must run sequentially per org (order matters)
+      const taskResult = await this.executeSingleTask(task, org, orgLogger);
+      results.push({error: taskResult.error, success: taskResult.success, task: task.name});
+
+      if (taskResult.success) {
+        this.emit('pool:task:complete', {
+          success: true,
+          task: task.name,
+          timestamp: new Date(),
+          username: org.username!,
+        });
+      } else {
+        this.emit('pool:task:error', {
+          error: taskResult.error ?? 'Unknown error',
+          task: task.name,
+          timestamp: new Date(),
+          username: org.username!,
+        });
+
+        if (!task.continueOnError) {
+          aborted = true;
+        }
+      }
+    }
+
+    return {
+      results,
+      success: results.every(r => r.success),
+      username: org.username!,
+    };
+  }
 
   /**
    * Validate that provisioned orgs are actually active.
@@ -458,3 +733,18 @@ export function computeOrgAllocation(
     toSatisfyMax,
   };
 }
+
+// ============================================================================
+// Internal helpers
+// ============================================================================
+
+/** Silent logger used when no logger or factory is provided. */
+const noop = (): void => {};
+const noopLogger: Logger = {
+  debug: noop,
+  error: noop,
+  info: noop,
+  log: noop,
+  trace: noop,
+  warn: noop,
+};

@@ -5,11 +5,13 @@ import {EventEmitter} from 'node:events';
 import type {ScratchOrg} from './scratch/types.js';
 
 import {
+  type AllocationStatus,
   type CreateScratchOrgOptions,
   DEFAULT_SCRATCH_ORG,
-  type HubOrgConnection,
+  type DevHub,
   OrgError,
   type OrgServiceEvents,
+  type ScratchOrgUsage,
   type ShareScratchOrgOptions,
 } from '../types.js';
 
@@ -42,7 +44,7 @@ import {
  */
 export default class OrgService extends EventEmitter<OrgServiceEvents> {
   constructor(
-    private readonly hubOrg: HubOrgConnection,
+    private readonly hubOrg: DevHub,
     private readonly logger?: Logger,
   ) {
     super();
@@ -139,6 +141,10 @@ export default class OrgService extends EventEmitter<OrgServiceEvents> {
     }
   }
 
+  // --------------------------------------------------------------------------
+  // Public — Scratch Org queries
+  // --------------------------------------------------------------------------
+
   /**
    * Delete scratch orgs by their ActiveScratchOrg record IDs.
    *
@@ -163,6 +169,54 @@ export default class OrgService extends EventEmitter<OrgServiceEvents> {
       throw new OrgError('delete', 'Failed to delete scratch orgs', {
         cause: error instanceof Error ? error : new Error(String(error)),
         context: {orgIds: scratchOrgIds},
+      });
+    }
+  }
+
+  /**
+   * Find active scratch orgs that have no pool tag.
+   *
+   * Returns orgs that were created outside the pool lifecycle or whose
+   * pool tag was cleared. Useful for cleanup operations.
+   *
+   * @throws {OrgError} When the query fails
+   */
+  public async getOrphanedScratchOrgs(): Promise<ScratchOrg[]> {
+    this.logger?.debug('Querying orphaned scratch orgs...');
+
+    try {
+      const orgs = await this.hubOrg.getOrphanedScratchOrgs();
+      this.logger?.info(`Found ${orgs.length} orphaned scratch org(s)`);
+      return orgs;
+    } catch (error) {
+      throw new OrgError('fetch', 'Failed to query orphaned scratch orgs', {
+        cause: error instanceof Error ? error : new Error(String(error)),
+      });
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Public — Scratch Org mutations
+  // --------------------------------------------------------------------------
+
+  /**
+   * Get scratch org usage counts grouped by user email.
+   *
+   * Returns an array of `{ email, count }` entries ordered by count
+   * descending. Useful for reporting and capacity planning.
+   *
+   * @throws {OrgError} When the query fails
+   */
+  public async getScratchOrgUsageByUser(): Promise<ScratchOrgUsage[]> {
+    this.logger?.debug('Querying scratch org usage by user...');
+
+    try {
+      const usage = await this.hubOrg.getScratchOrgUsageByUser();
+      this.logger?.info(`Found usage data for ${usage.length} user(s)`);
+      return usage;
+    } catch (error) {
+      throw new OrgError('fetch', 'Failed to query scratch org usage by user', {
+        cause: error instanceof Error ? error : new Error(String(error)),
       });
     }
   }
@@ -206,6 +260,52 @@ export default class OrgService extends EventEmitter<OrgServiceEvents> {
       throw new OrgError('share', `Failed to send scratch org details to ${emailAddress}`, {
         cause: error instanceof Error ? error : new Error(String(error)),
         orgIdentifier: scratchOrg.username,
+      });
+    }
+  }
+
+  /**
+   * Update the allocation status of a scratch org.
+   *
+   * Resolves the ScratchOrgInfo record from the DevHub by username,
+   * then sets its `Allocation_status__c` field.
+   *
+   * @param username - The scratch org's SignupUsername
+   * @param status - The new allocation status to set
+   * @returns `true` if the update succeeded
+   * @throws {OrgError} When the ScratchOrgInfo record cannot be found or the update fails
+   */
+  public async updateScratchOrgStatus(username: string, status: AllocationStatus): Promise<boolean> {
+    this.logger?.debug(`Updating status for ${username} to "${status}"`);
+
+    const scratchOrgInfoId = await this.hubOrg.getScratchOrgInfoByUsername(username);
+
+    if (!scratchOrgInfoId) {
+      throw new OrgError('update', `ScratchOrgInfo record not found for username: ${username}`, {
+        context: {status},
+        orgIdentifier: username,
+      });
+    }
+
+    try {
+      const result = await this.hubOrg.updateScratchOrgInfo({
+        Allocation_status__c: status, // eslint-disable-line camelcase -- Salesforce custom field name
+        Id: scratchOrgInfoId,
+      });
+
+      this.emit('scratch:status:complete', {
+        status,
+        timestamp: new Date(),
+        username,
+      });
+
+      this.logger?.info(`Status for ${username} updated to "${status}"`);
+      return result;
+    } catch (error) {
+      throw new OrgError('update', `Failed to update scratch org status to "${status}"`, {
+        cause: error instanceof Error ? error : new Error(String(error)),
+        context: {scratchOrgInfoId, status},
+        orgIdentifier: username,
       });
     }
   }

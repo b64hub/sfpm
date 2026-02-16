@@ -1,7 +1,7 @@
 import {AuthInfo, Org} from '@salesforce/core';
 
-import type {ScratchOrg} from '../org/scratch/types.js';
-import type {JwtAuthConfig, PoolOrgAuthenticator} from '../types.js';
+import type {JwtAuthConfig, PoolOrgAuthenticator} from '../../types.js';
+import type {ScratchOrg} from '../scratch/types.js';
 
 // ============================================================================
 // ScratchOrgAuthService

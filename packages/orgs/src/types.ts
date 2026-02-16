@@ -1,3 +1,5 @@
+import type {Logger} from '@b64/sfpm-core';
+
 import type {ScratchOrg} from './org/scratch/types.js';
 
 // ============================================================================
@@ -39,13 +41,13 @@ export interface JwtAuthConfig {
 // ============================================================================
 
 /**
- * Abstraction over the DevHub org connection.
+ * Abstraction over a Salesforce DevHub.
  *
  * Decouples org-service from @salesforce/core so the orgs package
- * depends only on sfpm-core types. Adapters bridge this interface
- * to the real Salesforce SDK at the CLI layer.
+ * depends only on sfpm-core types. The concrete implementation
+ * (`DevHubService`) bridges this interface to the real Salesforce SDK.
  */
-export interface HubOrgConnection {
+export interface DevHub {
   /** Create a scratch org against this DevHub */
   createScratchOrg(request: ScratchOrgCreateRequest): Promise<ScratchOrgCreateResult>;
 
@@ -64,6 +66,41 @@ export interface HubOrgConnection {
    */
   getJwtConfig(): JwtAuthConfig;
 
+  /**
+   * Find active scratch orgs that have no pool tag.
+   *
+   * Queries `ScratchOrgInfo WHERE Pooltag__c = null AND Status = 'Active'`.
+   * Useful for cleanup operations to identify orgs that were created
+   * outside of the pool lifecycle or whose tag was cleared.
+   */
+  getOrphanedScratchOrgs(): Promise<ScratchOrg[]>;
+
+  /**
+   * Look up a ScratchOrgInfo record ID by its SignupUsername.
+   *
+   * Uses the DevHub's `ScratchOrgInfo` sobject to find the record
+   * matching the given username. Returns the record ID or `undefined`
+   * if no match is found.
+   */
+  getScratchOrgInfoByUsername(username: string): Promise<string | undefined>;
+
+  /**
+   * Get scratch org usage counts grouped by user email.
+   *
+   * Queries `ActiveScratchOrg` and groups by `SignupEmail`, returning
+   * the count per user ordered by usage descending. Useful for
+   * reporting and capacity planning.
+   */
+  getScratchOrgUsageByUser(): Promise<ScratchOrgUsage[]>;
+
+  /**
+   * Look up a user's email address by their username.
+   *
+   * Queries the `User` SObject in the DevHub. Retries up to 3 times
+   * to handle transient API failures.
+   */
+  getUserEmail(username: string): Promise<string>;
+
   /** Returns the hub org username */
   getUsername(): string;
 
@@ -72,6 +109,47 @@ export interface HubOrgConnection {
 
   /** Set a local alias for a username */
   setAlias(username: string, alias: string): Promise<void>;
+
+  /**
+   * Set a password for a user via the DevHub.
+   *
+   * Looks up the user by username and assigns the given password.
+   * Use this in combination with `generatePassword()` utility when you
+   * need explicit control over password generation vs assignment.
+   *
+   * @param username - The username of the org/user to set password for
+   * @param password - The password to assign
+   */
+  setUserPassword(username: string, password: string): Promise<void>;
+
+  /**
+   * Update fields on a ScratchOrgInfo record.
+   *
+   * Wraps `connection.sobject('ScratchOrgInfo').update()`. The `id` field
+   * is required to identify the record; all other fields are merged.
+   *
+   * @param fields - Object with `Id` and any ScratchOrgInfo fields to update
+   * @returns `true` if the update succeeded
+   */
+  updateScratchOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean>;
+}
+
+// ============================================================================
+// Scratch Org Query Types
+// ============================================================================
+
+/**
+ * Scratch org usage count for a single user.
+ *
+ * Returned by `DevHub.getScratchOrgUsageByUser()`. Maps to
+ * the `SELECT count(id) In_Use, SignupEmail FROM ActiveScratchOrg
+ * GROUP BY SignupEmail` aggregate query.
+ */
+export interface ScratchOrgUsage {
+  /** Number of active scratch orgs owned by this user */
+  count: number;
+  /** The user's signup email address */
+  email: string;
 }
 
 // ============================================================================
@@ -302,6 +380,20 @@ export interface PoolOrgSource {
    * @returns Available scratch orgs with metadata populated
    */
   getAvailableByTag(tag: string, myPool?: boolean): Promise<ScratchOrg[]>;
+
+  /**
+   * Query all scratch orgs in a pool regardless of status.
+   *
+   * Returns orgs with all allocation statuses (Available, In Progress,
+   * Assigned, etc.). Used by pool deletion to find orgs to remove.
+   * Each returned org should include its `recordId` (the ActiveScratchOrg ID)
+   * when the org is still active.
+   *
+   * @param tag - Pool tag to filter by
+   * @param myPool - When true, only return orgs created by the current user
+   * @returns All pool orgs with metadata populated
+   */
+  getOrgsByTag(tag: string, myPool?: boolean): Promise<ScratchOrg[]>;
 }
 
 // ============================================================================
@@ -393,6 +485,143 @@ export interface PoolFetchOptions {
 export interface PoolFetchAllOptions extends PoolFetchOptions {
   /** Maximum number of orgs to fetch */
   limit?: number;
+}
+
+// ============================================================================
+// Pool Deletion
+// ============================================================================
+
+/**
+ * Options for deleting scratch orgs from a pool.
+ */
+export interface PoolDeleteOptions {
+  /** Only delete orgs with 'In Progress' allocation status */
+  inProgressOnly?: boolean;
+  /** Only delete orgs owned by the current user */
+  myPool?: boolean;
+  /** Pool tag identifying which pool to delete from */
+  tag: string;
+}
+
+// ============================================================================
+// Pool Task Execution
+// ============================================================================
+
+/**
+ * A unit of work to perform on a provisioned scratch org.
+ *
+ * Tasks run after org creation during pool provisioning — deploying
+ * packages, running scripts, configuring permissions, etc.
+ *
+ * Each task receives a `Logger` scoped to the scratch org it operates on.
+ * The logger implementation varies by context:
+ *
+ * - **CLI**: Writes to a per-org log file (`.sfpm/prepare_logs/{alias}.log`)
+ * - **GitHub Action**: Structured output, group annotations, artifact uploads
+ * - **Tests**: In-memory logger for assertions
+ *
+ * Tasks are executed in the order they are registered. If a task fails
+ * and its `continueOnError` property is `false` (the default), the
+ * remaining tasks for that org are skipped.
+ *
+ * @example
+ * ```typescript
+ * const deployTask: PoolOrgTask = {
+ *   name: 'deploy-packages',
+ *   async execute(scratchOrg, logger) {
+ *     logger.info(`Deploying to ${scratchOrg.username}...`);
+ *     await deployPackages(scratchOrg);
+ *     logger.info('Deployment complete');
+ *     return { success: true };
+ *   },
+ * };
+ * ```
+ */
+export interface PoolOrgTask {
+  /**
+   * Whether provisioning should continue if this task fails.
+   *
+   * When `true`, the failure is recorded but subsequent tasks
+   * still run. When `false` (default), remaining tasks for this
+   * org are skipped on failure.
+   */
+  continueOnError?: boolean;
+
+  /**
+   * Execute the task against a scratch org.
+   *
+   * @param scratchOrg - The provisioned scratch org to operate on
+   * @param logger - A logger scoped to this org (output destination
+   *                 is determined by the `PoolOrgLoggerFactory`)
+   * @returns Result indicating success or failure with details
+   */
+  execute(scratchOrg: ScratchOrg, logger: Logger): Promise<PoolOrgTaskResult>;
+
+  /** Human-readable task name, used in events and log prefixes */
+  name: string;
+}
+
+/**
+ * Result of a single task execution on a scratch org.
+ */
+export interface PoolOrgTaskResult {
+  /** Error message when `success` is false */
+  error?: string;
+  /** Whether the task completed successfully */
+  success: boolean;
+}
+
+/**
+ * Factory for creating loggers scoped to individual scratch orgs.
+ *
+ * Injected into the pool manager to control where per-org preparation
+ * logs are written. The factory is called once per scratch org before
+ * task execution begins.
+ *
+ * Implementations are context-specific:
+ *
+ * - **CLI** (`FileLoggerFactory`): Creates a logger that writes to
+ *   `.sfpm/prepare_logs/{alias}.log`. Useful for local debugging —
+ *   developers can tail the file or review after the run.
+ *
+ * - **GitHub Action** (`ActionsLoggerFactory`): Creates a logger that
+ *   emits `::group::` / `::endgroup::` annotations and optionally
+ *   uploads log content as workflow artifacts.
+ *
+ * - **Test** (`InMemoryLoggerFactory`): Captures log lines in an
+ *   array for test assertions. No filesystem or network I/O.
+ *
+ * If no factory is provided, the pool manager falls back to its
+ * injected `Logger` instance (or silent no-op if none).
+ *
+ * @example
+ * ```typescript
+ * class FileLoggerFactory implements PoolOrgLoggerFactory {
+ *   constructor(private readonly baseDir: string) {}
+ *
+ *   create(scratchOrg: ScratchOrg): Logger {
+ *     const logPath = path.join(this.baseDir, `${scratchOrg.alias}.log`);
+ *     return createFileLogger(logPath);
+ *   }
+ *
+ *   async dispose(): Promise<void> {
+ *     // Flush and close all file handles
+ *   }
+ * }
+ * ```
+ */
+export interface PoolOrgLoggerFactory {
+  /** Create a logger scoped to a specific scratch org */
+  create(scratchOrg: ScratchOrg): Logger;
+
+  /**
+   * Clean up resources after all tasks have completed.
+   *
+   * Called once at the end of the provisioning run. Use this to
+   * flush file handles, upload artifacts, or finalize structured
+   * output.
+   */
+  dispose?(): Promise<void>;
 }
 
 // ============================================================================
@@ -585,6 +814,7 @@ export interface OrgServiceEvents {
   'scratch:delete:complete': [payload: {orgIds: string[]; timestamp: Date}];
   'scratch:delete:start': [payload: {orgIds: string[]; timestamp: Date}];
   'scratch:share:complete': [payload: {emailAddress: string; timestamp: Date; username: string}];
+  'scratch:status:complete': [payload: {status: AllocationStatus; timestamp: Date; username: string}];
 }
 
 // ============================================================================
@@ -599,7 +829,7 @@ export interface OrgServiceEvents {
  */
 export class OrgError extends Error {
   public readonly context: Record<string, unknown>;
-  public readonly operation: 'auth' | 'create' | 'delete' | 'fetch' | 'password' | 'prerequisite' | 'share';
+  public readonly operation: 'auth' | 'create' | 'delete' | 'fetch' | 'password' | 'prerequisite' | 'share' | 'update';
   public readonly orgIdentifier?: string;
   public readonly timestamp: Date;
 
