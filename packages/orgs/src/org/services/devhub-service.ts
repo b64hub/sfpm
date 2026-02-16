@@ -1,5 +1,7 @@
 import {escapeSOQL, soql} from '@b64/sfpm-core';
-import {AuthInfo, Org, StateAggregator} from '@salesforce/core';
+import {
+  AuthInfo, Connection, Org, StateAggregator,
+} from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
 
 import type {
@@ -17,6 +19,9 @@ import type {
   SendEmailOptions,
 } from '../../types.js';
 import type {ScratchOrg} from '../scratch/types.js';
+
+import {OrgError} from '../../types.js';
+import {generatePassword} from '../../utils/password-generator.js';
 
 // ============================================================================
 // Record types – raw Salesforce SObject shapes
@@ -175,7 +180,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
   }
 
   async generatePassword(username: string): Promise<PasswordResult> {
-    const password = await (await import('../../utils/password-generator.js')).generatePassword();
+    const password = await generatePassword();
     await this.setUserPassword(username, password);
     return {password};
   }
@@ -292,19 +297,16 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
 
   async getUserEmail(username: string): Promise<string> {
     const query = soql`SELECT Email FROM User WHERE Username = '${escapeSOQL(username)}'`;
+    const result = await this.conn.query<{Email: string}>(query);
 
-    return retry(async () => {
-      const result = await this.conn.query<{Email: string}>(query);
+    if (result.records.length === 0) {
+      throw new OrgError(
+        'fetch',
+        `No user found with username ${username} in the DevHub.`,
+      );
+    }
 
-      if (result.records.length === 0) {
-        throw new (await import('../../types.js')).OrgError(
-          'fetch',
-          `No user found with username ${username} in the DevHub.`,
-        );
-      }
-
-      return result.records[0].Email;
-    }, 3, 3000);
+    return result.records[0].Email;
   }
 
   getUsername(): string {
@@ -344,7 +346,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
   async setUserPassword(username: string, password: string): Promise<void> {
     const scratchOrgAuthInfo = await AuthInfo.create({username});
     const scratchOrgConnection = await Org.create({
-      connection: await (await import('@salesforce/core')).Connection.create({authInfo: scratchOrgAuthInfo}),
+      connection: await Connection.create({authInfo: scratchOrgAuthInfo}),
     });
 
     // Query the user ID and use SOAP API to set password
@@ -352,7 +354,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
     const result = await scratchOrgConnection.getConnection().query<{Id: string}>(query);
 
     if (result.records.length === 0) {
-      throw new (await import('../../types.js')).OrgError(
+      throw new OrgError(
         'password',
         `No user found with username ${username}`,
       );
@@ -389,7 +391,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
     const allocationField = describe.fields.find(f => f.name === 'Allocation_status__c');
 
     if (!allocationField) {
-      throw new (await import('../../types.js')).OrgError(
+      throw new OrgError(
         'prerequisite',
         'ScratchOrgInfo is missing the "Allocation_status__c" custom field. '
         + 'Deploy the sfpm pool custom fields to your DevHub before running pool operations.',
@@ -401,7 +403,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
     const missing = REQUIRED_ALLOCATION_STATUSES.filter(s => !picklistValues.has(s));
 
     if (missing.length > 0) {
-      throw new (await import('../../types.js')).OrgError(
+      throw new OrgError(
         'prerequisite',
         `Allocation_status__c is missing required picklist values: ${missing.join(', ')}. `
         + 'Update the picklist on ScratchOrgInfo in your DevHub.',
@@ -463,25 +465,4 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
     tag: record.Pooltag__c,
     username: record.SignupUsername,
   };
-}
-
-async function retry<T>(fn: () => Promise<T>, retries: number, delayMs: number): Promise<T> {
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      // eslint-disable-next-line no-await-in-loop -- sequential retry by design
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      if (attempt < retries) {
-        // eslint-disable-next-line no-await-in-loop -- intentional delay between retries
-        await new Promise(resolve => {
-          setTimeout(resolve, delayMs);
-        });
-      }
-    }
-  }
-
-  throw lastError;
 }
