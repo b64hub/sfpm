@@ -1,18 +1,20 @@
 export interface ScratchOrg {
-  accessToken?: string;
-  alias?: string;
-  elapsedTime?: number;
-  expiryDate?: string;
-  failureMessage?: string;
-  instanceURL?: string;
-  isScriptExecuted?: boolean;
-  loginURL?: string;
-  orgId?: string;
-  password?: string;
+  auth: {
+    alias?: string;
+    authUrl?: string;
+    email?: string;
+    loginUrl?: string;
+    password?: string;
+    token?: string;
+    username: string;
+  },
+  expiry?: number;
+  orgId: string;
+  pool?: {
+    isScriptExecuted?: boolean;
+    status: string,
+    tag: string,
+    timestamp: number;
+  }
   recordId?: string;
-  sfdxAuthUrl?: string;
-  signupEmail?: string;
-  status?: string;
-  tag?: string;
-  username?: string;
 }

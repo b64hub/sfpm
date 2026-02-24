@@ -43,19 +43,27 @@ export default class ScratchOrgAuthService implements PoolOrgAuthenticator {
   }
 
   async enableSourceTracking(scratchOrg: ScratchOrg): Promise<void> {
-    if (!scratchOrg.username) return;
+    if (!scratchOrg.auth.username) return;
 
-    const authInfo = await AuthInfo.create({username: scratchOrg.username});
+    const authInfo = await AuthInfo.create({username: scratchOrg.auth.username});
     authInfo.update({tracksSource: true});
     await authInfo.save();
   }
 
   hasValidAuth(scratchOrg: ScratchOrg): boolean {
-    return Boolean(scratchOrg.username && scratchOrg.loginURL);
+    return Boolean(scratchOrg.auth.username && scratchOrg.auth.loginUrl);
   }
 
-  async login(scratchOrg: ScratchOrg): Promise<boolean> {
-    if (!scratchOrg.username) return false;
+  /**
+   * Login to a scratch org with the provided info
+   * @param scratchOrg org to login to
+   * @returns AuthInfo for the logged in org
+   * @throws Error
+   */
+  async login(scratchOrg: ScratchOrg): Promise<AuthInfo> {
+    if (!scratchOrg.auth.username) {
+      throw new Error('Login error, scratch org must have a valid username');
+    }
 
     try {
       const authInfo = await AuthInfo.create({
@@ -65,17 +73,16 @@ export default class ScratchOrgAuthService implements PoolOrgAuthenticator {
           privateKeyFile: this.jwtConfig.privateKeyPath,
         },
         parentUsername: this.hubUsername,
-        username: scratchOrg.username,
+        username: scratchOrg.auth.username,
       });
 
       await authInfo.save();
+      await Org.create({aliasOrUsername: scratchOrg.auth.username});
 
-      // Verify the connection works by creating an Org instance
-      await Org.create({aliasOrUsername: scratchOrg.username});
-
-      return true;
-    } catch {
-      return false;
+      return authInfo;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Error authenticating org ${scratchOrg.auth.username}. ` + errorMessage);
     }
   }
 }

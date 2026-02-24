@@ -1,5 +1,7 @@
 import type {Logger} from '@b64/sfpm-core';
 
+import {AuthInfo} from '@salesforce/core';
+
 import type {ScratchOrg} from './org/scratch/types.js';
 
 // ============================================================================
@@ -311,7 +313,7 @@ export interface PoolConfig {
 /**
  * Allocation status values for scratch orgs managed by a pool.
  *
- * Mirrors the picklist on the DevHub's `ScratchOrgInfo.Allocation_status__c`.
+ * Mirrors the picklist on the DevHub's `ScratchOrgInfo.Allocation_Status__c`.
  */
 export type AllocationStatus = 'Allocate' | 'Assigned' | 'Available' | 'In Progress' | 'Return';
 
@@ -403,7 +405,7 @@ export interface PoolOrgSource {
 /**
  * Validates that the DevHub has the required configuration for pool operations.
  *
- * Checks that the `Allocation_status__c` picklist values are present
+ * Checks that the `Allocation_Status__c` picklist values are present
  * on the `ScratchOrgInfo` sobject.
  *
  * Implement this interface at the CLI layer where you have access to
@@ -417,7 +419,7 @@ export interface PoolOrgSource {
  *   async validate(): Promise<void> {
  *     const describe = await this.hubOrg.getConnection()
  *       .sobject('ScratchOrgInfo').describe();
- *     // Check for Allocation_status__c picklist values.
+ *     // Check for Allocation_Status__c picklist values.
  *   }
  * }
  * ```
@@ -450,7 +452,7 @@ export interface PoolOrgAuthenticator {
   hasValidAuth(scratchOrg: ScratchOrg): boolean;
 
   /** Authenticate to a scratch org via JWT. Returns true on success. */
-  login(scratchOrg: ScratchOrg): Promise<boolean>;
+  login(scratchOrg: ScratchOrg): Promise<AuthInfo>;
 }
 
 /**

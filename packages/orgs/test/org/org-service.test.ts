@@ -339,12 +339,12 @@ describe('OrgService', () => {
   // updateScratchOrgStatus
   // --------------------------------------------------------------------------
   describe('updateScratchOrgStatus', () => {
-    it('resolves ScratchOrgInfo record and updates Allocation_status__c', async () => {
+    it('resolves ScratchOrgInfo record and updates Allocation_Status__c', async () => {
       const result = await service.updateScratchOrgStatus('test@example.com', 'Available');
 
       expect(hub.getScratchOrgInfoByUsername).toHaveBeenCalledWith('test@example.com');
       expect(hub.updateScratchOrgInfo).toHaveBeenCalledWith({
-        Allocation_status__c: 'Available',
+        Allocation_Status__c: 'Available',
         Id: 'a1B000000000001',
       });
       expect(result).toBe(true);

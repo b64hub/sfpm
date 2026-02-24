@@ -101,27 +101,27 @@ export default class OrgService extends EventEmitter<OrgServiceEvents> {
 
       // 3. Build the domain object
       const scratchOrg: ScratchOrg = {
-        alias,
-        elapsedTime: Date.now() - startTime,
-        loginURL: result.loginUrl,
+        auth: {
+          alias,
+          loginUrl: result.loginUrl,
+          username: result.username,
+        },
         orgId: result.orgId,
-        username: result.username,
       };
 
       // 4. Generate password
-      scratchOrg.password = await this.setPassword(scratchOrg);
+      scratchOrg.auth.password = await this.setPassword(scratchOrg);
 
       const elapsedMs = Date.now() - startTime;
-      scratchOrg.elapsedTime = elapsedMs;
 
       this.logger?.info(`Scratch org "${alias}" created successfully in ${formatElapsed(elapsedMs)}`);
 
       this.emit('scratch:create:complete', {
         alias,
         elapsedMs,
-        orgId: scratchOrg.orgId!,
+        orgId: scratchOrg.orgId,
         timestamp: new Date(),
-        username: scratchOrg.username!,
+        username: scratchOrg.auth.username,
       });
 
       return scratchOrg;
@@ -235,11 +235,11 @@ export default class OrgService extends EventEmitter<OrgServiceEvents> {
       '',
       'All the post scratch org scripts have been successfully completed in this org!',
       '',
-      `Login URL: ${scratchOrg.loginURL}`,
-      `Username: ${scratchOrg.username}`,
-      `Password: ${scratchOrg.password}`,
+      `Login URL: ${scratchOrg.auth.loginUrl}`,
+      `Username: ${scratchOrg.auth.username}`,
+      `Password: ${scratchOrg.auth.password}`,
       '',
-      `Use: sf org login web --instance-url ${scratchOrg.loginURL} --alias <alias>`,
+      `Use: sf org login web --instance-url ${scratchOrg.auth.loginUrl} --alias <alias>`,
     ].join('\n');
 
     try {
@@ -249,17 +249,17 @@ export default class OrgService extends EventEmitter<OrgServiceEvents> {
         to: emailAddress,
       });
 
-      this.logger?.info(`Email sent to ${emailAddress} for ${scratchOrg.username}`);
+      this.logger?.info(`Email sent to ${emailAddress} for ${scratchOrg.auth.username}`);
 
       this.emit('scratch:share:complete', {
         emailAddress,
         timestamp: new Date(),
-        username: scratchOrg.username!,
+        username: scratchOrg.auth.username,
       });
     } catch (error) {
       throw new OrgError('share', `Failed to send scratch org details to ${emailAddress}`, {
         cause: error instanceof Error ? error : new Error(String(error)),
-        orgIdentifier: scratchOrg.username,
+        orgIdentifier: scratchOrg.auth.username,
       });
     }
   }
@@ -268,7 +268,7 @@ export default class OrgService extends EventEmitter<OrgServiceEvents> {
    * Update the allocation status of a scratch org.
    *
    * Resolves the ScratchOrgInfo record from the DevHub by username,
-   * then sets its `Allocation_status__c` field.
+   * then sets its `Allocation_Status__c` field.
    *
    * @param username - The scratch org's SignupUsername
    * @param status - The new allocation status to set
@@ -289,7 +289,7 @@ export default class OrgService extends EventEmitter<OrgServiceEvents> {
 
     try {
       const result = await this.hubOrg.updateScratchOrgInfo({
-        Allocation_status__c: status, // eslint-disable-line camelcase -- Salesforce custom field name
+        Allocation_Status__c: status, // eslint-disable-line camelcase -- Salesforce custom field name
         Id: scratchOrgInfoId,
       });
 
@@ -323,15 +323,15 @@ export default class OrgService extends EventEmitter<OrgServiceEvents> {
   }
 
   private async setPassword(scratchOrg: ScratchOrg): Promise<string> {
-    const result = await this.hubOrg.generatePassword(scratchOrg.username!);
+    const result = await this.hubOrg.generatePassword(scratchOrg.auth.username);
 
     if (!result.password) {
       throw new OrgError('password', 'Unable to generate password for scratch org', {
-        orgIdentifier: scratchOrg.alias,
+        orgIdentifier: scratchOrg.auth.alias,
       });
     }
 
-    this.logger?.debug(`Password set for "${scratchOrg.alias}"`);
+    this.logger?.debug(`Password set for "${scratchOrg.auth.alias}"`);
     return result.password;
   }
 }

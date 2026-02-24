@@ -31,22 +31,22 @@ import {generatePassword} from '../../utils/password-generator.js';
  * Raw ScratchOrgInfo record shape as returned from SOQL queries.
  *
  * Field names match the Salesforce `ScratchOrgInfo` SObject.
- * Custom fields (`Pooltag__c`, `Allocation_status__c`, `Password__c`,
- * `SfdxAuthUrl__c`) are DevHub customizations required for pool operations.
+ * Custom fields (`Tag__c`, `Allocation_Status__c`, `Password__c`,
+ * `Auth_Url__c`) are DevHub customizations required for pool operations.
  */
 export interface ScratchOrgInfoRecord {
-  Allocation_status__c?: string;
+  Allocation_Status__c?: string;
+  Auth_Url__c?: string;
   CreatedDate?: string;
   ExpirationDate?: string;
   Id?: string;
   LoginUrl?: string;
   Password__c?: string;
-  Pooltag__c?: string;
   ScratchOrg?: string;
-  SfdxAuthUrl__c?: string;
   SignupEmail?: string;
   SignupUsername?: string;
   Status?: string;
+  Tag__c?: string;
 }
 
 /**
@@ -69,20 +69,20 @@ export interface ActiveScratchOrgRecord {
  * Used to build SOQL SELECT clauses consistently across all queries.
  */
 const SCRATCH_ORG_INFO_FIELDS = [
-  'Allocation_status__c',
+  'Allocation_Status__c',
   'CreatedDate',
   'ExpirationDate',
   'Id',
   'LoginUrl',
   'Password__c',
-  'Pooltag__c',
+  'Tag__c',
   'ScratchOrg',
-  'SfdxAuthUrl__c',
+  'Auth_Url__c',
   'SignupEmail',
   'SignupUsername',
 ].join(', ');
 
-/** Required picklist values on `ScratchOrgInfo.Allocation_status__c`. */
+/** Required picklist values on `ScratchOrgInfo.Allocation_Status__c`. */
 const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
   'Allocate',
   'Assigned',
@@ -131,6 +131,10 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
   private readonly hubUsername: string;
 
   constructor(hubOrg: Org) {
+    if (!hubOrg.isDevHubOrg) {
+      throw new Error('Provided org must be a devhub org');
+    }
+
     this.conn = hubOrg.getConnection();
     this.hubOrg = hubOrg;
     this.hubUsername = hubOrg.getUsername() ?? '';
@@ -143,7 +147,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
   async claimOrg(id: string): Promise<boolean> {
     try {
       const result = await this.conn.sobject('ScratchOrgInfo').update({
-        Allocation_status__c: 'Allocate' as const, // eslint-disable-line camelcase -- Salesforce custom field
+        Allocation_Status__c: 'Allocate' as const, // eslint-disable-line camelcase -- Salesforce custom field
         Id: id,
       });
 
@@ -186,7 +190,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
   }
 
   async getActiveCountByTag(tag: string): Promise<number> {
-    const query = soql`SELECT count() FROM ScratchOrgInfo WHERE Pooltag__c = '${escapeSOQL(tag)}' AND Status = 'Active'`;
+    const query = soql`SELECT count() FROM ScratchOrgInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Status = 'Active'`;
     const result = await this.conn.query(query);
     return result.totalSize;
   }
@@ -194,9 +198,9 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
   async getAvailableByTag(tag: string, myPool?: boolean): Promise<ScratchOrg[]> {
     const escapedTag = escapeSOQL(tag);
     const conditions = [
-      `Pooltag__c = '${escapedTag}'`,
+      `Tag__c = '${escapedTag}'`,
       'Status = \'Active\'',
-      String.raw`(Allocation_status__c = 'Available' OR Allocation_status__c = 'In Progress')`,
+      String.raw`(Allocation_Status__c = 'Available' OR Allocation_Status__c = 'In Progress')`,
     ];
 
     if (myPool) {
@@ -218,7 +222,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
   }
 
   async getOrgsByTag(tag: string, myPool?: boolean): Promise<ScratchOrg[]> {
-    let query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS} FROM ScratchOrgInfo WHERE Pooltag__c = '${escapeSOQL(tag)}' AND Status = 'Active'`;
+    let query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS} FROM ScratchOrgInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Allocation_Status__c = 'Active'`;
 
     if (myPool) {
       query += ` AND CreatedById = '${escapeSOQL(this.hubUsername)}'`;
@@ -238,7 +242,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
   }
 
   async getOrphanedScratchOrgs(): Promise<ScratchOrg[]> {
-    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS} FROM ScratchOrgInfo WHERE Pooltag__c = null AND Status = 'Active' ORDER BY CreatedDate DESC`;
+    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS} FROM ScratchOrgInfo WHERE Tag__c = null AND Allocation_Status__c = 'Active' ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<ScratchOrgInfoRecord>(query);
     return result.records.map(r => mapToScratchOrg(r));
   }
@@ -367,10 +371,10 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
     if (records.length === 0) return;
 
     const updates = records.map(r => ({
-      Allocation_status__c: r.allocationStatus, // eslint-disable-line camelcase -- Salesforce custom field
+      Allocation_Status__c: r.allocationStatus, // eslint-disable-line camelcase -- Salesforce custom field
       Id: r.id,
       Password__c: r.password, // eslint-disable-line camelcase -- Salesforce custom field
-      Pooltag__c: r.poolTag, // eslint-disable-line camelcase -- Salesforce custom field
+      Tag__c: r.poolTag, // eslint-disable-line camelcase -- Salesforce custom field
     }));
 
     await this.conn.sobject('ScratchOrgInfo').update(updates);
@@ -388,12 +392,12 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
   async validate(): Promise<void> {
     const describe = await this.conn.sobject('ScratchOrgInfo').describe();
 
-    const allocationField = describe.fields.find(f => f.name === 'Allocation_status__c');
+    const allocationField = describe.fields.find(f => f.name === 'Allocation_Status__c');
 
     if (!allocationField) {
       throw new OrgError(
         'prerequisite',
-        'ScratchOrgInfo is missing the "Allocation_status__c" custom field. '
+        'ScratchOrgInfo is missing the "Allocation_Status__c" custom field. '
         + 'Deploy the sfpm pool custom fields to your DevHub before running pool operations.',
       );
     }
@@ -405,7 +409,7 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
     if (missing.length > 0) {
       throw new OrgError(
         'prerequisite',
-        `Allocation_status__c is missing required picklist values: ${missing.join(', ')}. `
+        `Allocation_Status__c is missing required picklist values: ${missing.join(', ')}. `
         + 'Update the picklist on ScratchOrgInfo in your DevHub.',
         {context: {existing: [...picklistValues], missing}},
       );
@@ -441,7 +445,10 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
     for (const [i, record] of records.entries()) {
       const infoId = record.Id;
       if (infoId && activeIdMap.has(infoId)) {
-        orgs[i].recordId = activeIdMap.get(infoId);
+        const activeId = activeIdMap.get(infoId);
+        if (activeId) {
+          orgs[i].recordId = activeId;
+        }
       }
     }
   }
@@ -453,16 +460,32 @@ implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
 
 /** Map a ScratchOrgInfo SOQL record to the domain `ScratchOrg` type. */
 function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
+  const orgId = record.ScratchOrg ?? '';
+  const username = record.SignupUsername ?? '';
+  const tag = record.Tag__c ?? '';
+  const status = record.Allocation_Status__c ?? '';
+
   return {
-    expiryDate: record.ExpirationDate,
-    loginURL: record.LoginUrl,
-    orgId: record.ScratchOrg,
-    password: record.Password__c,
+    auth: {
+      authUrl: record.Auth_Url__c,
+      email: record.SignupEmail,
+      loginUrl: record.LoginUrl,
+      password: record.Password__c,
+      username,
+    },
+    expiry: record.ExpirationDate ? parseExpirationDate(record.ExpirationDate) : undefined,
+    orgId,
+    pool: {
+      status,
+      tag,
+      timestamp: record.CreatedDate ? new Date(record.CreatedDate).getTime() : Date.now(),
+    },
     recordId: record.Id,
-    sfdxAuthUrl: record.SfdxAuthUrl__c,
-    signupEmail: record.SignupEmail,
-    status: record.Allocation_status__c,
-    tag: record.Pooltag__c,
-    username: record.SignupUsername,
   };
+}
+
+/** Parse ExpirationDate string to milliseconds timestamp. */
+function parseExpirationDate(dateStr: string): number {
+  const date = new Date(dateStr);
+  return date.getTime();
 }

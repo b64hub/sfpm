@@ -59,7 +59,7 @@ export interface PoolFetcherEvents {
  * fetcher.on('pool:fetch:claimed', (p) => console.log(`Claimed ${p.username}`));
  *
  * const org = await fetcher.fetch({ tag: 'dev-pool' });
- * console.log(`Got org: ${org.username}`);
+ * console.log(`Got org: ${org.auth.username}`);
  * ```
  */
 export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
@@ -101,15 +101,17 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
       const claimed = await this.orgSource.claimOrg(org.recordId!);
 
       if (claimed) {
-        org.status = 'Assigned';
+        if (org.pool) {
+          org.pool.status = 'Assigned';
+        }
 
         this.emit('pool:fetch:claimed', {
           tag: options.tag,
           timestamp: new Date(),
-          username: org.username!,
+          username: org.auth.username!,
         });
 
-        this.logger?.info(`Claimed org ${org.username} from pool "${options.tag}"`);
+        this.logger?.info(`Claimed org ${org.auth.username} from pool "${options.tag}"`);
 
         // eslint-disable-next-line no-await-in-loop -- post-claim runs only once (we return immediately after)
         await this.handlePostClaim(org, options);
@@ -126,10 +128,10 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
       this.emit('pool:fetch:skipped', {
         reason: 'Claim failed (already taken by another consumer)',
         timestamp: new Date(),
-        username: org.username!,
+        username: org.auth.username!,
       });
 
-      this.logger?.trace(`Org ${org.username} claim failed, trying next...`);
+      this.logger?.trace(`Org ${org.auth.username} claim failed, trying next...`);
     }
 
     throw new OrgError('fetch', `No scratch org could be claimed from pool "${options.tag}"`, {
@@ -204,13 +206,13 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
       const loggedIn = await this.authenticator!.login(org);
 
       if (!loggedIn) {
-        this.logger?.warn(`Unable to authenticate to ${org.username}`);
+        this.logger?.warn(`Unable to authenticate to ${org.auth.username}`);
         return null;
       }
 
       return org;
     } catch (error) {
-      this.logger?.warn(`Authentication failed for ${org.username}: ${error instanceof Error ? error.message : error}`);
+      this.logger?.warn(`Authentication failed for ${org.auth.username}: ${error instanceof Error ? error.message : error}`);
       return null;
     }
   }
@@ -266,7 +268,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
     const loggedIn = await this.authenticator.login(org);
 
     if (!loggedIn) {
-      this.logger?.warn(`Unable to authenticate to claimed org ${org.username}`);
+      this.logger?.warn(`Unable to authenticate to claimed org ${org.auth.username}`);
       return;
     }
 

@@ -55,7 +55,7 @@ function createMockOrg() {
  */
 function createScratchOrgInfoRecord(overrides?: Record<string, unknown>) {
   return {
-    Allocation_status__c: 'Available',
+    Allocation_Status__c: 'Available',
     CreatedDate: '2025-01-08T00:00:00.000+0000',
     ExpirationDate: '2025-01-15',
     Id: 'a00XXXXXXXXXXXXXXX',
@@ -63,7 +63,7 @@ function createScratchOrgInfoRecord(overrides?: Record<string, unknown>) {
     Password__c: 'test-password-123',
     Pooltag__c: 'test-pool',
     ScratchOrg: '00D0000000000000000',
-    SfdxAuthUrl__c: 'force://PlatformCLI::5Aep861...',
+    Auth_Url__c: 'force://PlatformCLI::5Aep861...',
     SignupEmail: 'test@example.com',
     SignupUsername: 'test@scratch.org',
     ...overrides,
@@ -120,14 +120,14 @@ describe('DevHubService', () => {
   });
 
   describe('claimOrg', () => {
-    it('should update ScratchOrgInfo Allocation_status__c to "Allocate"', async () => {
+    it('should update ScratchOrgInfo Allocation_Status__c to "Allocate"', async () => {
       sobject.update.mockResolvedValue({success: true});
 
       const result = await devHub.claimOrg('a00XXXXXXXXXXXXXXX');
 
       expect(conn.sobject).toHaveBeenCalledWith('ScratchOrgInfo');
       expect(sobject.update).toHaveBeenCalledWith({
-        Allocation_status__c: 'Allocate',
+        Allocation_Status__c: 'Allocate',
         Id: 'a00XXXXXXXXXXXXXXX',
       });
       expect(result).toBe(true);
@@ -203,14 +203,14 @@ describe('DevHubService', () => {
 
   describe('getAvailableByTag', () => {
     it('should query orgs with Available or In Progress status', async () => {
-      const record = createScratchOrgInfoRecord({Allocation_status__c: 'Available'});
+      const record = createScratchOrgInfoRecord({Allocation_Status__c: 'Available'});
       conn.query.mockResolvedValue({records: [record]});
 
       const result = await devHub.getAvailableByTag('test-pool');
 
       const query = conn.query.mock.calls[0][0] as string;
-      expect(query).toContain("Allocation_status__c = 'Available'");
-      expect(query).toContain("Allocation_status__c = 'In Progress'");
+      expect(query).toContain("Allocation_Status__c = 'Available'");
+      expect(query).toContain("Allocation_Status__c = 'In Progress'");
       expect(query).toContain("Status = 'Active'");
       expect(result).toHaveLength(1);
       expect(result[0].status).toBe('Available');
@@ -478,10 +478,10 @@ describe('DevHubService', () => {
       expect(conn.sobject).toHaveBeenCalledWith('ScratchOrgInfo');
       expect(sobject.update).toHaveBeenCalledWith([
         {
-          Allocation_status__c: 'Available', Id: 'id-1', Password__c: 'pw1', Pooltag__c: 'pool-1',
+          Allocation_Status__c: 'Available', Id: 'id-1', Password__c: 'pw1', Pooltag__c: 'pool-1',
         },
         {
-          Allocation_status__c: 'Assigned', Id: 'id-2', Password__c: 'pw2', Pooltag__c: 'pool-1',
+          Allocation_Status__c: 'Assigned', Id: 'id-2', Password__c: 'pw2', Pooltag__c: 'pool-1',
         },
       ]);
     });
@@ -520,10 +520,10 @@ describe('DevHubService', () => {
   // ==========================================================================
 
   describe('validate', () => {
-    it('should pass when Allocation_status__c field has all required values', async () => {
+    it('should pass when Allocation_Status__c field has all required values', async () => {
       sobject.describe.mockResolvedValue({
         fields: [{
-          name: 'Allocation_status__c',
+          name: 'Allocation_Status__c',
           picklistValues: [
             {value: 'Allocate'},
             {value: 'Assigned'},
@@ -537,18 +537,18 @@ describe('DevHubService', () => {
       await expect(devHub.validate()).resolves.toBeUndefined();
     });
 
-    it('should throw when Allocation_status__c field is missing', async () => {
+    it('should throw when Allocation_Status__c field is missing', async () => {
       sobject.describe.mockResolvedValue({
         fields: [{name: 'Status', picklistValues: []}],
       });
 
-      await expect(devHub.validate()).rejects.toThrow('missing the "Allocation_status__c" custom field');
+      await expect(devHub.validate()).rejects.toThrow('missing the "Allocation_Status__c" custom field');
     });
 
     it('should throw when required picklist values are missing', async () => {
       sobject.describe.mockResolvedValue({
         fields: [{
-          name: 'Allocation_status__c',
+          name: 'Allocation_Status__c',
           picklistValues: [
             {value: 'Available'},
             // Missing: Allocate, Assigned, In Progress, Return
@@ -567,14 +567,14 @@ describe('DevHubService', () => {
   describe('field mapping (mapToScratchOrg)', () => {
     it('should correctly map all ScratchOrgInfo fields to ScratchOrg', async () => {
       const record = createScratchOrgInfoRecord({
-        Allocation_status__c: 'Assigned',
+        Allocation_Status__c: 'Assigned',
         ExpirationDate: '2025-12-31',
         Id: 'record-id-123',
         LoginUrl: 'https://mapped.scratch.org',
         Password__c: 'pw-123',
         Pooltag__c: 'my-pool',
         ScratchOrg: 'org-id-456',
-        SfdxAuthUrl__c: 'force://mapped',
+        Auth_Url__c: 'force://mapped',
         SignupEmail: 'mapped@example.com',
         SignupUsername: 'mapped@scratch.org',
       });
