@@ -365,7 +365,7 @@ export interface PoolOrgRecord {
  * At the CLI layer, both interfaces are typically implemented by the
  * same adapter class since they query the same DevHub sobject.
  */
-export interface PoolOrgSource {
+export interface PoolOrgProvider {
   /**
    * Claim a scratch org for use (optimistic concurrency).
    *

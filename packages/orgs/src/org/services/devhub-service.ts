@@ -10,8 +10,8 @@ import type {
   JwtAuthConfig,
   PasswordResult,
   PoolInfoProvider,
+  PoolOrgProvider,
   PoolOrgRecord,
-  PoolOrgSource,
   PoolPrerequisiteChecker,
   ScratchOrgCreateRequest,
   ScratchOrgCreateResult,
@@ -125,7 +125,7 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
  * ```
  */
 export default class DevHubService
-implements DevHub, PoolInfoProvider, PoolOrgSource, PoolPrerequisiteChecker {
+implements DevHub, PoolInfoProvider, PoolOrgProvider, PoolPrerequisiteChecker {
   private readonly conn;
   private readonly hubOrg;
   private readonly hubUsername: string;

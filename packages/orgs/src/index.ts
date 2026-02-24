@@ -62,7 +62,7 @@ export {
   type PoolOrgAuthenticator,
   type PoolOrgLoggerFactory,
   type PoolOrgRecord,
-  type PoolOrgSource,
+  type PoolOrgProvider as PoolOrgSource,
   type PoolOrgTask,
   type PoolOrgTaskResult,
   type PoolPrerequisiteChecker,

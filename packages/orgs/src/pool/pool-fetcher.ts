@@ -10,7 +10,7 @@ import {
   type PoolFetchAllOptions,
   type PoolFetchOptions,
   type PoolOrgAuthenticator,
-  type PoolOrgSource,
+  type PoolOrgProvider,
 } from '../types.js';
 
 // ============================================================================
@@ -64,7 +64,7 @@ export interface PoolFetcherEvents {
  */
 export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
   constructor(
-    private readonly orgSource: PoolOrgSource,
+    private readonly orgSource: PoolOrgProvider,
     private readonly orgService: OrgService,
     private readonly authenticator?: PoolOrgAuthenticator,
     private readonly logger?: Logger,

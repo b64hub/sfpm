@@ -13,8 +13,8 @@ import {
   type PoolDeleteOptions,
   type PoolInfoProvider,
   type PoolOrgLoggerFactory,
+  type PoolOrgProvider,
   type PoolOrgRecord,
-  type PoolOrgSource,
   type PoolOrgTask,
   type PoolOrgTaskResult,
   type PoolSizingConfig,
@@ -124,7 +124,7 @@ export interface PoolManagerOptions {
   /** Provider for pool state queries */
   poolInfo: PoolInfoProvider;
   /** Data source for querying pool scratch orgs (required for `delete()`) */
-  poolOrgSource?: PoolOrgSource;
+  poolOrgSource?: PoolOrgProvider;
   /** Tasks to run on each provisioned org (executed in order) */
   tasks?: PoolOrgTask[];
 }
@@ -169,7 +169,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   private readonly loggerFactory?: PoolOrgLoggerFactory;
   private readonly orgService: OrgService;
   private readonly poolInfo: PoolInfoProvider;
-  private readonly poolOrgSource?: PoolOrgSource;
+  private readonly poolOrgSource?: PoolOrgProvider;
   private readonly tasks: PoolOrgTask[];
 
   constructor(options: PoolManagerOptions) {
