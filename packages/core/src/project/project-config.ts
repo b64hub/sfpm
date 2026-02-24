@@ -1,11 +1,14 @@
 import {
-  Logger, ProjectJson, ProjectJsonSchema, SfProject, SfProjectJson,
+  ProjectJson, ProjectJsonSchema, SfProject, SfProjectJson,
 } from '@salesforce/core';
 
 import {PackageType} from '../types/package.js';
 import {
   ManagedPackageDefinition, PackageDefinition, ProjectDefinition, ProjectDefinitionSchema, SfpmPluginConfig, SUBSCRIBER_PKG_VERSION_ID_PREFIX,
 } from '../types/project.js';
+import {
+  Logger
+} from '../types/logger.js'
 
 /**
  * Dependency from sfdx-project.json packageDirectories[].dependencies
@@ -29,12 +32,11 @@ export interface ClassifiedDependencies {
  */
 export default class ProjectConfig {
   private hasValidated = false;
-  private logger: Logger;
+  public logger?: Logger;
   private project: SfProject;
 
   constructor(project: SfProject) {
     this.project = project;
-    this.logger = Logger.childFromRoot('ProjectConfig');
   }
 
   /**
@@ -334,16 +336,16 @@ export default class ProjectConfig {
     const result = ProjectDefinitionSchema.safeParse(rawContents);
 
     if (!result.success) {
-      this.logger.warn('SFPM custom properties validation failed:');
+      this.logger?.warn('SFPM custom properties validation failed:');
       const zodError = result.error;
       if (zodError && 'errors' in zodError && Array.isArray(zodError.errors)) {
         zodError.errors.forEach((err: any) => {
           const path = err.path?.join('.') || 'unknown';
-          this.logger.warn(`  - ${path}: ${err.message}`);
+          this.logger?.warn(`  - ${path}: ${err.message}`);
         });
       }
 
-      this.logger.warn('Continuing with potentially invalid custom properties...');
+      this.logger?.warn('Continuing with potentially invalid custom properties...');
     }
 
     this.hasValidated = true;
