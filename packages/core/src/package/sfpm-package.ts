@@ -10,7 +10,8 @@ import {
 } from '../types/package.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {SourceHasher} from '../utils/source-hasher.js';
-import {ManagedPackageRef, type SourceDeployable} from './installers/types.js';
+import {ManagedPackageRef, VersionInstallable, type SourceDeployable} from './installers/types.js';
+import { VersionManager } from '../project/version-manager.js';
 
 const TEST_COVERAGE_THRESHOLD = 75;
 const DEFAULT_API_VERSION = '65.0';
@@ -150,16 +151,12 @@ export default abstract class SfpmPackage {
     return this._metadata.identity.versionNumber;
   }
 
-  set version(val: string | undefined) {
-    this._metadata.identity.versionNumber = val;
+  set version(val: string) {
+    this._metadata.identity.versionNumber = VersionManager.normalizeVersion(val);
   }
 
   public setBuildNumber(buildNumber: string): void {
     if (!buildNumber) {
-      return;
-    }
-
-    if (this.type === PackageType.Unlocked) {
       return;
     }
 
@@ -533,6 +530,10 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
 
   set packageVersionId(val: string | undefined) {
     this.metadata.identity.packageVersionId = val;
+  }
+
+  override setBuildNumber(buildNumber: string): void {
+    return;
   }
 
   override setOrchestrationOptions(options: Partial<SfpmUnlockedPackageBuildOptions>): void {

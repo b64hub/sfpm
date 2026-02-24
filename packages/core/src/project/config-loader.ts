@@ -1,5 +1,6 @@
 import {existsSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {createJiti} from 'jiti'
 
 import {SfpmConfig} from '../types/config.js';
 import {Logger} from '../types/logger.js';
@@ -51,7 +52,6 @@ export async function loadSfpmConfig(
   logger?.debug(`Loading SFPM config from: ${configPath}`);
 
   try {
-    const {createJiti} = await import('jiti');
     const jiti = createJiti(import.meta.url, {
       fsCache: true,
       interopDefault: true,
