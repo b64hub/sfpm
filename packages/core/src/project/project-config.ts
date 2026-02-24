@@ -2,13 +2,13 @@ import {
   ProjectJson, ProjectJsonSchema, SfProject, SfProjectJson,
 } from '@salesforce/core';
 
+import {
+  Logger,
+} from '../types/logger.js'
 import {PackageType} from '../types/package.js';
 import {
   ManagedPackageDefinition, PackageDefinition, ProjectDefinition, ProjectDefinitionSchema, SfpmPluginConfig, SUBSCRIBER_PKG_VERSION_ID_PREFIX,
 } from '../types/project.js';
-import {
-  Logger
-} from '../types/logger.js'
 
 /**
  * Dependency from sfdx-project.json packageDirectories[].dependencies
@@ -31,8 +31,8 @@ export interface ClassifiedDependencies {
  * Configuration manager for sfdx-project.json
  */
 export default class ProjectConfig {
-  private hasValidated = false;
   public logger?: Logger;
+  private hasValidated = false;
   private project: SfProject;
 
   constructor(project: SfProject) {
@@ -258,8 +258,10 @@ export default class ProjectConfig {
    * console.log(pruned.packageDirectories.length); // 1
    * ```
    */
+  // eslint-disable-next-line unicorn/no-object-as-default-parameter -- we want to allow callers to omit pruneOptions and get default pruning behavior
   public getPrunedDefinition(packageName: string, pruneOptions: {isOrgDependent: boolean; removeCustomProperties: boolean,} = {isOrgDependent: false, removeCustomProperties: true}): ProjectDefinition {
     const definition = this.getProjectDefinition();
+    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- structuredClone is available in Node 17+ and provides a convenient way to deep copy the project definition without mutating the original
     const pruned = structuredClone(definition) as ProjectDefinition;
 
     const filteredPackages = pruned.packageDirectories.filter((pkg): pkg is PackageDefinition => 'package' in pkg && pkg.package === packageName);
@@ -339,10 +341,10 @@ export default class ProjectConfig {
       this.logger?.warn('SFPM custom properties validation failed:');
       const zodError = result.error;
       if (zodError && 'errors' in zodError && Array.isArray(zodError.errors)) {
-        zodError.errors.forEach((err: any) => {
+        for (const err of zodError.errors) {
           const path = err.path?.join('.') || 'unknown';
           this.logger?.warn(`  - ${path}: ${err.message}`);
-        });
+        }
       }
 
       this.logger?.warn('Continuing with potentially invalid custom properties...');
