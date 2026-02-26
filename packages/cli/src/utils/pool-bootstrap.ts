@@ -45,8 +45,7 @@ export async function createPoolServices(options: {
   const managerOptions: PoolManagerOptions = {
     logger: options.logger,
     orgService,
-    poolInfo: devHub,
-    poolOrgSource: devHub,
+    poolOrgProvider: devHub,
     tasks: options.tasks,
   };
 

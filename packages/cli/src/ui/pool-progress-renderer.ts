@@ -118,10 +118,10 @@ export class PoolProgressRenderer {
 
     this.logger.log('');
     this.logger.log(successBox('Scratch Org', {
-      ...(org.alias ? {Alias: org.alias} : {}),
-      ...(org.loginURL ? {'Login URL': org.loginURL} : {}),
-      ...(org.password ? {Password: org.password} : {}),
-      Username: org.username ?? 'N/A',
+      ...(org.auth.alias ? {Alias: org.auth.alias} : {}),
+      ...(org.auth.loginUrl ? {'Login URL': org.auth.loginUrl} : {}),
+      ...(org.auth.password ? {Password: org.auth.password} : {}),
+      Username: org.auth.username ?? 'N/A',
     }));
   }
 
@@ -139,9 +139,9 @@ export class PoolProgressRenderer {
     this.logger.log(`\nFound ${orgs.length} org(s) in pool "${tag}":\n`);
 
     for (const org of orgs) {
-      const status = formatStatus(org.status);
-      const expiry = org.expiryDate ? chalk.dim(` (expires ${org.expiryDate})`) : '';
-      this.logger.log(`  ${status} ${chalk.white(org.username ?? 'N/A')}${expiry}`);
+      const status = formatStatus(org.pool?.status);
+      const expiry = org.expiry ? chalk.dim(` (expires ${new Date(org.expiry).toISOString().split('T')[0]})`) : '';
+      this.logger.log(`  ${status} ${chalk.white(org.auth.username ?? 'N/A')}${expiry}`);
     }
 
     this.logger.log('');
