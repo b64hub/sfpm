@@ -4,14 +4,15 @@ import {EventEmitter} from 'node:events';
 
 import type OrgService from '../org/org-service.js';
 import type {ScratchOrg} from '../org/scratch/types.js';
+import type {
+  PoolFetchOptions,
+  PoolOrgAuthenticator,
+  PoolOrgProvider,
+} from './types.js';
 
 import {
   OrgError,
-  type PoolFetchAllOptions,
-  type PoolFetchOptions,
-  type PoolOrgAuthenticator,
-  type PoolOrgProvider,
-} from '../types.js';
+} from '../org/types.js';
 
 // ============================================================================
 // PoolFetcher Events
@@ -150,7 +151,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
    *
    * @throws {OrgError} When no orgs are available
    */
-  public async fetchAll(options: PoolFetchAllOptions): Promise<ScratchOrg[]> {
+  public async fetchAll(options: PoolFetchOptions & {limit?: number}): Promise<ScratchOrg[]> {
     let candidates = await this.getFilteredCandidates(options);
 
     this.emit('pool:fetch:start', {
@@ -167,8 +168,8 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
     // Assign aliases
     const orgs: ScratchOrg[] = candidates.map((org, i) => ({
       ...org,
-      alias: `SO${i + 1}`,
-      status: 'Available' as const,
+      auth: {...org.auth, alias: `SO${i + 1}`},
+      pool: {status: 'Available', tag: org.pool?.tag ?? options.tag, timestamp: org.pool?.timestamp ?? Date.now()},
     }));
 
     // Authenticate if authenticator is available and not sending to user
@@ -203,13 +204,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
    */
   private async authenticateSingleOrg(org: ScratchOrg): Promise<null | ScratchOrg> {
     try {
-      const loggedIn = await this.authenticator!.login(org);
-
-      if (!loggedIn) {
-        this.logger?.warn(`Unable to authenticate to ${org.auth.username}`);
-        return null;
-      }
-
+      await this.authenticator!.login(org);
       return org;
     } catch (error) {
       this.logger?.warn(`Authentication failed for ${org.auth.username}: ${error instanceof Error ? error.message : error}`);
@@ -265,10 +260,10 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
       return;
     }
 
-    const loggedIn = await this.authenticator.login(org);
-
-    if (!loggedIn) {
-      this.logger?.warn(`Unable to authenticate to claimed org ${org.auth.username}`);
+    try {
+      await this.authenticator.login(org);
+    } catch (error) {
+      this.logger?.warn(`Unable to authenticate to claimed org ${org.auth.username}: ${error instanceof Error ? error.message : error}`);
       return;
     }
 

@@ -9,6 +9,24 @@ export {
 } from './org/services/devhub-service.js';
 export {default as ScratchOrgAuthService} from './org/services/scratch-org-auth-service.js';
 
+// Org-layer types
+export {
+  type AllocationStatus,
+  type CreateScratchOrgOptions,
+  DEFAULT_SCRATCH_ORG,
+  type DevHub,
+  type JwtAuthConfig,
+  OrgError,
+  type OrgServiceEvents,
+  type PasswordResult,
+  type ScratchOrgCreateRequest,
+  type ScratchOrgCreateResult,
+  type ScratchOrgDefaults,
+  type ScratchOrgUsage,
+  type SendEmailOptions,
+  type ShareScratchOrgOptions,
+} from './org/types.js';
+
 export {
   ORG_PHASES,
   type OrgPhase,
@@ -38,43 +56,27 @@ export {
 // Pool service
 export {default as PoolService} from './pool/pool-service.js';
 
-// Types and config
+// Pool-layer types
 export {
-  type AllocationStatus,
-  type CreateScratchOrgOptions,
   DEFAULT_POOL_SIZING,
-  DEFAULT_SCRATCH_ORG,
-  defineOrgConfig,
-  type DevHub,
-  type JwtAuthConfig,
-  type OrgConfig,
-  OrgError,
-  type OrgServiceEvents,
-  type PasswordResult,
-  type PoolArtifactFetchConfig,
   type PoolConfig,
   type PoolDeleteOptions,
-  type PoolDeploymentConfig,
-  type PoolFetchAllOptions,
   type PoolFetchOptions,
-  type PoolInfoProvider,
-  type PoolNetworkConfig,
   type PoolOrgAuthenticator,
   type PoolOrgLoggerFactory,
+  type PoolOrgProvider,
   type PoolOrgRecord,
   type PoolOrgProvider as PoolOrgSource,
   type PoolOrgTask,
   type PoolOrgTaskResult,
-  type PoolPrerequisiteChecker,
   type PoolProvisioningState,
-  type PoolScriptsConfig,
   type PoolSizingConfig,
-  type ScratchOrgCreateRequest,
-  type ScratchOrgCreateResult,
-  type ScratchOrgDefaults,
-  type ScratchOrgUsage,
-  type SendEmailOptions,
-  type ShareScratchOrgOptions,
+} from './pool/types.js';
+
+// Config
+export {
+  defineOrgConfig,
+  type OrgConfig,
 } from './types.js';
 
 // Utilities

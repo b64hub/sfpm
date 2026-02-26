@@ -1,7 +1,8 @@
 import {AuthInfo, Org} from '@salesforce/core';
 
-import type {JwtAuthConfig, PoolOrgAuthenticator} from '../../types.js';
+import type {PoolOrgAuthenticator} from '../../pool/types.js';
 import type {ScratchOrg} from '../scratch/types.js';
+import type {JwtAuthConfig} from '../types.js';
 
 // ============================================================================
 // ScratchOrgAuthService
@@ -55,12 +56,11 @@ export default class ScratchOrgAuthService implements PoolOrgAuthenticator {
   }
 
   /**
-   * Login to a scratch org with the provided info
+   * Login to a scratch org with the provided info.
    * @param scratchOrg org to login to
-   * @returns AuthInfo for the logged in org
    * @throws Error
    */
-  async login(scratchOrg: ScratchOrg): Promise<AuthInfo> {
+  async login(scratchOrg: ScratchOrg): Promise<void> {
     if (!scratchOrg.auth.username) {
       throw new Error('Login error, scratch org must have a valid username');
     }
@@ -78,8 +78,6 @@ export default class ScratchOrgAuthService implements PoolOrgAuthenticator {
 
       await authInfo.save();
       await Org.create({aliasOrUsername: scratchOrg.auth.username});
-
-      return authInfo;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Error authenticating org ${scratchOrg.auth.username}. ` + errorMessage);

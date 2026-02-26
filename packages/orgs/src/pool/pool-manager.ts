@@ -6,19 +6,20 @@ import type OrgService from '../org/org-service.js';
 import type {ScratchOrg} from '../org/scratch/types.js';
 
 import {
-  DEFAULT_POOL_SIZING,
   DEFAULT_SCRATCH_ORG,
   OrgError,
+} from '../org/types.js';
+import {
+  DEFAULT_POOL_SIZING,
   type PoolConfig,
   type PoolDeleteOptions,
-  type PoolInfoProvider,
   type PoolOrgLoggerFactory,
   type PoolOrgProvider,
   type PoolOrgRecord,
   type PoolOrgTask,
   type PoolOrgTaskResult,
   type PoolSizingConfig,
-} from '../types.js';
+} from './types.js';
 
 // ============================================================================
 // Constants
@@ -121,10 +122,8 @@ export interface PoolManagerOptions {
   loggerFactory?: PoolOrgLoggerFactory;
   /** Service for creating scratch orgs */
   orgService: OrgService;
-  /** Provider for pool state queries */
-  poolInfo: PoolInfoProvider;
-  /** Data source for querying pool scratch orgs (required for `delete()`) */
-  poolOrgSource?: PoolOrgProvider;
+  /** Provider for pool org queries, state, and validation */
+  poolOrgProvider: PoolOrgProvider;
   /** Tasks to run on each provisioned org (executed in order) */
   tasks?: PoolOrgTask[];
 }
@@ -168,8 +167,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   private readonly logger?: Logger;
   private readonly loggerFactory?: PoolOrgLoggerFactory;
   private readonly orgService: OrgService;
-  private readonly poolInfo: PoolInfoProvider;
-  private readonly poolOrgSource?: PoolOrgProvider;
+  private readonly poolOrgProvider: PoolOrgProvider;
   private readonly tasks: PoolOrgTask[];
 
   constructor(options: PoolManagerOptions) {
@@ -177,8 +175,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     this.loggerFactory = options.loggerFactory;
     this.logger = options.logger;
     this.orgService = options.orgService;
-    this.poolInfo = options.poolInfo;
-    this.poolOrgSource = options.poolOrgSource;
+    this.poolOrgProvider = options.poolOrgProvider;
     this.tasks = options.tasks ?? [];
   }
 
@@ -194,8 +191,8 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    */
   public async computeAllocation(config: PoolConfig): Promise<PoolAllocation> {
     const [remaining, activeCount] = await Promise.all([
-      this.poolInfo.getRemainingCapacity(),
-      this.poolInfo.getActiveCountByTag(config.tag),
+      this.poolOrgProvider.getRemainingCapacity(),
+      this.poolOrgProvider.getActiveCountByTag(config.tag),
     ]);
 
     const allocation = computeOrgAllocation(remaining, activeCount, config.sizing);
@@ -224,21 +221,17 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * @throws {OrgError} When `poolOrgSource` was not provided at construction
    */
   public async delete(options: PoolDeleteOptions): Promise<PoolDeleteResult> {
-    if (!this.poolOrgSource) {
-      throw new OrgError('delete', 'PoolOrgSource is required for delete operations — provide it in PoolManagerOptions');
-    }
-
     const startTime = Date.now();
     const {inProgressOnly, myPool, tag} = options;
 
     this.logger?.info(`Querying pool "${tag}" for orgs to delete...`);
 
     // 1. Query orgs from the pool
-    let orgs = await this.poolOrgSource.getOrgsByTag(tag, myPool);
+    let orgs = await this.poolOrgProvider.getOrgsByTag(tag, myPool);
 
     // 2. Apply status filter
     if (inProgressOnly) {
-      orgs = orgs.filter(org => org.status === 'In Progress');
+      orgs = orgs.filter(org => org.pool?.status === 'In Progress');
     }
 
     if (orgs.length === 0) {
@@ -265,24 +258,27 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     for (const org of orgs) {
       if (!org.recordId) {
-        errors.push(`Org ${org.username ?? 'unknown'} has no recordId — skipping`);
+        errors.push(`Org ${org.auth.username ?? 'unknown'} has no recordId — skipping`);
         continue;
       }
 
       try {
         // eslint-disable-next-line no-await-in-loop -- sequential deletion avoids overwhelming the DevHub API
         await this.orgService.deleteScratchOrgs([org.recordId]);
-        org.status = 'Deleted';
+        if (org.pool) {
+          org.pool.status = 'Deleted';
+        }
+
         deleted.push(org);
 
         this.emit('pool:org:deleted', {
           timestamp: new Date(),
-          username: org.username!,
+          username: org.auth.username!,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        errors.push(`Failed to delete org ${org.username ?? org.recordId}: ${message}`);
-        this.logger?.warn(`Failed to delete org ${org.username ?? org.recordId}: ${message}`);
+        errors.push(`Failed to delete org ${org.auth.username ?? org.recordId}: ${message}`);
+        this.logger?.warn(`Failed to delete org ${org.auth.username ?? org.recordId}: ${message}`);
       }
     }
 
@@ -449,7 +445,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
         waitMinutes: config.scratchOrg.waitMinutes ?? DEFAULT_SCRATCH_ORG.waitMinutes,
       });
 
-      org.tag = config.tag;
+      org.pool = {status: 'In Progress', tag: config.tag, timestamp: Date.now()};
 
       this.emit('pool:org:created', {
         alias,
@@ -532,19 +528,19 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    */
   private async registerInPool(orgs: ScratchOrg[], tag: string): Promise<ScratchOrg[]> {
     // Enrich orgs with their DevHub record IDs
-    const enrichedOrgs = await this.poolInfo.getRecordIds(orgs);
+    const enrichedOrgs = await this.poolOrgProvider.getRecordIds(orgs);
 
     const records: PoolOrgRecord[] = enrichedOrgs
     .filter(org => org.recordId)
     .map(org => ({
       allocationStatus: 'In Progress' as const,
       id: org.recordId!,
-      password: org.password,
+      password: org.auth.password,
       poolTag: tag,
     }));
 
     if (records.length > 0) {
-      await this.poolInfo.updatePoolMetadata(records);
+      await this.poolOrgProvider.updatePoolMetadata(records);
       this.logger?.debug(`Registered ${records.length} org(s) in pool "${tag}"`);
     }
 
@@ -607,7 +603,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       this.emit('pool:task:start', {
         task: task.name,
         timestamp: new Date(),
-        username: org.username!,
+        username: org.auth.username!,
       });
 
       // eslint-disable-next-line no-await-in-loop -- tasks must run sequentially per org (order matters)
@@ -619,14 +615,14 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
           success: true,
           task: task.name,
           timestamp: new Date(),
-          username: org.username!,
+          username: org.auth.username!,
         });
       } else {
         this.emit('pool:task:error', {
           error: taskResult.error ?? 'Unknown error',
           task: task.name,
           timestamp: new Date(),
-          username: org.username!,
+          username: org.auth.username!,
         });
 
         if (!task.continueOnError) {
@@ -638,7 +634,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     return {
       results,
       success: results.every(r => r.success),
-      username: org.username!,
+      username: org.auth.username!,
     };
   }
 
@@ -662,12 +658,12 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    */
   private async validateSingleOrg(org: ScratchOrg): Promise<null | ScratchOrg> {
     try {
-      const isActive = await this.poolInfo.isOrgActive(org.username!);
+      const isActive = await this.poolOrgProvider.isOrgActive(org.auth.username!);
 
       if (isActive) {
         this.emit('pool:org:validated', {
           timestamp: new Date(),
-          username: org.username!,
+          username: org.auth.username!,
         });
         return org;
       }
@@ -675,17 +671,17 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       this.emit('pool:org:discarded', {
         reason: 'Org has status "Deleted"',
         timestamp: new Date(),
-        username: org.username!,
+        username: org.auth.username!,
       });
-      this.logger?.warn(`Discarding org ${org.username} — reported as deleted`);
+      this.logger?.warn(`Discarding org ${org.auth.username} — reported as deleted`);
       return null;
     } catch (error) {
       this.emit('pool:org:discarded', {
         reason: error instanceof Error ? error.message : String(error),
         timestamp: new Date(),
-        username: org.username!,
+        username: org.auth.username!,
       });
-      this.logger?.warn(`Unable to verify org ${org.username}, discarding: ${error instanceof Error ? error.message : error}`);
+      this.logger?.warn(`Unable to verify org ${org.auth.username}, discarding: ${error instanceof Error ? error.message : error}`);
       return null;
     }
   }

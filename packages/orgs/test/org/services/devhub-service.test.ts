@@ -37,6 +37,7 @@ function createMockOrg() {
   const mockOrg = {
     getConnection: vi.fn().mockReturnValue(mockConnection),
     getUsername: vi.fn().mockReturnValue('devhub@example.com'),
+    isDevHubOrg: true,
   };
 
   return {
@@ -61,7 +62,7 @@ function createScratchOrgInfoRecord(overrides?: Record<string, unknown>) {
     Id: 'a00XXXXXXXXXXXXXXX',
     LoginUrl: 'https://test.scratch.org',
     Password__c: 'test-password-123',
-    Pooltag__c: 'test-pool',
+    Tag__c: 'test-pool',
     ScratchOrg: '00D0000000000000000',
     Auth_Url__c: 'force://PlatformCLI::5Aep861...',
     SignupEmail: 'test@example.com',
@@ -178,7 +179,7 @@ describe('DevHubService', () => {
 
       const query = conn.query.mock.calls[0][0] as string;
       expect(query).toContain('count()');
-      expect(query).toContain("Pooltag__c = 'test-pool'");
+      expect(query).toContain("Tag__c = 'test-pool'");
       expect(query).toContain("Status = 'Active'");
       expect(count).toBe(42);
     });
@@ -213,7 +214,7 @@ describe('DevHubService', () => {
       expect(query).toContain("Allocation_Status__c = 'In Progress'");
       expect(query).toContain("Status = 'Active'");
       expect(result).toHaveLength(1);
-      expect(result[0].status).toBe('Available');
+      expect(result[0].pool.status).toBe('Available');
     });
 
     it('should return empty array when no available orgs', async () => {
@@ -246,9 +247,9 @@ describe('DevHubService', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({
+        auth: {username: 'test@scratch.org'},
         orgId: '00D0000000000000000',
-        tag: 'test-pool',
-        username: 'test@scratch.org',
+        pool: {tag: 'test-pool'},
       });
     });
 
@@ -293,7 +294,7 @@ describe('DevHubService', () => {
       await devHub.getOrgsByTag('test-pool', true);
 
       const query = conn.query.mock.calls[0][0] as string;
-      expect(query).toContain("Pooltag__c = 'test-pool'");
+      expect(query).toContain("Tag__c = 'test-pool'");
       expect(query).toContain("CreatedById = 'devhub@example.com'");
     });
   });
@@ -305,8 +306,8 @@ describe('DevHubService', () => {
       await devHub.getOrphanedScratchOrgs();
 
       const query = conn.query.mock.calls[0][0] as string;
-      expect(query).toContain('Pooltag__c = null');
-      expect(query).toContain("Status = 'Active'");
+      expect(query).toContain('Tag__c = null');
+      expect(query).toContain("Allocation_Status__c = 'Active'");
     });
   });
 
@@ -391,7 +392,7 @@ describe('DevHubService', () => {
   });
 
   // ==========================================================================
-  // PoolInfoProvider interface
+  // PoolOrgProvider interface (info methods)
   // ==========================================================================
 
   describe('getScratchOrgInfoByUsername', () => {
@@ -459,7 +460,7 @@ describe('DevHubService', () => {
   });
 
   // ==========================================================================
-  // PoolOrgSource interface
+  // PoolOrgProvider interface (org source methods)
   // ==========================================================================
 
   describe('updatePoolMetadata', () => {
@@ -478,10 +479,10 @@ describe('DevHubService', () => {
       expect(conn.sobject).toHaveBeenCalledWith('ScratchOrgInfo');
       expect(sobject.update).toHaveBeenCalledWith([
         {
-          Allocation_Status__c: 'Available', Id: 'id-1', Password__c: 'pw1', Pooltag__c: 'pool-1',
+          Allocation_Status__c: 'Available', Id: 'id-1', Password__c: 'pw1', Tag__c: 'pool-1',
         },
         {
-          Allocation_Status__c: 'Assigned', Id: 'id-2', Password__c: 'pw2', Pooltag__c: 'pool-1',
+          Allocation_Status__c: 'Assigned', Id: 'id-2', Password__c: 'pw2', Tag__c: 'pool-1',
         },
       ]);
     });
@@ -499,7 +500,7 @@ describe('DevHubService', () => {
 
       const result = await devHub.updateScratchOrgInfo({
         Id: 'a00XXXXXXXXXXXXXXX',
-        Pooltag__c: 'new-tag',
+        Tag__c: 'new-tag',
       });
 
       expect(result).toBe(true);
@@ -516,7 +517,7 @@ describe('DevHubService', () => {
   });
 
   // ==========================================================================
-  // PoolPrerequisiteChecker interface
+  // PoolOrgProvider interface (prerequisite checks)
   // ==========================================================================
 
   describe('validate', () => {
@@ -572,7 +573,7 @@ describe('DevHubService', () => {
         Id: 'record-id-123',
         LoginUrl: 'https://mapped.scratch.org',
         Password__c: 'pw-123',
-        Pooltag__c: 'my-pool',
+        Tag__c: 'my-pool',
         ScratchOrg: 'org-id-456',
         Auth_Url__c: 'force://mapped',
         SignupEmail: 'mapped@example.com',
@@ -584,16 +585,21 @@ describe('DevHubService', () => {
       const [result] = await devHub.getAvailableByTag('my-pool');
 
       expect(result).toEqual<ScratchOrg>({
-        expiryDate: '2025-12-31',
-        loginURL: 'https://mapped.scratch.org',
+        auth: {
+          authUrl: 'force://mapped',
+          email: 'mapped@example.com',
+          loginUrl: 'https://mapped.scratch.org',
+          password: 'pw-123',
+          username: 'mapped@scratch.org',
+        },
+        expiry: new Date('2025-12-31').getTime(),
         orgId: 'org-id-456',
-        password: 'pw-123',
+        pool: {
+          status: 'Assigned',
+          tag: 'my-pool',
+          timestamp: expect.any(Number),
+        },
         recordId: 'record-id-123',
-        sfdxAuthUrl: 'force://mapped',
-        signupEmail: 'mapped@example.com',
-        status: 'Assigned',
-        tag: 'my-pool',
-        username: 'mapped@scratch.org',
       });
     });
 
@@ -607,10 +613,10 @@ describe('DevHubService', () => {
       const [result] = await devHub.getAvailableByTag('pool');
 
       expect(result.recordId).toBe('min-id');
-      expect(result.username).toBe('min@scratch.org');
-      expect(result.password).toBeUndefined();
-      expect(result.tag).toBeUndefined();
-      expect(result.sfdxAuthUrl).toBeUndefined();
+      expect(result.auth.username).toBe('min@scratch.org');
+      expect(result.auth.password).toBeUndefined();
+      expect(result.pool.tag).toBe('');
+      expect(result.auth.authUrl).toBeUndefined();
     });
   });
 });

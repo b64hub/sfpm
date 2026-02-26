@@ -13,7 +13,7 @@ import {
   type OrgServiceEvents,
   type ScratchOrgUsage,
   type ShareScratchOrgOptions,
-} from '../types.js';
+} from './types.js';
 
 // ============================================================================
 // OrgService

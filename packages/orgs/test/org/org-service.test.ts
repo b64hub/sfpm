@@ -51,11 +51,14 @@ function createMockLogger() {
 
 function createScratchOrg(overrides: Partial<ScratchOrg> = {}): ScratchOrg {
   return {
-    alias: 'my-org',
-    loginURL: 'https://test.salesforce.com',
-    orgId: '00D000000000001',
-    password: 'P@ss1234',
-    username: 'test-123@example.com',
+    auth: {
+      alias: 'my-org',
+      loginUrl: 'https://test.salesforce.com',
+      password: 'P@ss1234',
+      username: 'test-123@example.com',
+      ...overrides.auth,
+    },
+    orgId: overrides.orgId ?? '00D000000000001',
     ...overrides,
   };
 }
@@ -98,13 +101,14 @@ describe('OrgService', () => {
       expect(hub.generatePassword).toHaveBeenCalledWith('test-123@example.com');
 
       expect(result).toMatchObject({
-        alias: 'my-org',
-        loginURL: 'https://test.salesforce.com',
+        auth: {
+          alias: 'my-org',
+          loginUrl: 'https://test.salesforce.com',
+          password: 'P@ss1234',
+          username: 'test-123@example.com',
+        },
         orgId: '00D000000000001',
-        password: 'P@ss1234',
-        username: 'test-123@example.com',
       });
-      expect(result.elapsedTime).toBeGreaterThanOrEqual(0);
     });
 
     it('uses custom expiryDays and waitMinutes when provided', async () => {
@@ -233,7 +237,7 @@ describe('OrgService', () => {
   // --------------------------------------------------------------------------
   describe('getOrphanedScratchOrgs', () => {
     it('delegates to hubOrg and returns results', async () => {
-      const orgs: ScratchOrg[] = [createScratchOrg({tag: undefined})];
+      const orgs: ScratchOrg[] = [createScratchOrg({pool: undefined})];
       (hub.getOrphanedScratchOrgs as Mock).mockResolvedValue(orgs);
 
       const result = await service.getOrphanedScratchOrgs();
@@ -415,7 +419,7 @@ describe('OrgService', () => {
         alias: 'no-log',
         definitionFile: 'def.json',
       });
-      expect(result.username).toBe('test-123@example.com');
+      expect(result.auth.username).toBe('test-123@example.com');
     });
   });
 

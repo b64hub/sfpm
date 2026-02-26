@@ -5,23 +5,23 @@ import {
 import {Duration} from '@salesforce/kit';
 
 import type {
+  PoolOrgProvider,
+  PoolOrgRecord,
+} from '../../pool/types.js';
+import type {ScratchOrg} from '../scratch/types.js';
+import type {
   AllocationStatus,
   DevHub,
   JwtAuthConfig,
   PasswordResult,
-  PoolInfoProvider,
-  PoolOrgProvider,
-  PoolOrgRecord,
-  PoolPrerequisiteChecker,
   ScratchOrgCreateRequest,
   ScratchOrgCreateResult,
   ScratchOrgUsage,
   SendEmailOptions,
-} from '../../types.js';
-import type {ScratchOrg} from '../scratch/types.js';
+} from '../types.js';
 
-import {OrgError} from '../../types.js';
 import {generatePassword} from '../../utils/password-generator.js';
+import {OrgError} from '../types.js';
 
 // ============================================================================
 // Record types – raw Salesforce SObject shapes
@@ -125,7 +125,7 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
  * ```
  */
 export default class DevHubService
-implements DevHub, PoolInfoProvider, PoolOrgProvider, PoolPrerequisiteChecker {
+implements DevHub, PoolOrgProvider {
   private readonly conn;
   private readonly hubOrg;
   private readonly hubUsername: string;

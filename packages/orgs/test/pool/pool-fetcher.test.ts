@@ -34,20 +34,28 @@ function createMockAuthenticator() {
   return {
     enableSourceTracking: vi.fn(),
     hasValidAuth: vi.fn().mockReturnValue(true),
-    login: vi.fn().mockResolvedValue(true),
+    login: vi.fn().mockResolvedValue(undefined),
   };
 }
 
 function createScratchOrg(overrides?: Record<string, unknown>) {
+  const username = (overrides?.username as string) ?? `org-${Math.random().toString(36).slice(2, 8)}@scratch.org`;
   return {
-    orgId: '00D000000000001',
-    password: 'pw-123',
-    recordId: 'a00000000000001',
-    sfdxAuthUrl: 'force://PlatformCLI::auth...',
-    status: 'Available',
-    tag: 'test-pool',
-    username: `org-${Math.random().toString(36).slice(2, 8)}@scratch.org`,
-    ...overrides,
+    auth: {
+      authUrl: 'force://PlatformCLI::auth...',
+      loginUrl: 'https://test.salesforce.com',
+      password: 'pw-123',
+      username,
+      ...(overrides?.auth as Record<string, unknown>),
+    },
+    orgId: (overrides?.orgId as string) ?? '00D000000000001',
+    pool: {
+      status: 'Available',
+      tag: 'test-pool',
+      timestamp: Date.now(),
+      ...(overrides?.pool as Record<string, unknown>),
+    },
+    recordId: (overrides?.recordId as string) ?? 'a00000000000001',
   };
 }
 
@@ -85,8 +93,8 @@ describe('PoolFetcher', () => {
       const result = await fetcher.fetch({tag: 'test-pool'});
 
       expect(orgSource.claimOrg).toHaveBeenCalledWith('a00000000000001');
-      expect(result.username).toBe('claimed@scratch.org');
-      expect(result.status).toBe('Assigned');
+      expect(result.auth.username).toBe('claimed@scratch.org');
+      expect(result.pool?.status).toBe('Assigned');
     });
 
     it('should skip orgs that fail claiming and try next', async () => {
@@ -106,7 +114,7 @@ describe('PoolFetcher', () => {
       const result = await fetcher.fetch({tag: 'test-pool'});
 
       expect(orgSource.claimOrg).toHaveBeenCalledTimes(2);
-      expect(result.username).toBe('available@scratch.org');
+      expect(result.auth.username).toBe('available@scratch.org');
     });
 
     it('should throw when no orgs are available in pool', async () => {
@@ -149,7 +157,7 @@ describe('PoolFetcher', () => {
       await fetcher.fetch({tag: 'test-pool'});
 
       expect(authenticator.login).toHaveBeenCalledWith(expect.objectContaining({
-        username: org.username,
+        auth: expect.objectContaining({username: org.auth.username}),
       }));
     });
 
@@ -166,7 +174,7 @@ describe('PoolFetcher', () => {
 
       await fetcher.fetch({enableSourceTracking: true, tag: 'test-pool'});
 
-      expect(authenticator.enableSourceTracking).toHaveBeenCalledWith(expect.objectContaining({username: org.username}));
+      expect(authenticator.enableSourceTracking).toHaveBeenCalledWith(expect.objectContaining({auth: expect.objectContaining({username: org.auth.username})}));
     });
 
     it('should share org instead of authenticating when sendToUser is set', async () => {
@@ -183,15 +191,15 @@ describe('PoolFetcher', () => {
       await fetcher.fetch({sendToUser: 'someone@company.com', tag: 'test-pool'});
 
       expect(orgService.shareScratchOrg).toHaveBeenCalledWith(
-        expect.objectContaining({username: org.username}),
+        expect.objectContaining({auth: expect.objectContaining({username: org.auth.username})}),
         {emailAddress: 'someone@company.com'},
       );
       expect(authenticator.login).not.toHaveBeenCalled();
     });
 
     it('should filter by auth validity when requireValidAuth is set', async () => {
-      const orgValid = createScratchOrg({sfdxAuthUrl: 'valid', username: 'valid@scratch.org'});
-      const orgInvalid = createScratchOrg({sfdxAuthUrl: undefined, username: 'invalid@scratch.org'});
+      const orgValid = createScratchOrg({auth: {authUrl: 'valid'}, username: 'valid@scratch.org'});
+      const orgInvalid = createScratchOrg({auth: {authUrl: undefined}, username: 'invalid@scratch.org'});
       orgSource.getAvailableByTag.mockResolvedValue([orgValid, orgInvalid]);
       authenticator.hasValidAuth
       .mockReturnValueOnce(true)
@@ -206,7 +214,7 @@ describe('PoolFetcher', () => {
 
       const result = await fetcher.fetch({requireValidAuth: true, tag: 'test-pool'});
 
-      expect(result.username).toBe('valid@scratch.org');
+      expect(result.auth.username).toBe('valid@scratch.org');
     });
 
     it('should throw when no orgs pass auth validity filter', async () => {
@@ -310,8 +318,8 @@ describe('PoolFetcher', () => {
 
       const result = await fetcher.fetchAll({tag: 'test-pool'});
 
-      expect(result[0].alias).toBe('SO1');
-      expect(result[1].alias).toBe('SO2');
+      expect(result[0].auth.alias).toBe('SO1');
+      expect(result[1].auth.alias).toBe('SO2');
     });
 
     it('should authenticate orgs and filter out failures', async () => {
@@ -319,8 +327,8 @@ describe('PoolFetcher', () => {
       const org2 = createScratchOrg({username: 'bad@scratch.org'});
       orgSource.getAvailableByTag.mockResolvedValue([org1, org2]);
       authenticator.login
-      .mockResolvedValueOnce(true) // org1 passes
-      .mockResolvedValueOnce(false); // org2 fails
+      .mockResolvedValueOnce(undefined) // org1 passes
+      .mockRejectedValueOnce(new Error('Auth failed')); // org2 fails
 
       const fetcher = new PoolFetcher(
         orgSource as any,

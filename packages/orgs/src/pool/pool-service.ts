@@ -1,15 +1,14 @@
 import type {Logger} from '@b64/sfpm-core';
 
 import type {ScratchOrg} from '../org/scratch/types.js';
-import type {
-  PoolConfig,
-  PoolFetchAllOptions,
-  PoolFetchOptions,
-  PoolPrerequisiteChecker,
-} from '../types.js';
 import type PoolFetcher from './pool-fetcher.js';
 import type {PoolProvisionResult} from './pool-manager.js';
 import type PoolManager from './pool-manager.js';
+import type {
+  PoolConfig,
+  PoolFetchOptions,
+  PoolOrgProvider,
+} from './types.js';
 
 // ============================================================================
 // PoolService
@@ -24,7 +23,7 @@ import type PoolManager from './pool-manager.js';
  *
  * - **PoolManager** — provisions new scratch orgs to fill pools
  * - **PoolFetcher** — fetches and claims orgs from existing pools
- * - **PoolPrerequisiteChecker** — validates DevHub configuration
+ * - **PoolOrgProvider** — validates DevHub configuration and provides pool state
  *
  * The service is intentionally thin — it coordinates cross-cutting
  * concerns (prerequisite validation) and delegates to the appropriate
@@ -33,7 +32,7 @@ import type PoolManager from './pool-manager.js';
  *
  * @example
  * ```ts
- * const service = new PoolService(poolManager, poolFetcher, prereqChecker, logger);
+ * const service = new PoolService(poolManager, poolFetcher, poolOrgProvider, logger);
  *
  * // Provision a pool (validates prerequisites first)
  * const result = await service.provision(poolConfig);
@@ -46,7 +45,7 @@ export default class PoolService {
   constructor(
     private readonly manager: PoolManager,
     private readonly fetcher: PoolFetcher,
-    private readonly prerequisiteChecker?: PoolPrerequisiteChecker,
+    private readonly poolOrgProvider?: PoolOrgProvider,
     private readonly logger?: Logger,
   ) {}
 
@@ -80,7 +79,7 @@ export default class PoolService {
    * Delegates to `PoolFetcher.fetchAll()`. Does not claim individual
    * orgs — the caller manages allocation status.
    */
-  public async fetchAll(options: PoolFetchAllOptions): Promise<ScratchOrg[]> {
+  public async fetchAll(options: PoolFetchOptions & {limit?: number}): Promise<ScratchOrg[]> {
     return this.fetcher.fetchAll(options);
   }
 
@@ -100,17 +99,17 @@ export default class PoolService {
   /**
    * Validate that the DevHub meets pool operation prerequisites.
    *
-   * Skips validation if no `PoolPrerequisiteChecker` was provided.
+   * Skips validation if no `PoolOrgProvider` was provided.
    * Callers can invoke this directly if they need to check prerequisites
    * without performing an operation.
    */
   public async validatePrerequisites(): Promise<void> {
-    if (!this.prerequisiteChecker) {
+    if (!this.poolOrgProvider) {
       return;
     }
 
     this.logger?.debug('Validating DevHub prerequisites...');
-    await this.prerequisiteChecker.validate();
+    await this.poolOrgProvider.validate();
     this.logger?.debug('Prerequisites validated');
   }
 }
