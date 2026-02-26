@@ -44,6 +44,24 @@ Artifact and package version management
 - Build process and hash-based skipping
 - npm packaging considerations
 
+### [logging.instructions.md](./instructions/logging.instructions.md)
+Logging patterns and environment-agnostic logger abstraction
+- `Logger` interface (base) and `StructuredLogger` (extended with groups/annotations)
+- Logger injection via optional constructor parameter
+- Environment-specific implementations: CLI, GitHub Actions, console, tests
+- `noopLogger` sentinel, `createConsoleLogger()` factory, `isStructuredLogger()` type guard
+- Log level guidelines (error/warn/info/debug/trace)
+- Events vs logging separation of concerns
+
+### [actions.instructions.md](./instructions/actions.instructions.md)
+GitHub Actions integration patterns
+- PR validation pipeline (org cache → pool fetch → deploy)
+- Scratch org caching with TTL per PR
+- `GitHubActionsLogger` integrating with `@actions/core`
+- `ActionsProgressRenderer` for event-driven log output
+- Action inputs/outputs and workflow usage
+- Bundling with esbuild for single-file distribution
+
 ## How These Are Used
 
 ### By AI Agents
@@ -70,8 +88,16 @@ When adding new patterns or making architectural decisions:
 ### Core Principles
 
 **Separation of Concerns**
-- **Core** (`packages/core/`) - Business logic, no CLI concerns
-- **CLI** (`packages/cli/`) - User interface, command handling
+- **Core** (`packages/core/`) - Business logic, no CLI or environment concerns
+- **CLI** (`packages/cli/`) - User interface, command handling, spinner/box rendering
+- **Actions** (`packages/actions/`) - GitHub Actions integration, action.yml definitions
+- **Orgs** (`packages/orgs/`) - Scratch org pool management, DevHub operations
+
+**Logging**
+- Environment-agnostic `Logger` interface in core
+- `StructuredLogger` extension for groups and annotations
+- CLI, GitHub Actions, and console implementations
+- Injected via constructor, never imported globally
 
 **Error Handling**
 - Rich, structured error types with context
@@ -128,6 +154,17 @@ When adding new patterns or making architectural decisions:
 3. Throw `BuildError` on failure
 4. Log progress with logger
 5. Test with mocked dependencies
+
+### Adding a New GitHub Action
+
+1. Create `src/my-action.ts` with pipeline logic
+2. Create `src/my-action-main.ts` entry point
+3. Add/update `action.yml` definition
+4. Wire inputs → options → core services
+5. Use `GitHubActionsLogger` for logging
+6. Use `ActionsProgressRenderer` for event-driven output
+7. Add tests with mocked `@actions/*` dependencies
+8. Update [actions.instructions.md](./instructions/actions.instructions.md)
 
 ## Contributing
 
