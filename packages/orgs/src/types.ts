@@ -40,6 +40,7 @@ export type {
   PoolOrgRecord,
   PoolOrgTask,
   PoolOrgTaskResult,
+  PostClaimAction,
   PoolProvisioningState,
   PoolSizingConfig,
 } from './pool/types.js';

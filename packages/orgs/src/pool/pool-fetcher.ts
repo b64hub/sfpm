@@ -2,7 +2,6 @@ import type {Logger} from '@b64/sfpm-core';
 
 import {EventEmitter} from 'node:events';
 
-import type OrgService from '../org/org-service.js';
 import type {ScratchOrg} from '../org/scratch/types.js';
 import type {
   PoolFetchOptions,
@@ -38,17 +37,21 @@ export interface PoolFetcherEvents {
  *
  * Migrated from the legacy `PoolFetchImpl`. Key differences:
  *
- * - **Composition over inheritance** — takes `PoolOrgSource`, `OrgService`,
- *   and `PoolOrgAuthenticator` via constructor instead of extending
+ * - **Composition over inheritance** — takes `PoolOrgProvider` and
+ *   `PoolOrgAuthenticator` via constructor instead of extending
  *   `PoolBaseImpl`.
  *
  * - **Prerequisite checks abstracted** — the legacy `PoolBaseImpl`
- *   embedded DevHub prerequisite validation. This is now a separate
- *   `PoolPrerequisiteChecker` interface, injected at the service layer.
+ *   embedded DevHub prerequisite validation. This is now handled by
+ *   `PoolManager.validatePrerequisites()`.
  *
  * - **Authentication decoupled** — login, auth URL validation, and source
  *   tracking are handled by `PoolOrgAuthenticator`, keeping the fetcher
  *   SDK-free.
+ *
+ * - **Post-claim extensibility** — an optional `postClaimAction` callback
+ *   on `PoolFetchOptions` handles side effects (e.g., sharing via email)
+ *   without coupling the fetcher to `OrgService`.
  *
  * Two fetch modes:
  * - `fetch()` — claim a single org using optimistic concurrency
@@ -56,7 +59,7 @@ export interface PoolFetcherEvents {
  *
  * @example
  * ```ts
- * const fetcher = new PoolFetcher(orgSource, orgService, authenticator, logger);
+ * const fetcher = new PoolFetcher(orgSource, authenticator, logger);
  * fetcher.on('pool:fetch:claimed', (p) => console.log(`Claimed ${p.username}`));
  *
  * const org = await fetcher.fetch({ tag: 'dev-pool' });
@@ -66,7 +69,6 @@ export interface PoolFetcherEvents {
 export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
   constructor(
     private readonly orgSource: PoolOrgProvider,
-    private readonly orgService: OrgService,
     private readonly authenticator?: PoolOrgAuthenticator,
     private readonly logger?: Logger,
   ) {
@@ -248,11 +250,16 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
   // --------------------------------------------------------------------------
 
   /**
-   * Handle post-claim actions: send email, login, source tracking.
+   * Handle post-claim actions: custom action, login, source tracking.
    */
   private async handlePostClaim(org: ScratchOrg, options: PoolFetchOptions): Promise<void> {
+    // Run custom post-claim action (e.g., share via email)
+    if (options.postClaimAction) {
+      await options.postClaimAction(org, options);
+    }
+
+    // If a custom action handled the claim (e.g., sendToUser), skip auth
     if (options.sendToUser) {
-      await this.orgService.shareScratchOrg(org, {emailAddress: options.sendToUser});
       return;
     }
 

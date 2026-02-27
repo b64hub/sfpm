@@ -221,6 +221,18 @@ export interface PoolOrgAuthenticator {
 // ============================================================================
 
 /**
+ * Action to execute after a scratch org has been claimed from the pool.
+ *
+ * Injected into `PoolFetcher` to handle post-claim side effects like
+ * sharing the org via email. This decouples the fetcher from `OrgService`
+ * and keeps it focused on claim-and-authenticate logic.
+ *
+ * @param org - The claimed scratch org
+ * @param options - The original fetch options (includes `sendToUser`, etc.)
+ */
+export type PostClaimAction = (org: ScratchOrg, options: PoolFetchOptions) => Promise<void>;
+
+/**
  * Options for fetching scratch orgs from a pool.
  *
  * Used for both single-org fetch (claims via optimistic concurrency)
@@ -233,6 +245,11 @@ export interface PoolFetchOptions {
   limit?: number;
   /** Only return orgs owned by the current user */
   myPool?: boolean;
+  /**
+   * Optional callback invoked after an org is claimed (single-fetch only).
+   * Use for side effects like sharing the org via email.
+   */
+  postClaimAction?: PostClaimAction;
   /**
    * Only return orgs with valid authentication credentials.
    *

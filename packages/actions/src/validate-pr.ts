@@ -9,10 +9,7 @@ import {
     type Logger,
 } from '@b64/sfpm-core';
 import {
-    DevHubService,
-    OrgService,
-    PoolFetcher,
-    ScratchOrgAuthService,
+    createPoolServices,
     type ScratchOrg,
 } from '@b64/sfpm-orgs';
 
@@ -227,15 +224,7 @@ async function fetchOrgFromPool(
     if (isStructuredLogger(logger)) logger.group('Pool Fetch');
 
     const hubOrg = await Org.create({aliasOrUsername: options.devhubUsername});
-    const devHubService = new DevHubService(hubOrg);
-    const orgService = new OrgService(devHubService, logger);
-
-    const jwtConfig = devHubService.getJwtConfig();
-    const authenticator = jwtConfig
-        ? new ScratchOrgAuthService(devHubService.getUsername(), jwtConfig)
-        : undefined;
-
-    const fetcher = new PoolFetcher(devHubService, orgService, authenticator, logger);
+    const {fetcher} = createPoolServices({hubOrg, logger});
 
     const renderer = new ActionsProgressRenderer(logger);
     renderer.attachToPoolFetcher(fetcher);

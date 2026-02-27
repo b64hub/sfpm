@@ -184,6 +184,21 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   // --------------------------------------------------------------------------
 
   /**
+   * Validate that the DevHub meets pool operation prerequisites.
+   *
+   * Checks that the DevHub has the required custom fields and picklist
+   * values on `ScratchOrgInfo` for pool operations. Call this before
+   * provisioning or as a standalone health check.
+   *
+   * @throws {OrgError} When prerequisites are not met
+   */
+  public async validatePrerequisites(): Promise<void> {
+    this.logger?.debug('Validating DevHub prerequisites...');
+    await this.poolOrgProvider.validate();
+    this.logger?.debug('Prerequisites validated');
+  }
+
+  /**
    * Compute how many scratch orgs should be allocated for a pool.
    *
    * Factors in the current pool count, DevHub remaining capacity,
@@ -311,6 +326,9 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   public async provision(config: PoolConfig): Promise<PoolProvisionResult> {
     const concurrency = config.sizing.batchSize ?? DEFAULT_CONCURRENCY;
     const startTime = Date.now();
+
+    // 0. Validate prerequisites
+    await this.validatePrerequisites();
 
     // 1. Compute allocation
     const allocation = await this.computeAllocation(config);

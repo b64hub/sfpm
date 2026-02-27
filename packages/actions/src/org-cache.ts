@@ -80,7 +80,7 @@ const CACHE_FILE_NAME = 'sfpm-org-cache.json';
  *
  * let connection = await orgCache.restore();
  * if (!connection) {
- *   const org = await poolService.fetch({ tag: 'dev-pool' });
+ *   const org = await fetcher.fetch({ tag: 'dev-pool' });
  *   connection = { username: org.auth.username, sfdxAuthUrl: org.auth.authUrl!, ... };
  *   await orgCache.save(connection);
  * }

@@ -41,7 +41,7 @@ export default class PoolProvision extends SfpmCommand {
     };
 
     try {
-      const {manager, poolService} = await createPoolServices({
+      const {manager} = await createPoolServices({
         devhub: flags['target-dev-hub'],
         logger,
       });
@@ -57,7 +57,7 @@ export default class PoolProvision extends SfpmCommand {
       renderer.attachToManager(manager);
 
       const validationSpinner = mode === 'interactive' ? ora('Validating DevHub prerequisites...').start() : undefined;
-      await poolService.validatePrerequisites();
+      await manager.validatePrerequisites();
       validationSpinner?.succeed('DevHub prerequisites validated');
 
       const config: PoolConfig = {
@@ -72,7 +72,7 @@ export default class PoolProvision extends SfpmCommand {
         tag: flags.tag,
       };
 
-      const result = await poolService.provision(config);
+      const result = await manager.provision(config);
 
       if (flags.json) {
         this.logJson({...result, events: renderer.getJsonOutput().events, success: result.failed === 0});

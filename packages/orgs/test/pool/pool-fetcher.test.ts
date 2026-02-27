@@ -20,16 +20,6 @@ function createMockOrgSource() {
   };
 }
 
-function createMockOrgService() {
-  return {
-    createScratchOrg: vi.fn(),
-    deleteScratchOrgs: vi.fn(),
-    emit: vi.fn(),
-    on: vi.fn(),
-    shareScratchOrg: vi.fn(),
-  };
-}
-
 function createMockAuthenticator() {
   return {
     enableSourceTracking: vi.fn(),
@@ -65,12 +55,10 @@ function createScratchOrg(overrides?: Record<string, unknown>) {
 
 describe('PoolFetcher', () => {
   let orgSource: ReturnType<typeof createMockOrgSource>;
-  let orgService: ReturnType<typeof createMockOrgService>;
   let authenticator: ReturnType<typeof createMockAuthenticator>;
 
   beforeEach(() => {
     orgSource = createMockOrgSource();
-    orgService = createMockOrgService();
     authenticator = createMockAuthenticator();
   });
 
@@ -86,7 +74,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -107,7 +94,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -122,7 +108,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -136,7 +121,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -150,7 +134,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -168,7 +151,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -177,22 +159,23 @@ describe('PoolFetcher', () => {
       expect(authenticator.enableSourceTracking).toHaveBeenCalledWith(expect.objectContaining({auth: expect.objectContaining({username: org.auth.username})}));
     });
 
-    it('should share org instead of authenticating when sendToUser is set', async () => {
+    it('should invoke postClaimAction when sendToUser is set', async () => {
       const org = createScratchOrg();
       orgSource.getAvailableByTag.mockResolvedValue([org]);
       orgSource.claimOrg.mockResolvedValue(true);
 
+      const postClaimAction = vi.fn().mockResolvedValue(undefined);
+
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
-      await fetcher.fetch({sendToUser: 'someone@company.com', tag: 'test-pool'});
+      await fetcher.fetch({postClaimAction, sendToUser: 'someone@company.com', tag: 'test-pool'});
 
-      expect(orgService.shareScratchOrg).toHaveBeenCalledWith(
+      expect(postClaimAction).toHaveBeenCalledWith(
         expect.objectContaining({auth: expect.objectContaining({username: org.auth.username})}),
-        {emailAddress: 'someone@company.com'},
+        expect.objectContaining({sendToUser: 'someone@company.com'}),
       );
       expect(authenticator.login).not.toHaveBeenCalled();
     });
@@ -208,7 +191,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -224,7 +206,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -236,7 +217,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -252,7 +232,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -279,7 +258,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -296,7 +274,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -312,7 +289,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -332,7 +308,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -347,7 +322,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -362,7 +336,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 
@@ -375,7 +348,6 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(
         orgSource as any,
-        orgService as any,
         authenticator as any,
       );
 

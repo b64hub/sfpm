@@ -1,14 +1,9 @@
 import type {Logger} from '@b64/sfpm-core';
 
 import {
-  DevHubService,
-  OrgService,
-  PoolFetcher,
-  PoolManager,
-  type PoolManagerOptions,
+  createPoolServices as createPoolServicesFromOrg,
   type PoolOrgTask,
-  PoolService,
-  ScratchOrgAuthService,
+  type PoolServices,
 } from '@b64/sfpm-orgs';
 import {Org} from '@salesforce/core';
 
@@ -19,41 +14,19 @@ import {Org} from '@salesforce/core';
 /**
  * Bootstrap the full pool service stack from a DevHub alias or username.
  *
- * Resolves the DevHub org, creates the DevHubService adapter, and wires
- * up all collaborators needed for pool operations.
+ * Resolves the DevHub org and delegates to the shared
+ * `createPoolServices()` factory from `@b64/sfpm-orgs`.
  */
 export async function createPoolServices(options: {
   devhub: string;
   logger?: Logger;
   tasks?: PoolOrgTask[];
-}): Promise<{
-  devHub: DevHubService;
-  fetcher: PoolFetcher;
-  manager: PoolManager;
-  orgService: OrgService;
-  poolService: PoolService;
-}> {
+}): Promise<PoolServices> {
   const hubOrg = await Org.create({aliasOrUsername: options.devhub});
-  const devHub = new DevHubService(hubOrg);
-  const orgService = new OrgService(devHub, options.logger);
 
-  const auth = new ScratchOrgAuthService(
-    devHub.getUsername(),
-    devHub.getJwtConfig(),
-  );
-
-  const managerOptions: PoolManagerOptions = {
+  return createPoolServicesFromOrg({
+    hubOrg,
     logger: options.logger,
-    orgService,
-    poolOrgProvider: devHub,
     tasks: options.tasks,
-  };
-
-  const manager = new PoolManager(managerOptions);
-  const fetcher = new PoolFetcher(devHub, orgService, auth, options.logger);
-  const poolService = new PoolService(manager, fetcher, devHub, options.logger);
-
-  return {
-    devHub, fetcher, manager, orgService, poolService,
-  };
+  });
 }

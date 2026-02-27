@@ -53,8 +53,12 @@ export {
   type PoolProvisionResult,
 } from './pool/pool-manager.js';
 
-// Pool service
-export {default as PoolService} from './pool/pool-service.js';
+// Pool factory
+export {
+  createPoolServices,
+  type CreatePoolServicesOptions,
+  type PoolServices,
+} from './pool/pool-factory.js';
 
 // Pool-layer types
 export {
@@ -69,6 +73,7 @@ export {
   type PoolOrgProvider as PoolOrgSource,
   type PoolOrgTask,
   type PoolOrgTaskResult,
+  type PostClaimAction,
   type PoolProvisioningState,
   type PoolSizingConfig,
 } from './pool/types.js';

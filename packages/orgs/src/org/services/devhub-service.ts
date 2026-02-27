@@ -77,7 +77,7 @@ const SCRATCH_ORG_INFO_FIELDS = [
   // 'Password__c',
   'Tag__c',
   'ScratchOrg',
-  // 'Auth_Url__c',
+  'Auth_Url__c',
   'SignupEmail',
   'SignupUsername',
 ].join(', ');
@@ -467,7 +467,7 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
 
   return {
     auth: {
-      // authUrl: record.Auth_Url__c,
+      authUrl: record.Auth_Url__c,
       email: record.SignupEmail,
       loginUrl: record.LoginUrl,
       // password: record.Password__c,
