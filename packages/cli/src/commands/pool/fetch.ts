@@ -1,3 +1,4 @@
+import {type OrgKind} from '@b64/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -9,9 +10,10 @@ import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
 import {createPoolServices} from '../../utils/pool-bootstrap.js';
 
 export default class PoolFetch extends SfpmCommand {
-  static override description = 'fetch a scratch org from a pool'
+  static override description = 'fetch an org from a pool'
   static override examples = [
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub',
+    '<%= config.bin %> pool fetch --tag sb-pool --type sandbox -v my-prod-org',
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --send-to user@example.com',
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --all --limit 5',
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --json',
@@ -25,7 +27,12 @@ export default class PoolFetch extends SfpmCommand {
     'send-to': Flags.string({description: 'email org details to this address instead of local login'}),
     'source-tracking': Flags.boolean({default: false, description: 'enable source tracking after fetch'}),
     tag: Flags.string({char: 't', description: 'pool tag to fetch from', required: true}),
-    'target-dev-hub': Flags.string({char: 'v', description: 'target DevHub username or alias', required: true}),
+    'target-dev-hub': Flags.string({char: 'v', description: 'target hub org username or alias', required: true}),
+    type: Flags.string({
+      default: 'scratchOrg',
+      description: 'pool type: scratchOrg or sandbox',
+      options: ['scratchOrg', 'sandbox'],
+    }),
   }
 
   public async execute(): Promise<void> {
@@ -47,8 +54,9 @@ export default class PoolFetch extends SfpmCommand {
       const {fetcher, orgService} = await createPoolServices({
         devhub: flags['target-dev-hub'],
         logger,
+        poolType: flags.type as OrgKind,
       });
-      spinner?.succeed('Connected to DevHub');
+      spinner?.succeed('Connected to hub org');
 
       const renderer = new PoolProgressRenderer({
         logger: {

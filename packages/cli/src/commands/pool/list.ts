@@ -1,4 +1,4 @@
-import {type ScratchOrg} from '@b64/sfpm-orgs';
+import {type OrgKind, type PoolOrg} from '@b64/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {printTable} from '@oclif/table';
 import chalk from 'chalk';
@@ -9,9 +9,10 @@ import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
 import {createPoolServices} from '../../utils/pool-bootstrap.js';
 
 export default class PoolList extends SfpmCommand {
-  static override description = 'list scratch orgs in a pool'
+  static override description = 'list orgs in a pool'
   static override examples = [
     '<%= config.bin %> pool list --tag dev-pool -v my-devhub',
+    '<%= config.bin %> pool list --tag sb-pool --type sandbox -v my-prod-org',
     '<%= config.bin %> pool list --tag dev-pool -v my-devhub --my-pool',
     '<%= config.bin %> pool list --tag dev-pool -v my-devhub --json',
   ]
@@ -20,21 +21,29 @@ export default class PoolList extends SfpmCommand {
     'my-pool': Flags.boolean({description: 'only show orgs created by the current user'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     tag: Flags.string({char: 't', description: 'pool tag to query', required: true}),
-    'target-dev-hub': Flags.string({char: 'v', description: 'target DevHub username or alias', required: true}),
+    'target-dev-hub': Flags.string({char: 'v', description: 'target hub org username or alias', required: true}),
+    type: Flags.string({
+      default: 'scratchOrg',
+      description: 'pool type: scratchOrg or sandbox',
+      options: ['scratchOrg', 'sandbox'],
+    }),
   }
 
   public async execute(): Promise<void> {
     const {flags} = await this.parse(PoolList);
     const mode = flags.json ? 'json' as const : flags.quiet ? 'quiet' as const : 'interactive' as const;
 
-    const spinner = mode === 'interactive' ? ora('Connecting to DevHub...').start() : undefined;
+    const spinner = mode === 'interactive' ? ora('Connecting to hub org...').start() : undefined;
 
     try {
-      const {devHub} = await createPoolServices({devhub: flags['target-dev-hub']});
-      spinner?.succeed('Connected to DevHub');
+      const {provider} = await createPoolServices({
+        devhub: flags['target-dev-hub'],
+        poolType: flags.type as OrgKind,
+      });
+      spinner?.succeed('Connected to hub org');
 
       const querySpinner = mode === 'interactive' ? ora(`Fetching orgs for pool "${flags.tag}"...`).start() : undefined;
-      const orgs = await devHub.getOrgsByTag(flags.tag, flags['my-pool']);
+      const orgs = await provider.getOrgsByTag(flags.tag, flags['my-pool']);
       querySpinner?.succeed(`Found ${orgs.length} org(s)`);
 
       if (flags.json) {
@@ -61,7 +70,7 @@ export default class PoolList extends SfpmCommand {
     }
   }
 
-  private renderTable(orgs: ScratchOrg[]): void {
+  private renderTable(orgs: PoolOrg[]): void {
     printTable({
       borderStyle: 'headers-only-with-underline',
       columns: [

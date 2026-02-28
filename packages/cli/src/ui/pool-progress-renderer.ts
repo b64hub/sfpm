@@ -2,8 +2,8 @@ import type {
   PoolDeleteResult,
   PoolFetcher,
   PoolManager,
+  PoolOrg,
   PoolProvisionResult,
-  ScratchOrg,
 } from '@b64/sfpm-orgs';
 
 import chalk from 'chalk';
@@ -113,7 +113,7 @@ export class PoolProgressRenderer {
   /**
    * Render a fetched org summary box.
    */
-  public renderFetchedOrg(org: ScratchOrg): void {
+  public renderFetchedOrg(org: PoolOrg): void {
     if (!this.isInteractive()) return;
 
     this.logger.log('');
@@ -128,7 +128,7 @@ export class PoolProgressRenderer {
   /**
    * Render a list of orgs as a summary.
    */
-  public renderOrgList(orgs: ScratchOrg[], tag: string): void {
+  public renderOrgList(orgs: PoolOrg[], tag: string): void {
     if (!this.isInteractive()) return;
 
     if (orgs.length === 0) {
