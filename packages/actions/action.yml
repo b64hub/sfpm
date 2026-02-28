@@ -8,13 +8,13 @@ branding:
 
 inputs:
   devhub-username:
-    description: 'DevHub username or alias for scratch org pool access'
+    description: 'DevHub username or alias for org pool access'
     required: true
   pool-tag:
-    description: 'Pool tag to fetch scratch orgs from'
+    description: 'Pool tag to fetch orgs from'
     required: true
   cache-ttl-hours:
-    description: 'How long to cache a scratch org for this PR (hours). Set to 0 to disable caching.'
+    description: 'How long to cache an org for this PR (hours). Set to 0 to disable caching.'
     required: false
     default: '4'
   project-dir:
