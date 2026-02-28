@@ -1,20 +1,12 @@
-export interface ScratchOrg {
-  auth: {
-    alias?: string;
-    authUrl?: string;
-    email?: string;
-    loginUrl?: string;
-    password?: string;
-    token?: string;
-    username: string;
-  },
-  expiry?: number;
-  orgId: string;
-  pool?: {
-    isScriptExecuted?: boolean;
-    status: string,
-    tag: string,
-    timestamp: number;
-  }
-  recordId?: string;
+import type {PoolOrg} from '../pool-org.js';
+
+/**
+ * A scratch org managed by a pool.
+ *
+ * Extends `PoolOrg` with a fixed `kind` discriminant.  Scratch orgs
+ * share the same pool metadata shape as the base — no additional
+ * fields are needed.
+ */
+export interface ScratchOrg extends PoolOrg {
+  readonly kind: 'scratchOrg';
 }
