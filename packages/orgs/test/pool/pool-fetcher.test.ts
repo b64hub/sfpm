@@ -111,7 +111,7 @@ describe('PoolFetcher', () => {
         authenticator as any,
       );
 
-      await expect(fetcher.fetch({tag: 'empty-pool'})).rejects.toThrow('No scratch orgs available for pool "empty-pool"');
+      await expect(fetcher.fetch({tag: 'empty-pool'})).rejects.toThrow('No orgs available for pool "empty-pool"');
     });
 
     it('should throw when all claim attempts fail', async () => {
@@ -124,7 +124,7 @@ describe('PoolFetcher', () => {
         authenticator as any,
       );
 
-      await expect(fetcher.fetch({tag: 'test-pool'})).rejects.toThrow('No scratch org could be claimed');
+      await expect(fetcher.fetch({tag: 'test-pool'})).rejects.toThrow('No org could be claimed');
     });
 
     it('should authenticate after claiming', async () => {
@@ -209,7 +209,7 @@ describe('PoolFetcher', () => {
         authenticator as any,
       );
 
-      await expect(fetcher.fetch({requireValidAuth: true, tag: 'test-pool'})).rejects.toThrow('No scratch orgs with valid auth credentials');
+      await expect(fetcher.fetch({requireValidAuth: true, tag: 'test-pool'})).rejects.toThrow('No orgs with valid auth credentials');
     });
 
     it('should pass myPool flag to orgSource', async () => {
@@ -339,7 +339,7 @@ describe('PoolFetcher', () => {
         authenticator as any,
       );
 
-      await expect(fetcher.fetchAll({tag: 'empty-pool'})).rejects.toThrow('No scratch orgs available for pool "empty-pool"');
+      await expect(fetcher.fetchAll({tag: 'empty-pool'})).rejects.toThrow('No orgs available for pool "empty-pool"');
     });
 
     it('should emit start and complete events', async () => {

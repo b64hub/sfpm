@@ -6,29 +6,26 @@ import type {
   PoolConfig, PoolDeleteOptions, PoolOrgTask, PoolOrgTaskResult,
 } from '../../src/types.js';
 
+import type {OrgProvider} from '../../src/org/org-provider.js';
+
 import PoolManager from '../../src/pool/pool-manager.js';
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
-function createMockOrgService() {
-  return {
-    createScratchOrg: vi.fn(),
-    deleteScratchOrgs: vi.fn(),
-    emit: vi.fn(),
-    on: vi.fn(),
-  };
-}
-
-function createMockPoolOrgProvider() {
+function createMockProvider(): {[K in keyof OrgProvider]: ReturnType<typeof vi.fn>} {
   return {
     claimOrg: vi.fn(),
+    createOrg: vi.fn(),
+    deleteOrgs: vi.fn(),
+    generatePassword: vi.fn(),
     getActiveCountByTag: vi.fn(),
     getAvailableByTag: vi.fn(),
     getOrgsByTag: vi.fn(),
     getRecordIds: vi.fn(),
     getRemainingCapacity: vi.fn(),
+    getUsername: vi.fn().mockReturnValue('hub@example.com'),
     isOrgActive: vi.fn(),
     updatePoolMetadata: vi.fn(),
     validate: vi.fn(),
@@ -40,15 +37,15 @@ function createPoolConfig(overrides?: Partial<PoolConfig>): PoolConfig {
     scratchOrg: {
       definitionFile: 'config/project-scratch-def.json',
       expiryDays: 7,
-      ...overrides?.scratchOrg,
+      ...('scratchOrg' in (overrides ?? {}) ? (overrides as any).scratchOrg : {}),
     },
     sizing: {
       batchSize: 2,
       maxAllocation: 5,
       ...overrides?.sizing,
     },
-    tag: 'test-pool',
-    ...overrides,
+    tag: overrides?.tag ?? 'test-pool',
+    type: 'scratchOrg' as const,
   };
 }
 
@@ -61,6 +58,7 @@ function createScratchOrg(overrides?: Record<string, unknown>) {
       username,
       ...(overrides?.auth as Record<string, unknown>),
     },
+    kind: 'scratchOrg' as const,
     orgId: (overrides?.orgId as string) ?? '00D000000000001',
     pool: overrides?.pool as Record<string, unknown> | undefined,
     recordId: overrides && 'recordId' in overrides ? (overrides.recordId as string | undefined) : 'a00000000000001',
@@ -80,12 +78,10 @@ function createMockTask(name: string, result?: Partial<PoolOrgTaskResult>): Pool
 // ============================================================================
 
 describe('PoolManager', () => {
-  let orgService: ReturnType<typeof createMockOrgService>;
-  let poolOrgProvider: ReturnType<typeof createMockPoolOrgProvider>;
+  let provider: ReturnType<typeof createMockProvider>;
 
   beforeEach(() => {
-    orgService = createMockOrgService();
-    poolOrgProvider = createMockPoolOrgProvider();
+    provider = createMockProvider();
   });
 
   // ==========================================================================
@@ -94,26 +90,26 @@ describe('PoolManager', () => {
 
   describe('computeAllocation', () => {
     it('should query remaining capacity and active count', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(3);
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(3);
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 10}});
 
       const result = await manager.computeAllocation(config);
 
-      expect(poolOrgProvider.getRemainingCapacity).toHaveBeenCalled();
-      expect(poolOrgProvider.getActiveCountByTag).toHaveBeenCalledWith('test-pool');
+      expect(provider.getRemainingCapacity).toHaveBeenCalled();
+      expect(provider.getActiveCountByTag).toHaveBeenCalledWith('test-pool');
       expect(result.toAllocate).toBe(7); // 10 - 3 = 7, min(7, 100)
       expect(result.remaining).toBe(100);
       expect(result.currentAllocation).toBe(3);
     });
 
     it('should emit pool:allocation:computed event', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(50);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(5);
+      provider.getRemainingCapacity.mockResolvedValue(50);
+      provider.getActiveCountByTag.mockResolvedValue(5);
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const events: any[] = [];
       manager.on('pool:allocation:computed', e => events.push(e));
 
@@ -131,23 +127,23 @@ describe('PoolManager', () => {
 
   describe('provision', () => {
     it('should return zero-allocation result when pool is full', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(5); // maxAllocation = 5
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(5); // maxAllocation = 5
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const result = await manager.provision(createPoolConfig());
 
       expect(result.succeeded).toEqual([]);
       expect(result.failed).toBe(0);
       expect(result.tag).toBe('test-pool');
-      expect(orgService.createScratchOrg).not.toHaveBeenCalled();
+      expect(provider.createOrg).not.toHaveBeenCalled();
     });
 
     it('should return zero-allocation result when no DevHub capacity', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(0);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(0);
+      provider.getRemainingCapacity.mockResolvedValue(0);
+      provider.getActiveCountByTag.mockResolvedValue(0);
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const result = await manager.provision(createPoolConfig());
 
       expect(result.succeeded).toEqual([]);
@@ -156,44 +152,44 @@ describe('PoolManager', () => {
     });
 
     it('should create scratch orgs and validate them', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(0);
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
 
       const org1 = createScratchOrg({username: 'org1@scratch.org'});
       const org2 = createScratchOrg({username: 'org2@scratch.org'});
 
-      orgService.createScratchOrg
+      provider.createOrg
       .mockResolvedValueOnce(org1)
       .mockResolvedValueOnce(org2);
 
-      poolOrgProvider.isOrgActive.mockResolvedValue(true);
-      poolOrgProvider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
-      poolOrgProvider.updatePoolMetadata.mockResolvedValue();
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue();
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 2}});
       const result = await manager.provision(config);
 
-      expect(orgService.createScratchOrg).toHaveBeenCalledTimes(2);
-      expect(poolOrgProvider.isOrgActive).toHaveBeenCalledTimes(2);
+      expect(provider.createOrg).toHaveBeenCalledTimes(2);
+      expect(provider.isOrgActive).toHaveBeenCalledTimes(2);
       expect(result.succeeded).toHaveLength(2);
       expect(result.failed).toBe(0);
     });
 
     it('should handle partial failures during creation', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(0);
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
 
       const org1 = createScratchOrg({username: 'org1@scratch.org'});
-      orgService.createScratchOrg
+      provider.createOrg
       .mockResolvedValueOnce(org1)
       .mockRejectedValueOnce(new Error('Creation timed out'));
 
-      poolOrgProvider.isOrgActive.mockResolvedValue(true);
-      poolOrgProvider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
-      poolOrgProvider.updatePoolMetadata.mockResolvedValue();
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue();
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 2}});
       const result = await manager.provision(config);
 
@@ -204,36 +200,36 @@ describe('PoolManager', () => {
     });
 
     it('should throw when all creation attempts fail', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(0);
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
 
-      orgService.createScratchOrg.mockRejectedValue(new Error('API limit'));
+      provider.createOrg.mockRejectedValue(new Error('API limit'));
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 2}});
 
       await expect(manager.provision(config)).rejects.toThrow('All scratch org provisioning attempts failed');
     });
 
     it('should discard orgs that fail validation', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(0);
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
 
       const org1 = createScratchOrg({username: 'active@scratch.org'});
       const org2 = createScratchOrg({username: 'deleted@scratch.org'});
 
-      orgService.createScratchOrg
+      provider.createOrg
       .mockResolvedValueOnce(org1)
       .mockResolvedValueOnce(org2);
 
-      poolOrgProvider.isOrgActive
+      provider.isOrgActive
       .mockResolvedValueOnce(true) // org1 is active
       .mockResolvedValueOnce(false); // org2 was silently deleted
 
-      poolOrgProvider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
-      poolOrgProvider.updatePoolMetadata.mockResolvedValue();
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue();
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 2}});
       const result = await manager.provision(config);
 
@@ -242,37 +238,37 @@ describe('PoolManager', () => {
     });
 
     it('should throw when all orgs fail validation', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(0);
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
 
-      orgService.createScratchOrg.mockResolvedValue(createScratchOrg());
-      poolOrgProvider.isOrgActive.mockResolvedValue(false);
+      provider.createOrg.mockResolvedValue(createScratchOrg());
+      provider.isOrgActive.mockResolvedValue(false);
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}});
 
       await expect(manager.provision(config)).rejects.toThrow('All provisioned orgs were found to be inactive');
     });
 
     it('should register orgs in pool with correct metadata', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(0);
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
 
       const org = createScratchOrg({
         password: 'pw123',
         recordId: 'rec-id',
         username: 'meta@scratch.org',
       });
-      orgService.createScratchOrg.mockResolvedValue(org);
-      poolOrgProvider.isOrgActive.mockResolvedValue(true);
-      poolOrgProvider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
-      poolOrgProvider.updatePoolMetadata.mockResolvedValue();
+      provider.createOrg.mockResolvedValue(org);
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue();
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}});
       await manager.provision(config);
 
-      expect(poolOrgProvider.updatePoolMetadata).toHaveBeenCalledWith(expect.arrayContaining([
+      expect(provider.updatePoolMetadata).toHaveBeenCalledWith(expect.arrayContaining([
         expect.objectContaining({
           allocationStatus: 'In Progress',
           id: 'rec-id',
@@ -282,16 +278,16 @@ describe('PoolManager', () => {
     });
 
     it('should emit provision start and complete events', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(0);
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
 
       const org = createScratchOrg();
-      orgService.createScratchOrg.mockResolvedValue(org);
-      poolOrgProvider.isOrgActive.mockResolvedValue(true);
-      poolOrgProvider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
-      poolOrgProvider.updatePoolMetadata.mockResolvedValue();
+      provider.createOrg.mockResolvedValue(org);
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue();
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       const events: string[] = [];
       manager.on('pool:provision:start', () => events.push('start'));
       manager.on('pool:provision:complete', () => events.push('complete'));
@@ -302,25 +298,25 @@ describe('PoolManager', () => {
     });
 
     it('should respect batch concurrency (sequential batches)', async () => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(0);
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
 
       // Track timing of create calls
       const callOrder: number[] = [];
-      orgService.createScratchOrg.mockImplementation(async () => {
+      provider.createOrg.mockImplementation(async () => {
         callOrder.push(Date.now());
         return createScratchOrg();
       });
-      poolOrgProvider.isOrgActive.mockResolvedValue(true);
-      poolOrgProvider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
-      poolOrgProvider.updatePoolMetadata.mockResolvedValue();
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue();
 
-      const manager = new PoolManager({orgService: orgService as any, poolOrgProvider: poolOrgProvider as any});
+      const manager = new PoolManager({provider: provider as any});
       // 4 orgs with batchSize 2 = 2 batches
       const config = createPoolConfig({sizing: {batchSize: 2, maxAllocation: 4}});
       await manager.provision(config);
 
-      expect(orgService.createScratchOrg).toHaveBeenCalledTimes(4);
+      expect(provider.createOrg).toHaveBeenCalledTimes(4);
     });
   });
 
@@ -330,21 +326,20 @@ describe('PoolManager', () => {
 
   describe('provision with tasks', () => {
     beforeEach(() => {
-      poolOrgProvider.getRemainingCapacity.mockResolvedValue(100);
-      poolOrgProvider.getActiveCountByTag.mockResolvedValue(0);
-      poolOrgProvider.isOrgActive.mockResolvedValue(true);
-      poolOrgProvider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
-      poolOrgProvider.updatePoolMetadata.mockResolvedValue();
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue();
     });
 
     it('should run tasks on each provisioned org', async () => {
       const org = createScratchOrg();
-      orgService.createScratchOrg.mockResolvedValue(org);
+      provider.createOrg.mockResolvedValue(org);
 
       const task = createMockTask('deploy');
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
         tasks: [task],
       });
 
@@ -357,7 +352,7 @@ describe('PoolManager', () => {
 
     it('should run tasks in order per org', async () => {
       const org = createScratchOrg();
-      orgService.createScratchOrg.mockResolvedValue(org);
+      provider.createOrg.mockResolvedValue(org);
 
       const executionOrder: string[] = [];
       const task1: PoolOrgTask = {
@@ -378,8 +373,7 @@ describe('PoolManager', () => {
       };
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
         tasks: [task1, task2],
       });
 
@@ -390,14 +384,13 @@ describe('PoolManager', () => {
 
     it('should abort remaining tasks when a task fails (continueOnError=false)', async () => {
       const org = createScratchOrg();
-      orgService.createScratchOrg.mockResolvedValue(org);
+      provider.createOrg.mockResolvedValue(org);
 
       const failTask = createMockTask('deploy', {error: 'Deploy failed', success: false});
       const skipTask = createMockTask('script');
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
         tasks: [failTask, skipTask],
       });
 
@@ -411,7 +404,7 @@ describe('PoolManager', () => {
 
     it('should continue remaining tasks when continueOnError=true', async () => {
       const org = createScratchOrg();
-      orgService.createScratchOrg.mockResolvedValue(org);
+      provider.createOrg.mockResolvedValue(org);
 
       const failTask: PoolOrgTask = {
         continueOnError: true,
@@ -421,8 +414,7 @@ describe('PoolManager', () => {
       const nextTask = createMockTask('script');
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
         tasks: [failTask, nextTask],
       });
 
@@ -434,7 +426,7 @@ describe('PoolManager', () => {
 
     it('should handle task execution errors gracefully', async () => {
       const org = createScratchOrg();
-      orgService.createScratchOrg.mockResolvedValue(org);
+      provider.createOrg.mockResolvedValue(org);
 
       const crashingTask: PoolOrgTask = {
         continueOnError: false,
@@ -443,8 +435,7 @@ describe('PoolManager', () => {
       };
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
         tasks: [crashingTask],
       });
 
@@ -457,12 +448,11 @@ describe('PoolManager', () => {
 
     it('should emit task events', async () => {
       const org = createScratchOrg({username: 'task-org@scratch.org'});
-      orgService.createScratchOrg.mockResolvedValue(org);
+      provider.createOrg.mockResolvedValue(org);
 
       const task = createMockTask('deploy');
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
         tasks: [task],
       });
 
@@ -477,7 +467,7 @@ describe('PoolManager', () => {
 
     it('should call loggerFactory.dispose after tasks complete', async () => {
       const org = createScratchOrg();
-      orgService.createScratchOrg.mockResolvedValue(org);
+      provider.createOrg.mockResolvedValue(org);
 
       const loggerFactory = {
         create: vi.fn().mockReturnValue({
@@ -488,8 +478,7 @@ describe('PoolManager', () => {
 
       const manager = new PoolManager({
         loggerFactory,
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
         tasks: [createMockTask('deploy')],
       });
 
@@ -505,11 +494,10 @@ describe('PoolManager', () => {
 
   describe('delete', () => {
     it('should return empty result when no orgs match', async () => {
-      poolOrgProvider.getOrgsByTag.mockResolvedValue([]);
+      provider.getOrgsByTag.mockResolvedValue([]);
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
       });
 
       const result = await manager.delete({tag: 'empty-pool'});
@@ -522,32 +510,30 @@ describe('PoolManager', () => {
     it('should delete orgs with valid recordIds', async () => {
       const org1 = createScratchOrg({recordId: 'rec-1', username: 'del1@scratch.org'});
       const org2 = createScratchOrg({recordId: 'rec-2', username: 'del2@scratch.org'});
-      poolOrgProvider.getOrgsByTag.mockResolvedValue([org1, org2]);
-      orgService.deleteScratchOrgs.mockResolvedValue();
+      provider.getOrgsByTag.mockResolvedValue([org1, org2]);
+      provider.deleteOrgs.mockResolvedValue();
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
       });
 
       const result = await manager.delete({tag: 'test-pool'});
 
-      expect(orgService.deleteScratchOrgs).toHaveBeenCalledTimes(2);
+      expect(provider.deleteOrgs).toHaveBeenCalledTimes(2);
       expect(result.deleted).toHaveLength(2);
     });
 
     it('should skip orgs without recordIds', async () => {
       const orgNoId = createScratchOrg({recordId: undefined, username: 'noid@scratch.org'});
-      poolOrgProvider.getOrgsByTag.mockResolvedValue([orgNoId]);
+      provider.getOrgsByTag.mockResolvedValue([orgNoId]);
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
       });
 
       const result = await manager.delete({tag: 'test-pool'});
 
-      expect(orgService.deleteScratchOrgs).not.toHaveBeenCalled();
+      expect(provider.deleteOrgs).not.toHaveBeenCalled();
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]).toContain('no recordId');
     });
@@ -555,17 +541,16 @@ describe('PoolManager', () => {
     it('should filter by inProgressOnly', async () => {
       const org1 = createScratchOrg({pool: {status: 'In Progress', tag: 'test-pool', timestamp: Date.now()}, recordId: 'r1', username: 'ip@scratch.org'});
       const org2 = createScratchOrg({pool: {status: 'Available', tag: 'test-pool', timestamp: Date.now()}, recordId: 'r2', username: 'av@scratch.org'});
-      poolOrgProvider.getOrgsByTag.mockResolvedValue([org1, org2]);
-      orgService.deleteScratchOrgs.mockResolvedValue();
+      provider.getOrgsByTag.mockResolvedValue([org1, org2]);
+      provider.deleteOrgs.mockResolvedValue();
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
       });
 
       const result = await manager.delete({inProgressOnly: true, tag: 'test-pool'});
 
-      expect(orgService.deleteScratchOrgs).toHaveBeenCalledTimes(1);
+      expect(provider.deleteOrgs).toHaveBeenCalledTimes(1);
       expect(result.deleted).toHaveLength(1);
       expect(result.deleted[0].auth.username).toBe('ip@scratch.org');
     });
@@ -573,14 +558,13 @@ describe('PoolManager', () => {
     it('should handle deletion errors for individual orgs', async () => {
       const org1 = createScratchOrg({recordId: 'ok', username: 'ok@scratch.org'});
       const org2 = createScratchOrg({recordId: 'fail', username: 'fail@scratch.org'});
-      poolOrgProvider.getOrgsByTag.mockResolvedValue([org1, org2]);
-      orgService.deleteScratchOrgs
+      provider.getOrgsByTag.mockResolvedValue([org1, org2]);
+      provider.deleteOrgs
       .mockResolvedValueOnce()
       .mockRejectedValueOnce(new Error('DELETE_FAILED'));
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
       });
 
       const result = await manager.delete({tag: 'test-pool'});
@@ -591,26 +575,24 @@ describe('PoolManager', () => {
     });
 
     it('should pass myPool flag to getOrgsByTag', async () => {
-      poolOrgProvider.getOrgsByTag.mockResolvedValue([]);
+      provider.getOrgsByTag.mockResolvedValue([]);
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
       });
 
       await manager.delete({myPool: true, tag: 'test-pool'});
 
-      expect(poolOrgProvider.getOrgsByTag).toHaveBeenCalledWith('test-pool', true);
+      expect(provider.getOrgsByTag).toHaveBeenCalledWith('test-pool', true);
     });
 
     it('should emit delete start and complete events', async () => {
       const org = createScratchOrg({recordId: 'rec-1'});
-      poolOrgProvider.getOrgsByTag.mockResolvedValue([org]);
-      orgService.deleteScratchOrgs.mockResolvedValue();
+      provider.getOrgsByTag.mockResolvedValue([org]);
+      provider.deleteOrgs.mockResolvedValue();
 
       const manager = new PoolManager({
-        orgService: orgService as any,
-        poolOrgProvider: poolOrgProvider as any,
+        provider: provider as any,
       });
 
       const events: string[] = [];

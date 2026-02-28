@@ -392,7 +392,7 @@ describe('DevHubService', () => {
   });
 
   // ==========================================================================
-  // PoolOrgProvider interface (info methods)
+  // OrgProvider interface (info methods)
   // ==========================================================================
 
   describe('getScratchOrgInfoByUsername', () => {
@@ -460,7 +460,7 @@ describe('DevHubService', () => {
   });
 
   // ==========================================================================
-  // PoolOrgProvider interface (org source methods)
+  // OrgProvider interface (org source methods)
   // ==========================================================================
 
   describe('updatePoolMetadata', () => {
@@ -517,7 +517,7 @@ describe('DevHubService', () => {
   });
 
   // ==========================================================================
-  // PoolOrgProvider interface (prerequisite checks)
+  // OrgProvider interface (prerequisite checks)
   // ==========================================================================
 
   describe('validate', () => {
@@ -589,7 +589,6 @@ describe('DevHubService', () => {
           authUrl: 'force://mapped',
           email: 'mapped@example.com',
           loginUrl: 'https://mapped.scratch.org',
-          password: 'pw-123',
           username: 'mapped@scratch.org',
         },
         expiry: new Date('2025-12-31').getTime(),
