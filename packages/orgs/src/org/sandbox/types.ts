@@ -1,4 +1,4 @@
-import type {PoolOrg, PoolOrgPoolInfo} from '../pool-org.js';
+import type {PoolOrg, PoolOrgInfo} from '../pool-org.js';
 
 // ============================================================================
 // Sandbox Domain Types
@@ -7,7 +7,7 @@ import type {PoolOrg, PoolOrgPoolInfo} from '../pool-org.js';
 /**
  * Pool metadata for a sandbox, extending the base with sandbox-specific fields.
  */
-export interface SandboxPoolInfo extends PoolOrgPoolInfo {
+export interface SandboxPoolInfo extends PoolOrgInfo {
   /** Group whose members may access this sandbox. */
   groupId?: string;
 }
@@ -19,7 +19,7 @@ export interface SandboxPoolInfo extends PoolOrgPoolInfo {
  * `pool` shape that includes `groupId`.
  */
 export interface Sandbox extends PoolOrg {
-  readonly kind: 'sandbox';
+  readonly orgType: 'sandbox';
   pool?: SandboxPoolInfo;
 }
 

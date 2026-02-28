@@ -126,18 +126,12 @@ export interface OrgProvider {
 export interface OrgCreateOptions {
   /** Group ID for sandbox access */
   activationUserGroupId?: string;
-
-  // -- Scratch org specific (ignored by SandboxProvider) --
-
   /** Local alias for the org (e.g., `SO1`, `SB1`) */
   alias: string;
   /** Apex class ID for post-copy script */
   apexClassId?: string;
   /** Whether to auto-activate the sandbox */
   autoActivate?: boolean;
-
-  // -- Sandbox specific (ignored by ScratchOrgProvider) --
-
   /** Path to the scratch org definition file */
   definitionFile?: string;
   /** Number of days until the org expires */
@@ -150,8 +144,6 @@ export interface OrgCreateOptions {
   retries?: number;
   /** Sandbox name */
   sandboxName?: string;
-
-  // -- Shared --
 
   /** Source sandbox name for cloning */
   sourceSandboxName?: string;

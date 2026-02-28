@@ -7,10 +7,10 @@ export {default as OrgService} from './org/org-service.js';
 export {
   isSandbox,
   isScratchOrg,
-  type OrgKind,
+  type OrgType,
   type PoolOrg,
   type PoolOrgAuth,
-  type PoolOrgPoolInfo,
+  type PoolOrgInfo as PoolOrgPoolInfo,
 } from './org/pool-org.js';
 
 export {default as SandboxProvider} from './org/sandbox/sandbox-provider.js';

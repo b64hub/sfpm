@@ -2,7 +2,7 @@ import type {Logger} from '@b64/sfpm-core';
 import type {Org} from '@salesforce/core';
 
 import type {OrgProvider} from '../org/org-provider.js';
-import type {OrgKind} from '../org/pool-org.js';
+import type {OrgType} from '../org/pool-org.js';
 import type {
   PoolOrgTask,
 } from './types.js';
@@ -50,7 +50,7 @@ export interface CreatePoolServicesOptions {
    * - `'scratchOrg'` (default) — selects `ScratchOrgProvider` + JWT auth
    * - `'sandbox'` — selects `SandboxProvider` + auth URL auth
    */
-  poolType?: OrgKind;
+  poolType?: OrgType;
   /** Tasks to run on each provisioned org */
   tasks?: PoolOrgTask[];
 }

@@ -41,7 +41,7 @@ export interface SandboxInfoRecord {
 // Constants
 // ============================================================================
 
-const SANDBOX_INFO_FIELDS = [
+const SANDBOX_INFO_FIELDS: (keyof SandboxInfoRecord)[] = [
   'Allocation_Status__c',
   'Auth_Url__c',
   'AutoActivate',
@@ -53,7 +53,7 @@ const SANDBOX_INFO_FIELDS = [
   'SandboxOrganization',
   'Status',
   'Tag__c',
-].join(', ');
+];
 
 const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
   'Allocate',
@@ -167,8 +167,8 @@ export default class SandboxProvider implements OrgProvider {
         loginUrl: 'https://test.salesforce.com',
         username: sandboxUsername,
       },
-      kind: 'sandbox',
       orgId,
+      orgType: 'sandbox',
       pool: {
         groupId: options.activationUserGroupId,
         status: 'In Progress',
@@ -227,7 +227,7 @@ export default class SandboxProvider implements OrgProvider {
       conditions.push(`CreatedById = '${escapeSOQL(this.hubUsername)}'`);
     }
 
-    const query = soql`SELECT ${SANDBOX_INFO_FIELDS} FROM SandboxInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
+    const query = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<SandboxInfoRecord>(query);
     return result.records.map(r => mapToSandbox(r));
   }
@@ -241,7 +241,7 @@ export default class SandboxProvider implements OrgProvider {
       conditions.push(`CreatedById = '${escapeSOQL(this.hubUsername)}'`);
     }
 
-    const query = soql`SELECT ${SANDBOX_INFO_FIELDS} FROM SandboxInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
+    const query = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<SandboxInfoRecord>(query);
     return result.records.map(r => mapToSandbox(r));
   }
@@ -406,8 +406,8 @@ function mapToSandbox(record: SandboxInfoRecord): Sandbox {
       username: sandboxName ? `${sandboxName}` : '',
     },
     expiry: record.EndDate ? new Date(record.EndDate).getTime() : undefined,
-    kind: 'sandbox',
     orgId,
+    orgType: 'sandbox',
     pool: {
       status,
       tag,

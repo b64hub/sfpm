@@ -8,18 +8,14 @@ import type {PoolOrgRecord} from '../../pool/types.js';
 import type {OrgCreateOptions, OrgProvider} from '../org-provider.js';
 import type {PoolOrg} from '../pool-org.js';
 import type {
-  AllocationStatus,
-  JwtAuthConfig,
-  PasswordResult,
-  ScratchOrgCreateRequest,
-  ScratchOrgCreateResult,
-  ScratchOrgUsage,
-  SendEmailOptions,
+  AllocationStatus, JwtAuthConfig, PasswordResult, SendEmailOptions,
 } from '../types.js';
-import type {ScratchOrg} from './types.js';
 
 import {generatePassword} from '../../utils/password-generator.js';
 import {OrgError} from '../types.js';
+import {
+  type ScratchOrg, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
+} from './types.js';
 
 // ============================================================================
 // Record types – raw Salesforce SObject shapes
@@ -39,7 +35,7 @@ export interface ScratchOrgInfoRecord {
   ExpirationDate?: string;
   Id?: string;
   LoginUrl?: string;
-  Password__c?: string;
+  // Password__c?: string;
   ScratchOrg?: string;
   SignupEmail?: string;
   SignupUsername?: string;
@@ -57,11 +53,7 @@ export interface ActiveScratchOrgRecord {
   SignupUsername?: string;
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-const SCRATCH_ORG_INFO_FIELDS = [
+export const SCRATCH_ORG_INFO_FIELDS: (keyof ScratchOrgInfoRecord)[] = [
   'Allocation_Status__c',
   'CreatedDate',
   'ExpirationDate',
@@ -72,15 +64,9 @@ const SCRATCH_ORG_INFO_FIELDS = [
   'Auth_Url__c',
   'SignupEmail',
   'SignupUsername',
-].join(', ');
-
-const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
-  'Allocate',
-  'Assigned',
-  'Available',
-  'In Progress',
-  'Return',
 ];
+
+export const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = ['Allocate', 'Assigned', 'Available', 'In Progress', 'Return'];
 
 // ============================================================================
 // ScratchOrgProvider
@@ -128,6 +114,7 @@ export default class ScratchOrgProvider implements OrgProvider {
 
   async createOrg(options: OrgCreateOptions): Promise<PoolOrg> {
     const request: ScratchOrgCreateRequest = {
+      alias: options.alias,
       definitionFile: options.definitionFile ?? '',
       durationDays: options.expiryDays ?? 7,
       noAncestors: options.noAncestors,
@@ -146,8 +133,8 @@ export default class ScratchOrgProvider implements OrgProvider {
         loginUrl: result.loginUrl,
         username: result.username,
       },
-      kind: 'scratchOrg',
       orgId: result.orgId,
+      orgType: 'scratchOrg',
     };
 
     const passwordResult = await this.generatePassword(scratchOrg.auth.username);
@@ -181,7 +168,7 @@ export default class ScratchOrgProvider implements OrgProvider {
     const escapedTag = escapeSOQL(tag);
     const conditions = [
       `Tag__c = '${escapedTag}'`,
-      'Status = \'Active\'',
+      "Status = 'Active'",
       String.raw`(Allocation_Status__c = 'Available' OR Allocation_Status__c = 'In Progress')`,
     ];
 
@@ -189,7 +176,7 @@ export default class ScratchOrgProvider implements OrgProvider {
       conditions.push(`CreatedById = '${escapeSOQL(this.hubUsername)}'`);
     }
 
-    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS} FROM ScratchOrgInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
+    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<ScratchOrgInfoRecord>(query);
     return result.records.map(r => mapToScratchOrg(r));
   }
@@ -205,7 +192,7 @@ export default class ScratchOrgProvider implements OrgProvider {
   }
 
   async getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
-    let query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS} FROM ScratchOrgInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Allocation_Status__c = 'Active'`;
+    let query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Allocation_Status__c = 'Active'`;
 
     if (myPool) {
       query += ` AND CreatedById = '${escapeSOQL(this.hubUsername)}'`;
@@ -225,7 +212,7 @@ export default class ScratchOrgProvider implements OrgProvider {
 
   /** Find active scratch orgs that have no pool tag. */
   async getOrphanedScratchOrgs(): Promise<ScratchOrg[]> {
-    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS} FROM ScratchOrgInfo WHERE Tag__c = null AND Allocation_Status__c = 'Active' ORDER BY CreatedDate DESC`;
+    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE Tag__c = null AND Allocation_Status__c = 'Active' ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<ScratchOrgInfoRecord>(query);
     return result.records.map(r => mapToScratchOrg(r));
   }
@@ -306,11 +293,13 @@ export default class ScratchOrgProvider implements OrgProvider {
     const apiVersion = this.conn.getApiVersion();
     await this.conn.request({
       body: JSON.stringify({
-        inputs: [{
-          emailAddresses: options.to,
-          emailBody: options.body,
-          emailSubject: options.subject,
-        }],
+        inputs: [
+          {
+            emailAddresses: options.to,
+            emailBody: options.body,
+            emailSubject: options.subject,
+          },
+        ],
       }),
       method: 'POST',
       url: `/services/data/v${apiVersion}/actions/standard/emailSimple`,
@@ -407,10 +396,7 @@ export default class ScratchOrgProvider implements OrgProvider {
     };
   }
 
-  private async resolveActiveRecordIds(
-    records: ScratchOrgInfoRecord[],
-    orgs: ScratchOrg[],
-  ): Promise<void> {
+  private async resolveActiveRecordIds(records: ScratchOrgInfoRecord[], orgs: ScratchOrg[]): Promise<void> {
     const scratchOrgInfoIds = records
     .filter(r => r.Id)
     .map(r => `'${r.Id}'`)
@@ -456,8 +442,8 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
       username,
     },
     expiry: record.ExpirationDate ? parseExpirationDate(record.ExpirationDate) : undefined,
-    kind: 'scratchOrg',
     orgId,
+    orgType: 'scratchOrg',
     pool: {
       status,
       tag,

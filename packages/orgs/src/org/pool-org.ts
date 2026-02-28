@@ -11,7 +11,7 @@ import type {ScratchOrg} from './scratch/types.js';
  * Defined up front so that `PoolOrg.kind` can reference it without
  * circular derivation.
  */
-export type OrgKind = 'sandbox' | 'scratchOrg';
+export type OrgType = 'sandbox' | 'scratchOrg';
 
 /**
  * Authentication fields stored against a pool-managed org.
@@ -38,7 +38,7 @@ export interface PoolOrgAuth {
  * Subtypes (e.g. `SandboxPoolInfo`) may extend this with type-specific
  * fields such as `groupId`.
  */
-export interface PoolOrgPoolInfo {
+export interface PoolOrgInfo {
   isScriptExecuted?: boolean;
   status: string;
   tag: string;
@@ -54,19 +54,19 @@ export interface PoolOrgPoolInfo {
  * behind the `OrgProvider` interface.
  *
  * Concrete subtypes:
- * - {@link ScratchOrg} — `kind: 'scratchOrg'`
- * - {@link Sandbox}    — `kind: 'sandbox'`, adds `pool.groupId`
+ * - {@link ScratchOrg} — `orgType: 'scratchOrg'`
+ * - {@link Sandbox}    — `orgType: 'sandbox'`, adds `pool.groupId`
  *
- * Use the `kind` discriminant only when you genuinely need type-specific
+ * Use the `orgType` discriminant only when you genuinely need type-specific
  * behaviour.  The vast majority of pool code should depend on `PoolOrg`
  * alone.
  */
 export interface PoolOrg {
   auth: PoolOrgAuth;
   expiry?: number;
-  readonly kind: OrgKind;
   orgId: string;
-  pool?: PoolOrgPoolInfo;
+  readonly orgType: OrgType;
+  pool?: PoolOrgInfo;
   recordId?: string;
 }
 
@@ -85,7 +85,7 @@ export interface PoolOrg {
  * ```
  */
 export function isSandbox(org: PoolOrg): org is Sandbox {
-  return org.kind === 'sandbox';
+  return org.orgType === 'sandbox';
 }
 
 /**
@@ -99,5 +99,5 @@ export function isSandbox(org: PoolOrg): org is Sandbox {
  * ```
  */
 export function isScratchOrg(org: PoolOrg): org is ScratchOrg {
-  return org.kind === 'scratchOrg';
+  return org.orgType === 'scratchOrg';
 }

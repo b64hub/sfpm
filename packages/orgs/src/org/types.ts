@@ -1,4 +1,6 @@
-import type {ScratchOrg} from './scratch/types.js';
+import type {
+  ScratchOrg, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
+} from './scratch/types.js';
 
 // ============================================================================
 // Authentication
@@ -132,38 +134,6 @@ export interface DevHub {
   updateScratchOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean>;
 }
 
-// ============================================================================
-// Scratch Org Types
-// ============================================================================
-
-/**
- * Configuration for creating a scratch org.
- */
-export interface ScratchOrgCreateRequest {
-  /** Path to the scratch org definition file */
-  definitionFile: string;
-  /** Number of days until the org expires */
-  durationDays: number;
-  /** Whether to exclude ancestor versions */
-  noAncestors?: boolean;
-  /** Whether to exclude namespace from the org */
-  noNamespace?: boolean;
-  /** Number of retries on transient failures */
-  retries?: number;
-  /** Max minutes to wait for org creation */
-  waitMinutes?: number;
-}
-
-/**
- * Result returned from the hub after scratch org creation.
- */
-export interface ScratchOrgCreateResult {
-  loginUrl: string;
-  orgId: string;
-  username: string;
-  warnings?: string[];
-}
-
 /**
  * Result from password generation.
  */
@@ -180,47 +150,6 @@ export interface SendEmailOptions {
   to: string;
 }
 
-/**
- * Scratch org usage count for a single user.
- *
- * Returned by `DevHub.getScratchOrgUsageByUser()`. Maps to
- * the `SELECT count(id) In_Use, SignupEmail FROM ActiveScratchOrg
- * GROUP BY SignupEmail` aggregate query.
- */
-export interface ScratchOrgUsage {
-  /** Number of active scratch orgs owned by this user */
-  count: number;
-  /** The user's signup email address */
-  email: string;
-}
-
-/**
- * Scratch org creation defaults used when provisioning orgs for a pool.
- *
- * These settings control how individual scratch orgs are created.
- * They can be overridden per-invocation via `CreateScratchOrgOptions`.
- */
-export interface ScratchOrgDefaults {
-  /** Path to the scratch org definition file (e.g., `config/project-scratch-def.json`) */
-  definitionFile: string;
-  /** Number of days until scratch orgs expire (default: 7) */
-  expiryDays?: number;
-  /** Max retries on transient creation failures (default: 3) */
-  maxRetries?: number;
-  /** Whether to exclude ancestor package versions (default: false) */
-  noAncestors?: boolean;
-  /** Max minutes to wait for org creation (default: 6) */
-  waitMinutes?: number;
-}
-
-/** Default scratch org creation settings. */
-export const DEFAULT_SCRATCH_ORG: Required<Pick<ScratchOrgDefaults, 'expiryDays' | 'maxRetries' | 'noAncestors' | 'waitMinutes'>> = {
-  expiryDays: 7,
-  maxRetries: 3,
-  noAncestors: false,
-  waitMinutes: 6,
-};
-
 // ============================================================================
 // OrgService Options
 // ============================================================================
@@ -232,30 +161,6 @@ export const DEFAULT_SCRATCH_ORG: Required<Pick<ScratchOrgDefaults, 'expiryDays'
  */
 export type AllocationStatus = 'Allocate' | 'Assigned' | 'Available' | 'In Progress' | 'Return';
 
-/**
- * Options for creating a scratch org through OrgService.
- */
-export interface CreateScratchOrgOptions {
-  /** Local alias for the scratch org */
-  alias: string;
-  /** Path to the scratch org definition file */
-  definitionFile: string;
-  /** Number of days until the org expires (default: 7) */
-  expiryDays?: number;
-  /** Whether to exclude ancestor versions */
-  noAncestors?: boolean;
-  /** Max minutes to wait for org creation (default: 6) */
-  waitMinutes?: number;
-}
-
-/**
- * Options for sharing a scratch org via email.
- */
-export interface ShareScratchOrgOptions {
-  /** Email address to send the org details to */
-  emailAddress: string;
-}
-
 // ============================================================================
 // OrgService Events
 // ============================================================================
@@ -265,13 +170,13 @@ export interface ShareScratchOrgOptions {
  * type-safe event handling.
  */
 export interface OrgServiceEvents {
-  'scratch:create:complete': [payload: {alias: string; elapsedMs: number; orgId: string; timestamp: Date; username: string}];
-  'scratch:create:error': [payload: {alias: string; error: string; timestamp: Date}];
-  'scratch:create:start': [payload: {alias: string; definitionFile: string; timestamp: Date}];
-  'scratch:delete:complete': [payload: {orgIds: string[]; timestamp: Date}];
-  'scratch:delete:start': [payload: {orgIds: string[]; timestamp: Date}];
-  'scratch:share:complete': [payload: {emailAddress: string; timestamp: Date; username: string}];
-  'scratch:status:complete': [payload: {status: AllocationStatus; timestamp: Date; username: string}];
+  'org:create:complete': [payload: {alias: string; elapsedMs: number; orgId: string; timestamp: Date; username: string}];
+  'org:create:error': [payload: {alias: string; error: string; timestamp: Date}];
+  'org:create:start': [payload: {alias: string; definitionFile: string; timestamp: Date}];
+  'org:delete:complete': [payload: {orgIds: string[]; timestamp: Date}];
+  'org:delete:start': [payload: {orgIds: string[]; timestamp: Date}];
+  'org:share:complete': [payload: {emailAddress: string; timestamp: Date; username: string}];
+  'org:status:complete': [payload: {status: AllocationStatus; timestamp: Date; username: string}];
 }
 
 // ============================================================================

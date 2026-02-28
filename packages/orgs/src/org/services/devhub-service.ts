@@ -4,49 +4,17 @@ import {
 } from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
 
+import type {PoolOrgRecord} from '../../pool/types.js';
 import type {
-  PoolOrgRecord,
-} from '../../pool/types.js';
-import type {ScratchOrg} from '../scratch/types.js';
+  ScratchOrg, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
+} from '../scratch/types.js';
 import type {
-  AllocationStatus,
-  DevHub,
-  JwtAuthConfig,
-  PasswordResult,
-  ScratchOrgCreateRequest,
-  ScratchOrgCreateResult,
-  ScratchOrgUsage,
-  SendEmailOptions,
+  AllocationStatus, DevHub, JwtAuthConfig, PasswordResult, SendEmailOptions,
 } from '../types.js';
 
 import {generatePassword} from '../../utils/password-generator.js';
+import {REQUIRED_ALLOCATION_STATUSES, SCRATCH_ORG_INFO_FIELDS, ScratchOrgInfoRecord} from '../scratch/scratch-org-provider.js';
 import {OrgError} from '../types.js';
-
-// ============================================================================
-// Record types – raw Salesforce SObject shapes
-// ============================================================================
-
-/**
- * Raw ScratchOrgInfo record shape as returned from SOQL queries.
- *
- * Field names match the Salesforce `ScratchOrgInfo` SObject.
- * Custom fields (`Tag__c`, `Allocation_Status__c`, `Password__c`,
- * `Auth_Url__c`) are DevHub customizations required for pool operations.
- */
-export interface ScratchOrgInfoRecord {
-  Allocation_Status__c?: string;
-  Auth_Url__c?: string;
-  CreatedDate?: string;
-  ExpirationDate?: string;
-  Id?: string;
-  LoginUrl?: string;
-  Password__c?: string;
-  ScratchOrg?: string;
-  SignupEmail?: string;
-  SignupUsername?: string;
-  Status?: string;
-  Tag__c?: string;
-}
 
 /**
  * Raw ActiveScratchOrg record shape as returned from SOQL queries.
@@ -57,42 +25,6 @@ export interface ActiveScratchOrgRecord {
   ScratchOrgInfoId?: string;
   SignupUsername?: string;
 }
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-/**
- * Standard set of ScratchOrgInfo fields queried for pool operations.
- *
- * Used to build SOQL SELECT clauses consistently across all queries.
- */
-const SCRATCH_ORG_INFO_FIELDS = [
-  'Allocation_Status__c',
-  'CreatedDate',
-  'ExpirationDate',
-  'Id',
-  'LoginUrl',
-  // 'Password__c',
-  'Tag__c',
-  'ScratchOrg',
-  'Auth_Url__c',
-  'SignupEmail',
-  'SignupUsername',
-].join(', ');
-
-/** Required picklist values on `ScratchOrgInfo.Allocation_Status__c`. */
-const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
-  'Allocate',
-  'Assigned',
-  'Available',
-  'In Progress',
-  'Return',
-];
-
-// ============================================================================
-// DevHubService
-// ============================================================================
 
 /**
  * Service that wraps a Salesforce DevHub `Org` to implement all hub-level
@@ -123,8 +55,7 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
  * await devHub.validate();
  * ```
  */
-export default class DevHubService
-implements DevHub {
+export default class DevHubService implements DevHub {
   private readonly conn;
   private readonly hubOrg;
   private readonly hubUsername: string;
@@ -198,7 +129,7 @@ implements DevHub {
     const escapedTag = escapeSOQL(tag);
     const conditions = [
       `Tag__c = '${escapedTag}'`,
-      'Status = \'Active\'',
+      "Status = 'Active'",
       String.raw`(Allocation_Status__c = 'Available' OR Allocation_Status__c = 'In Progress')`,
     ];
 
@@ -206,7 +137,7 @@ implements DevHub {
       conditions.push(`CreatedById = '${escapeSOQL(this.hubUsername)}'`);
     }
 
-    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS} FROM ScratchOrgInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
+    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<ScratchOrgInfoRecord>(query);
     return result.records.map(r => mapToScratchOrg(r));
   }
@@ -221,7 +152,7 @@ implements DevHub {
   }
 
   async getOrgsByTag(tag: string, myPool?: boolean): Promise<ScratchOrg[]> {
-    let query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS} FROM ScratchOrgInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Allocation_Status__c = 'Active'`;
+    let query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Allocation_Status__c = 'Active'`;
 
     if (myPool) {
       query += ` AND CreatedById = '${escapeSOQL(this.hubUsername)}'`;
@@ -241,7 +172,7 @@ implements DevHub {
   }
 
   async getOrphanedScratchOrgs(): Promise<ScratchOrg[]> {
-    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS} FROM ScratchOrgInfo WHERE Tag__c = null AND Allocation_Status__c = 'Active' ORDER BY CreatedDate DESC`;
+    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE Tag__c = null AND Allocation_Status__c = 'Active' ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<ScratchOrgInfoRecord>(query);
     return result.records.map(r => mapToScratchOrg(r));
   }
@@ -303,10 +234,7 @@ implements DevHub {
     const result = await this.conn.query<{Email: string}>(query);
 
     if (result.records.length === 0) {
-      throw new OrgError(
-        'fetch',
-        `No user found with username ${username} in the DevHub.`,
-      );
+      throw new OrgError('fetch', `No user found with username ${username} in the DevHub.`);
     }
 
     return result.records[0].Email;
@@ -326,11 +254,13 @@ implements DevHub {
     const apiVersion = this.conn.getApiVersion();
     await this.conn.request({
       body: JSON.stringify({
-        inputs: [{
-          emailAddresses: options.to,
-          emailBody: options.body,
-          emailSubject: options.subject,
-        }],
+        inputs: [
+          {
+            emailAddresses: options.to,
+            emailBody: options.body,
+            emailSubject: options.subject,
+          },
+        ],
       }),
       method: 'POST',
       url: `/services/data/v${apiVersion}/actions/standard/emailSimple`,
@@ -357,10 +287,7 @@ implements DevHub {
     const result = await scratchOrgConnection.getConnection().query<{Id: string}>(query);
 
     if (result.records.length === 0) {
-      throw new OrgError(
-        'password',
-        `No user found with username ${username}`,
-      );
+      throw new OrgError('password', `No user found with username ${username}`);
     }
 
     await scratchOrgConnection.getConnection().soap.setPassword(result.records[0].Id, password);
@@ -422,10 +349,7 @@ implements DevHub {
   /**
    * Enrich a list of `ScratchOrg` objects with their ActiveScratchOrg record IDs.
    */
-  private async resolveActiveRecordIds(
-    records: ScratchOrgInfoRecord[],
-    orgs: ScratchOrg[],
-  ): Promise<void> {
+  private async resolveActiveRecordIds(records: ScratchOrgInfoRecord[], orgs: ScratchOrg[]): Promise<void> {
     const scratchOrgInfoIds = records
     .filter(r => r.Id)
     .map(r => `'${r.Id}'`)
@@ -473,8 +397,8 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
       username,
     },
     expiry: record.ExpirationDate ? parseExpirationDate(record.ExpirationDate) : undefined,
-    kind: 'scratchOrg',
     orgId,
+    orgType: 'scratchOrg',
     pool: {
       status,
       tag,
