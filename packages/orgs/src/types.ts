@@ -3,7 +3,7 @@
  *
  * Consumers should prefer importing directly from the domain modules:
  * - `@b64/sfpm-orgs/org/types` — org-layer types (DevHub, OrgError, etc.)
- * - `@b64/sfpm-orgs/pool/types` — pool types (PoolConfig, PoolOrgProvider, etc.)
+ * - `@b64/sfpm-orgs/pool/types` — pool types (PoolConfig, etc.)
  *
  * This barrel re-export exists for backward compatibility.
  */
@@ -36,13 +36,12 @@ export type {
   PoolFetchOptions,
   PoolOrgAuthenticator,
   PoolOrgLoggerFactory,
-  PoolOrgProvider,
   PoolOrgRecord,
   PoolOrgTask,
   PoolOrgTaskResult,
-  PostClaimAction,
   PoolProvisioningState,
   PoolSizingConfig,
+  PostClaimAction,
 } from './pool/types.js';
 
 export {DEFAULT_POOL_SIZING} from './pool/types.js';
