@@ -1,5 +1,33 @@
+// Org Provider
+export {
+  type OrgCreateOptions,
+  type OrgProvider,
+} from './org/org-provider.js';
 export {default as OrgService} from './org/org-service.js';
+export {
+  isSandbox,
+  isScratchOrg,
+  type OrgKind,
+  type PoolOrg,
+  type PoolOrgAuth,
+  type PoolOrgPoolInfo,
+} from './org/pool-org.js';
+
+export {default as SandboxProvider} from './org/sandbox/sandbox-provider.js';
+export {type Sandbox} from './org/sandbox/types.js';
+
+// Sandbox types
+export {
+  DEFAULT_SANDBOX,
+  type SandboxCreateRequest,
+  type SandboxCreateResult,
+  type SandboxDefaults,
+  type SandboxLicenseType,
+  type SandboxPoolInfo,
+} from './org/sandbox/types.js';
+export {default as ScratchOrgProvider} from './org/scratch/scratch-org-provider.js';
 export {type ScratchOrg} from './org/scratch/types.js';
+export {default as AuthService} from './org/services/auth-service.js';
 
 // Services
 export {
@@ -7,7 +35,6 @@ export {
   default as DevHubService,
   type ScratchOrgInfoRecord,
 } from './org/services/devhub-service.js';
-export {default as ScratchOrgAuthService} from './org/services/scratch-org-auth-service.js';
 
 // Org-layer types
 export {
@@ -34,6 +61,13 @@ export {
   VALIDATE_PHASE,
 } from './phases.js';
 
+// Pool factory
+export {
+  createPoolServices,
+  type CreatePoolServicesOptions,
+  type PoolServices,
+} from './pool/pool-factory.js';
+
 // Pool fetcher
 export {
   default as PoolFetcher,
@@ -53,29 +87,23 @@ export {
   type PoolProvisionResult,
 } from './pool/pool-manager.js';
 
-// Pool factory
-export {
-  createPoolServices,
-  type CreatePoolServicesOptions,
-  type PoolServices,
-} from './pool/pool-factory.js';
-
 // Pool-layer types
 export {
   DEFAULT_POOL_SIZING,
   type PoolConfig,
+  type PoolConfigBase,
   type PoolDeleteOptions,
   type PoolFetchOptions,
   type PoolOrgAuthenticator,
   type PoolOrgLoggerFactory,
-  type PoolOrgProvider,
   type PoolOrgRecord,
-  type PoolOrgProvider as PoolOrgSource,
   type PoolOrgTask,
   type PoolOrgTaskResult,
-  type PostClaimAction,
   type PoolProvisioningState,
   type PoolSizingConfig,
+  type PostClaimAction,
+  type SandboxPoolConfig,
+  type ScratchOrgPoolConfig,
 } from './pool/types.js';
 
 // Config

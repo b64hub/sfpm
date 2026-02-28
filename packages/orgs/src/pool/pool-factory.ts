@@ -1,15 +1,19 @@
 import type {Logger} from '@b64/sfpm-core';
-
 import type {Org} from '@salesforce/core';
 
-import DevHubService from '../org/services/devhub-service.js';
-import OrgService from '../org/org-service.js';
-import ScratchOrgAuthService from '../org/services/scratch-org-auth-service.js';
-import PoolFetcher from './pool-fetcher.js';
-import PoolManager from './pool-manager.js';
+import type {OrgProvider} from '../org/org-provider.js';
+import type {OrgKind} from '../org/pool-org.js';
 import type {
   PoolOrgTask,
 } from './types.js';
+
+import OrgService from '../org/org-service.js';
+import SandboxProvider from '../org/sandbox/sandbox-provider.js';
+import ScratchOrgProvider from '../org/scratch/scratch-org-provider.js';
+import AuthService from '../org/services/auth-service.js';
+import DevHubService from '../org/services/devhub-service.js';
+import PoolFetcher from './pool-fetcher.js';
+import PoolManager from './pool-manager.js';
 
 // ============================================================================
 // Pool Factory
@@ -20,33 +24,42 @@ import type {
  * collaborators ready for use.
  */
 export interface PoolServices {
-  /** The DevHub adapter (also implements `PoolOrgProvider`) */
+  /** The DevHub adapter — deprecated, use provider */
   devHub: DevHubService;
-  /** Pool fetcher for claiming scratch orgs */
+  /** Pool fetcher for claiming orgs */
   fetcher: PoolFetcher;
-  /** Pool manager for provisioning and deleting scratch orgs */
+  /** Pool manager for provisioning and deleting orgs */
   manager: PoolManager;
-  /** Org service for scratch org lifecycle operations */
+  /** Org service for scratch org lifecycle operations (legacy) */
   orgService: OrgService;
+  /** The selected org provider */
+  provider: OrgProvider;
 }
 
 /**
  * Options for `createPoolServices()`.
  */
 export interface CreatePoolServicesOptions {
-  /** The resolved Salesforce `Org` instance for the DevHub */
+  /** The resolved Salesforce `Org` instance for the hub */
   hubOrg: Org;
   /** Logger shared across all services */
   logger?: Logger;
+  /**
+   * Pool type — determines which strategy is used.
+   *
+   * - `'scratchOrg'` (default) — selects `ScratchOrgProvider` + JWT auth
+   * - `'sandbox'` — selects `SandboxProvider` + auth URL auth
+   */
+  poolType?: OrgKind;
   /** Tasks to run on each provisioned org */
   tasks?: PoolOrgTask[];
 }
 
 /**
- * Bootstrap the full pool service stack from a resolved DevHub `Org`.
+ * Bootstrap the full pool service stack from a resolved hub `Org`.
  *
- * Wires up `DevHubService`, `OrgService`, `ScratchOrgAuthService`,
- * `PoolManager`, and `PoolFetcher` with proper dependency injection.
+ * Wires up the appropriate `OrgProvider` based on `poolType`,
+ * along with the authenticator, `PoolManager`, and `PoolFetcher`.
  * Both the CLI and GitHub Actions packages use this factory to avoid
  * duplicate wiring.
  *
@@ -55,37 +68,46 @@ export interface CreatePoolServicesOptions {
  * import { Org } from '@salesforce/core';
  * import { createPoolServices } from '@b64/sfpm-orgs';
  *
+ * // Scratch org pool (default)
  * const hubOrg = await Org.create({ aliasOrUsername: 'my-devhub' });
  * const { manager, fetcher } = createPoolServices({ hubOrg });
  *
- * // Provision a pool
- * const result = await manager.provision(poolConfig);
- *
- * // Fetch an org
- * const org = await fetcher.fetch({ tag: 'dev-pool' });
+ * // Sandbox pool
+ * const prodOrg = await Org.create({ aliasOrUsername: 'my-prod-org' });
+ * const { manager: sbManager } = createPoolServices({
+ *   hubOrg: prodOrg,
+ *   poolType: 'sandbox',
+ * });
  * ```
  */
 export function createPoolServices(options: CreatePoolServicesOptions): PoolServices {
-  const devHub = new DevHubService(options.hubOrg);
-  const orgService = new OrgService(devHub, options.logger);
+  const {hubOrg, logger, poolType = 'scratchOrg', tasks} = options;
 
+  // Legacy DevHubService + OrgService kept for backward compatibility
+  const devHub = new DevHubService(hubOrg);
+  const orgService = new OrgService(devHub, logger);
+
+  // Select provider based on pool type
+  const provider: OrgProvider = poolType === 'sandbox'
+    ? new SandboxProvider(hubOrg)
+    : new ScratchOrgProvider(hubOrg);
+
+  // Create authenticator — always AuthService with auth URL primary, JWT fallback
   const jwtConfig = devHub.getJwtConfig();
-  const auth = jwtConfig.clientId
-    ? new ScratchOrgAuthService(devHub.getUsername(), jwtConfig)
-    : undefined;
+  const authenticator = new AuthService(
+    provider.getUsername(),
+    jwtConfig.clientId ? jwtConfig : undefined,
+  );
 
   const manager = new PoolManager({
-    logger: options.logger,
-    orgService,
-    poolOrgProvider: devHub,
-    tasks: options.tasks,
+    logger,
+    provider,
+    tasks,
   });
 
-  const fetcher = new PoolFetcher(devHub, auth, options.logger);
+  const fetcher = new PoolFetcher(provider, authenticator, logger);
 
   return {
-    devHub, fetcher, manager, orgService,
+    devHub, fetcher, manager, orgService, provider,
   };
 }
-
-

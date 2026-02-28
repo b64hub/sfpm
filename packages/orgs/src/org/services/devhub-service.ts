@@ -5,7 +5,6 @@ import {
 import {Duration} from '@salesforce/kit';
 
 import type {
-  PoolOrgProvider,
   PoolOrgRecord,
 } from '../../pool/types.js';
 import type {ScratchOrg} from '../scratch/types.js';
@@ -125,7 +124,7 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
  * ```
  */
 export default class DevHubService
-implements DevHub, PoolOrgProvider {
+implements DevHub {
   private readonly conn;
   private readonly hubOrg;
   private readonly hubUsername: string;
@@ -474,6 +473,7 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
       username,
     },
     expiry: record.ExpirationDate ? parseExpirationDate(record.ExpirationDate) : undefined,
+    kind: 'scratchOrg',
     orgId,
     pool: {
       status,

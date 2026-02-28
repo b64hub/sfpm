@@ -2,11 +2,11 @@ import type {Logger} from '@b64/sfpm-core';
 
 import {EventEmitter} from 'node:events';
 
-import type {ScratchOrg} from '../org/scratch/types.js';
+import type {OrgProvider} from '../org/org-provider.js';
+import type {PoolOrg} from '../org/pool-org.js';
 import type {
   PoolFetchOptions,
   PoolOrgAuthenticator,
-  PoolOrgProvider,
 } from './types.js';
 
 import {
@@ -37,7 +37,7 @@ export interface PoolFetcherEvents {
  *
  * Migrated from the legacy `PoolFetchImpl`. Key differences:
  *
- * - **Composition over inheritance** — takes `PoolOrgProvider` and
+ * - **Composition over inheritance** — takes `OrgProvider` and
  *   `PoolOrgAuthenticator` via constructor instead of extending
  *   `PoolBaseImpl`.
  *
@@ -68,7 +68,7 @@ export interface PoolFetcherEvents {
  */
 export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
   constructor(
-    private readonly orgSource: PoolOrgProvider,
+    private readonly orgSource: OrgProvider,
     private readonly authenticator?: PoolOrgAuthenticator,
     private readonly logger?: Logger,
   ) {
@@ -89,7 +89,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
    *
    * @throws {OrgError} When no orgs are available or none could be claimed
    */
-  public async fetch(options: PoolFetchOptions): Promise<ScratchOrg> {
+  public async fetch(options: PoolFetchOptions): Promise<PoolOrg> {
     const available = await this.getFilteredCandidates(options);
 
     this.emit('pool:fetch:start', {
@@ -137,7 +137,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
       this.logger?.trace(`Org ${org.auth.username} claim failed, trying next...`);
     }
 
-    throw new OrgError('fetch', `No scratch org could be claimed from pool "${options.tag}"`, {
+    throw new OrgError('fetch', `No org could be claimed from pool "${options.tag}"`, {
       context: {candidateCount: available.length, tag: options.tag},
     });
   }
@@ -153,7 +153,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
    *
    * @throws {OrgError} When no orgs are available
    */
-  public async fetchAll(options: PoolFetchOptions & {limit?: number}): Promise<ScratchOrg[]> {
+  public async fetchAll(options: PoolFetchOptions & {limit?: number}): Promise<PoolOrg[]> {
     let candidates = await this.getFilteredCandidates(options);
 
     this.emit('pool:fetch:start', {
@@ -168,7 +168,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
     }
 
     // Assign aliases
-    const orgs: ScratchOrg[] = candidates.map((org, i) => ({
+    const orgs: PoolOrg[] = candidates.map((org, i) => ({
       ...org,
       auth: {...org.auth, alias: `SO${i + 1}`},
       pool: {status: 'Available', tag: org.pool?.tag ?? options.tag, timestamp: org.pool?.timestamp ?? Date.now()},
@@ -195,16 +195,16 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
   /**
    * Authenticate multiple orgs in parallel, filtering out failures.
    */
-  private async authenticateOrgs(orgs: ScratchOrg[]): Promise<ScratchOrg[]> {
+  private async authenticateOrgs(orgs: PoolOrg[]): Promise<PoolOrg[]> {
     const results = await Promise.all(orgs.map(org => this.authenticateSingleOrg(org)));
 
-    return results.filter((org): org is ScratchOrg => org !== null);
+    return results.filter((org): org is PoolOrg => org !== null);
   }
 
   /**
    * Attempt to authenticate a single org. Returns null on failure.
    */
-  private async authenticateSingleOrg(org: ScratchOrg): Promise<null | ScratchOrg> {
+  private async authenticateSingleOrg(org: PoolOrg): Promise<null | PoolOrg> {
     try {
       await this.authenticator!.login(org);
       return org;
@@ -217,11 +217,11 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
   /**
    * Query available orgs and filter by auth validity if required.
    */
-  private async getFilteredCandidates(options: PoolFetchOptions): Promise<ScratchOrg[]> {
+  private async getFilteredCandidates(options: PoolFetchOptions): Promise<PoolOrg[]> {
     const available = await this.orgSource.getAvailableByTag(options.tag, options.myPool);
 
     if (available.length === 0) {
-      throw new OrgError('fetch', `No scratch orgs available for pool "${options.tag}"`, {
+      throw new OrgError('fetch', `No orgs available for pool "${options.tag}"`, {
         context: {tag: options.tag},
       });
     }
@@ -233,7 +233,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
       const filtered = available.filter(org => this.authenticator!.hasValidAuth(org));
 
       if (filtered.length === 0) {
-        throw new OrgError('fetch', `No scratch orgs with valid auth credentials in pool "${options.tag}"`, {
+        throw new OrgError('fetch', `No orgs with valid auth credentials in pool "${options.tag}"`, {
           context: {availableCount: available.length, tag: options.tag},
         });
       }
@@ -252,7 +252,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
   /**
    * Handle post-claim actions: custom action, login, source tracking.
    */
-  private async handlePostClaim(org: ScratchOrg, options: PoolFetchOptions): Promise<void> {
+  private async handlePostClaim(org: PoolOrg, options: PoolFetchOptions): Promise<void> {
     // Run custom post-claim action (e.g., share via email)
     if (options.postClaimAction) {
       await options.postClaimAction(org, options);

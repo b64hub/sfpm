@@ -2,11 +2,10 @@ import type {Logger} from '@b64/sfpm-core';
 
 import {EventEmitter} from 'node:events';
 
-import type OrgService from '../org/org-service.js';
-import type {ScratchOrg} from '../org/scratch/types.js';
+import type {OrgCreateOptions, OrgProvider} from '../org/org-provider.js';
+import type {PoolOrg} from '../org/pool-org.js';
 
 import {
-  DEFAULT_SCRATCH_ORG,
   OrgError,
 } from '../org/types.js';
 import {
@@ -14,7 +13,6 @@ import {
   type PoolConfig,
   type PoolDeleteOptions,
   type PoolOrgLoggerFactory,
-  type PoolOrgProvider,
   type PoolOrgRecord,
   type PoolOrgTask,
   type PoolOrgTaskResult,
@@ -39,7 +37,7 @@ export interface OrgProvisionResult {
   /** Error message if provisioning failed */
   error?: string;
   /** The provisioned org, if successful */
-  org?: ScratchOrg;
+  org?: PoolOrg;
   /** Whether this was a timeout failure */
   timedOut?: boolean;
 }
@@ -49,7 +47,7 @@ export interface OrgProvisionResult {
  */
 export interface PoolDeleteResult {
   /** Orgs that were successfully deleted */
-  deleted: ScratchOrg[];
+  deleted: PoolOrg[];
   /** Total elapsed time in milliseconds */
   elapsedMs: number;
   /** Individual deletion error messages */
@@ -69,7 +67,7 @@ export interface PoolProvisionResult {
   /** Number of orgs that failed to provision */
   failed: number;
   /** Successfully provisioned orgs */
-  succeeded: ScratchOrg[];
+  succeeded: PoolOrg[];
   /** The pool tag */
   tag: string;
   /** Per-org task execution results (omitted when no tasks configured) */
@@ -120,10 +118,13 @@ export interface PoolManagerOptions {
   logger?: Logger;
   /** Factory for creating per-org scoped loggers during task execution */
   loggerFactory?: PoolOrgLoggerFactory;
-  /** Service for creating scratch orgs */
-  orgService: OrgService;
-  /** Provider for pool org queries, state, and validation */
-  poolOrgProvider: PoolOrgProvider;
+  /**
+   * Provider for org-type-specific operations (create, delete, query, etc.).
+   *
+   * The provider encapsulates all interaction with the hub org's SObjects
+   * (ScratchOrgInfo / SandboxInfo) so the pool manager stays org-type agnostic.
+   */
+  provider: OrgProvider;
   /** Tasks to run on each provisioned org (executed in order) */
   tasks?: PoolOrgTask[];
 }
@@ -147,7 +148,7 @@ export interface PoolManagerOptions {
  * - **Org-type agnostic core** — while currently scratch-org focused,
  *   the provisioning pattern (compute allocation → create orgs → validate
  *   → register in pool) can extend to sandboxes by swapping the
- *   creation strategy.
+ *   creation provider.
  *
  * @example
  * ```ts
@@ -166,37 +167,20 @@ export interface PoolManagerOptions {
 export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   private readonly logger?: Logger;
   private readonly loggerFactory?: PoolOrgLoggerFactory;
-  private readonly orgService: OrgService;
-  private readonly poolOrgProvider: PoolOrgProvider;
+  private readonly provider: OrgProvider;
   private readonly tasks: PoolOrgTask[];
 
   constructor(options: PoolManagerOptions) {
     super();
     this.loggerFactory = options.loggerFactory;
     this.logger = options.logger;
-    this.orgService = options.orgService;
-    this.poolOrgProvider = options.poolOrgProvider;
+    this.provider = options.provider;
     this.tasks = options.tasks ?? [];
   }
 
   // --------------------------------------------------------------------------
   // Public API
   // --------------------------------------------------------------------------
-
-  /**
-   * Validate that the DevHub meets pool operation prerequisites.
-   *
-   * Checks that the DevHub has the required custom fields and picklist
-   * values on `ScratchOrgInfo` for pool operations. Call this before
-   * provisioning or as a standalone health check.
-   *
-   * @throws {OrgError} When prerequisites are not met
-   */
-  public async validatePrerequisites(): Promise<void> {
-    this.logger?.debug('Validating DevHub prerequisites...');
-    await this.poolOrgProvider.validate();
-    this.logger?.debug('Prerequisites validated');
-  }
 
   /**
    * Compute how many scratch orgs should be allocated for a pool.
@@ -206,8 +190,8 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    */
   public async computeAllocation(config: PoolConfig): Promise<PoolAllocation> {
     const [remaining, activeCount] = await Promise.all([
-      this.poolOrgProvider.getRemainingCapacity(),
-      this.poolOrgProvider.getActiveCountByTag(config.tag),
+      this.provider.getRemainingCapacity(),
+      this.provider.getActiveCountByTag(config.tag),
     ]);
 
     const allocation = computeOrgAllocation(remaining, activeCount, config.sizing);
@@ -242,7 +226,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     this.logger?.info(`Querying pool "${tag}" for orgs to delete...`);
 
     // 1. Query orgs from the pool
-    let orgs = await this.poolOrgProvider.getOrgsByTag(tag, myPool);
+    let orgs = await this.provider.getOrgsByTag(tag, myPool);
 
     // 2. Apply status filter
     if (inProgressOnly) {
@@ -268,7 +252,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     this.logger?.info(`Deleting ${orgs.length} org(s) from pool "${tag}"...`);
 
     // 3. Delete each org individually (some may lack recordIds or fail)
-    const deleted: ScratchOrg[] = [];
+    const deleted: PoolOrg[] = [];
     const errors: string[] = [];
 
     for (const org of orgs) {
@@ -279,7 +263,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
       try {
         // eslint-disable-next-line no-await-in-loop -- sequential deletion avoids overwhelming the DevHub API
-        await this.orgService.deleteScratchOrgs([org.recordId]);
+        await this.provider.deleteOrgs([org.recordId]);
         if (org.pool) {
           org.pool.status = 'Deleted';
         }
@@ -353,7 +337,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     );
 
     const succeeded = results
-    .filter((r): r is OrgProvisionResult & {org: ScratchOrg} => Boolean(r.org))
+    .filter((r): r is OrgProvisionResult & {org: PoolOrg} => Boolean(r.org))
     .map(r => r.org);
     const errors = results.filter(r => r.error).map(r => r.error!);
 
@@ -397,9 +381,56 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     return result;
   }
 
+  /**
+   * Validate that the DevHub meets pool operation prerequisites.
+   *
+   * Checks that the DevHub has the required custom fields and picklist
+   * values on `ScratchOrgInfo` for pool operations. Call this before
+   * provisioning or as a standalone health check.
+   *
+   * @throws {OrgError} When prerequisites are not met
+   */
+  public async validatePrerequisites(): Promise<void> {
+    this.logger?.debug('Validating DevHub prerequisites...');
+    await this.provider.validate();
+    this.logger?.debug('Prerequisites validated');
+  }
+
   // --------------------------------------------------------------------------
   // Private — Org creation
   // --------------------------------------------------------------------------
+
+  /**
+   * Build `OrgCreateOptions` from the pool config and an alias.
+   *
+   * Maps the discriminated pool config union to the generic
+   * `OrgCreateOptions` used by the provider.
+   */
+  private buildCreateOptions(config: PoolConfig, alias: string): OrgCreateOptions {
+    if (config.type === 'sandbox') {
+      return {
+        activationUserGroupId: config.sandbox.groupId,
+        alias,
+        apexClassId: config.sandbox.apexClassId,
+        autoActivate: config.sandbox.autoActivate,
+        licenseType: config.sandbox.licenseType,
+        retries: config.sandbox.maxRetries,
+        sandboxName: `${config.sandbox.namePattern}${alias.replaceAll(/\D/g, '')}`,
+        sourceSandboxName: config.sandbox.sourceSandboxName,
+        waitMinutes: config.sandbox.waitMinutes,
+      };
+    }
+
+    // Scratch org
+    return {
+      alias,
+      definitionFile: config.scratchOrg.definitionFile,
+      expiryDays: config.scratchOrg.expiryDays,
+      noAncestors: config.scratchOrg.noAncestors,
+      retries: config.scratchOrg.maxRetries,
+      waitMinutes: config.scratchOrg.waitMinutes,
+    };
+  }
 
   /**
    * Create multiple orgs concurrently, capped at `concurrency`.
@@ -444,8 +475,12 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     return allResults;
   }
 
+  // --------------------------------------------------------------------------
+  // Private — Config to OrgCreateOptions mapping
+  // --------------------------------------------------------------------------
+
   /**
-   * Create a single scratch org and return the result.
+   * Create a single org and return the result.
    * Never throws — returns an `OrgProvisionResult` with error info on failure.
    */
   private async createSingleOrg(
@@ -455,13 +490,8 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     total: number,
   ): Promise<OrgProvisionResult> {
     try {
-      const org = await this.orgService.createScratchOrg({
-        alias,
-        definitionFile: config.scratchOrg.definitionFile,
-        expiryDays: config.scratchOrg.expiryDays ?? DEFAULT_SCRATCH_ORG.expiryDays,
-        noAncestors: config.scratchOrg.noAncestors ?? DEFAULT_SCRATCH_ORG.noAncestors,
-        waitMinutes: config.scratchOrg.waitMinutes ?? DEFAULT_SCRATCH_ORG.waitMinutes,
-      });
+      const createOptions = this.buildCreateOptions(config, alias);
+      const org = await this.provider.createOrg(createOptions);
 
       org.pool = {status: 'In Progress', tag: config.tag, timestamp: Date.now()};
 
@@ -476,6 +506,9 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const timedOut = message.includes('timed out');
+      const waitMinutes = config.type === 'scratchOrg'
+        ? config.scratchOrg.waitMinutes
+        : config.sandbox.waitMinutes;
 
       this.emit('pool:org:failed', {
         alias,
@@ -486,7 +519,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       });
 
       if (timedOut) {
-        this.logger?.warn(`Org "${alias}" creation timed out — consider increasing waitMinutes (current: ${config.scratchOrg.waitMinutes ?? DEFAULT_SCRATCH_ORG.waitMinutes}min)`);
+        this.logger?.warn(`Org "${alias}" creation timed out — consider increasing waitMinutes (current: ${waitMinutes ?? 6}min)`);
       } else {
         this.logger?.warn(`Org "${alias}" creation failed: ${message}`);
       }
@@ -505,7 +538,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    */
   private async executeSingleTask(
     task: PoolOrgTask,
-    org: ScratchOrg,
+    org: PoolOrg,
     orgLogger?: Logger,
   ): Promise<PoolOrgTaskResult> {
     try {
@@ -544,9 +577,9 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   /**
    * Fetch record IDs from the DevHub and update pool metadata.
    */
-  private async registerInPool(orgs: ScratchOrg[], tag: string): Promise<ScratchOrg[]> {
+  private async registerInPool(orgs: PoolOrg[], tag: string): Promise<PoolOrg[]> {
     // Enrich orgs with their DevHub record IDs
-    const enrichedOrgs = await this.poolOrgProvider.getRecordIds(orgs);
+    const enrichedOrgs = await this.provider.getRecordIds(orgs);
 
     const records: PoolOrgRecord[] = enrichedOrgs
     .filter(org => org.recordId)
@@ -558,7 +591,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     }));
 
     if (records.length > 0) {
-      await this.poolOrgProvider.updatePoolMetadata(records);
+      await this.provider.updatePoolMetadata(records);
       this.logger?.debug(`Registered ${records.length} org(s) in pool "${tag}"`);
     }
 
@@ -574,7 +607,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * `concurrency`.
    */
   private async runTasksOnOrgs(
-    orgs: ScratchOrg[],
+    orgs: PoolOrg[],
     concurrency: number,
   ): Promise<OrgTaskSummary[]> {
     this.logger?.info(`Running ${this.tasks.length} task(s) on ${orgs.length} org(s)...`);
@@ -607,7 +640,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * order. If a task fails and `continueOnError` is false, remaining
    * tasks are skipped.
    */
-  private async runTasksOnSingleOrg(org: ScratchOrg): Promise<OrgTaskSummary> {
+  private async runTasksOnSingleOrg(org: PoolOrg): Promise<OrgTaskSummary> {
     const orgLogger = this.loggerFactory?.create(org) ?? this.logger;
     const results: Array<{error?: string; success: boolean; task: string}> = [];
     let aborted = false;
@@ -665,18 +698,18 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    *
    * All validations run in parallel since they are independent queries.
    */
-  private async validateOrgs(orgs: ScratchOrg[]): Promise<ScratchOrg[]> {
+  private async validateOrgs(orgs: PoolOrg[]): Promise<PoolOrg[]> {
     const results = await Promise.all(orgs.map(org => this.validateSingleOrg(org)));
 
-    return results.filter((org): org is ScratchOrg => org !== null);
+    return results.filter((org): org is PoolOrg => org !== null);
   }
 
   /**
    * Validate a single org is active. Returns the org if valid, null if not.
    */
-  private async validateSingleOrg(org: ScratchOrg): Promise<null | ScratchOrg> {
+  private async validateSingleOrg(org: PoolOrg): Promise<null | PoolOrg> {
     try {
-      const isActive = await this.poolOrgProvider.isOrgActive(org.auth.username!);
+      const isActive = await this.provider.isOrgActive(org.auth.username!);
 
       if (isActive) {
         this.emit('pool:org:validated', {
