@@ -5,7 +5,7 @@ import {
 import {Duration} from '@salesforce/kit';
 
 import type {PoolOrgRecord} from '../../pool/types.js';
-import type {OrgCreateOptions, OrgProvider} from '../org-provider.js';
+import type {OrgProvider, OrgUsage} from '../org-provider.js';
 import type {PoolOrg} from '../pool-org.js';
 import type {
   AllocationStatus, JwtAuthConfig, PasswordResult, SendEmailOptions,
@@ -14,7 +14,7 @@ import type {
 import {generatePassword} from '../../utils/password-generator.js';
 import {OrgError} from '../types.js';
 import {
-  type ScratchOrg, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
+  type ScratchOrg, type ScratchOrgCreateOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
 } from './types.js';
 
 // ============================================================================
@@ -81,7 +81,7 @@ export const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = ['Allocate', 'As
  * Also provides DevHub-level utilities (email, alias, JWT config) that
  * are shared across providers but naturally live on the hub org.
  */
-export default class ScratchOrgProvider implements OrgProvider {
+export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateOptions> {
   private readonly conn;
   private readonly hubOrg;
   private readonly hubUsername: string;
@@ -112,10 +112,10 @@ export default class ScratchOrgProvider implements OrgProvider {
     }
   }
 
-  async createOrg(options: OrgCreateOptions): Promise<PoolOrg> {
+  async createOrg(options: ScratchOrgCreateOptions): Promise<PoolOrg> {
     const request: ScratchOrgCreateRequest = {
       alias: options.alias,
-      definitionFile: options.definitionFile ?? '',
+      definitionFile: options.definitionFile,
       durationDays: options.expiryDays ?? 7,
       noAncestors: options.noAncestors,
       noNamespace: false,
@@ -210,8 +210,15 @@ export default class ScratchOrgProvider implements OrgProvider {
     return orgs;
   }
 
-  /** Find active scratch orgs that have no pool tag. */
-  async getOrphanedScratchOrgs(): Promise<ScratchOrg[]> {
+  /** Get org usage counts grouped by user email. */
+  async getOrgUsageByUser(): Promise<OrgUsage[]> {
+    const query = soql`SELECT count(Id) In_Use, SignupEmail FROM ActiveScratchOrg GROUP BY SignupEmail ORDER BY count(Id) DESC`;
+    const result = await this.conn.query<{In_Use: number; SignupEmail: string}>(query);
+    return result.records.map(r => ({count: r.In_Use, email: r.SignupEmail}));
+  }
+
+  /** Find active orgs that have no pool tag. */
+  async getOrphanedOrgs(): Promise<PoolOrg[]> {
     const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE Tag__c = null AND Allocation_Status__c = 'Active' ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<ScratchOrgInfoRecord>(query);
     return result.records.map(r => mapToScratchOrg(r));
@@ -253,13 +260,6 @@ export default class ScratchOrgProvider implements OrgProvider {
     const query = soql`SELECT Id FROM ScratchOrgInfo WHERE SignupUsername = '${escapeSOQL(username)}'`;
     const result = await this.conn.query<{Id: string}>(query);
     return result.records[0]?.Id;
-  }
-
-  /** Get scratch org usage counts grouped by user email. */
-  async getScratchOrgUsageByUser(): Promise<ScratchOrgUsage[]> {
-    const query = soql`SELECT count(Id) In_Use, SignupEmail FROM ActiveScratchOrg GROUP BY SignupEmail ORDER BY count(Id) DESC`;
-    const result = await this.conn.query<{In_Use: number; SignupEmail: string}>(query);
-    return result.records.map(r => ({count: r.In_Use, email: r.SignupEmail}));
   }
 
   // ==========================================================================
@@ -329,6 +329,12 @@ export default class ScratchOrgProvider implements OrgProvider {
     await scratchOrgConnection.getConnection().soap.setPassword(result.records[0].Id, password);
   }
 
+  /** Update fields on a ScratchOrgInfo record. */
+  async updateOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean> {
+    const result = await this.conn.sobject('ScratchOrgInfo').update(fields);
+    return result.success === true;
+  }
+
   async updatePoolMetadata(records: PoolOrgRecord[]): Promise<void> {
     if (records.length === 0) return;
 
@@ -340,12 +346,6 @@ export default class ScratchOrgProvider implements OrgProvider {
     }));
 
     await this.conn.sobject('ScratchOrgInfo').update(updates);
-  }
-
-  /** Update fields on a ScratchOrgInfo record. */
-  async updateScratchOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean> {
-    const result = await this.conn.sobject('ScratchOrgInfo').update(fields);
-    return result.success === true;
   }
 
   async validate(): Promise<void> {

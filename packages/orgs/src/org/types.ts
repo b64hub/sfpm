@@ -2,6 +2,11 @@ import type {
   ScratchOrg, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
 } from './scratch/types.js';
 
+export {DEFAULT_SCRATCH_ORG, type ScratchOrgDefaults} from './scratch/types.js';
+export type {
+  ScratchOrgCreateOptions as CreateScratchOrgOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
+} from './scratch/types.js';
+
 // ============================================================================
 // Authentication
 // ============================================================================
@@ -160,6 +165,13 @@ export interface SendEmailOptions {
  * Mirrors the picklist on the DevHub's `ScratchOrgInfo.Allocation_Status__c`.
  */
 export type AllocationStatus = 'Allocate' | 'Assigned' | 'Available' | 'In Progress' | 'Return';
+
+/**
+ * Options for sharing org credentials via email.
+ */
+export interface ShareScratchOrgOptions {
+  emailAddress: string;
+}
 
 // ============================================================================
 // OrgService Events

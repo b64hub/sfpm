@@ -138,3 +138,30 @@ export interface SandboxCreateResult {
   /** Username for the sandbox */
   username: string;
 }
+
+/**
+ * Pool-level options for creating a sandbox.
+ *
+ * Used by `SandboxProvider.createOrg()`. Maps to the SDK's sandbox
+ * creation methods internally.
+ */
+export interface SandboxCreateOptions {
+  /** Group ID for sandbox access */
+  activationUserGroupId?: string;
+  /** Local alias for the sandbox */
+  alias: string;
+  /** Apex class ID for post-copy script */
+  apexClassId?: string;
+  /** Whether to auto-activate the sandbox */
+  autoActivate?: boolean;
+  /** Sandbox license type */
+  licenseType?: string;
+  /** Max retries on transient failures */
+  retries?: number;
+  /** Sandbox name */
+  sandboxName?: string;
+  /** Source sandbox name for cloning */
+  sourceSandboxName?: string;
+  /** Max minutes to wait for creation */
+  waitMinutes?: number;
+}

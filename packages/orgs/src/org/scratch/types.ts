@@ -12,7 +12,31 @@ export interface ScratchOrg extends PoolOrg {
 }
 
 /**
- * Configuration for creating a scratch org.
+ * Pool-level options for creating a scratch org.
+ *
+ * Used by `ScratchOrgProvider.createOrg()`. Maps to `ScratchOrgCreateRequest`
+ * internally but uses pool-friendly terminology (e.g., `expiryDays` instead
+ * of `durationDays`).
+ */
+export interface ScratchOrgCreateOptions {
+  /** Local alias for the scratch org */
+  alias: string;
+  /** Path to the scratch org definition file */
+  definitionFile: string;
+  /** Number of days until the org expires */
+  expiryDays?: number;
+  /** Whether to exclude ancestor versions */
+  noAncestors?: boolean;
+  /** Max retries on transient failures */
+  retries?: number;
+  /** Max minutes to wait for creation */
+  waitMinutes?: number;
+}
+
+/**
+ * SDK-level configuration for creating a scratch org.
+ *
+ * @internal
  */
 export interface ScratchOrgCreateRequest {
   /** Local alias for the scratch org */

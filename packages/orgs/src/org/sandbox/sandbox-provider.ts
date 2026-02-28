@@ -3,10 +3,10 @@ import {Org} from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
 
 import type {PoolOrgRecord} from '../../pool/types.js';
-import type {OrgCreateOptions, OrgProvider} from '../org-provider.js';
+import type {OrgProvider, OrgUsage} from '../org-provider.js';
 import type {PoolOrg} from '../pool-org.js';
 import type {AllocationStatus, PasswordResult} from '../types.js';
-import type {Sandbox} from './types.js';
+import type {Sandbox, SandboxCreateOptions} from './types.js';
 
 import {OrgError} from '../types.js';
 import {DEFAULT_SANDBOX} from './types.js';
@@ -91,7 +91,7 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
  * });
  * ```
  */
-export default class SandboxProvider implements OrgProvider {
+export default class SandboxProvider implements OrgProvider<SandboxCreateOptions> {
   private readonly conn;
   private readonly hubOrg;
   private readonly hubUsername: string;
@@ -118,7 +118,7 @@ export default class SandboxProvider implements OrgProvider {
     }
   }
 
-  async createOrg(options: OrgCreateOptions): Promise<PoolOrg> {
+  async createOrg(options: SandboxCreateOptions): Promise<PoolOrg> {
     const sandboxName = options.sandboxName ?? options.alias;
     const licenseType = options.licenseType ?? DEFAULT_SANDBOX.licenseType;
     const waitMinutes = options.waitMinutes ?? DEFAULT_SANDBOX.waitMinutes;
@@ -246,6 +246,19 @@ export default class SandboxProvider implements OrgProvider {
     return result.records.map(r => mapToSandbox(r));
   }
 
+  async getOrgUsageByUser(): Promise<OrgUsage[]> {
+    // Sandboxes don't have a direct equivalent of ActiveScratchOrg usage tracking.
+    // Capacity is tracked via license limits (getRemainingCapacity) instead.
+    return [];
+  }
+
+  /** Find active sandboxes that have no pool tag. */
+  async getOrphanedOrgs(): Promise<PoolOrg[]> {
+    const query = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE Tag__c = null ORDER BY CreatedDate DESC`;
+    const result = await this.conn.query<SandboxInfoRecord>(query);
+    return result.records.map(r => mapToSandbox(r));
+  }
+
   async getRecordIds(orgs: PoolOrg[]): Promise<PoolOrg[]> {
     if (orgs.length === 0) return orgs;
 
@@ -306,6 +319,12 @@ export default class SandboxProvider implements OrgProvider {
     } catch {
       return false;
     }
+  }
+
+  /** Update fields on a SandboxInfo record. */
+  async updateOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean> {
+    const result = await this.conn.sobject('SandboxInfo').update(fields);
+    return result.success === true;
   }
 
   async updatePoolMetadata(records: PoolOrgRecord[]): Promise<void> {

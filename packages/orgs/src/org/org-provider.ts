@@ -1,5 +1,7 @@
 import type {PoolOrgRecord} from '../pool/types.js';
 import type {PoolOrg} from './pool-org.js';
+import type {SandboxCreateOptions} from './sandbox/types.js';
+import type {ScratchOrgCreateOptions} from './scratch/types.js';
 import type {PasswordResult} from './types.js';
 
 // ============================================================================
@@ -32,7 +34,7 @@ import type {PasswordResult} from './types.js';
  * const manager = new PoolManager({ provider, logger });
  * ```
  */
-export interface OrgProvider {
+export interface OrgProvider<TCreateOptions = OrgCreateOptions> {
   // -- Pool query & claim --
 
   /**
@@ -49,7 +51,7 @@ export interface OrgProvider {
    * Returns the created org with basic auth information populated.
    * The caller is responsible for setting pool metadata after creation.
    */
-  createOrg(options: OrgCreateOptions): Promise<PoolOrg>;
+  createOrg(options: TCreateOptions): Promise<PoolOrg>;
 
   /**
    * Delete org records by their IDs.
@@ -92,6 +94,22 @@ export interface OrgProvider {
    */
   getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]>;
 
+  /**
+   * Get org usage counts grouped by user email.
+   *
+   * Queries active orgs and groups by user, returning the count per
+   * user ordered by usage descending. Useful for reporting and capacity planning.
+   */
+  getOrgUsageByUser(): Promise<OrgUsage[]>;
+
+  /**
+   * Find active orgs that have no pool tag.
+   *
+   * Returns orgs created outside of the pool lifecycle or whose
+   * pool tag was cleared. Useful for cleanup operations.
+   */
+  getOrphanedOrgs(): Promise<PoolOrg[]>;
+
   /** Fetch the hub record IDs for a list of orgs (by orgId) */
   getRecordIds(orgs: PoolOrg[]): Promise<PoolOrg[]>;
 
@@ -106,6 +124,17 @@ export interface OrgProvider {
   /** Check if an org is still active (not deleted) */
   isOrgActive(username: string): Promise<boolean>;
 
+  /**
+   * Update fields on an org info record.
+   *
+   * For scratch orgs, updates `ScratchOrgInfo`.
+   * For sandboxes, updates `SandboxInfo`.
+   *
+   * @param fields - Object with `Id` and any fields to update
+   * @returns `true` if the update succeeded
+   */
+  updateOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean>;
+
   /** Update org pool metadata (tag, status, auth info) */
   updatePoolMetadata(records: PoolOrgRecord[]): Promise<void>;
 
@@ -118,35 +147,23 @@ export interface OrgProvider {
 // ============================================================================
 
 /**
- * Options for creating an org through a provider.
+ * Union of all org-type-specific create options.
  *
- * Provider implementations map these generic options to the
- * org-type-specific SDK calls.
+ * `PoolManager` works with this union when the concrete org type is not
+ * known at compile time. Concrete `OrgProvider<T>` implementations narrow
+ * to their specific options type for compile-time safety.
  */
-export interface OrgCreateOptions {
-  /** Group ID for sandbox access */
-  activationUserGroupId?: string;
-  /** Local alias for the org (e.g., `SO1`, `SB1`) */
-  alias: string;
-  /** Apex class ID for post-copy script */
-  apexClassId?: string;
-  /** Whether to auto-activate the sandbox */
-  autoActivate?: boolean;
-  /** Path to the scratch org definition file */
-  definitionFile?: string;
-  /** Number of days until the org expires */
-  expiryDays?: number;
-  /** Sandbox license type */
-  licenseType?: string;
-  /** Whether to exclude ancestor versions */
-  noAncestors?: boolean;
-  /** Max retries on transient failures */
-  retries?: number;
-  /** Sandbox name */
-  sandboxName?: string;
+export type OrgCreateOptions = SandboxCreateOptions | ScratchOrgCreateOptions;
 
-  /** Source sandbox name for cloning */
-  sourceSandboxName?: string;
-  /** Max minutes to wait for creation */
-  waitMinutes?: number;
+/**
+ * Org usage count for a single user.
+ *
+ * Returned by `OrgProvider.getOrgUsageByUser()`. Generalizes over
+ * org-type-specific usage tracking (e.g., `ActiveScratchOrg` counts).
+ */
+export interface OrgUsage {
+  /** Number of active orgs owned by this user */
+  count: number;
+  /** The user's email address */
+  email: string;
 }

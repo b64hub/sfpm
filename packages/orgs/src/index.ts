@@ -2,6 +2,7 @@
 export {
   type OrgCreateOptions,
   type OrgProvider,
+  type OrgUsage,
 } from './org/org-provider.js';
 export {default as OrgService} from './org/org-service.js';
 export {
@@ -19,6 +20,7 @@ export {type Sandbox} from './org/sandbox/types.js';
 // Sandbox types
 export {
   DEFAULT_SANDBOX,
+  type SandboxCreateOptions,
   type SandboxCreateRequest,
   type SandboxCreateResult,
   type SandboxDefaults,
@@ -26,14 +28,14 @@ export {
   type SandboxPoolInfo,
 } from './org/sandbox/types.js';
 export {default as ScratchOrgProvider} from './org/scratch/scratch-org-provider.js';
-export {type ScratchOrg} from './org/scratch/types.js';
-export {default as AuthService} from './org/services/auth-service.js';
+export {type ScratchOrgInfoRecord} from './org/scratch/scratch-org-provider.js';
+export {type ScratchOrg, type ScratchOrgCreateOptions} from './org/scratch/types.js';
 
+export {default as AuthService} from './org/services/auth-service.js';
 // Services
 export {
   type ActiveScratchOrgRecord,
   default as DevHubService,
-  type ScratchOrgInfoRecord,
 } from './org/services/devhub-service.js';
 
 // Org-layer types
