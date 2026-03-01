@@ -35,15 +35,8 @@ export interface PoolFetcherEvents {
 /**
  * Fetches and claims scratch orgs from an existing pool.
  *
- * Migrated from the legacy `PoolFetchImpl`. Key differences:
- *
  * - **Composition over inheritance** — takes `OrgProvider` and
- *   `PoolOrgAuthenticator` via constructor instead of extending
- *   `PoolBaseImpl`.
- *
- * - **Prerequisite checks abstracted** — the legacy `PoolBaseImpl`
- *   embedded DevHub prerequisite validation. This is now handled by
- *   `PoolManager.validatePrerequisites()`.
+ *   `PoolOrgAuthenticator` via constructor
  *
  * - **Authentication decoupled** — login, auth URL validation, and source
  *   tracking are handled by `PoolOrgAuthenticator`, keeping the fetcher

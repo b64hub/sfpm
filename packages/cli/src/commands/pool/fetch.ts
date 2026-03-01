@@ -71,7 +71,7 @@ export default class PoolFetch extends SfpmCommand {
         enableSourceTracking: flags['source-tracking'],
         myPool: flags['my-pool'],
         postClaimAction: flags['send-to']
-          ? async (org: any) => orgService.shareScratchOrg(org, {emailAddress: flags['send-to']!})
+          ? async (org: any) => orgService.shareOrg(org, {emailAddress: flags['send-to']!})
           : undefined,
         sendToUser: flags['send-to'],
         tag: flags.tag,
