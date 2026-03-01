@@ -24,7 +24,7 @@ import PoolManager from './pool-manager.js';
  * collaborators ready for use.
  */
 export interface PoolServices {
-  /** The DevHub adapter — deprecated, use provider */
+  /** The hub service for JWT config, email, and user lookups */
   devHub: DevHubService;
   /** Pool fetcher for claiming orgs */
   fetcher: PoolFetcher;
@@ -83,19 +83,21 @@ export interface CreatePoolServicesOptions {
 export function createPoolServices(options: CreatePoolServicesOptions): PoolServices {
   const {hubOrg, logger, poolType = 'scratchOrg', tasks} = options;
 
-  // Legacy DevHubService + OrgService kept for backward compatibility
+  // Hub service for JWT config, email, and user lookups
   const devHub = new DevHubService(hubOrg);
-  const orgService = new OrgService(devHub, logger);
 
   // Select provider based on pool type
   const provider: OrgProvider = poolType === 'sandbox'
     ? new SandboxProvider(hubOrg)
     : new ScratchOrgProvider(hubOrg);
 
+  // OrgService for admin operations (orphan queries, sharing, status updates)
+  const orgService = new OrgService(provider, devHub, logger);
+
   // Create authenticator — always AuthService with auth URL primary, JWT fallback
   const jwtConfig = devHub.getJwtConfig();
   const authenticator = new AuthService(
-    provider.getUsername(),
+    devHub.getUsername(),
     jwtConfig.clientId ? jwtConfig : undefined,
   );
 

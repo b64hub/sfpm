@@ -3,6 +3,9 @@ export {
   type OrgCreateOptions,
   type OrgProvider,
   type OrgUsage,
+  type PoolOrgClaimer,
+  type PoolOrgInspector,
+  type PoolOrgProvisioner,
 } from './org/org-provider.js';
 export {default as OrgService} from './org/org-service.js';
 export {
@@ -28,13 +31,12 @@ export {
   type SandboxPoolInfo,
 } from './org/sandbox/types.js';
 export {default as ScratchOrgProvider} from './org/scratch/scratch-org-provider.js';
-export {type ScratchOrgInfoRecord} from './org/scratch/scratch-org-provider.js';
+export {type ActiveScratchOrgRecord, type ScratchOrgInfoRecord} from './org/scratch/scratch-org-provider.js';
 export {type ScratchOrg, type ScratchOrgCreateOptions} from './org/scratch/types.js';
 
 export {default as AuthService} from './org/services/auth-service.js';
 // Services
 export {
-  type ActiveScratchOrgRecord,
   default as DevHubService,
 } from './org/services/devhub-service.js';
 
@@ -44,6 +46,7 @@ export {
   type CreateScratchOrgOptions,
   DEFAULT_SCRATCH_ORG,
   type DevHub,
+  type DevHub as HubService,
   type JwtAuthConfig,
   OrgError,
   type OrgServiceEvents,
@@ -53,6 +56,7 @@ export {
   type ScratchOrgDefaults,
   type ScratchOrgUsage,
   type SendEmailOptions,
+  type ShareOrgOptions,
   type ShareScratchOrgOptions,
 } from './org/types.js';
 

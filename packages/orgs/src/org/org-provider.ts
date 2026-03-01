@@ -5,38 +5,16 @@ import type {ScratchOrgCreateOptions} from './scratch/types.js';
 import type {PasswordResult} from './types.js';
 
 // ============================================================================
-// OrgProvider — Unified interface for org-type-specific operations
+// Pool-need facets — each expresses a specific pool concern
 // ============================================================================
 
 /**
- * Unified provider interface for org-type-specific pool operations.
+ * The pool's need to find and claim available orgs.
  *
- * Combines org lifecycle (create, delete, password) with pool
- * query/claim/metadata operations into a single contract. Each
- * implementation handles one org type (scratch org or sandbox) and
- * encapsulates all interaction with the hub org's SObjects. The pool
- * layer (`PoolManager`, `PoolFetcher`) depends only on this interface
- * — it never branches on org type directly.
- *
- * Implementors:
- * - `ScratchOrgProvider` — Queries `ScratchOrgInfo` / `ActiveScratchOrg`;
- *   creates via `Org.scratchOrgCreate()`
- * - `SandboxProvider` — Queries `SandboxInfo` / `SandboxProcess`;
- *   creates via `Org.createSandbox()`
- *
- * @example
- * ```typescript
- * // Provider is selected at factory time, not at runtime
- * const provider: OrgProvider = poolType === 'sandbox'
- *   ? new SandboxProvider(hubOrg)
- *   : new ScratchOrgProvider(hubOrg);
- *
- * const manager = new PoolManager({ provider, logger });
- * ```
+ * Used by `PoolFetcher` to query candidates and optimistically
+ * claim one for a consumer.
  */
-export interface OrgProvider<TCreateOptions = OrgCreateOptions> {
-  // -- Pool query & claim --
-
+export interface PoolOrgClaimer {
   /**
    * Claim an org for use (optimistic concurrency).
    *
@@ -45,6 +23,23 @@ export interface OrgProvider<TCreateOptions = OrgCreateOptions> {
    */
   claimOrg(id: string): Promise<boolean>;
 
+  /**
+   * Query available orgs in a pool.
+   *
+   * @param tag - Pool tag to filter by
+   * @param myPool - When true, only return orgs created by the current user
+   * @returns Available orgs with metadata populated
+   */
+  getAvailableByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]>;
+}
+
+/**
+ * The pool's need to provision, delete, and manage orgs.
+ *
+ * Used by `PoolManager` to create orgs, validate the hub,
+ * manage pool metadata, and clean up the pool.
+ */
+export interface PoolOrgProvisioner<TCreateOptions = OrgCreateOptions> {
   /**
    * Create a new org (scratch org or sandbox).
    *
@@ -73,15 +68,6 @@ export interface OrgProvider<TCreateOptions = OrgCreateOptions> {
   getActiveCountByTag(tag: string): Promise<number>;
 
   /**
-   * Query available orgs in a pool.
-   *
-   * @param tag - Pool tag to filter by
-   * @param myPool - When true, only return orgs created by the current user
-   * @returns Available orgs with metadata populated
-   */
-  getAvailableByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]>;
-
-  /**
    * Query all orgs in a pool regardless of status.
    *
    * Returns orgs with all allocation statuses (Available, In Progress,
@@ -94,14 +80,29 @@ export interface OrgProvider<TCreateOptions = OrgCreateOptions> {
    */
   getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]>;
 
-  /**
-   * Get org usage counts grouped by user email.
-   *
-   * Queries active orgs and groups by user, returning the count per
-   * user ordered by usage descending. Useful for reporting and capacity planning.
-   */
-  getOrgUsageByUser(): Promise<OrgUsage[]>;
+  /** Fetch the hub record IDs for a list of orgs (by orgId) */
+  getRecordIds(orgs: PoolOrg[]): Promise<PoolOrg[]>;
 
+  /** Get the remaining org capacity on the hub */
+  getRemainingCapacity(): Promise<number>;
+
+  /** Check if an org is still active (not deleted) */
+  isOrgActive(username: string): Promise<boolean>;
+
+  /** Update org pool metadata (tag, status, auth info) */
+  updatePoolMetadata(records: PoolOrgRecord[]): Promise<void>;
+
+  /** Validate hub prerequisites (custom fields, picklist values). Throws `OrgError` if not met. */
+  validate(): Promise<void>;
+}
+
+/**
+ * The pool's need to inspect org state for reporting and admin operations.
+ *
+ * Used by `OrgService` (and future admin commands) for orphan discovery,
+ * usage reporting, and ad-hoc record updates.
+ */
+export interface PoolOrgInspector {
   /**
    * Find active orgs that have no pool tag.
    *
@@ -110,19 +111,13 @@ export interface OrgProvider<TCreateOptions = OrgCreateOptions> {
    */
   getOrphanedOrgs(): Promise<PoolOrg[]>;
 
-  /** Fetch the hub record IDs for a list of orgs (by orgId) */
-  getRecordIds(orgs: PoolOrg[]): Promise<PoolOrg[]>;
-
-  /** Get the remaining org capacity on the hub */
-  getRemainingCapacity(): Promise<number>;
-
-  // -- Org lifecycle --
-
-  /** Returns the hub org username. */
-  getUsername(): string;
-
-  /** Check if an org is still active (not deleted) */
-  isOrgActive(username: string): Promise<boolean>;
+  /**
+   * Get org usage counts grouped by user email.
+   *
+   * Queries active orgs and groups by user, returning the count per
+   * user ordered by usage descending. Useful for reporting and capacity planning.
+   */
+  getOrgUsageByUser(): Promise<OrgUsage[]>;
 
   /**
    * Update fields on an org info record.
@@ -134,13 +129,46 @@ export interface OrgProvider<TCreateOptions = OrgCreateOptions> {
    * @returns `true` if the update succeeded
    */
   updateOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean>;
-
-  /** Update org pool metadata (tag, status, auth info) */
-  updatePoolMetadata(records: PoolOrgRecord[]): Promise<void>;
-
-  /** Validate hub prerequisites (custom fields, picklist values). Throws `OrgError` if not met. */
-  validate(): Promise<void>;
 }
+
+// ============================================================================
+// OrgProvider — Full intersection of all pool needs
+// ============================================================================
+
+/**
+ * Unified provider interface for org-type-specific pool operations.
+ *
+ * Combines all pool-need facets into a single contract. Each
+ * implementation handles one org type (scratch org or sandbox) and
+ * encapsulates all interaction with the hub org's SObjects. The pool
+ * layer depends only on the facet it needs — consumers never branch
+ * on org type directly.
+ *
+ * Facets:
+ * - {@link PoolOrgClaimer} — Find and claim available orgs (`PoolFetcher`)
+ * - {@link PoolOrgProvisioner} — Provision, delete, manage orgs (`PoolManager`)
+ * - {@link PoolOrgInspector} — Reporting and admin queries (`OrgService`)
+ *
+ * Implementors:
+ * - `ScratchOrgProvider` — Queries `ScratchOrgInfo` / `ActiveScratchOrg`;
+ *   creates via `Org.scratchOrgCreate()`
+ * - `SandboxProvider` — Queries `SandboxInfo` / `SandboxProcess`;
+ *   creates via `Org.createSandbox()`
+ *
+ * @example
+ * ```typescript
+ * // Provider is selected at factory time, not at runtime
+ * const provider: OrgProvider = poolType === 'sandbox'
+ *   ? new SandboxProvider(hubOrg)
+ *   : new ScratchOrgProvider(hubOrg);
+ *
+ * const manager = new PoolManager({ provider, logger });
+ * ```
+ */
+export type OrgProvider<TCreateOptions = OrgCreateOptions> =
+  PoolOrgClaimer &
+  PoolOrgInspector &
+  PoolOrgProvisioner<TCreateOptions>;
 
 // ============================================================================
 // OrgProvider Supporting Types

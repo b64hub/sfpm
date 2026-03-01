@@ -1,7 +1,3 @@
-import type {
-  ScratchOrg, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
-} from './scratch/types.js';
-
 export {DEFAULT_SCRATCH_ORG, type ScratchOrgDefaults} from './scratch/types.js';
 export type {
   ScratchOrgCreateOptions as CreateScratchOrgOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
@@ -46,97 +42,39 @@ export interface JwtAuthConfig {
 // ============================================================================
 
 /**
- * Abstraction over a Salesforce DevHub.
+ * Abstraction over hub-level operations on a Salesforce org.
  *
- * Decouples org-service from @salesforce/core so the orgs package
- * depends only on sfpm-core types. The concrete implementation
- * (`DevHubService`) bridges this interface to the real Salesforce SDK.
+ * Covers capabilities that belong to the hub itself rather than to any
+ * specific pool org type (scratch org or sandbox): authentication
+ * config, user lookups, and email.
+ *
+ * The pool layer (`OrgProvider` facets) handles all SObject queries;
+ * `DevHub` handles everything else.
+ *
+ * Concrete implementation: `DevHubService` in `services/devhub-service.ts`.
  */
 export interface DevHub {
-  /** Create a scratch org against this DevHub */
-  createScratchOrg(request: ScratchOrgCreateRequest): Promise<ScratchOrgCreateResult>;
-
-  /** Delete active scratch org records by their IDs */
-  deleteActiveScratchOrgs(recordIds: string[]): Promise<void>;
-
-  /** Generate and set a password for a scratch org user */
-  generatePassword(username: string): Promise<PasswordResult>;
-
   /**
    * Retrieve JWT auth configuration for the hub.
    *
    * Returns the `clientId` and `privateKeyPath` used to authenticate.
-   * Scratch orgs inherit the DevHub's Connected App credentials
-   * automatically via the `parentUsername` mechanism.
+   * Scratch orgs inherit the Connected App credentials automatically
+   * via the `parentUsername` mechanism.
    */
   getJwtConfig(): JwtAuthConfig;
 
   /**
-   * Find active scratch orgs that have no pool tag.
-   *
-   * Queries `ScratchOrgInfo WHERE Pooltag__c = null AND Status = 'Active'`.
-   * Useful for cleanup operations to identify orgs that were created
-   * outside of the pool lifecycle or whose tag was cleared.
-   */
-  getOrphanedScratchOrgs(): Promise<ScratchOrg[]>;
-
-  /**
-   * Look up a ScratchOrgInfo record ID by its SignupUsername.
-   *
-   * Uses the DevHub's `ScratchOrgInfo` sobject to find the record
-   * matching the given username. Returns the record ID or `undefined`
-   * if no match is found.
-   */
-  getScratchOrgInfoByUsername(username: string): Promise<string | undefined>;
-
-  /**
-   * Get scratch org usage counts grouped by user email.
-   *
-   * Queries `ActiveScratchOrg` and groups by `SignupEmail`, returning
-   * the count per user ordered by usage descending. Useful for
-   * reporting and capacity planning.
-   */
-  getScratchOrgUsageByUser(): Promise<ScratchOrgUsage[]>;
-
-  /**
    * Look up a user's email address by their username.
    *
-   * Queries the `User` SObject in the DevHub. Retries up to 3 times
-   * to handle transient API failures.
+   * Queries the `User` SObject in the hub org.
    */
   getUserEmail(username: string): Promise<string>;
 
-  /** Returns the hub org username */
+  /** Returns the hub org username. */
   getUsername(): string;
 
-  /** Send a simple email via the connected org's REST API */
+  /** Send a simple email via the connected org's REST API. */
   sendEmail(options: SendEmailOptions): Promise<void>;
-
-  /** Set a local alias for a username */
-  setAlias(username: string, alias: string): Promise<void>;
-
-  /**
-   * Set a password for a user via the DevHub.
-   *
-   * Looks up the user by username and assigns the given password.
-   * Use this in combination with `generatePassword()` utility when you
-   * need explicit control over password generation vs assignment.
-   *
-   * @param username - The username of the org/user to set password for
-   * @param password - The password to assign
-   */
-  setUserPassword(username: string, password: string): Promise<void>;
-
-  /**
-   * Update fields on a ScratchOrgInfo record.
-   *
-   * Wraps `connection.sobject('ScratchOrgInfo').update()`. The `id` field
-   * is required to identify the record; all other fields are merged.
-   *
-   * @param fields - Object with `Id` and any ScratchOrgInfo fields to update
-   * @returns `true` if the update succeeded
-   */
-  updateScratchOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean>;
 }
 
 /**
@@ -169,9 +107,12 @@ export type AllocationStatus = 'Allocate' | 'Assigned' | 'Available' | 'In Progr
 /**
  * Options for sharing org credentials via email.
  */
-export interface ShareScratchOrgOptions {
+export interface ShareOrgOptions {
   emailAddress: string;
 }
+
+/** @deprecated Use {@link ShareOrgOptions} instead. */
+export type ShareScratchOrgOptions = ShareOrgOptions;
 
 // ============================================================================
 // OrgService Events
@@ -182,13 +123,8 @@ export interface ShareScratchOrgOptions {
  * type-safe event handling.
  */
 export interface OrgServiceEvents {
-  'org:create:complete': [payload: {alias: string; elapsedMs: number; orgId: string; timestamp: Date; username: string}];
-  'org:create:error': [payload: {alias: string; error: string; timestamp: Date}];
-  'org:create:start': [payload: {alias: string; definitionFile: string; timestamp: Date}];
-  'org:delete:complete': [payload: {orgIds: string[]; timestamp: Date}];
-  'org:delete:start': [payload: {orgIds: string[]; timestamp: Date}];
   'org:share:complete': [payload: {emailAddress: string; timestamp: Date; username: string}];
-  'org:status:complete': [payload: {status: AllocationStatus; timestamp: Date; username: string}];
+  'org:status:complete': [payload: {recordId: string; status: AllocationStatus; timestamp: Date}];
 }
 
 // ============================================================================

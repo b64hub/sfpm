@@ -2,17 +2,15 @@ import type {Logger} from '@b64/sfpm-core';
 
 import {EventEmitter} from 'node:events';
 
-import type {ScratchOrg} from './scratch/types.js';
+import type {OrgUsage, PoolOrgInspector} from './org-provider.js';
+import type {PoolOrg} from './pool-org.js';
 
 import {
   type AllocationStatus,
-  type CreateScratchOrgOptions,
-  DEFAULT_SCRATCH_ORG,
   type DevHub,
   OrgError,
   type OrgServiceEvents,
-  type ScratchOrgUsage,
-  type ShareScratchOrgOptions,
+  type ShareOrgOptions,
 } from './types.js';
 
 // ============================================================================
@@ -20,335 +18,175 @@ import {
 // ============================================================================
 
 /**
- * Service for managing Salesforce orgs (scratch, sandbox, etc.).
+ * Service for org-type-agnostic admin operations.
  *
- * Migrated from the legacy ScratchOrgOperator. Follows SFPM patterns:
- * - Dependency injection for hub connection and logger
- * - EventEmitter for progress tracking
- * - Structured OrgError for failures
- * - Interface-based abstraction over Salesforce SDK
+ * Wraps a {@link PoolOrgInspector} (for queries and record updates)
+ * and an optional {@link DevHub} (for email sharing). All methods
+ * work identically for scratch orgs and sandboxes — the provider
+ * handles the SObject differences.
+ *
+ * Provisioning and deletion are handled by `PoolManager` + `OrgProvider`;
+ * `OrgService` covers the remaining admin surface: orphan discovery,
+ * usage reporting, credential sharing, and status updates.
  *
  * @example
  * ```ts
- * const orgService = new OrgService(hubConnection, logger);
- * orgService.on('scratch:create:complete', (payload) => {
- *   console.log(`Created ${payload.username} in ${payload.elapsedMs}ms`);
+ * const orgService = new OrgService(provider, hub, logger);
+ * orgService.on('org:share:complete', (p) => {
+ *   console.log(`Shared ${p.username} with ${p.emailAddress}`);
  * });
  *
- * const scratchOrg = await orgService.createScratchOrg({
- *   alias: 'my-org',
- *   definitionFile: 'config/project-scratch-def.json',
- *   expiryDays: 7,
- * });
+ * const orphans = await orgService.getOrphanedOrgs();
+ * await orgService.shareOrg(org, { emailAddress: 'user@example.com' });
  * ```
  */
 export default class OrgService extends EventEmitter<OrgServiceEvents> {
   constructor(
-    private readonly hubOrg: DevHub,
+    private readonly inspector: PoolOrgInspector,
+    private readonly hub?: DevHub,
     private readonly logger?: Logger,
   ) {
     super();
   }
 
   // --------------------------------------------------------------------------
-  // Public — Scratch Org lifecycle
+  // Public — Queries
   // --------------------------------------------------------------------------
 
   /**
-   * Create a new scratch org against the DevHub.
-   *
-   * Handles the full provisioning flow: create the org, generate a password,
-   * and return a populated ScratchOrg object. Scratch orgs inherit the
-   * DevHub's JWT credentials automatically via `parentUsername`.
-   *
-   * @throws {OrgError} When creation or password generation fails
-   */
-  public async createScratchOrg(options: CreateScratchOrgOptions): Promise<ScratchOrg> {
-    const {
-      alias,
-      definitionFile,
-      expiryDays = DEFAULT_SCRATCH_ORG.expiryDays,
-      noAncestors = DEFAULT_SCRATCH_ORG.noAncestors,
-      waitMinutes = DEFAULT_SCRATCH_ORG.waitMinutes,
-    } = options;
-
-    this.logger?.trace(`createScratchOrg params: alias=${alias} def=${definitionFile} expiry=${expiryDays}`);
-
-    this.emit('scratch:create:start', {
-      alias,
-      definitionFile,
-      timestamp: new Date(),
-    });
-
-    const startTime = Date.now();
-    this.logger?.info(`Requesting scratch org "${alias}"...`);
-
-    try {
-      // 1. Request the scratch org from the DevHub
-      const result = await this.hubOrg.createScratchOrg({
-        definitionFile,
-        durationDays: expiryDays,
-        noAncestors,
-        noNamespace: false,
-        retries: DEFAULT_SCRATCH_ORG.maxRetries,
-        waitMinutes,
-      });
-
-      this.logger?.trace(`Scratch org create result: ${JSON.stringify(result)}`);
-
-      // 2. Set the local alias
-      await this.hubOrg.setAlias(result.username, alias);
-
-      // 3. Build the domain object
-      const scratchOrg: ScratchOrg = {
-        auth: {
-          alias,
-          loginUrl: result.loginUrl,
-          username: result.username,
-        },
-        orgId: result.orgId,
-      };
-
-      // 4. Generate password
-      scratchOrg.auth.password = await this.setPassword(scratchOrg);
-
-      const elapsedMs = Date.now() - startTime;
-
-      this.logger?.info(`Scratch org "${alias}" created successfully in ${formatElapsed(elapsedMs)}`);
-
-      this.emit('scratch:create:complete', {
-        alias,
-        elapsedMs,
-        orgId: scratchOrg.orgId,
-        timestamp: new Date(),
-        username: scratchOrg.auth.username,
-      });
-
-      return scratchOrg;
-    } catch (error) {
-      // Don't re-wrap OrgError — just re-throw
-      if (error instanceof OrgError) {
-        this.emitCreateError(alias, error);
-        throw error;
-      }
-
-      const wrapped = new OrgError('create', 'Scratch org creation failed', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-        orgIdentifier: alias,
-      });
-      this.emitCreateError(alias, wrapped);
-      throw wrapped;
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // Public — Scratch Org queries
-  // --------------------------------------------------------------------------
-
-  /**
-   * Delete scratch orgs by their ActiveScratchOrg record IDs.
-   *
-   * @throws {OrgError} When deletion fails after retries
-   */
-  public async deleteScratchOrgs(scratchOrgIds: string[]): Promise<void> {
-    this.emit('scratch:delete:start', {
-      orgIds: scratchOrgIds,
-      timestamp: new Date(),
-    });
-
-    try {
-      await this.hubOrg.deleteActiveScratchOrgs(scratchOrgIds);
-
-      this.emit('scratch:delete:complete', {
-        orgIds: scratchOrgIds,
-        timestamp: new Date(),
-      });
-
-      this.logger?.info(`Deleted ${scratchOrgIds.length} scratch org(s)`);
-    } catch (error) {
-      throw new OrgError('delete', 'Failed to delete scratch orgs', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-        context: {orgIds: scratchOrgIds},
-      });
-    }
-  }
-
-  /**
-   * Find active scratch orgs that have no pool tag.
+   * Find active orgs that have no pool tag.
    *
    * Returns orgs that were created outside the pool lifecycle or whose
    * pool tag was cleared. Useful for cleanup operations.
    *
    * @throws {OrgError} When the query fails
    */
-  public async getOrphanedScratchOrgs(): Promise<ScratchOrg[]> {
-    this.logger?.debug('Querying orphaned scratch orgs...');
+  public async getOrphanedOrgs(): Promise<PoolOrg[]> {
+    this.logger?.debug('Querying orphaned orgs...');
 
     try {
-      const orgs = await this.hubOrg.getOrphanedScratchOrgs();
-      this.logger?.info(`Found ${orgs.length} orphaned scratch org(s)`);
+      const orgs = await this.inspector.getOrphanedOrgs();
+      this.logger?.info(`Found ${orgs.length} orphaned org(s)`);
       return orgs;
     } catch (error) {
-      throw new OrgError('fetch', 'Failed to query orphaned scratch orgs', {
+      throw new OrgError('fetch', 'Failed to query orphaned orgs', {
         cause: error instanceof Error ? error : new Error(String(error)),
       });
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Public — Scratch Org mutations
-  // --------------------------------------------------------------------------
-
   /**
-   * Get scratch org usage counts grouped by user email.
+   * Get org usage counts grouped by user email.
    *
    * Returns an array of `{ email, count }` entries ordered by count
    * descending. Useful for reporting and capacity planning.
    *
    * @throws {OrgError} When the query fails
    */
-  public async getScratchOrgUsageByUser(): Promise<ScratchOrgUsage[]> {
-    this.logger?.debug('Querying scratch org usage by user...');
+  public async getOrgUsageByUser(): Promise<OrgUsage[]> {
+    this.logger?.debug('Querying org usage by user...');
 
     try {
-      const usage = await this.hubOrg.getScratchOrgUsageByUser();
+      const usage = await this.inspector.getOrgUsageByUser();
       this.logger?.info(`Found usage data for ${usage.length} user(s)`);
       return usage;
     } catch (error) {
-      throw new OrgError('fetch', 'Failed to query scratch org usage by user', {
+      throw new OrgError('fetch', 'Failed to query org usage by user', {
         cause: error instanceof Error ? error : new Error(String(error)),
       });
     }
   }
 
+  // --------------------------------------------------------------------------
+  // Public — Sharing
+  // --------------------------------------------------------------------------
+
   /**
-   * Share scratch org credentials with a user via email.
+   * Share org credentials with a user via email.
    *
-   * @throws {OrgError} When the email fails to send
+   * Requires a `HubService` to be provided at construction time.
+   *
+   * @throws {OrgError} When the hub is missing or the email fails to send
    */
-  public async shareScratchOrg(scratchOrg: ScratchOrg, options: ShareScratchOrgOptions): Promise<void> {
+  public async shareOrg(org: PoolOrg, options: ShareOrgOptions): Promise<void> {
+    if (!this.hub) {
+      throw new OrgError('share', 'Hub service is required to share org credentials via email');
+    }
+
     const {emailAddress} = options;
-    const hubOrgUsername = this.hubOrg.getUsername();
+    const hubUsername = this.hub.getUsername();
 
     const body = [
-      `${hubOrgUsername} has fetched a new scratch org from the Scratch Org Pool!`,
+      `${hubUsername} has fetched a new org from the pool!`,
       '',
-      'All the post scratch org scripts have been successfully completed in this org!',
+      'All post-provisioning scripts have been successfully completed in this org!',
       '',
-      `Login URL: ${scratchOrg.auth.loginUrl}`,
-      `Username: ${scratchOrg.auth.username}`,
-      `Password: ${scratchOrg.auth.password}`,
+      `Login URL: ${org.auth.loginUrl}`,
+      `Username: ${org.auth.username}`,
+      `Password: ${org.auth.password}`,
       '',
-      `Use: sf org login web --instance-url ${scratchOrg.auth.loginUrl} --alias <alias>`,
+      `Use: sf org login web --instance-url ${org.auth.loginUrl} --alias <alias>`,
     ].join('\n');
 
     try {
-      await this.hubOrg.sendEmail({
+      await this.hub.sendEmail({
         body,
-        subject: `${hubOrgUsername} created you a new Salesforce org`,
+        subject: `${hubUsername} created you a new Salesforce org`,
         to: emailAddress,
       });
 
-      this.logger?.info(`Email sent to ${emailAddress} for ${scratchOrg.auth.username}`);
+      this.logger?.info(`Email sent to ${emailAddress} for ${org.auth.username}`);
 
-      this.emit('scratch:share:complete', {
+      this.emit('org:share:complete', {
         emailAddress,
         timestamp: new Date(),
-        username: scratchOrg.auth.username,
+        username: org.auth.username,
       });
     } catch (error) {
-      throw new OrgError('share', `Failed to send scratch org details to ${emailAddress}`, {
+      throw new OrgError('share', `Failed to send org details to ${emailAddress}`, {
         cause: error instanceof Error ? error : new Error(String(error)),
-        orgIdentifier: scratchOrg.auth.username,
+        orgIdentifier: org.auth.username,
       });
     }
   }
+
+  // --------------------------------------------------------------------------
+  // Public — Status updates
+  // --------------------------------------------------------------------------
 
   /**
-   * Update the allocation status of a scratch org.
+   * Update the allocation status of a pool org.
    *
-   * Resolves the ScratchOrgInfo record from the DevHub by username,
-   * then sets its `Allocation_Status__c` field.
+   * Sets the `Allocation_Status__c` field on the org's info record
+   * (ScratchOrgInfo or SandboxInfo, depending on the provider).
    *
-   * @param username - The scratch org's SignupUsername
+   * @param recordId - The org info record ID (e.g., from `PoolOrg.recordId`)
    * @param status - The new allocation status to set
    * @returns `true` if the update succeeded
-   * @throws {OrgError} When the ScratchOrgInfo record cannot be found or the update fails
+   * @throws {OrgError} When the update fails
    */
-  public async updateScratchOrgStatus(username: string, status: AllocationStatus): Promise<boolean> {
-    this.logger?.debug(`Updating status for ${username} to "${status}"`);
-
-    const scratchOrgInfoId = await this.hubOrg.getScratchOrgInfoByUsername(username);
-
-    if (!scratchOrgInfoId) {
-      throw new OrgError('update', `ScratchOrgInfo record not found for username: ${username}`, {
-        context: {status},
-        orgIdentifier: username,
-      });
-    }
+  public async updateOrgStatus(recordId: string, status: AllocationStatus): Promise<boolean> {
+    this.logger?.debug(`Updating status for record ${recordId} to "${status}"`);
 
     try {
-      const result = await this.hubOrg.updateScratchOrgInfo({
+      const result = await this.inspector.updateOrgInfo({
         Allocation_Status__c: status, // eslint-disable-line camelcase -- Salesforce custom field name
-        Id: scratchOrgInfoId,
+        Id: recordId,
       });
 
-      this.emit('scratch:status:complete', {
+      this.emit('org:status:complete', {
+        recordId,
         status,
         timestamp: new Date(),
-        username,
       });
 
-      this.logger?.info(`Status for ${username} updated to "${status}"`);
+      this.logger?.info(`Status updated to "${status}" for record ${recordId}`);
       return result;
     } catch (error) {
-      throw new OrgError('update', `Failed to update scratch org status to "${status}"`, {
+      throw new OrgError('update', `Failed to update org status to "${status}"`, {
         cause: error instanceof Error ? error : new Error(String(error)),
-        context: {scratchOrgInfoId, status},
-        orgIdentifier: username,
+        context: {recordId, status},
       });
     }
   }
-
-  // --------------------------------------------------------------------------
-  // Private helpers
-  // --------------------------------------------------------------------------
-
-  private emitCreateError(alias: string, error: Error): void {
-    this.emit('scratch:create:error', {
-      alias,
-      error: error.message,
-      timestamp: new Date(),
-    });
-  }
-
-  private async setPassword(scratchOrg: ScratchOrg): Promise<string> {
-    const result = await this.hubOrg.generatePassword(scratchOrg.auth.username);
-
-    if (!result.password) {
-      throw new OrgError('password', 'Unable to generate password for scratch org', {
-        orgIdentifier: scratchOrg.auth.alias,
-      });
-    }
-
-    this.logger?.debug(`Password set for "${scratchOrg.auth.alias}"`);
-    return result.password;
-  }
-}
-
-// ============================================================================
-// Utilities
-// ============================================================================
-
-/** Format milliseconds into a human-readable duration string. */
-function formatElapsed(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(seconds / 60);
-
-  if (minutes > 0) {
-    const remainingSeconds = seconds % 60;
-    return `${minutes}m ${remainingSeconds}s`;
-  }
-
-  return `${seconds}s`;
 }
