@@ -1,12 +1,12 @@
-import {type OrgKind} from '@b64/sfpm-orgs';
+import {createPoolServices} from '@b64/sfpm-orgs';
 import {Flags} from '@oclif/core';
+import {Org, OrgTypes} from '@salesforce/core';
 import ora from 'ora';
 
 import type {OutputMode} from '../../ui/renderer-utils.js';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
-import {createPoolServices} from '../../utils/pool-bootstrap.js';
 
 export default class PoolDelete extends SfpmCommand {
   static override description = 'delete orgs from a pool'
@@ -47,10 +47,11 @@ export default class PoolDelete extends SfpmCommand {
     };
 
     try {
-      const {manager} = await createPoolServices({
-        devhub: flags['target-dev-hub'],
+      const devhub = await Org.create({aliasOrUsername: flags['target-dev-hub']});
+      const {manager} = createPoolServices({
+        devhub,
         logger,
-        poolType: flags.type as OrgKind,
+        poolType: flags.type as OrgTypes,
       });
       spinner?.succeed('Connected to hub org');
 

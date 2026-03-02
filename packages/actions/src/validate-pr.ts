@@ -222,8 +222,8 @@ async function fetchOrgFromPool(
 ): Promise<PoolOrg> {
   if (isStructuredLogger(logger)) logger.group('Pool Fetch');
 
-  const hubOrg = await Org.create({aliasOrUsername: options.devhubUsername});
-  const {authenticator, fetcher} = createPoolServices({hubOrg, logger});
+  const devhub = await Org.create({aliasOrUsername: options.devhubUsername});
+  const {authenticator, fetcher} = createPoolServices({devhub, logger});
 
   const renderer = new ActionsProgressRenderer(logger);
   renderer.attachToPoolFetcher(fetcher);

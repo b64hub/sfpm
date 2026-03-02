@@ -1,12 +1,12 @@
-import {type OrgKind, type PoolConfig, type SandboxLicenseType} from '@b64/sfpm-orgs';
+import {createPoolServices, type PoolConfig, type SandboxLicenseType} from '@b64/sfpm-orgs';
 import {Flags} from '@oclif/core';
+import {Org, OrgTypes} from '@salesforce/core';
 import ora from 'ora';
 
 import type {OutputMode} from '../../ui/renderer-utils.js';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
-import {createPoolServices} from '../../utils/pool-bootstrap.js';
 
 export default class PoolProvision extends SfpmCommand {
   static override description = 'provision orgs to fill a pool'
@@ -38,7 +38,7 @@ export default class PoolProvision extends SfpmCommand {
   public async execute(): Promise<void> {
     const {flags} = await this.parse(PoolProvision);
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
-    const poolType = flags.type as OrgKind;
+    const poolType = flags.type as OrgTypes;
 
     const spinner = mode === 'interactive' ? ora('Connecting to hub org...').start() : undefined;
 
@@ -52,8 +52,9 @@ export default class PoolProvision extends SfpmCommand {
     };
 
     try {
-      const {manager} = await createPoolServices({
-        devhub: flags['target-dev-hub'],
+      const devhub = await Org.create({aliasOrUsername: flags['target-dev-hub']});
+      const {manager} = createPoolServices({
+        devhub,
         logger,
         poolType,
       });
@@ -94,13 +95,13 @@ export default class PoolProvision extends SfpmCommand {
     }
   }
 
-  private buildPoolConfig(flags: Record<string, any>, poolType: OrgKind): PoolConfig {
+  private buildPoolConfig(flags: Record<string, any>, poolType: OrgTypes): PoolConfig {
     const sizing = {
       batchSize: flags['batch-size'] as number | undefined,
       maxAllocation: flags.max as number,
     };
 
-    if (poolType === 'sandbox') {
+    if (poolType === OrgTypes.Sandbox) {
       return {
         sandbox: {
           groupId: flags['group-id'] as string | undefined,
@@ -110,7 +111,7 @@ export default class PoolProvision extends SfpmCommand {
         },
         sizing,
         tag: flags.tag as string,
-        type: 'sandbox',
+        type: OrgTypes.Sandbox,
       };
     }
 
@@ -125,7 +126,7 @@ export default class PoolProvision extends SfpmCommand {
       },
       sizing,
       tag: flags.tag as string,
-      type: 'scratchOrg',
+      type: OrgTypes.Scratch,
     };
   }
 }

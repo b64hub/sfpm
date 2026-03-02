@@ -1,13 +1,12 @@
-import {type PoolOrg} from '@b64/sfpm-orgs';
+import {createPoolServices, type PoolOrg} from '@b64/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {printTable} from '@oclif/table';
-import {type OrgTypes} from '@salesforce/core';
+import {Org, type OrgTypes} from '@salesforce/core';
 import chalk from 'chalk';
 import ora from 'ora';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
-import {createPoolServices} from '../../utils/pool-bootstrap.js';
 
 export default class PoolList extends SfpmCommand {
   static override description = 'list orgs in a pool'
@@ -37,8 +36,9 @@ export default class PoolList extends SfpmCommand {
     const spinner = mode === 'interactive' ? ora('Connecting to hub org...').start() : undefined;
 
     try {
-      const {manager} = await createPoolServices({
-        devhub: flags['target-dev-hub'],
+      const devhub = await Org.create({aliasOrUsername: flags['target-dev-hub']});
+      const {manager} = createPoolServices({
+        devhub,
         poolType: flags.type as OrgTypes,
       });
       spinner?.succeed('Connected to hub org');

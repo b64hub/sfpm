@@ -1,5 +1,6 @@
+import {createPoolServices} from '@b64/sfpm-orgs';
 import {Flags} from '@oclif/core';
-import {OrgTypes} from '@salesforce/core';
+import {Org, OrgTypes} from '@salesforce/core';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -7,7 +8,6 @@ import type {OutputMode} from '../../ui/renderer-utils.js';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
-import {createPoolServices} from '../../utils/pool-bootstrap.js';
 
 export default class PoolFetch extends SfpmCommand {
   static override description = 'fetch an org from a pool'
@@ -27,11 +27,6 @@ export default class PoolFetch extends SfpmCommand {
     'source-tracking': Flags.boolean({default: false, description: 'enable source tracking after fetch'}),
     tag: Flags.string({char: 't', description: 'pool tag to fetch from', required: true}),
     'target-dev-hub': Flags.string({char: 'v', description: 'target hub org username or alias', required: true}),
-    type: Flags.string({
-      default: OrgTypes.Scratch,
-      description: 'pool type: scratch or sandbox',
-      options: [OrgTypes.Scratch, OrgTypes.Sandbox],
-    }),
   }
 
   public async execute(): Promise<void> {
@@ -49,13 +44,15 @@ export default class PoolFetch extends SfpmCommand {
       warn: (msg: string) => this.warn(msg),
     };
 
+    const devhub = await Org.create({aliasOrUsername: flags['target-dev-hub']});
+
     try {
-      const {authenticator, devHub, fetcher} = await createPoolServices({
-        devhub: flags['target-dev-hub'],
+      const {authenticator, devhubService, fetcher} = await createPoolServices({
+        devhub,
         logger,
         poolType: flags.type,
       });
-      spinner?.succeed('Connected to hub org');
+      spinner?.succeed('Connected to devhub org');
 
       const renderer = new PoolProgressRenderer({
         logger: {
@@ -69,7 +66,7 @@ export default class PoolFetch extends SfpmCommand {
       const postClaimActions: Array<(org: any) => Promise<void>> = [];
 
       if (flags['send-to']) {
-        postClaimActions.push(async org => devHub.shareOrg(org, {emailAddress: flags['send-to']!}));
+        postClaimActions.push(async org => devhubService.shareOrg(org, {emailAddress: flags['send-to']!}));
       } else {
         postClaimActions.push(org => authenticator.login(org));
 

@@ -22,7 +22,7 @@ export interface PoolServices {
   /** Authenticator for handling org authentication */
   authenticator: AuthService;
   /** DevHub service for JWT config, email, and user lookups */
-  devHub: DevHubService;
+  devhubService: DevHubService;
   /** Pool fetcher for claiming orgs */
   fetcher: PoolFetcher;
   /** Pool manager for provisioning and deleting orgs */
@@ -33,8 +33,8 @@ export interface PoolServices {
  * Options for `createPoolServices()`.
  */
 export interface CreatePoolServicesOptions {
-  /** The resolved Salesforce `Org` instance for the hub */
-  hubOrg: Org;
+  /** The resolved Salesforce `Org` instance for the devhub */
+  devhub: Org;
   /** Logger shared across all services */
   logger?: Logger;
   /**
@@ -46,7 +46,7 @@ export interface CreatePoolServicesOptions {
 }
 
 /**
- * Bootstrap the full pool service stack from a resolved hub `Org`.
+ * Bootstrap the full pool service stack from a resolved devhub `Org`.
  *
  * Wires up the appropriate `OrgProvider` based on `poolType`,
  * along with the authenticator, `PoolManager`, and `PoolFetcher`.
@@ -59,37 +59,37 @@ export interface CreatePoolServicesOptions {
  * import { createPoolServices } from '@b64/sfpm-orgs';
  *
  * // Scratch org pool (default)
- * const hubOrg = await Org.create({ aliasOrUsername: 'my-devhub' });
- * const { manager, fetcher } = createPoolServices({ hubOrg });
+ * const devhub = await Org.create({ aliasOrUsername: 'my-devhub' });
+ * const { manager, fetcher } = createPoolServices({ devhub });
  *
  * // Sandbox pool
  * const prodOrg = await Org.create({ aliasOrUsername: 'my-prod-org' });
  * const { manager: sbManager } = createPoolServices({
- *   hubOrg: prodOrg,
+ *   devhub: prodOrg,
  *   poolType: 'sandbox',
  * });
  * ```
  */
 export function createPoolServices(options: CreatePoolServicesOptions): PoolServices {
-  const {hubOrg, logger, poolType = 'scratchOrg', tasks} = options;
+  const {devhub, logger, poolType = OrgTypes.Scratch, tasks} = options;
 
-  if (!hubOrg.getUsername()) {
+  if (!devhub.getUsername()) {
     throw new Error('Hub org must be authenticated and have a username');
   }
 
-  if (!hubOrg.isDevHubOrg()) {
+  if (!devhub.isDevHubOrg()) {
     throw new Error('Hub org must be a DevHub');
   }
 
-  const devHub = new DevHubService(hubOrg, logger);
+  const devhubService = new DevHubService(devhub, logger);
 
   const provider: OrgProvider = poolType === OrgTypes.Sandbox
-    ? new SandboxProvider(hubOrg)
-    : new ScratchOrgProvider(hubOrg);
+    ? new SandboxProvider(devhub)
+    : new ScratchOrgProvider(devhub);
 
-  const jwtConfig = devHub.getJwtConfig();
+  const jwtConfig = devhubService.getJwtConfig();
   const authenticator = new AuthService(
-    hubOrg.getUsername()!,
+    devhub.getUsername()!,
     jwtConfig.clientId ? jwtConfig : undefined,
   );
 
@@ -102,6 +102,6 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
   const fetcher = new PoolFetcher(provider, logger);
 
   return {
-    authenticator, devHub, fetcher, manager,
+    authenticator, devhubService, fetcher, manager,
   };
 }
