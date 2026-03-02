@@ -17,6 +17,7 @@ export type {
   CreateScratchOrgOptions,
   DevHub,
   JwtAuthConfig,
+  DevHubServiceEvents,
   OrgServiceEvents,
   PasswordResult,
   ScratchOrgCreateRequest,

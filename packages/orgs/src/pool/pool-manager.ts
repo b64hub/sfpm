@@ -132,29 +132,16 @@ export interface PoolManagerOptions {
 /**
  * Manages the lifecycle of a scratch org pool.
  *
- * Migrated from the legacy `PoolCreateImpl`. Key differences:
- *
- * - **No Bottleneck dependency** — uses a simple concurrency-limited
+ *   Uses a simple concurrency-limited
  *   Promise pattern. Salesforce DevHub has concurrent request limits,
  *   so we cap parallelism at `batchSize` (default: 5) but don't need
  *   a heavyweight rate-limiter library for this.
- *
- * - **Composition over inheritance** — takes `OrgService` and
- *   `PoolInfoProvider` via constructor instead of extending a base class.
- *
- * - **Separated concerns** — pool config vs runtime state, org creation
- *   vs pool metadata management, progress events vs logging.
- *
- * - **Org-type agnostic core** — while currently scratch-org focused,
- *   the provisioning pattern (compute allocation → create orgs → validate
- *   → register in pool) can extend to sandboxes by swapping the
- *   creation provider.
  *
  * @example
  * ```ts
  * const manager = new PoolManager({
  *   loggerFactory: fileLoggerFactory,
- *   orgService,
+ *   provider,
  *   poolInfo: poolInfoProvider,
  *   tasks: [deployTask, scriptTask],
  * });
@@ -177,11 +164,6 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     this.provider = options.provider;
     this.tasks = options.tasks ?? [];
   }
-
-  // --------------------------------------------------------------------------
-  // Public API
-  // --------------------------------------------------------------------------
-
   /**
    * Compute how many scratch orgs should be allocated for a pool.
    *
@@ -213,7 +195,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    *
    * Queries all orgs matching the pool tag, optionally filtering to
    * only 'In Progress' orgs or orgs owned by the current user. Each
-   * matching org with a valid `recordId` is deleted via `OrgService`.
+   * matching org with a valid `recordId` is deleted via the provider.
    *
    * @param options - Tag, filter, and ownership options
    * @returns Summary of deleted orgs and any errors
@@ -396,9 +378,6 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     this.logger?.debug('Prerequisites validated');
   }
 
-  // --------------------------------------------------------------------------
-  // Private — Org creation
-  // --------------------------------------------------------------------------
 
   /**
    * Build `OrgCreateOptions` from the pool config and an alias.

@@ -223,7 +223,7 @@ describe('ScratchOrgProvider', () => {
         expiryDays: 7,
       });
 
-      expect(result.kind).toBe('scratchOrg');
+      expect(result.orgType).toBe('scratchOrg');
       expect(result.auth.username).toBe('test-1@scratch.org');
       expect(result.orgId).toBe('00D000000000001');
       expect(mocks.org.scratchOrgCreate).toHaveBeenCalledWith(
@@ -278,7 +278,7 @@ describe('ScratchOrgProvider', () => {
       const orgs = await strategy.getAvailableByTag('dev-pool');
 
       expect(orgs).toHaveLength(1);
-      expect(orgs[0].kind).toBe('scratchOrg');
+      expect(orgs[0].orgType).toBe('scratchOrg');
       expect(orgs[0].auth.username).toBe('test-1@scratch.org');
       expect(orgs[0].orgId).toBe('00D000000000001');
       expect(orgs[0].recordId).toBe('a00000000000001');

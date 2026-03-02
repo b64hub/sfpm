@@ -7,7 +7,6 @@ import type {
   PoolOrgTask,
 } from './types.js';
 
-import OrgService from '../org/org-service.js';
 import SandboxProvider from '../org/sandbox/sandbox-provider.js';
 import ScratchOrgProvider from '../org/scratch/scratch-org-provider.js';
 import AuthService from '../org/services/auth-service.js';
@@ -30,8 +29,6 @@ export interface PoolServices {
   fetcher: PoolFetcher;
   /** Pool manager for provisioning and deleting orgs */
   manager: PoolManager;
-  /** Org service for scratch org lifecycle operations (legacy) */
-  orgService: OrgService;
   /** The selected org provider */
   provider: OrgProvider;
 }
@@ -84,15 +81,12 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
   const {hubOrg, logger, poolType = 'scratchOrg', tasks} = options;
 
   // Hub service for JWT config, email, and user lookups
-  const devHub = new DevHubService(hubOrg);
+  const devHub = new DevHubService(hubOrg, logger);
 
   // Select provider based on pool type
   const provider: OrgProvider = poolType === 'sandbox'
     ? new SandboxProvider(hubOrg)
     : new ScratchOrgProvider(hubOrg);
-
-  // OrgService for admin operations (orphan queries, sharing, status updates)
-  const orgService = new OrgService(provider, devHub, logger);
 
   // Create authenticator — always AuthService with auth URL primary, JWT fallback
   const jwtConfig = devHub.getJwtConfig();
@@ -110,6 +104,6 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
   const fetcher = new PoolFetcher(provider, authenticator, logger);
 
   return {
-    devHub, fetcher, manager, orgService, provider,
+    devHub, fetcher, manager, provider,
   };
 }

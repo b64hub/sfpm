@@ -1,3 +1,5 @@
+import { PoolOrg } from '../index.js';
+
 export {DEFAULT_SCRATCH_ORG, type ScratchOrgDefaults} from './scratch/types.js';
 export type {
   ScratchOrgCreateOptions as CreateScratchOrgOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
@@ -62,19 +64,9 @@ export interface DevHub {
    * via the `parentUsername` mechanism.
    */
   getJwtConfig(): JwtAuthConfig;
-
-  /**
-   * Look up a user's email address by their username.
-   *
-   * Queries the `User` SObject in the hub org.
-   */
   getUserEmail(username: string): Promise<string>;
-
-  /** Returns the hub org username. */
   getUsername(): string;
-
-  /** Send a simple email via the connected org's REST API. */
-  sendEmail(options: SendEmailOptions): Promise<void>;
+  shareOrg(org: PoolOrg, options: ShareOrgOptions): Promise<void>;
 }
 
 /**
@@ -84,18 +76,6 @@ export interface PasswordResult {
   password: string | undefined;
 }
 
-/**
- * Options for sending an email through the org's REST API.
- */
-export interface SendEmailOptions {
-  body: string;
-  subject: string;
-  to: string;
-}
-
-// ============================================================================
-// OrgService Options
-// ============================================================================
 
 /**
  * Allocation status values for scratch orgs managed by a pool.
@@ -114,18 +94,25 @@ export interface ShareOrgOptions {
 /** @deprecated Use {@link ShareOrgOptions} instead. */
 export type ShareScratchOrgOptions = ShareOrgOptions;
 
-// ============================================================================
-// OrgService Events
-// ============================================================================
+/**
+ * Options for sending an email through the hub org's REST API.
+ */
+export interface SendEmailOptions {
+  body: string;
+  subject: string;
+  to: string;
+}
 
 /**
- * Event map for OrgService. Used with EventEmitter for
+ * Event map for `DevHubService`. Used with `EventEmitter` for
  * type-safe event handling.
  */
-export interface OrgServiceEvents {
+export interface DevHubServiceEvents {
   'org:share:complete': [payload: {emailAddress: string; timestamp: Date; username: string}];
-  'org:status:complete': [payload: {recordId: string; status: AllocationStatus; timestamp: Date}];
 }
+
+/** @deprecated Use {@link DevHubServiceEvents} instead. */
+export type OrgServiceEvents = DevHubServiceEvents;
 
 // ============================================================================
 // Errors

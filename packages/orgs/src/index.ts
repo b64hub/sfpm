@@ -7,7 +7,6 @@ export {
   type PoolOrgInspector,
   type PoolOrgProvisioner,
 } from './org/org-provider.js';
-export {default as OrgService} from './org/org-service.js';
 export {
   isSandbox,
   isScratchOrg,
@@ -49,6 +48,7 @@ export {
   type DevHub as HubService,
   type JwtAuthConfig,
   OrgError,
+  type DevHubServiceEvents,
   type OrgServiceEvents,
   type PasswordResult,
   type ScratchOrgCreateRequest,

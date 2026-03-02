@@ -1,15 +1,14 @@
+import type {Logger} from '@b64/sfpm-core';
 import {escapeSOQL, soql} from '@b64/sfpm-core';
 import type {Org} from '@salesforce/core';
+import {EventEmitter} from 'node:events';
 
-import type {DevHub, JwtAuthConfig, SendEmailOptions} from '../types.js';
+import type {DevHub, DevHubServiceEvents, JwtAuthConfig, SendEmailOptions, ShareOrgOptions} from '../types.js';
 import {OrgError} from '../types.js';
-
-// ============================================================================
-// DevHubService — Hub-level operations only
-// ============================================================================
+import type {PoolOrg} from '../pool-org.js';
 
 /**
- * Service that wraps a Salesforce hub `Org` for hub-level operations.
+ * Service that wraps a Salesforce DevHub / Production org.
  *
  * Covers authentication config, user lookups, and email — everything
  * that belongs to the hub itself rather than to any specific pool org
@@ -31,20 +30,21 @@ import {OrgError} from '../types.js';
  * const email = await hub.getUserEmail('user@example.com');
  * ```
  */
-export default class DevHubService implements DevHub {
+export default class DevHubService extends EventEmitter<DevHubServiceEvents> implements DevHub {
   private readonly conn;
+  private readonly hubOrg: Org;
   private readonly hubUsername: string;
+  private readonly logger?: Logger;
 
-  constructor(hubOrg: Org) {
+  constructor(hubOrg: Org, logger?: Logger) {
+    super();
+    this.hubOrg = hubOrg;
     this.conn = hubOrg.getConnection();
     this.hubUsername = hubOrg.getUsername() ?? '';
+    this.logger = logger;
   }
 
-  // ==========================================================================
-  // HubService
-  // ==========================================================================
-
-  getJwtConfig(): JwtAuthConfig {
+  public getJwtConfig(): JwtAuthConfig {
     const fields = this.conn.getAuthInfoFields();
     return {
       clientId: fields.clientId ?? '',
@@ -53,7 +53,7 @@ export default class DevHubService implements DevHub {
     };
   }
 
-  async getUserEmail(username: string): Promise<string> {
+  public async getUserEmail(username: string): Promise<string> {
     const query = soql`SELECT Email FROM User WHERE Username = '${escapeSOQL(username)}'`;
     const result = await this.conn.query<{Email: string}>(query);
 
@@ -64,7 +64,7 @@ export default class DevHubService implements DevHub {
     return result.records[0].Email;
   }
 
-  getUsername(): string {
+  public getUsername(): string {
     return this.hubUsername;
   }
 
@@ -83,5 +83,50 @@ export default class DevHubService implements DevHub {
       method: 'POST',
       url: `/services/data/v${apiVersion}/actions/standard/emailSimple`,
     });
+  }
+
+  /**
+   * Share org credentials with a user via email.
+   *
+   * Composes a notification email with the org's login URL, username,
+   * and password, then sends it through the hub org's REST API.
+   *
+   * @throws {OrgError} When the email fails to send
+   */
+  public async shareOrg(org: PoolOrg, options: ShareOrgOptions): Promise<void> {
+    const {emailAddress} = options;
+
+    const body = [
+      `${this.hubUsername} has fetched a new org from the pool!`,
+      '',
+      'All post-provisioning scripts have been successfully completed in this org!',
+      '',
+      `Login URL: ${org.auth.loginUrl}`,
+      `Username: ${org.auth.username}`,
+      `Password: ${org.auth.password}`,
+      '',
+      `Use: sf org login web --instance-url ${org.auth.loginUrl} --alias <alias>`,
+    ].join('\n');
+
+    try {
+      await this.sendEmail({
+        body,
+        subject: `${this.hubUsername} created you a new Salesforce org`,
+        to: emailAddress,
+      });
+
+      this.logger?.info(`Email sent to ${emailAddress} for ${org.auth.username}`);
+
+      this.emit('org:share:complete', {
+        emailAddress,
+        timestamp: new Date(),
+        username: org.auth.username,
+      });
+    } catch (error) {
+      throw new OrgError('share', `Failed to send org details to ${emailAddress}`, {
+        cause: error instanceof Error ? error : new Error(String(error)),
+        orgIdentifier: org.auth.username,
+      });
+    }
   }
 }

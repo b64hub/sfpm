@@ -193,16 +193,11 @@ export interface PoolOrgAuthenticator {
   login(org: PoolOrg): Promise<void>;
 }
 
-// ============================================================================
-// Pool Fetching
-// ============================================================================
-
 /**
  * Action to execute after an org has been claimed from the pool.
  *
  * Injected into `PoolFetcher` to handle post-claim side effects like
- * sharing the org via email. This decouples the fetcher from `OrgService`
- * and keeps it focused on claim-and-authenticate logic.
+ * sharing the org via email.
  *
  * @param org - The claimed org
  * @param options - The original fetch options (includes `sendToUser`, etc.)

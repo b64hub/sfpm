@@ -99,7 +99,7 @@ export interface PoolOrgProvisioner<TCreateOptions = OrgCreateOptions> {
 /**
  * The pool's need to inspect org state for reporting and admin operations.
  *
- * Used by `OrgService` (and future admin commands) for orphan discovery,
+ * Used by admin commands (and `DevHubService`) for orphan discovery,
  * usage reporting, and ad-hoc record updates.
  */
 export interface PoolOrgInspector {
@@ -147,7 +147,7 @@ export interface PoolOrgInspector {
  * Facets:
  * - {@link PoolOrgClaimer} — Find and claim available orgs (`PoolFetcher`)
  * - {@link PoolOrgProvisioner} — Provision, delete, manage orgs (`PoolManager`)
- * - {@link PoolOrgInspector} — Reporting and admin queries (`OrgService`)
+ * - {@link PoolOrgInspector} — Reporting and admin queries
  *
  * Implementors:
  * - `ScratchOrgProvider` — Queries `ScratchOrgInfo` / `ActiveScratchOrg`;

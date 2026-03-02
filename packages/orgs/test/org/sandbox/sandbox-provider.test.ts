@@ -167,7 +167,7 @@ describe('SandboxProvider', () => {
         }),
         expect.any(Object),
       );
-      expect(result.kind).toBe('sandbox');
+      expect(result.orgType).toBe('sandbox');
       expect(result.orgId).toBe('00D999000000001');
     });
 
@@ -300,7 +300,7 @@ describe('SandboxProvider', () => {
       const orgs = await strategy.getAvailableByTag('sb-pool');
 
       expect(orgs).toHaveLength(1);
-      expect(orgs[0].kind).toBe('sandbox');
+      expect(orgs[0].orgType).toBe('sandbox');
       expect(orgs[0].recordId).toBe('a00000000000001');
       expect(orgs[0].orgId).toBe('00D999000000001');
     });

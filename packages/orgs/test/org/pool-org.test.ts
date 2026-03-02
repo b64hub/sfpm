@@ -13,8 +13,8 @@ import type {PoolOrg} from '../../src/org/pool-org.js';
 function createSandbox(overrides?: Partial<Sandbox>): Sandbox {
   return {
     auth: {username: 'user@prod.sb1'},
-    kind: 'sandbox',
     orgId: '00D000000000001',
+    orgType: 'sandbox',
     ...overrides,
   };
 }
@@ -22,8 +22,8 @@ function createSandbox(overrides?: Partial<Sandbox>): Sandbox {
 function createScratchOrg(overrides?: Partial<ScratchOrg>): ScratchOrg {
   return {
     auth: {username: 'test@scratch.org'},
-    kind: 'scratchOrg',
     orgId: '00D000000000002',
+    orgType: 'scratchOrg',
     ...overrides,
   };
 }
@@ -67,7 +67,7 @@ describe('pool-org type guards', () => {
     it('should narrow the type to ScratchOrg', () => {
       const org: PoolOrg = createScratchOrg({recordId: 'rec-123'});
       if (isScratchOrg(org)) {
-        expect(org.kind).toBe('scratchOrg');
+        expect(org.orgType).toBe('scratchOrg');
         expect(org.recordId).toBe('rec-123');
       }
     });

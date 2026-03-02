@@ -51,7 +51,7 @@ export default class PoolFetch extends SfpmCommand {
     };
 
     try {
-      const {fetcher, orgService} = await createPoolServices({
+      const {fetcher, devHub} = await createPoolServices({
         devhub: flags['target-dev-hub'],
         logger,
         poolType: flags.type as OrgKind,
@@ -71,7 +71,7 @@ export default class PoolFetch extends SfpmCommand {
         enableSourceTracking: flags['source-tracking'],
         myPool: flags['my-pool'],
         postClaimAction: flags['send-to']
-          ? async (org: any) => orgService.shareOrg(org, {emailAddress: flags['send-to']!})
+          ? async (org: any) => devHub.shareOrg(org, {emailAddress: flags['send-to']!})
           : undefined,
         sendToUser: flags['send-to'],
         tag: flags.tag,

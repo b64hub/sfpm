@@ -44,7 +44,6 @@ export interface PoolFetcherEvents {
  *
  * - **Post-claim extensibility** — an optional `postClaimAction` callback
  *   on `PoolFetchOptions` handles side effects (e.g., sharing via email)
- *   without coupling the fetcher to `OrgService`.
  *
  * Two fetch modes:
  * - `fetch()` — claim a single org using optimistic concurrency
