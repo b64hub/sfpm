@@ -1,5 +1,5 @@
-import {type OrgKind} from '@b64/sfpm-orgs';
 import {Flags} from '@oclif/core';
+import {Org, OrgTypes} from '@salesforce/core';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -28,9 +28,9 @@ export default class PoolFetch extends SfpmCommand {
     tag: Flags.string({char: 't', description: 'pool tag to fetch from', required: true}),
     'target-dev-hub': Flags.string({char: 'v', description: 'target hub org username or alias', required: true}),
     type: Flags.string({
-      default: 'scratchOrg',
-      description: 'pool type: scratchOrg or sandbox',
-      options: ['scratchOrg', 'sandbox'],
+      default: OrgTypes.Scratch,
+      description: 'pool type: scratch or sandbox',
+      options: [OrgTypes.Scratch, OrgTypes.Sandbox],
     }),
   }
 
@@ -53,7 +53,7 @@ export default class PoolFetch extends SfpmCommand {
       const {authenticator, devHub, fetcher} = await createPoolServices({
         devhub: flags['target-dev-hub'],
         logger,
-        poolType: flags.type as OrgKind,
+        poolType: flags.type,
       });
       spinner?.succeed('Connected to hub org');
 
