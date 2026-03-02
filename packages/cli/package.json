@@ -7,13 +7,15 @@
   "bin": {
     "sfpm": "./bin/run.js"
   },
-  "bugs": "https://github.com/b64hub/sfp/issues",
+  "bugs": "https://github.com/b64hub/sfpm/issues",
   "dependencies": {
     "@b64/sfpm-core": "workspace:^0.1.0",
+    "@b64/sfpm-orgs": "workspace:^",
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-plugins": "^5",
     "@oclif/table": "^0.5.1",
+    "@salesforce/core": "^8.25.0",
     "boxen": "^8.0.1",
     "chalk": "^5.6.2",
     "fs-extra": "^11.3.3",
@@ -41,7 +43,7 @@
     "./oclif.manifest.json",
     "./theme.json"
   ],
-  "homepage": "https://github.com/b64hub/sfp",
+  "homepage": "https://github.com/b64hub/sfpm",
   "keywords": [
     "oclif"
   ],
@@ -60,11 +62,14 @@
     "topics": {
       "hello": {
         "description": "Say hello to the world and others"
+      },
+      "pool": {
+        "description": "Manage scratch org pools"
       }
     },
     "theme": "theme.json"
   },
-  "repository": "b64hub/sfp",
+  "repository": "b64hub/sfpm",
   "scripts": {
     "build": "shx rm -rf dist && tsc -b",
     "debug": "DEBUG=* node --inspect-brk --loader ts-node/esm --disable-warning=ExperimentalWarning bin/dev.js",

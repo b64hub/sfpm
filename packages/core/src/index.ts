@@ -35,6 +35,7 @@ export class SfpmCore extends EventEmitter<AllBuildEvents> {
 }
 export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
+
 export {ArtifactResolver} from './artifacts/artifact-resolver.js';
 export {ArtifactService, type InstallTarget} from './artifacts/artifact-service.js';
 export {
@@ -50,7 +51,11 @@ export {
 } from './artifacts/registry/index.js';
 export {GitService} from './git/git-service.js';
 export {default as Git} from './git/git.js';
+// Lifecycle engine and config
+export {LifecycleEngine} from './lifecycle/lifecycle-engine.js';
+export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
 export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions} from './package/build-orchestrator.js';
+export {BuilderRegistry} from './package/builders/builder-registry.js';
 export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './package/install-orchestrator.js';
 export {InstallerRegistry} from './package/installers/installer-registry.js';
 export {
@@ -62,14 +67,18 @@ export {
 export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {PackageFactory, default as SfpmPackage} from './package/sfpm-package.js';
+export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export {default as ProjectConfig} from './project/project-config.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
 export * from './project/version-manager.js';
 export * from './types/artifact.js';
+export * from './types/config.js';
 export * from './types/errors.js';
 export * from './types/events.js';
+export * from './types/lifecycle.js';
 export * from './types/logger.js';
 export * from './types/npm.js';
 export * from './types/package.js';
 export * from './types/project.js';
+export {escapeSOQL, soql} from './utils/soql.js';

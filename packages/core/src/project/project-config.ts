@@ -1,7 +1,10 @@
 import {
-  Logger, ProjectJson, ProjectJsonSchema, SfProject, SfProjectJson,
+  ProjectJson, ProjectJsonSchema, SfProject, SfProjectJson,
 } from '@salesforce/core';
 
+import {
+  Logger,
+} from '../types/logger.js'
 import {PackageType} from '../types/package.js';
 import {
   ManagedPackageDefinition, PackageDefinition, ProjectDefinition, ProjectDefinitionSchema, SfpmPluginConfig, SUBSCRIBER_PKG_VERSION_ID_PREFIX,
@@ -28,13 +31,12 @@ export interface ClassifiedDependencies {
  * Configuration manager for sfdx-project.json
  */
 export default class ProjectConfig {
+  public logger?: Logger;
   private hasValidated = false;
-  private logger: Logger;
   private project: SfProject;
 
   constructor(project: SfProject) {
     this.project = project;
-    this.logger = Logger.childFromRoot('ProjectConfig');
   }
 
   /**
@@ -256,8 +258,10 @@ export default class ProjectConfig {
    * console.log(pruned.packageDirectories.length); // 1
    * ```
    */
+  // eslint-disable-next-line unicorn/no-object-as-default-parameter -- we want to allow callers to omit pruneOptions and get default pruning behavior
   public getPrunedDefinition(packageName: string, pruneOptions: {isOrgDependent: boolean; removeCustomProperties: boolean,} = {isOrgDependent: false, removeCustomProperties: true}): ProjectDefinition {
     const definition = this.getProjectDefinition();
+    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- structuredClone is available in Node 17+ and provides a convenient way to deep copy the project definition without mutating the original
     const pruned = structuredClone(definition) as ProjectDefinition;
 
     const filteredPackages = pruned.packageDirectories.filter((pkg): pkg is PackageDefinition => 'package' in pkg && pkg.package === packageName);
@@ -334,16 +338,16 @@ export default class ProjectConfig {
     const result = ProjectDefinitionSchema.safeParse(rawContents);
 
     if (!result.success) {
-      this.logger.warn('SFPM custom properties validation failed:');
+      this.logger?.warn('SFPM custom properties validation failed:');
       const zodError = result.error;
       if (zodError && 'errors' in zodError && Array.isArray(zodError.errors)) {
-        zodError.errors.forEach((err: any) => {
+        for (const err of zodError.errors) {
           const path = err.path?.join('.') || 'unknown';
-          this.logger.warn(`  - ${path}: ${err.message}`);
-        });
+          this.logger?.warn(`  - ${path}: ${err.message}`);
+        }
       }
 
-      this.logger.warn('Continuing with potentially invalid custom properties...');
+      this.logger?.warn('Continuing with potentially invalid custom properties...');
     }
 
     this.hasValidated = true;

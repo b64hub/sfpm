@@ -1,0 +1,42 @@
+{
+  "name": "@b64/sfpm-actions",
+  "version": "0.1.0",
+  "description": "GitHub Actions for SFPM — PR validation, scratch org pool integration, and source deployment",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "bundle": "node esbuild.config.mjs"
+  },
+  "keywords": [
+    "sfpm",
+    "salesforce",
+    "github-actions",
+    "pr-validation"
+  ],
+  "author": "b64",
+  "license": "MIT",
+  "dependencies": {
+    "@actions/cache": "^4.0.3",
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0",
+    "@b64/sfpm-core": "workspace:^0.1.0",
+    "@b64/sfpm-orgs": "workspace:^0.1.0",
+    "@salesforce/core": "^8.24.2"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "vitest": "^4.0.17"
+  }
+}

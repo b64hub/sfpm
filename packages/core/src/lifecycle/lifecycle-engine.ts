@@ -1,0 +1,256 @@
+import {Logger} from '../types/logger.js';
+import {
+  HookContext,
+  HookHandler,
+  HookRegistration,
+  LifecycleHooks,
+} from '../types/lifecycle.js';
+
+// ============================================================================
+// Internal Hook Entry
+// ============================================================================
+
+/**
+ * Internal representation of a registered hook with sorting metadata.
+ *
+ * Sort order priority: set enforce → hook order → insertion order.
+ *
+ * The sorting produces this execution order:
+ * 1. Sets with `enforce: 'pre'`  + hooks with `order: 'pre'`
+ * 2. Sets with `enforce: 'pre'`  + hooks without order
+ * 3. Sets with `enforce: 'pre'`  + hooks with `order: 'post'`
+ * 4. Normal sets + hooks with `order: 'pre'`
+ * 5. Normal sets + hooks without order
+ * 6. Normal sets + hooks with `order: 'post'`
+ * 7. Sets with `enforce: 'post'` + hooks with `order: 'pre'`
+ * 8. Sets with `enforce: 'post'` + hooks without order
+ * 9. Sets with `enforce: 'post'` + hooks with `order: 'post'`
+ */
+interface RegisteredHook {
+  /** The lifecycle phase (e.g., 'build', 'install') */
+  phase: string;
+  /** The timing within the phase (e.g., 'pre', 'post') */
+  timing: string;
+  /** The handler function to execute */
+  handler: HookHandler;
+  /** Per-hook ordering within a timing slot */
+  order: 'default' | 'pre' | 'post';
+  /** Set-level ordering from LifecycleHooks.enforce */
+  enforce: 'default' | 'pre' | 'post';
+  /** Name of the LifecycleHooks set that registered this hook */
+  hooksName: string;
+  /** Insertion index for stable sort tie-breaking */
+  insertionIndex: number;
+  /** Optional filter predicate */
+  filter?: (context: HookContext) => boolean;
+}
+
+const ENFORCE_PRIORITY: Record<string, number> = {pre: 0, default: 1, post: 2};
+const ORDER_PRIORITY: Record<string, number> = {pre: 0, default: 1, post: 2};
+
+function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
+  return [...hooks].sort((a, b) => {
+    const enforceDiff = ENFORCE_PRIORITY[a.enforce] - ENFORCE_PRIORITY[b.enforce];
+    if (enforceDiff !== 0) return enforceDiff;
+
+    const orderDiff = ORDER_PRIORITY[a.order] - ORDER_PRIORITY[b.order];
+    if (orderDiff !== 0) return orderDiff;
+
+    return a.insertionIndex - b.insertionIndex;
+  });
+}
+
+// ============================================================================
+// Lifecycle Engine
+// ============================================================================
+
+/**
+ * Lifecycle engine that manages hook registration and sequential execution.
+ *
+ * The engine is phase-agnostic — it does not define or enforce any specific
+ * phases. Any `phase:timing` combination is valid; the engine simply stores
+ * hooks and executes them when `run()` is called with a matching phase and
+ * timing. Core orchestrators call `run('build', 'pre', ctx)` and
+ * `run('install', 'post', ctx)`; other modules (orgs) can use their own
+ * phases ('prepare', 'validate') with the same engine.
+ *
+ * All hooks run **sequentially** in sorted order. For fire-and-forget
+ * notifications, use the EventEmitter system instead.
+ *
+ * **Instance-based** — each CLI command invocation creates its own engine.
+ * No global state, no cleanup needed between tests.
+ *
+ * @example
+ * ```typescript
+ * const lifecycle = new LifecycleEngine();
+ *
+ * // Register hooks
+ * lifecycle.use(profileHooks({ reconcile: true }));
+ *
+ * // Execute hooks at the appropriate lifecycle point
+ * await lifecycle.run('install', 'pre', { phase: 'install', timing: 'pre' });
+ * ```
+ */
+export class LifecycleEngine {
+  private readonly hooks: RegisteredHook[] = [];
+  private readonly logger?: Logger;
+  private insertionCounter = 0;
+
+  constructor(options?: {logger?: Logger}) {
+    this.logger = options?.logger;
+  }
+
+  // --------------------------------------------------------------------------
+  // Hook Registration
+  // --------------------------------------------------------------------------
+
+  /**
+   * Register a set of lifecycle hooks with the engine.
+   *
+   * Each `HookRegistration` in the set specifies the phase, timing, handler,
+   * and optional ordering/filter options. The engine stores them internally
+   * and executes them when `run()` is called with a matching phase and timing.
+   */
+  use(lifecycleHooks: LifecycleHooks): void {
+    const enforce = lifecycleHooks.enforce ?? 'default';
+
+    for (const registration of lifecycleHooks.hooks) {
+      const entry: RegisteredHook = {
+        enforce,
+        filter: registration.options?.filter,
+        handler: registration.handler,
+        hooksName: lifecycleHooks.name,
+        insertionIndex: this.insertionCounter++,
+        order: registration.options?.order ?? 'default',
+        phase: registration.phase,
+        timing: registration.timing,
+      };
+
+      this.hooks.push(entry);
+    }
+
+    this.logger?.debug(
+      `Lifecycle: registered '${lifecycleHooks.name}' with ${lifecycleHooks.hooks.length} hook(s)`,
+    );
+  }
+
+  /**
+   * Remove all hooks registered under a given name.
+   *
+   * @param name - The `LifecycleHooks.name` used during `use()` registration
+   * @returns The number of hooks removed
+   */
+  remove(name: string): number {
+    let removed = 0;
+    for (let i = this.hooks.length - 1; i >= 0; i--) {
+      if (this.hooks[i].hooksName === name) {
+        this.hooks.splice(i, 1);
+        removed++;
+      }
+    }
+
+    if (removed > 0) {
+      this.logger?.debug(`Lifecycle: removed ${removed} hook(s) for '${name}'`);
+    }
+
+    return removed;
+  }
+
+  /**
+   * Remove all registered hooks.
+   */
+  clear(): void {
+    this.hooks.length = 0;
+    this.insertionCounter = 0;
+    this.logger?.debug('Lifecycle: cleared all hooks');
+  }
+
+  // --------------------------------------------------------------------------
+  // Hook Execution
+  // --------------------------------------------------------------------------
+
+  /**
+   * Execute all hooks registered for a given phase and timing, sequentially.
+   *
+   * Hooks are sorted by: enforce → order → insertion order.
+   * Filtered hooks are skipped. If no hooks match, returns immediately.
+   *
+   * @param phase - The lifecycle phase (e.g., 'build', 'install')
+   * @param timing - The timing within the phase (e.g., 'pre', 'post')
+   * @param context - The hook context with package and environment information
+   */
+  async run(phase: string, timing: string, context: HookContext): Promise<void> {
+    const matching = this.getMatchingHooks(phase, timing, context);
+
+    if (matching.length === 0) {
+      return;
+    }
+
+    this.logger?.debug(
+      `Lifecycle: running ${matching.length} hook(s) for '${phase}:${timing}'` +
+      (context.packageName ? ` on package '${context.packageName}'` : ''),
+    );
+
+    for (const hook of matching) {
+      try {
+        await hook.handler(context);
+      } catch (error) {
+        this.logger?.error(
+          `Lifecycle: hook from '${hook.hooksName}' failed ` +
+          `at '${hook.phase}:${hook.timing}'` +
+          (context.packageName ? ` for package '${context.packageName}'` : '') +
+          `: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        throw error;
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Introspection
+  // --------------------------------------------------------------------------
+
+  /**
+   * Check if any hooks are registered for a given phase and timing.
+   * Useful for orchestrators to skip hook invocation overhead when no hooks exist.
+   */
+  hasHooks(phase: string, timing: string): boolean {
+    return this.hooks.some((h) => h.phase === phase && h.timing === timing);
+  }
+
+  /**
+   * Get all unique phase names that have at least one hook registered.
+   */
+  getRegisteredPhases(): string[] {
+    return [...new Set(this.hooks.map((h) => h.phase))];
+  }
+
+  /**
+   * Get all unique hook set names that have been registered.
+   */
+  getRegisteredHookNames(): string[] {
+    return [...new Set(this.hooks.map((h) => h.hooksName))];
+  }
+
+  // --------------------------------------------------------------------------
+  // Private Helpers
+  // --------------------------------------------------------------------------
+
+  private getMatchingHooks(phase: string, timing: string, context: HookContext): RegisteredHook[] {
+    const candidates = this.hooks.filter((h) => h.phase === phase && h.timing === timing);
+    const sorted = sortHooks(candidates);
+
+    // Apply filters — only include hooks that pass their filter predicate
+    return sorted.filter((h) => {
+      if (h.filter && !h.filter(context)) {
+        this.logger?.debug(
+          `Lifecycle: skipping hook from '${h.hooksName}' for '${phase}:${timing}' — ` +
+          `filter returned false` +
+          (context.packageName ? ` for package '${context.packageName}'` : ''),
+        );
+        return false;
+      }
+      return true;
+    });
+  }
+}
