@@ -1,18 +1,18 @@
 import {escapeSOQL, soql} from '@b64/sfpm-core';
 import {
-  AuthInfo, Connection, Org, OrgTypes, StateAggregator,
+  AuthInfo, Connection, Org, OrgTypes,
 } from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
 
 import type {OrgProvider} from '../org-provider.js';
-import type {PoolOrg, PoolOrgUsage, PoolOrgRecord} from '../pool-org.js';
-import {
-  AllocationStatus, PasswordResult
-} from '../types.js';
+import type {PoolOrg, PoolOrgRecord, PoolOrgUsage} from '../pool-org.js';
 
 import generatePassword from '../../utils/password-generator.js';
 import setAlias from '../../utils/set-alias.js';
-import {OrgError} from '../types.js';
+import {
+  AllocationStatus, OrgError,
+  PasswordResult,
+} from '../types.js';
 import {
   type ScratchOrg, type ScratchOrgCreateOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult,
 } from './types.js';
@@ -142,12 +142,6 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     }
   }
 
-  async setPassword(username: string, password?: string): Promise<PasswordResult> {
-    const newPassword = password ?? await generatePassword();
-    await this.setUserPassword(username, newPassword);
-    return {password: newPassword};
-  }
-
   async getActiveCountByTag(tag: string): Promise<number> {
     const query = soql`SELECT count() FROM ScratchOrgInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Status = 'Active'`;
     const result = await this.conn.query(query);
@@ -252,21 +246,10 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     return result.totalSize > 0;
   }
 
-  /** Set a password for a user via the org's SOAP API. */
-  private async setUserPassword(username: string, password: string): Promise<void> {
-    const scratchOrgAuthInfo = await AuthInfo.create({username});
-    const scratchOrgConnection = await Org.create({
-      connection: await Connection.create({authInfo: scratchOrgAuthInfo}),
-    });
-
-    const query = soql`SELECT Id FROM User WHERE Username = '${escapeSOQL(username)}'`;
-    const result = await scratchOrgConnection.getConnection().query<{Id: string}>(query);
-
-    if (result.records.length === 0) {
-      throw new OrgError('password', `No user found with username ${username}`);
-    }
-
-    await scratchOrgConnection.getConnection().soap.setPassword(result.records[0].Id, password);
+  async setPassword(username: string, password?: string): Promise<PasswordResult> {
+    const newPassword = password ?? await generatePassword();
+    await this.setUserPassword(username, newPassword);
+    return {password: newPassword};
   }
 
   /** Update fields on a ScratchOrgInfo record. */
@@ -314,7 +297,6 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     }
   }
 
-
   private async createScratchOrg(request: ScratchOrgCreateRequest): Promise<ScratchOrgCreateResult> {
     const result = await this.hubOrg.scratchOrgCreate({
       definitionfile: request.definitionFile,
@@ -358,6 +340,23 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
         }
       }
     }
+  }
+
+  /** Set a password for a user via the org's SOAP API. */
+  private async setUserPassword(username: string, password: string): Promise<void> {
+    const scratchOrgAuthInfo = await AuthInfo.create({username});
+    const scratchOrgConnection = await Org.create({
+      connection: await Connection.create({authInfo: scratchOrgAuthInfo}),
+    });
+
+    const query = soql`SELECT Id FROM User WHERE Username = '${escapeSOQL(username)}'`;
+    const result = await scratchOrgConnection.getConnection().query<{Id: string}>(query);
+
+    if (result.records.length === 0) {
+      throw new OrgError('password', `No user found with username ${username}`);
+    }
+
+    await scratchOrgConnection.getConnection().soap.setPassword(result.records[0].Id, password);
   }
 }
 

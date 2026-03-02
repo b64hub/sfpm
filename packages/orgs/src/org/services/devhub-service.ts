@@ -1,11 +1,15 @@
 import type {Logger} from '@b64/sfpm-core';
+
 import {escapeSOQL, soql} from '@b64/sfpm-core';
-import {StateAggregator, type Org} from '@salesforce/core';
+import {type Org} from '@salesforce/core';
 import {EventEmitter} from 'node:events';
 
-import type {DevHub, DevHubEvents, JwtAuthConfig, ShareOrgOptions} from '../types.js';
-import {OrgError} from '../types.js';
 import type {PoolOrg} from '../pool-org.js';
+import type {
+  DevHub, DevHubEvents, JwtAuthConfig, ShareOrgOptions,
+} from '../types.js';
+
+import {OrgError} from '../types.js';
 
 /**
  * Options for sending an email through the hub org's REST API.
