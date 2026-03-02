@@ -1,12 +1,10 @@
 import type {Logger} from '@b64/sfpm-core';
 
+import {Org, OrgTypes} from '@salesforce/core';
+
 import type {PoolOrg} from '../org/pool-org.js';
 import type {SandboxDefaults} from '../org/sandbox/types.js';
 import type {ScratchOrgDefaults} from '../org/types.js';
-
-// ============================================================================
-// Pool Configuration
-// ============================================================================
 
 /**
  * Pool sizing configuration — how many orgs to maintain.
@@ -109,10 +107,8 @@ export interface PoolConfigBase {
  * ```
  */
 export interface ScratchOrgPoolConfig extends PoolConfigBase {
-  /** Scratch org creation defaults */
   scratchOrg: ScratchOrgDefaults;
-  /** Discriminant — this pool manages scratch orgs */
-  type: 'scratchOrg';
+  type: OrgTypes.Scratch;
 }
 
 /**
@@ -133,10 +129,8 @@ export interface ScratchOrgPoolConfig extends PoolConfigBase {
  * ```
  */
 export interface SandboxPoolConfig extends PoolConfigBase {
-  /** Sandbox creation defaults */
   sandbox: SandboxDefaults;
-  /** Discriminant — this pool manages sandboxes */
-  type: 'sandbox';
+  type: OrgTypes.Sandbox;
 }
 
 /**
@@ -156,7 +150,6 @@ export const DEFAULT_POOL_SIZING: Required<Pick<PoolSizingConfig, 'batchSize' | 
   batchSize: 5,
   minAllocation: 0,
 };
-
 
 /**
  * Handles authentication to orgs fetched from a pool.
@@ -183,42 +176,52 @@ export interface PoolOrgAuthenticator {
 /**
  * Action to execute after an org has been claimed from the pool.
  *
- * Injected into `PoolFetcher` to handle post-claim side effects like
- * sharing the org via email.
+ * Post-claim actions form a composable pipeline — each action runs
+ * in order after a successful claim. Common actions include:
+ * - Authentication (`authenticator.login`)
+ * - Source tracking setup (`authenticator.enableSourceTracking`)
+ * - Sharing via email (`devHub.shareOrg`)
+ *
+ * The caller (CLI, factory, actions) composes the appropriate set of
+ * actions based on the use case.
  *
  * @param org - The claimed org
- * @param options - The original fetch options (includes `sendToUser`, etc.)
  */
-export type PostClaimAction = (org: PoolOrg, options: PoolFetchOptions) => Promise<void>;
+export type PostClaimAction = (org: PoolOrg) => Promise<void>;
 
 /**
  * Options for fetching orgs from a pool.
  *
  * Used for both single-org fetch (claims via optimistic concurrency)
  * and multi-org fetch (no claiming — caller manages allocation).
+ *
+ * Authentication and other post-claim behaviors are composed via
+ * `postClaimActions` rather than baked into the fetcher. The caller
+ * decides which actions to include.
  */
 export interface PoolFetchOptions {
-  /** Enable source tracking after fetching */
-  enableSourceTracking?: boolean;
   /** Maximum number of orgs to fetch (only used with fetchAll) */
   limit?: number;
   /** Only return orgs owned by the current user */
   myPool?: boolean;
   /**
-   * Optional callback invoked after an org is claimed (single-fetch only).
-   * Use for side effects like sharing the org via email.
-   */
-  postClaimAction?: PostClaimAction;
-  /**
-   * Only return orgs with valid authentication credentials.
+   * Pipeline of actions to run after claiming/fetching.
    *
-   * When true, candidates are filtered through
-   * `PoolOrgAuthenticator.hasValidAuth()` — typically checking
-   * that the org has an auth URL or valid username and login URL.
+   * Actions run sequentially per org, but different orgs are processed
+   * in parallel. If any action throws for an org, that org is filtered
+   * out of the result. Non-fatal actions should catch internally and log.
+   *
+   * @example
+   * ```typescript
+   * {
+   *   postClaimActions: [
+   *     (org) => authenticator.login(org),
+   *     (org) => authenticator.enableSourceTracking(org),
+   *   ]
+   * }
+   * ```
    */
-  requireValidAuth?: boolean;
-  /** Email address to send the org details to instead of logging in locally */
-  sendToUser?: string;
+  postClaimActions?: PostClaimAction[];
   /** Pool tag to fetch from */
   tag: string;
 }

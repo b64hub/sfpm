@@ -51,7 +51,7 @@ export default class PoolFetch extends SfpmCommand {
     };
 
     try {
-      const {fetcher, devHub} = await createPoolServices({
+      const {authenticator, devHub, fetcher} = await createPoolServices({
         devhub: flags['target-dev-hub'],
         logger,
         poolType: flags.type as OrgKind,
@@ -67,20 +67,37 @@ export default class PoolFetch extends SfpmCommand {
       });
       renderer.attachToFetcher(fetcher);
 
+      // Compose post-claim actions based on flags
+      const postClaimActions = flags['send-to']
+        ? [async (org: any) => devHub.shareOrg(org, {emailAddress: flags['send-to']!})]
+        : [
+          (org: any) => authenticator.login(org),
+          ...(flags['source-tracking'] ? [(org: any) => authenticator.enableSourceTracking(org)] : []),
+        ];
+
       const fetchOptions = {
-        enableSourceTracking: flags['source-tracking'],
         myPool: flags['my-pool'],
-        postClaimAction: flags['send-to']
-          ? async (org: any) => devHub.shareOrg(org, {emailAddress: flags['send-to']!})
-          : undefined,
-        sendToUser: flags['send-to'],
+        postClaimActions,
         tag: flags.tag,
       };
 
       if (flags.all) {
+        // For fetchAll: validate orgs via auth (unless sending to user)
+        const orgValidator = flags['send-to']
+          ? undefined
+          : async (org: any) => {
+            try {
+              await authenticator.login(org);
+              return org;
+            } catch {
+              return null;
+            }
+          };
+
         const orgs = await fetcher.fetchAll({
           ...fetchOptions,
           limit: flags.limit,
+          orgValidator,
         });
 
         if (flags.json) {

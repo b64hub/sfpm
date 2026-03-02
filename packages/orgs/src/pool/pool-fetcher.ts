@@ -4,18 +4,9 @@ import {EventEmitter} from 'node:events';
 
 import type {OrgProvider} from '../org/org-provider.js';
 import type {PoolOrg} from '../org/pool-org.js';
-import type {
-  PoolFetchOptions,
-  PoolOrgAuthenticator,
-} from './types.js';
+import type {PoolFetchOptions, PostClaimAction} from './types.js';
 
-import {
-  OrgError,
-} from '../org/types.js';
-
-// ============================================================================
-// PoolFetcher Events
-// ============================================================================
+import {OrgError} from '../org/types.js';
 
 /**
  * Event map for PoolFetcher. Provides progress tracking during
@@ -28,22 +19,14 @@ export interface PoolFetcherEvents {
   'pool:fetch:start': [payload: {available: number; tag: string; timestamp: Date}];
 }
 
-// ============================================================================
-// PoolFetcher
-// ============================================================================
-
 /**
- * Fetches and claims scratch orgs from an existing pool.
+ * Fetches and claims orgs from an existing pool.
  *
- * - **Composition over inheritance** — takes `OrgProvider` and
- *   `PoolOrgAuthenticator` via constructor
+ * - **Composition over inheritance** — takes `OrgProvider` via constructor
  *
- * - **Authentication decoupled** — login, auth URL validation, and source
- *   tracking are handled by `PoolOrgAuthenticator`, keeping the fetcher
- *   SDK-free.
- *
- * - **Post-claim extensibility** — an optional `postClaimAction` callback
- *   on `PoolFetchOptions` handles side effects (e.g., sharing via email)
+ * - **Post-claim pipeline** — authentication, source tracking, email sharing,
+ *   and any other post-claim behavior is composed via `postClaimActions` on
+ *   `PoolFetchOptions`. The fetcher itself is SDK-free and auth-agnostic.
  *
  * Two fetch modes:
  * - `fetch()` — claim a single org using optimistic concurrency
@@ -51,25 +34,26 @@ export interface PoolFetcherEvents {
  *
  * @example
  * ```ts
- * const fetcher = new PoolFetcher(orgSource, authenticator, logger);
+ * const fetcher = new PoolFetcher(orgSource, logger);
  * fetcher.on('pool:fetch:claimed', (p) => console.log(`Claimed ${p.username}`));
  *
- * const org = await fetcher.fetch({ tag: 'dev-pool' });
+ * const org = await fetcher.fetch({
+ *   tag: 'dev-pool',
+ *   postClaimActions: [
+ *     (org) => authenticator.login(org),
+ *     (org) => authenticator.enableSourceTracking(org),
+ *   ],
+ * });
  * console.log(`Got org: ${org.auth.username}`);
  * ```
  */
 export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
   constructor(
-    private readonly orgSource: OrgProvider,
-    private readonly authenticator?: PoolOrgAuthenticator,
+    private readonly provider: OrgProvider,
     private readonly logger?: Logger,
   ) {
     super();
   }
-
-  // --------------------------------------------------------------------------
-  // Public API
-  // --------------------------------------------------------------------------
 
   /**
    * Fetch a single scratch org from the pool.
@@ -82,7 +66,15 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
    * @throws {OrgError} When no orgs are available or none could be claimed
    */
   public async fetch(options: PoolFetchOptions): Promise<PoolOrg> {
-    const available = await this.getFilteredCandidates(options);
+    const available = await this.provider.getAvailableByTag(options.tag, options.myPool);
+
+    if (available.length === 0) {
+      throw new OrgError('fetch', `No orgs available for pool "${options.tag}"`, {
+        context: {tag: options.tag},
+      });
+    }
+
+    this.logger?.info(`Pool "${options.tag}" has ${available.length} candidate(s)`);
 
     this.emit('pool:fetch:start', {
       available: available.length,
@@ -93,7 +85,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
     // Try to claim an org (optimistic concurrency — sequential by design)
     for (const org of available) {
       // eslint-disable-next-line no-await-in-loop -- sequential claims: we want exactly one org
-      const claimed = await this.orgSource.claimOrg(org.recordId!);
+      const claimed = await this.provider.claimOrg(org.recordId!);
 
       if (claimed) {
         if (org.pool) {
@@ -109,7 +101,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
         this.logger?.info(`Claimed org ${org.auth.username} from pool "${options.tag}"`);
 
         // eslint-disable-next-line no-await-in-loop -- post-claim runs only once (we return immediately after)
-        await this.handlePostClaim(org, options);
+        await this.handlePostClaims([org], options.postClaimActions ?? []);
 
         this.emit('pool:fetch:complete', {
           count: 1,
@@ -135,18 +127,25 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
   }
 
   /**
-   * Fetch multiple available scratch orgs from the pool.
+   * Fetch multiple available orgs from the pool.
    *
    * Unlike `fetch()`, this does NOT claim individual orgs. The caller
    * is responsible for updating allocation status as needed (e.g., when
    * transferring orgs from a snapshot pool to a new pool).
    *
-   * Orgs that fail authentication are silently filtered out.
+   * Post-claim actions run per-org in parallel. Orgs where any action
+   * throws are silently filtered out.
    *
    * @throws {OrgError} When no orgs are available
    */
-  public async fetchAll(options: PoolFetchOptions & {limit?: number}): Promise<PoolOrg[]> {
-    let candidates = await this.getFilteredCandidates(options);
+  public async fetchAll(options: PoolFetchOptions): Promise<PoolOrg[]> {
+    let candidates = await this.provider.getAvailableByTag(options.tag, options.myPool);
+
+    if (candidates.length === 0) {
+      throw new OrgError('fetch', `No orgs available for pool "${options.tag}"`, {
+        context: {tag: options.tag},
+      });
+    }
 
     this.emit('pool:fetch:start', {
       available: candidates.length,
@@ -166,10 +165,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
       pool: {status: 'Available', tag: org.pool?.tag ?? options.tag, timestamp: org.pool?.timestamp ?? Date.now()},
     }));
 
-    // Authenticate if authenticator is available and not sending to user
-    const validOrgs = this.authenticator && !options.sendToUser
-      ? await this.authenticateOrgs(orgs)
-      : orgs;
+    const validOrgs = await this.handlePostClaims(orgs, options.postClaimActions ?? []);
 
     this.emit('pool:fetch:complete', {
       count: validOrgs.length,
@@ -180,94 +176,36 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
     return validOrgs;
   }
 
-  // --------------------------------------------------------------------------
-  // Private — Filtering
-  // --------------------------------------------------------------------------
-
   /**
-   * Authenticate multiple orgs in parallel, filtering out failures.
+   * Run the post-claim action pipeline on orgs in parallel.
+   *
+   * Each org's actions run sequentially (in order), but different orgs
+   * are processed concurrently. If any action throws for an org, that
+   * org is filtered out of the result. Actions that fail non-fatally
+   * should catch internally and log rather than throw.
    */
-  private async authenticateOrgs(orgs: PoolOrg[]): Promise<PoolOrg[]> {
-    const results = await Promise.all(orgs.map(org => this.authenticateSingleOrg(org)));
+  private async handlePostClaims(orgs: PoolOrg[], actions: PostClaimAction[]): Promise<PoolOrg[]> {
+    if (actions.length === 0) return orgs;
 
-    return results.filter((org): org is PoolOrg => org !== null);
-  }
+    const results = await Promise.allSettled(orgs.map(async org => {
+      for (const action of actions) {
+        // eslint-disable-next-line no-await-in-loop -- actions are sequential per org
+        await action(org);
+      }
 
-  /**
-   * Attempt to authenticate a single org. Returns null on failure.
-   */
-  private async authenticateSingleOrg(org: PoolOrg): Promise<null | PoolOrg> {
-    try {
-      await this.authenticator!.login(org);
       return org;
-    } catch (error) {
-      this.logger?.warn(`Authentication failed for ${org.auth.username}: ${error instanceof Error ? error.message : error}`);
-      return null;
-    }
-  }
+    }));
 
-  /**
-   * Query available orgs and filter by auth validity if required.
-   */
-  private async getFilteredCandidates(options: PoolFetchOptions): Promise<PoolOrg[]> {
-    const available = await this.orgSource.getAvailableByTag(options.tag, options.myPool);
-
-    if (available.length === 0) {
-      throw new OrgError('fetch', `No orgs available for pool "${options.tag}"`, {
-        context: {tag: options.tag},
-      });
-    }
-
-    this.logger?.info(`Pool "${options.tag}" has ${available.length} available org(s)`);
-
-    // Filter by auth validity if required
-    if (options.requireValidAuth && this.authenticator) {
-      const filtered = available.filter(org => this.authenticator!.hasValidAuth(org));
-
-      if (filtered.length === 0) {
-        throw new OrgError('fetch', `No orgs with valid auth credentials in pool "${options.tag}"`, {
-          context: {availableCount: available.length, tag: options.tag},
-        });
+    return results
+    .filter((r): r is PromiseFulfilledResult<PoolOrg> => {
+      if (r.status === 'rejected') {
+        const error = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        this.logger?.warn(`Post-claim action failed, filtering org: ${error}`);
+        return false;
       }
 
-      this.logger?.debug(`${filtered.length} of ${available.length} org(s) have valid auth credentials`);
-      return filtered;
-    }
-
-    return available;
-  }
-
-  /**
-   * Handle post-claim actions: custom action, login, source tracking.
-   */
-  private async handlePostClaim(org: PoolOrg, options: PoolFetchOptions): Promise<void> {
-    // Run custom post-claim action (e.g., share via email)
-    if (options.postClaimAction) {
-      await options.postClaimAction(org, options);
-    }
-
-    // If a custom action handled the claim (e.g., sendToUser), skip auth
-    if (options.sendToUser) {
-      return;
-    }
-
-    if (!this.authenticator) {
-      return;
-    }
-
-    try {
-      await this.authenticator.login(org);
-    } catch (error) {
-      this.logger?.warn(`Unable to authenticate to claimed org ${org.auth.username}: ${error instanceof Error ? error.message : error}`);
-      return;
-    }
-
-    if (options.enableSourceTracking && this.authenticator.enableSourceTracking) {
-      try {
-        await this.authenticator.enableSourceTracking(org);
-      } catch (error) {
-        this.logger?.trace(`Source tracking setup skipped: ${error instanceof Error ? error.message : error}`);
-      }
-    }
+      return true;
+    })
+    .map(r => r.value);
   }
 }

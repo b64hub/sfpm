@@ -19,6 +19,8 @@ import PoolManager from './pool-manager.js';
  * collaborators ready for use.
  */
 export interface PoolServices {
+  /** Authenticator for composing post-claim actions */
+  authenticator: AuthService;
   /** The hub service for JWT config, email, and user lookups */
   devHub: DevHubService;
   /** Pool fetcher for claiming orgs */
@@ -93,9 +95,9 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
     tasks,
   });
 
-  const fetcher = new PoolFetcher(provider, authenticator, logger);
+  const fetcher = new PoolFetcher(provider, logger);
 
   return {
-    devHub, fetcher, manager,
+    authenticator, devHub, fetcher, manager,
   };
 }

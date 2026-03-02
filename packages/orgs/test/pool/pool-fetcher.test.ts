@@ -72,10 +72,7 @@ describe('PoolFetcher', () => {
       orgSource.getAvailableByTag.mockResolvedValue([org]);
       orgSource.claimOrg.mockResolvedValue(true);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       const result = await fetcher.fetch({tag: 'test-pool'});
 
@@ -92,10 +89,7 @@ describe('PoolFetcher', () => {
       .mockResolvedValueOnce(false) // org1 already claimed
       .mockResolvedValueOnce(true); // org2 succeeds
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       const result = await fetcher.fetch({tag: 'test-pool'});
 
@@ -106,10 +100,7 @@ describe('PoolFetcher', () => {
     it('should throw when no orgs are available in pool', async () => {
       orgSource.getAvailableByTag.mockResolvedValue([]);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       await expect(fetcher.fetch({tag: 'empty-pool'})).rejects.toThrow('No orgs available for pool "empty-pool"');
     });
@@ -119,106 +110,70 @@ describe('PoolFetcher', () => {
       orgSource.getAvailableByTag.mockResolvedValue([org]);
       orgSource.claimOrg.mockResolvedValue(false);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       await expect(fetcher.fetch({tag: 'test-pool'})).rejects.toThrow('No org could be claimed');
     });
 
-    it('should authenticate after claiming', async () => {
+    it('should run postClaimActions after claiming', async () => {
       const org = createScratchOrg();
       orgSource.getAvailableByTag.mockResolvedValue([org]);
       orgSource.claimOrg.mockResolvedValue(true);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
-      await fetcher.fetch({tag: 'test-pool'});
+      await fetcher.fetch({
+        postClaimActions: [
+          (o) => authenticator.login(o),
+        ],
+        tag: 'test-pool',
+      });
 
       expect(authenticator.login).toHaveBeenCalledWith(expect.objectContaining({
         auth: expect.objectContaining({username: org.auth.username}),
       }));
     });
 
-    it('should enable source tracking when requested', async () => {
+    it('should run multiple postClaimActions in order', async () => {
       const org = createScratchOrg();
       orgSource.getAvailableByTag.mockResolvedValue([org]);
       orgSource.claimOrg.mockResolvedValue(true);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
-      await fetcher.fetch({enableSourceTracking: true, tag: 'test-pool'});
+      await fetcher.fetch({
+        postClaimActions: [
+          (o) => authenticator.login(o),
+          (o) => authenticator.enableSourceTracking(o),
+        ],
+        tag: 'test-pool',
+      });
 
+      expect(authenticator.login).toHaveBeenCalledWith(expect.objectContaining({auth: expect.objectContaining({username: org.auth.username})}));
       expect(authenticator.enableSourceTracking).toHaveBeenCalledWith(expect.objectContaining({auth: expect.objectContaining({username: org.auth.username})}));
     });
 
-    it('should invoke postClaimAction when sendToUser is set', async () => {
+    it('should run only the share action when sending to user', async () => {
       const org = createScratchOrg();
       orgSource.getAvailableByTag.mockResolvedValue([org]);
       orgSource.claimOrg.mockResolvedValue(true);
 
-      const postClaimAction = vi.fn().mockResolvedValue(undefined);
+      const shareAction = vi.fn().mockResolvedValue(undefined);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
-      await fetcher.fetch({postClaimAction, sendToUser: 'someone@company.com', tag: 'test-pool'});
+      await fetcher.fetch({postClaimActions: [shareAction], tag: 'test-pool'});
 
-      expect(postClaimAction).toHaveBeenCalledWith(
+      expect(shareAction).toHaveBeenCalledWith(
         expect.objectContaining({auth: expect.objectContaining({username: org.auth.username})}),
-        expect.objectContaining({sendToUser: 'someone@company.com'}),
       );
       expect(authenticator.login).not.toHaveBeenCalled();
-    });
-
-    it('should filter by auth validity when requireValidAuth is set', async () => {
-      const orgValid = createScratchOrg({auth: {authUrl: 'valid'}, username: 'valid@scratch.org'});
-      const orgInvalid = createScratchOrg({auth: {authUrl: undefined}, username: 'invalid@scratch.org'});
-      orgSource.getAvailableByTag.mockResolvedValue([orgValid, orgInvalid]);
-      authenticator.hasValidAuth
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(false);
-      orgSource.claimOrg.mockResolvedValue(true);
-
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
-
-      const result = await fetcher.fetch({requireValidAuth: true, tag: 'test-pool'});
-
-      expect(result.auth.username).toBe('valid@scratch.org');
-    });
-
-    it('should throw when no orgs pass auth validity filter', async () => {
-      const org = createScratchOrg();
-      orgSource.getAvailableByTag.mockResolvedValue([org]);
-      authenticator.hasValidAuth.mockReturnValue(false);
-
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
-
-      await expect(fetcher.fetch({requireValidAuth: true, tag: 'test-pool'})).rejects.toThrow('No orgs with valid auth credentials');
     });
 
     it('should pass myPool flag to orgSource', async () => {
       orgSource.getAvailableByTag.mockResolvedValue([]);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       await expect(fetcher.fetch({myPool: true, tag: 'test-pool'})).rejects.toThrow();
 
@@ -230,10 +185,7 @@ describe('PoolFetcher', () => {
       orgSource.getAvailableByTag.mockResolvedValue([org]);
       orgSource.claimOrg.mockResolvedValue(true);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       const events: string[] = [];
       fetcher.on('pool:fetch:start', () => events.push('start'));
@@ -256,10 +208,7 @@ describe('PoolFetcher', () => {
       const org2 = createScratchOrg({username: 'b@scratch.org'});
       orgSource.getAvailableByTag.mockResolvedValue([org1, org2]);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       const result = await fetcher.fetchAll({tag: 'test-pool'});
 
@@ -272,10 +221,7 @@ describe('PoolFetcher', () => {
         createScratchOrg({username: `org${i}@scratch.org`}));
       orgSource.getAvailableByTag.mockResolvedValue(orgs);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       const result = await fetcher.fetchAll({limit: 3, tag: 'test-pool'});
 
@@ -287,10 +233,7 @@ describe('PoolFetcher', () => {
       const org2 = createScratchOrg();
       orgSource.getAvailableByTag.mockResolvedValue([org1, org2]);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       const result = await fetcher.fetchAll({tag: 'test-pool'});
 
@@ -298,46 +241,21 @@ describe('PoolFetcher', () => {
       expect(result[1].auth.alias).toBe('SO2');
     });
 
-    it('should authenticate orgs and filter out failures', async () => {
-      const org1 = createScratchOrg({username: 'good@scratch.org'});
-      const org2 = createScratchOrg({username: 'bad@scratch.org'});
-      orgSource.getAvailableByTag.mockResolvedValue([org1, org2]);
-      authenticator.login
-      .mockResolvedValueOnce(undefined) // org1 passes
-      .mockRejectedValueOnce(new Error('Auth failed')); // org2 fails
+    it('should return all available orgs', async () => {
+      const org = createScratchOrg();
+      orgSource.getAvailableByTag.mockResolvedValue([org]);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       const result = await fetcher.fetchAll({tag: 'test-pool'});
 
       expect(result).toHaveLength(1);
     });
 
-    it('should skip authentication when sendToUser is set', async () => {
-      const org = createScratchOrg();
-      orgSource.getAvailableByTag.mockResolvedValue([org]);
-
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
-
-      const result = await fetcher.fetchAll({sendToUser: 'user@company.com', tag: 'test-pool'});
-
-      expect(authenticator.login).not.toHaveBeenCalled();
-      expect(result).toHaveLength(1);
-    });
-
     it('should throw when no orgs are available', async () => {
       orgSource.getAvailableByTag.mockResolvedValue([]);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       await expect(fetcher.fetchAll({tag: 'empty-pool'})).rejects.toThrow('No orgs available for pool "empty-pool"');
     });
@@ -346,10 +264,7 @@ describe('PoolFetcher', () => {
       const org = createScratchOrg();
       orgSource.getAvailableByTag.mockResolvedValue([org]);
 
-      const fetcher = new PoolFetcher(
-        orgSource as any,
-        authenticator as any,
-      );
+      const fetcher = new PoolFetcher(orgSource as any);
 
       const events: string[] = [];
       fetcher.on('pool:fetch:start', () => events.push('start'));

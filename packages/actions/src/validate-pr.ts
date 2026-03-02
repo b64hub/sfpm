@@ -223,13 +223,13 @@ async function fetchOrgFromPool(
   if (isStructuredLogger(logger)) logger.group('Pool Fetch');
 
   const hubOrg = await Org.create({aliasOrUsername: options.devhubUsername});
-  const {fetcher} = createPoolServices({hubOrg, logger});
+  const {authenticator, fetcher} = createPoolServices({hubOrg, logger});
 
   const renderer = new ActionsProgressRenderer(logger);
   renderer.attachToPoolFetcher(fetcher);
 
   const org = await fetcher.fetch({
-    requireValidAuth: true,
+    postClaimActions: [org => authenticator.login(org)],
     tag: options.poolTag,
   });
 
