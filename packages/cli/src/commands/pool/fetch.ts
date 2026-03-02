@@ -1,5 +1,5 @@
 import {Flags} from '@oclif/core';
-import {Org, OrgTypes} from '@salesforce/core';
+import {OrgTypes} from '@salesforce/core';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -66,13 +66,17 @@ export default class PoolFetch extends SfpmCommand {
       });
       renderer.attachToFetcher(fetcher);
 
-      // Compose post-claim actions based on flags
-      const postClaimActions = flags['send-to']
-        ? [async (org: any) => devHub.shareOrg(org, {emailAddress: flags['send-to']!})]
-        : [
-          (org: any) => authenticator.login(org),
-          ...(flags['source-tracking'] ? [(org: any) => authenticator.enableSourceTracking(org)] : []),
-        ];
+      const postClaimActions: Array<(org: any) => Promise<void>> = [];
+
+      if (flags['send-to']) {
+        postClaimActions.push(async org => devHub.shareOrg(org, {emailAddress: flags['send-to']!}));
+      } else {
+        postClaimActions.push(org => authenticator.login(org));
+
+        if (flags['source-tracking']) {
+          postClaimActions.push(org => authenticator.enableSourceTracking(org));
+        }
+      }
 
       const fetchOptions = {
         myPool: flags['my-pool'],
