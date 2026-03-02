@@ -19,9 +19,9 @@ import PoolManager from './pool-manager.js';
  * collaborators ready for use.
  */
 export interface PoolServices {
-  /** Authenticator for composing post-claim actions */
+  /** Authenticator for handling org authentication */
   authenticator: AuthService;
-  /** The hub service for JWT config, email, and user lookups */
+  /** DevHub service for JWT config, email, and user lookups */
   devHub: DevHubService;
   /** Pool fetcher for claiming orgs */
   fetcher: PoolFetcher;
@@ -75,6 +75,10 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
 
   if (!hubOrg.getUsername()) {
     throw new Error('Hub org must be authenticated and have a username');
+  }
+
+  if (!hubOrg.isDevHubOrg()) {
+    throw new Error('Hub org must be a DevHub');
   }
 
   const devHub = new DevHubService(hubOrg, logger);
