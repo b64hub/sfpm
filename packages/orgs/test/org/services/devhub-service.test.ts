@@ -47,16 +47,6 @@ describe('DevHubService', () => {
   });
 
   // --------------------------------------------------------------------------
-  // getUsername
-  // --------------------------------------------------------------------------
-
-  describe('getUsername', () => {
-    it('should return the DevHub username', () => {
-      expect(devHub.getUsername()).toBe('devhub@example.com');
-    });
-  });
-
-  // --------------------------------------------------------------------------
   // getJwtConfig
   // --------------------------------------------------------------------------
 
@@ -141,7 +131,7 @@ describe('DevHubService', () => {
           username: 'test@scratch.org',
         },
         orgId: '00D000000000001',
-        orgType: 'scratchOrg' as const,
+        orgType: 'scratch' as const,
       };
 
       await devHub.shareOrg(org, {emailAddress: 'recipient@example.com'});
@@ -160,7 +150,7 @@ describe('DevHubService', () => {
       const org = {
         auth: {loginUrl: 'https://test.salesforce.com', password: 'pw-123', username: 'test@scratch.org'},
         orgId: '00D000000000001',
-        orgType: 'scratchOrg' as const,
+        orgType: 'scratch' as const,
       };
 
       const listener = vi.fn();
@@ -182,7 +172,7 @@ describe('DevHubService', () => {
       const org = {
         auth: {loginUrl: 'https://test.salesforce.com', password: 'pw-123', username: 'test@scratch.org'},
         orgId: '00D000000000001',
-        orgType: 'scratchOrg' as const,
+        orgType: 'scratch' as const,
       };
 
       await expect(

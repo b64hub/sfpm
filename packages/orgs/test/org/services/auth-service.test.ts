@@ -34,7 +34,7 @@ function createOrg(overrides?: Partial<PoolOrg['auth']>): PoolOrg {
       username: 'test@scratch.org',
       ...overrides,
     },
-    kind: 'scratchOrg',
+    orgType: 'scratch' as any,
     orgId: '00D000000000001',
   };
 }

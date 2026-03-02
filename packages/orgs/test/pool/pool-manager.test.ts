@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 
 import {computeOrgAllocation, type PoolAllocation} from '../../src/pool/pool-manager.js';
-import {DEFAULT_POOL_SIZING} from '../../src/types.js';
+import {DEFAULT_POOL_SIZING} from '../../src/pool/types.js';
 
 // ============================================================================
 // computeOrgAllocation Tests

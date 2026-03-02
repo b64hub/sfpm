@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 
-import {generatePassword} from '../../src/utils/password-generator.js';
+import generatePassword from '../../src/utils/password-generator.js';
 
 // ============================================================================
 // generatePassword Tests

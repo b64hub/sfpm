@@ -36,6 +36,10 @@ vi.mock('@salesforce/core', () => ({
       deleteFrom: vi.fn().mockResolvedValue(undefined),
     }),
   },
+  OrgTypes: {
+    Sandbox: 'sandbox',
+    Scratch: 'scratch',
+  },
 }));
 
 vi.mock('@salesforce/kit', () => ({
@@ -49,6 +53,10 @@ vi.mock('@b64/sfpm-core', () => ({
   escapeSOQL: (v: string) => v,
   soql: (strings: TemplateStringsArray, ...values: unknown[]) =>
     strings.reduce((acc, str, i) => acc + str + (values[i] ?? ''), ''),
+}));
+
+vi.mock('../../../src/utils/password-generator.js', () => ({
+  default: vi.fn().mockResolvedValue('MockPass123!'),
 }));
 
 import SandboxProvider from '../../../src/org/sandbox/sandbox-provider.js';
@@ -86,7 +94,7 @@ describe('SandboxProvider', () => {
       {
         name: 'Allocation_Status__c',
         picklistValues: [
-          {value: 'Allocate'},
+          {value: 'Allocated'},
           {value: 'Assigned'},
           {value: 'Available'},
           {value: 'In Progress'},
@@ -149,6 +157,10 @@ describe('SandboxProvider', () => {
 
   describe('createOrg', () => {
     it('should create a new sandbox via SDK', async () => {
+      // Mock the Group query for getGroupId
+      mockConnection.query.mockResolvedValue({
+        records: [{Id: '0GR000000000001'}],
+      });
       mockHubOrg.createSandbox.mockResolvedValue({
         SandboxOrganization: '00D999000000001',
       });
@@ -172,6 +184,10 @@ describe('SandboxProvider', () => {
     });
 
     it('should clone from source sandbox when sourceSandboxName is provided', async () => {
+      // Mock the Group query for getGroupId
+      mockConnection.query.mockResolvedValue({
+        records: [{Id: '0GR000000000001'}],
+      });
       mockHubOrg.cloneSandbox.mockResolvedValue({
         SandboxOrganization: '00D999000000002',
       });
@@ -191,14 +207,18 @@ describe('SandboxProvider', () => {
       expect(mockHubOrg.createSandbox).not.toHaveBeenCalled();
     });
 
-    it('should pass activationUserGroupId in the request', async () => {
+    it('should pass activationUserGroupName to resolve group ID', async () => {
+      // Mock the Group query
+      mockConnection.query.mockResolvedValue({
+        records: [{Id: '0GR000000000001'}],
+      });
       mockHubOrg.createSandbox.mockResolvedValue({
         SandboxOrganization: '00D999000000003',
       });
 
       const strategy = createStrategy();
       await strategy.createOrg({
-        activationUserGroupId: '0GR000000000001',
+        activationUserGroupName: 'My_Group',
         alias: 'SB3',
         sandboxName: 'SB3',
       });
@@ -213,15 +233,16 @@ describe('SandboxProvider', () => {
   });
 
   // --------------------------------------------------------------------------
-  // generatePassword
+  // setPassword
   // --------------------------------------------------------------------------
 
-  describe('generatePassword', () => {
-    it('should return undefined password (sandboxes inherit production passwords)', async () => {
+  describe('setPassword', () => {
+    it('should return a generated password', async () => {
       const strategy = createStrategy();
-      const result = await strategy.generatePassword('user@prod.sb1');
+      const result = await strategy.setPassword('user@prod.sb1');
 
-      expect(result).toEqual({password: undefined});
+      expect(result.password).toBeDefined();
+      expect(typeof result.password).toBe('string');
     });
   });
 
@@ -301,6 +322,7 @@ describe('SandboxProvider', () => {
 
       expect(orgs).toHaveLength(1);
       expect(orgs[0].orgType).toBe('sandbox');
+      // orgType uses OrgTypes.Sandbox which equals 'sandbox'
       expect(orgs[0].recordId).toBe('a00000000000001');
       expect(orgs[0].orgId).toBe('00D999000000001');
     });
@@ -411,15 +433,4 @@ describe('SandboxProvider', () => {
     });
   });
 
-  // --------------------------------------------------------------------------
-  // getUsername
-  // --------------------------------------------------------------------------
-
-  describe('getUsername', () => {
-    it('should return the hub org username', () => {
-      const strategy = createStrategy();
-
-      expect(strategy.getUsername()).toBe('admin@production.org');
-    });
-  });
 });

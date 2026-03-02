@@ -78,7 +78,7 @@ describe('PoolFetcher', () => {
 
       expect(orgSource.claimOrg).toHaveBeenCalledWith('a00000000000001');
       expect(result.auth.username).toBe('claimed@scratch.org');
-      expect(result.pool?.status).toBe('Assigned');
+      expect(result.pool?.status).toBe('Allocated');
     });
 
     it('should skip orgs that fail claiming and try next', async () => {

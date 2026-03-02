@@ -4,7 +4,7 @@ import {
 
 import type {
   PoolConfig, PoolDeleteOptions, PoolOrgTask, PoolOrgTaskResult,
-} from '../../src/types.js';
+} from '../../src/pool/types.js';
 
 import type {OrgProvider} from '../../src/org/org-provider.js';
 
@@ -19,14 +19,16 @@ function createMockProvider(): {[K in keyof OrgProvider]: ReturnType<typeof vi.f
     claimOrg: vi.fn(),
     createOrg: vi.fn(),
     deleteOrgs: vi.fn(),
-    generatePassword: vi.fn(),
     getActiveCountByTag: vi.fn(),
     getAvailableByTag: vi.fn(),
     getOrgsByTag: vi.fn(),
+    getOrgUsageByUser: vi.fn(),
+    getOrphanedOrgs: vi.fn(),
     getRecordIds: vi.fn(),
     getRemainingCapacity: vi.fn(),
-    getUsername: vi.fn().mockReturnValue('hub@example.com'),
     isOrgActive: vi.fn(),
+    setPassword: vi.fn(),
+    updateOrgInfo: vi.fn(),
     updatePoolMetadata: vi.fn(),
     validate: vi.fn(),
   };
@@ -45,7 +47,7 @@ function createPoolConfig(overrides?: Partial<PoolConfig>): PoolConfig {
       ...overrides?.sizing,
     },
     tag: overrides?.tag ?? 'test-pool',
-    type: 'scratchOrg' as const,
+    type: 'scratch' as const,
   };
 }
 
@@ -58,7 +60,7 @@ function createScratchOrg(overrides?: Record<string, unknown>) {
       username,
       ...(overrides?.auth as Record<string, unknown>),
     },
-    kind: 'scratchOrg' as const,
+    orgType: 'scratch' as const,
     orgId: (overrides?.orgId as string) ?? '00D000000000001',
     pool: overrides?.pool as Record<string, unknown> | undefined,
     recordId: overrides && 'recordId' in overrides ? (overrides.recordId as string | undefined) : 'a00000000000001',
@@ -196,7 +198,7 @@ describe('PoolManager', () => {
       expect(result.succeeded).toHaveLength(1);
       expect(result.failed).toBe(1);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]).toContain('timed out');
+      expect(result.errors[0]).toContain('Creation timed out');
     });
 
     it('should throw when all creation attempts fail', async () => {

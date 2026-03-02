@@ -12,6 +12,10 @@ vi.mock('@salesforce/core', () => ({
   AuthInfo: {create: vi.fn()},
   Connection: {create: vi.fn()},
   Org: {create: vi.fn()},
+  OrgTypes: {
+    Sandbox: 'sandbox',
+    Scratch: 'scratch',
+  },
   StateAggregator: {getInstance: vi.fn()},
 }));
 
@@ -29,7 +33,7 @@ vi.mock('@b64/sfpm-core', () => ({
 }));
 
 vi.mock('../../../src/utils/password-generator.js', () => ({
-  generatePassword: vi.fn().mockResolvedValue('TestPass123!'),
+  default: vi.fn().mockResolvedValue('TestPass123!'),
 }));
 
 import ScratchOrgProvider from '../../../src/org/scratch/scratch-org-provider.js';
@@ -130,7 +134,7 @@ describe('ScratchOrgProvider', () => {
         fields: [{
           name: 'Allocation_Status__c',
           picklistValues: [
-            {value: 'Allocate'},
+            {value: 'Allocated'},
             {value: 'Assigned'},
             {value: 'Available'},
             {value: 'In Progress'},
@@ -166,13 +170,13 @@ describe('ScratchOrgProvider', () => {
   // --------------------------------------------------------------------------
 
   describe('claimOrg', () => {
-    it('should update Allocation_Status__c to Allocate', async () => {
+    it('should update Allocation_Status__c to Allocated', async () => {
       mocks.sobject.update.mockResolvedValue({success: true});
 
       const result = await strategy.claimOrg('a00000000000001');
 
       expect(mocks.sobject.update).toHaveBeenCalledWith({
-        Allocation_Status__c: 'Allocate',
+        Allocation_Status__c: 'Allocated',
         Id: 'a00000000000001',
       });
       expect(result).toBe(true);
@@ -223,7 +227,7 @@ describe('ScratchOrgProvider', () => {
         expiryDays: 7,
       });
 
-      expect(result.orgType).toBe('scratchOrg');
+      expect(result.orgType).toBe('scratch');
       expect(result.auth.username).toBe('test-1@scratch.org');
       expect(result.orgId).toBe('00D000000000001');
       expect(mocks.org.scratchOrgCreate).toHaveBeenCalledWith(
@@ -278,7 +282,7 @@ describe('ScratchOrgProvider', () => {
       const orgs = await strategy.getAvailableByTag('dev-pool');
 
       expect(orgs).toHaveLength(1);
-      expect(orgs[0].orgType).toBe('scratchOrg');
+      expect(orgs[0].orgType).toBe('scratch');
       expect(orgs[0].auth.username).toBe('test-1@scratch.org');
       expect(orgs[0].orgId).toBe('00D000000000001');
       expect(orgs[0].recordId).toBe('a00000000000001');
@@ -363,32 +367,6 @@ describe('ScratchOrgProvider', () => {
     it('should skip when no records provided', async () => {
       await strategy.updatePoolMetadata([]);
       expect(mocks.sobject.update).not.toHaveBeenCalled();
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // getUsername
-  // --------------------------------------------------------------------------
-
-  describe('getUsername', () => {
-    it('should return the DevHub username', () => {
-      expect(strategy.getUsername()).toBe('devhub@example.com');
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // getJwtConfig
-  // --------------------------------------------------------------------------
-
-  describe('getJwtConfig', () => {
-    it('should return JWT auth fields from connection', () => {
-      const config = strategy.getJwtConfig();
-
-      expect(config).toEqual({
-        clientId: 'test-client-id',
-        loginUrl: 'https://login.salesforce.com',
-        privateKeyPath: '/path/to/key.pem',
-      });
     });
   });
 });
