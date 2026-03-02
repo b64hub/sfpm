@@ -19,7 +19,6 @@ export default class PoolFetch extends SfpmCommand {
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --json',
   ]
   static override flags = {
-    all: Flags.boolean({description: 'fetch all available orgs (does not claim)'}),
     json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
     limit: Flags.integer({description: 'max orgs to return when using --all', min: 1}),
     'my-pool': Flags.boolean({description: 'only fetch from orgs created by the current user'}),
@@ -81,46 +80,17 @@ export default class PoolFetch extends SfpmCommand {
         tag: flags.tag,
       };
 
-      if (flags.all) {
-        // For fetchAll: validate orgs via auth (unless sending to user)
-        const orgValidator = flags['send-to']
-          ? undefined
-          : async (org: any) => {
-            try {
-              await authenticator.login(org);
-              return org;
-            } catch {
-              return null;
-            }
-          };
+      const org = await fetcher.fetch(fetchOptions);
 
-        const orgs = await fetcher.fetchAll({
-          ...fetchOptions,
-          limit: flags.limit,
-          orgValidator,
-        });
+      if (flags.json) {
+        this.logJson({data: org, success: true, tag: flags.tag});
+        return;
+      }
 
-        if (flags.json) {
-          this.logJson({
-            data: orgs, success: true, tag: flags.tag, total: orgs.length,
-          });
-          return;
-        }
+      renderer.renderFetchedOrg(org);
 
-        renderer.renderOrgList(orgs, flags.tag);
-      } else {
-        const org = await fetcher.fetch(fetchOptions);
-
-        if (flags.json) {
-          this.logJson({data: org, success: true, tag: flags.tag});
-          return;
-        }
-
-        renderer.renderFetchedOrg(org);
-
-        if (flags['send-to']) {
-          this.log(chalk.green(`Org details sent to ${flags['send-to']}`));
-        }
+      if (flags['send-to']) {
+        this.log(chalk.green(`Org details sent to ${flags['send-to']}`));
       }
     } catch (error) {
       spinner?.fail('Failed');
