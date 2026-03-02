@@ -1,6 +1,7 @@
-import {type OrgKind, type PoolOrg} from '@b64/sfpm-orgs';
+import {type PoolOrg} from '@b64/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {printTable} from '@oclif/table';
+import {type OrgTypes} from '@salesforce/core';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -38,7 +39,7 @@ export default class PoolList extends SfpmCommand {
     try {
       const {manager} = await createPoolServices({
         devhub: flags['target-dev-hub'],
-        poolType: flags.type as OrgKind,
+        poolType: flags.type as OrgTypes,
       });
       spinner?.succeed('Connected to hub org');
 
