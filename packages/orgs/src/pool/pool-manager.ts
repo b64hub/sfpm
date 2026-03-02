@@ -1,5 +1,6 @@
 import type {Logger} from '@b64/sfpm-core';
 
+import {OrgTypes} from '@salesforce/core';
 import {EventEmitter} from 'node:events';
 
 import type {OrgCreateOptions, OrgProvider} from '../org/org-provider.js';
@@ -17,7 +18,6 @@ import {
   type PoolOrgTaskResult,
   type PoolSizingConfig,
 } from './types.js';
-import { OrgTypes } from '@salesforce/core';
 
 // ============================================================================
 // Constants
@@ -164,6 +164,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     this.provider = options.provider;
     this.tasks = options.tasks ?? [];
   }
+
   /**
    * Compute how many scratch orgs should be allocated for a pool.
    *
@@ -278,6 +279,21 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   }
 
   /**
+   * List all orgs in a pool regardless of status.
+   *
+   * Delegates to the provider's `getOrgsByTag()` query. Optionally
+   * filters to orgs created by the current user.
+   *
+   * @param tag - Pool tag to query
+   * @param myPool - When true, only return orgs created by the current user
+   * @returns All pool orgs with metadata populated
+   */
+  public async list(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
+    this.logger?.info(`Listing orgs for pool "${tag}"...`);
+    return this.provider.getOrgsByTag(tag, myPool);
+  }
+
+  /**
    * Provision scratch orgs to fill the pool up to its configured capacity.
    *
    * Flow:
@@ -377,7 +393,6 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     await this.provider.validate();
     this.logger?.debug('Prerequisites validated');
   }
-
 
   /**
    * Build `OrgCreateOptions` from the pool config and an alias.

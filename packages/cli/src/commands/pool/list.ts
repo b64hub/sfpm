@@ -36,14 +36,14 @@ export default class PoolList extends SfpmCommand {
     const spinner = mode === 'interactive' ? ora('Connecting to hub org...').start() : undefined;
 
     try {
-      const {provider} = await createPoolServices({
+      const {manager} = await createPoolServices({
         devhub: flags['target-dev-hub'],
         poolType: flags.type as OrgKind,
       });
       spinner?.succeed('Connected to hub org');
 
       const querySpinner = mode === 'interactive' ? ora(`Fetching orgs for pool "${flags.tag}"...`).start() : undefined;
-      const orgs = await provider.getOrgsByTag(flags.tag, flags['my-pool']);
+      const orgs = await manager.list(flags.tag, flags['my-pool']);
       querySpinner?.succeed(`Found ${orgs.length} org(s)`);
 
       if (flags.json) {

@@ -1,5 +1,6 @@
 import type {Logger} from '@b64/sfpm-core';
-import type {Org, OrgTypes} from '@salesforce/core';
+
+import {Org, OrgTypes} from '@salesforce/core';
 
 import type {OrgProvider} from '../org/org-provider.js';
 import type {
@@ -24,8 +25,6 @@ export interface PoolServices {
   fetcher: PoolFetcher;
   /** Pool manager for provisioning and deleting orgs */
   manager: PoolManager;
-  /** The selected org provider */
-  provider: OrgProvider;
 }
 
 /**
@@ -38,9 +37,6 @@ export interface CreatePoolServicesOptions {
   logger?: Logger;
   /**
    * Pool type — determines which strategy is used.
-   *
-   * - `'scratchOrg'` (default) — selects `ScratchOrgProvider` + JWT auth
-   * - `'sandbox'` — selects `SandboxProvider` + auth URL auth
    */
   poolType?: OrgTypes;
   /** Tasks to run on each provisioned org */
@@ -79,11 +75,9 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
     throw new Error('Hub org must be authenticated and have a username');
   }
 
-  // Hub service for JWT config, email, and user lookups
   const devHub = new DevHubService(hubOrg, logger);
 
-  // Select provider based on pool type
-  const provider: OrgProvider = poolType === 'sandbox'
+  const provider: OrgProvider = poolType === OrgTypes.Sandbox
     ? new SandboxProvider(hubOrg)
     : new ScratchOrgProvider(hubOrg);
 
@@ -102,6 +96,6 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
   const fetcher = new PoolFetcher(provider, authenticator, logger);
 
   return {
-    devHub, fetcher, manager, provider,
+    devHub, fetcher, manager,
   };
 }

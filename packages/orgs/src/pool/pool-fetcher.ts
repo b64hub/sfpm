@@ -237,10 +237,6 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
     return available;
   }
 
-  // --------------------------------------------------------------------------
-  // Private — Post-claim actions
-  // --------------------------------------------------------------------------
-
   /**
    * Handle post-claim actions: custom action, login, source tracking.
    */
