@@ -1,3 +1,4 @@
+import { OrgTypes } from '@salesforce/core';
 import type {PoolOrg} from '../pool-org.js';
 
 /**
@@ -8,7 +9,7 @@ import type {PoolOrg} from '../pool-org.js';
  * fields are needed.
  */
 export interface ScratchOrg extends PoolOrg {
-  readonly orgType: 'scratchOrg';
+  readonly orgType: OrgTypes.Scratch;
 }
 
 /**
@@ -63,20 +64,6 @@ export interface ScratchOrgCreateResult {
   orgId: string;
   username: string;
   warnings?: string[];
-}
-
-/**
- * Scratch org usage count for a single user.
- *
- * Returned by `DevHub.getScratchOrgUsageByUser()`. Maps to
- * the `SELECT count(id) In_Use, SignupEmail FROM ActiveScratchOrg
- * GROUP BY SignupEmail` aggregate query.
- */
-export interface ScratchOrgUsage {
-  /** Number of active scratch orgs owned by this user */
-  count: number;
-  /** The user's signup email address */
-  email: string;
 }
 
 /**

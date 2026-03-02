@@ -1,19 +1,15 @@
-import {escapeSOQL, soql} from '@b64/sfpm-core';
-import {Org} from '@salesforce/core';
-import {Duration} from '@salesforce/kit';
+import { escapeSOQL, soql } from '@b64/sfpm-core';
+import { Org, OrgTypes } from '@salesforce/core';
+import { Duration } from '@salesforce/kit';
 
-import type {PoolOrgRecord} from '../../pool/types.js';
-import type {OrgProvider, OrgUsage} from '../org-provider.js';
-import type {PoolOrg} from '../pool-org.js';
-import type {AllocationStatus, PasswordResult} from '../types.js';
-import type {Sandbox, SandboxCreateOptions} from './types.js';
+import type { OrgProvider } from '../org-provider.js';
+import type { PoolOrg, PoolOrgUsage, PoolOrgRecord } from '../pool-org.js';
+import { AllocationStatus, PasswordResult } from '../types.js';
+import type { Sandbox, SandboxCreateOptions } from './types.js';
 
-import {OrgError} from '../types.js';
-import {DEFAULT_SANDBOX} from './types.js';
-
-// ============================================================================
-// Record types — raw Salesforce SObject shapes
-// ============================================================================
+import { OrgError } from '../types.js';
+import { DEFAULT_SANDBOX } from './types.js';
+import { generatePassword } from '../../index.js';
 
 /**
  * Raw SandboxInfo record shape as returned from SOQL queries.
@@ -37,10 +33,6 @@ export interface SandboxInfoRecord {
   Tag__c?: string;
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 const SANDBOX_INFO_FIELDS: (keyof SandboxInfoRecord)[] = [
   'Allocation_Status__c',
   'Auth_Url__c',
@@ -56,16 +48,10 @@ const SANDBOX_INFO_FIELDS: (keyof SandboxInfoRecord)[] = [
 ];
 
 const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
-  'Allocate',
-  'Assigned',
-  'Available',
-  'In Progress',
-  'Return',
+  AllocationStatus.Available,
+  AllocationStatus.Allocated,
+  AllocationStatus.InProgress,
 ];
-
-// ============================================================================
-// SandboxProvider
-// ============================================================================
 
 /**
  * Provider for managing sandboxes in a pool.
@@ -102,10 +88,6 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     this.hubUsername = hubOrg.getUsername() ?? '';
   }
 
-  // ==========================================================================
-  // OrgProvider — Pool operations
-  // ==========================================================================
-
   async claimOrg(id: string): Promise<boolean> {
     try {
       const result = await this.conn.sobject('SandboxInfo').update({
@@ -134,41 +116,32 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
 
     if (options.sourceSandboxName) {
       // Clone from an existing sandbox using the proper SDK API
-      processResult = await this.hubOrg.cloneSandbox(
-        sandboxRequest,
-        options.sourceSandboxName,
-        {
-          interval: Duration.seconds(30),
-          wait: Duration.minutes(waitMinutes),
-        },
-      );
+      processResult = await this.hubOrg.cloneSandbox(sandboxRequest, options.sourceSandboxName, {
+        interval: Duration.seconds(30),
+        wait: Duration.minutes(waitMinutes),
+      });
     } else {
       // Create a new sandbox using the proper SDK API
-      processResult = await this.hubOrg.createSandbox(
-        sandboxRequest,
-        {
-          async: false,
-          interval: Duration.seconds(30),
-          wait: Duration.minutes(waitMinutes),
-        },
-      );
+      processResult = await this.hubOrg.createSandbox(sandboxRequest, {
+        async: false,
+        interval: Duration.seconds(30),
+        wait: Duration.minutes(waitMinutes),
+      });
     }
 
     const orgId = processResult.SandboxOrganization ?? '';
 
     // Derive the sandbox username (production username + sandbox name suffix)
-    const sandboxUsername = orgId
-      ? await this.resolveSandboxUsername(sandboxName)
-      : '';
+    const sandboxUsername = orgId ? await this.resolveSandboxUsername(sandboxName) : '';
 
     const sandbox: Sandbox = {
       auth: {
         alias: options.alias,
         loginUrl: 'https://test.salesforce.com',
         username: sandboxUsername,
-      },
+      },  
       orgId,
-      orgType: 'sandbox',
+      orgType: OrgTypes.Sandbox,
       pool: {
         groupId: options.activationUserGroupId,
         status: 'In Progress',
@@ -185,13 +158,16 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       try {
         // Look up the sandbox to get its name, then use SDK to delete
         // eslint-disable-next-line no-await-in-loop
-        const sandboxInfo = await this.conn.sobject('SandboxInfo').retrieve(recordId) as {Id: string; SandboxName: string};
+        const sandboxInfo = (await this.conn.sobject('SandboxInfo').retrieve(recordId)) as {
+          Id: string;
+          SandboxName: string;
+        };
         if (sandboxInfo?.SandboxName) {
           // eslint-disable-next-line no-await-in-loop
           const process = await this.hubOrg.querySandboxProcessBySandboxName(sandboxInfo.SandboxName);
           if (process?.SandboxOrganization) {
             // eslint-disable-next-line no-await-in-loop
-            const sandboxOrg = await Org.create({aliasOrUsername: process.SandboxOrganization});
+            const sandboxOrg = await Org.create({ aliasOrUsername: process.SandboxOrganization });
             // eslint-disable-next-line no-await-in-loop
             await sandboxOrg.deleteFrom(this.hubOrg);
           }
@@ -202,12 +178,6 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
         await this.conn.sobject('SandboxInfo').destroy(recordId);
       }
     }
-  }
-
-  async generatePassword(_username: string): Promise<PasswordResult> {
-    // Sandboxes inherit the production user's password.
-    // No password generation needed for pool-fetched sandboxes.
-    return {password: undefined};
   }
 
   async getActiveCountByTag(tag: string): Promise<number> {
@@ -229,13 +199,11 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
 
     const query = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<SandboxInfoRecord>(query);
-    return result.records.map(r => mapToSandbox(r));
+    return result.records.map((r) => mapToSandbox(r));
   }
 
   async getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
-    const conditions = [
-      `Tag__c = '${escapeSOQL(tag)}'`,
-    ];
+    const conditions = [`Tag__c = '${escapeSOQL(tag)}'`];
 
     if (myPool) {
       conditions.push(`CreatedById = '${escapeSOQL(this.hubUsername)}'`);
@@ -243,10 +211,10 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
 
     const query = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<SandboxInfoRecord>(query);
-    return result.records.map(r => mapToSandbox(r));
+    return result.records.map((r) => mapToSandbox(r));
   }
 
-  async getOrgUsageByUser(): Promise<OrgUsage[]> {
+  async getOrgUsageByUser(): Promise<PoolOrgUsage[]> {
     // Sandboxes don't have a direct equivalent of ActiveScratchOrg usage tracking.
     // Capacity is tracked via license limits (getRemainingCapacity) instead.
     return [];
@@ -256,7 +224,7 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   async getOrphanedOrgs(): Promise<PoolOrg[]> {
     const query = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE Tag__c = null ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<SandboxInfoRecord>(query);
-    return result.records.map(r => mapToSandbox(r));
+    return result.records.map((r) => mapToSandbox(r));
   }
 
   async getRecordIds(orgs: PoolOrg[]): Promise<PoolOrg[]> {
@@ -264,12 +232,12 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
 
     // For sandboxes, the SandboxInfo Id IS the record Id — already populated
     // from the query. But if missing, look up by sandbox org ID.
-    const missingIds = orgs.filter(org => !org.recordId && org.orgId);
+    const missingIds = orgs.filter((org) => !org.recordId && org.orgId);
     if (missingIds.length === 0) return orgs;
 
-    const orgIdList = missingIds.map(org => `'${escapeSOQL(org.orgId)}'`).join(',');
+    const orgIdList = missingIds.map((org) => `'${escapeSOQL(org.orgId)}'`).join(',');
     const query = soql`SELECT Id, SandboxOrganization FROM SandboxInfo WHERE SandboxOrganization IN (${orgIdList})`;
-    const result = await this.conn.query<{Id: string; SandboxOrganization: string}>(query);
+    const result = await this.conn.query<{ Id: string; SandboxOrganization: string }>(query);
 
     const idMap = new Map<string, string>();
     for (const record of result.records) {
@@ -290,7 +258,9 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
 
   async getRemainingCapacity(): Promise<number> {
     const apiVersion = this.conn.getApiVersion();
-    const limits = await this.conn.request<Record<string, {Max: number; Remaining: number}>>(`/services/data/v${apiVersion}/limits`);
+    const limits = await this.conn.request<Record<string, { Max: number; Remaining: number }>>(
+      `/services/data/v${apiVersion}/limits`,
+    );
 
     // Salesforce exposes sandbox limits under 'DeveloperSandbox', 'DeveloperProSandbox', etc.
     // Aggregate remaining across all sandbox types
@@ -302,10 +272,6 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     }
 
     return remaining;
-  }
-
-  getUsername(): string {
-    return this.hubUsername;
   }
 
   async isOrgActive(username: string): Promise<boolean> {
@@ -320,9 +286,16 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       return false;
     }
   }
+  
+  async setPassword(username: string, password?: string): Promise<PasswordResult> {
+    const newPassword = password ?? await generatePassword();
+    // await this.setUserPassword(username, newPassword); TODO
+    return {password: newPassword};
+  }
+
 
   /** Update fields on a SandboxInfo record. */
-  async updateOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean> {
+  async updateOrgInfo(fields: Record<string, unknown> & { Id: string }): Promise<boolean> {
     const result = await this.conn.sobject('SandboxInfo').update(fields);
     return result.success === true;
   }
@@ -330,7 +303,7 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   async updatePoolMetadata(records: PoolOrgRecord[]): Promise<void> {
     if (records.length === 0) return;
 
-    const updates = records.map(r => ({
+    const updates = records.map((r) => ({
       Allocation_Status__c: r.allocationStatus, // eslint-disable-line camelcase -- Salesforce custom field
       Id: r.id,
       Tag__c: r.poolTag, // eslint-disable-line camelcase -- Salesforce custom field
@@ -342,49 +315,45 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   async validate(): Promise<void> {
     const describe = await this.conn.sobject('SandboxInfo').describe();
 
-    const tagField = describe.fields.find(f => f.name === 'Tag__c');
+    const tagField = describe.fields.find((f) => f.name === 'Tag__c');
     if (!tagField) {
       throw new OrgError(
         'prerequisite',
-        'SandboxInfo is missing the "Tag__c" custom field. '
-        + 'Deploy the sfpm pool custom fields to your production org before running sandbox pool operations.',
+        'SandboxInfo is missing the "Tag__c" custom field. ' +
+          'Deploy the sfpm pool custom fields to your production org before running sandbox pool operations.',
       );
     }
 
-    const allocationField = describe.fields.find(f => f.name === 'Allocation_Status__c');
+    const allocationField = describe.fields.find((f) => f.name === 'Allocation_Status__c');
     if (!allocationField) {
       throw new OrgError(
         'prerequisite',
-        'SandboxInfo is missing the "Allocation_Status__c" custom field. '
-        + 'Deploy the sfpm pool custom fields to your production org before running sandbox pool operations.',
+        'SandboxInfo is missing the "Allocation_Status__c" custom field. ' +
+          'Deploy the sfpm pool custom fields to your production org before running sandbox pool operations.',
       );
     }
 
-    const picklistValues = new Set((allocationField.picklistValues ?? []).map(v => v.value));
-    const missing = REQUIRED_ALLOCATION_STATUSES.filter(s => !picklistValues.has(s));
+    const picklistValues = new Set((allocationField.picklistValues ?? []).map((v) => v.value));
+    const missing = REQUIRED_ALLOCATION_STATUSES.filter((s) => !picklistValues.has(s));
 
     if (missing.length > 0) {
       throw new OrgError(
         'prerequisite',
-        `Allocation_Status__c on SandboxInfo is missing required picklist values: ${missing.join(', ')}. `
-        + 'Update the picklist on SandboxInfo in your production org.',
-        {context: {existing: [...picklistValues], missing}},
+        `Allocation_Status__c on SandboxInfo is missing required picklist values: ${missing.join(', ')}. ` +
+          'Update the picklist on SandboxInfo in your production org.',
+        { context: { existing: [...picklistValues], missing } },
       );
     }
 
-    const authUrlField = describe.fields.find(f => f.name === 'Auth_Url__c');
+    const authUrlField = describe.fields.find((f) => f.name === 'Auth_Url__c');
     if (!authUrlField) {
       throw new OrgError(
         'prerequisite',
-        'SandboxInfo is missing the "Auth_Url__c" custom field. '
-        + 'Deploy the sfpm pool custom fields to your production org before running sandbox pool operations.',
+        'SandboxInfo is missing the "Auth_Url__c" custom field. ' +
+          'Deploy the sfpm pool custom fields to your production org before running sandbox pool operations.',
       );
     }
   }
-
-  // ==========================================================================
-  // Private helpers
-  // ==========================================================================
 
   /**
    * Extract the sandbox name suffix from a username.
@@ -407,10 +376,6 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   }
 }
 
-// ============================================================================
-// Internal helpers
-// ============================================================================
-
 /** Map a SandboxInfo SOQL record to the domain `Sandbox` type. */
 function mapToSandbox(record: SandboxInfoRecord): Sandbox {
   const orgId = record.SandboxOrganization ?? '';
@@ -426,7 +391,7 @@ function mapToSandbox(record: SandboxInfoRecord): Sandbox {
     },
     expiry: record.EndDate ? new Date(record.EndDate).getTime() : undefined,
     orgId,
-    orgType: 'sandbox',
+    orgType: OrgTypes.Sandbox,
     pool: {
       status,
       tag,

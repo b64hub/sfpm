@@ -1,27 +1,25 @@
-// Org Provider
 export {
   type OrgCreateOptions,
   type OrgProvider,
-  type OrgUsage,
   type PoolOrgClaimer,
   type PoolOrgInspector,
   type PoolOrgProvisioner,
 } from './org/org-provider.js';
+
 export {
   isSandbox,
   isScratchOrg,
-  type OrgType,
   type PoolOrg,
   type PoolOrgAuth,
-  type PoolOrgInfo as PoolOrgPoolInfo,
+  type PoolOrgInfo,
+  type PoolOrgRecord,
+  type PoolOrgUsage,
 } from './org/pool-org.js';
 
-export {default as SandboxProvider} from './org/sandbox/sandbox-provider.js';
-export {type Sandbox} from './org/sandbox/types.js';
-
-// Sandbox types
+export { default as SandboxProvider } from './org/sandbox/sandbox-provider.js';
 export {
   DEFAULT_SANDBOX,
+  type Sandbox,
   type SandboxCreateOptions,
   type SandboxCreateRequest,
   type SandboxCreateResult,
@@ -29,58 +27,29 @@ export {
   type SandboxLicenseType,
   type SandboxPoolInfo,
 } from './org/sandbox/types.js';
-export {default as ScratchOrgProvider} from './org/scratch/scratch-org-provider.js';
-export {type ActiveScratchOrgRecord, type ScratchOrgInfoRecord} from './org/scratch/scratch-org-provider.js';
-export {type ScratchOrg, type ScratchOrgCreateOptions} from './org/scratch/types.js';
 
-export {default as AuthService} from './org/services/auth-service.js';
-// Services
 export {
-  default as DevHubService,
-} from './org/services/devhub-service.js';
-
-// Org-layer types
+  default as ScratchOrgProvider,
+  type ActiveScratchOrgRecord,
+  type ScratchOrgInfoRecord,
+} from './org/scratch/scratch-org-provider.js';
 export {
-  type AllocationStatus,
-  type CreateScratchOrgOptions,
   DEFAULT_SCRATCH_ORG,
-  type DevHub,
-  type DevHub as HubService,
-  type JwtAuthConfig,
-  OrgError,
-  type DevHubServiceEvents,
-  type OrgServiceEvents,
-  type PasswordResult,
+  type ScratchOrg,
+  type ScratchOrgCreateOptions,
   type ScratchOrgCreateRequest,
   type ScratchOrgCreateResult,
-  type ScratchOrgDefaults,
-  type ScratchOrgUsage,
-  type SendEmailOptions,
-  type ShareOrgOptions,
-  type ShareScratchOrgOptions,
-} from './org/types.js';
+} from './org/scratch/types.js';
 
-export {
-  ORG_PHASES,
-  type OrgPhase,
-  PREPARE_PHASE,
-  VALIDATE_PHASE,
-} from './phases.js';
+export { default as AuthService } from './org/services/auth-service.js';
+export { default as DevHubService } from './org/services/devhub-service.js';
 
-// Pool factory
-export {
-  createPoolServices,
-  type CreatePoolServicesOptions,
-  type PoolServices,
-} from './pool/pool-factory.js';
+export { ORG_PHASES, type OrgPhase, PREPARE_PHASE, VALIDATE_PHASE } from './phases.js';
 
-// Pool fetcher
-export {
-  default as PoolFetcher,
-  type PoolFetcherEvents,
-} from './pool/pool-fetcher.js';
+export { createPoolServices, type CreatePoolServicesOptions, type PoolServices } from './pool/pool-factory.js';
 
-// Pool manager
+export { default as PoolFetcher, type PoolFetcherEvents } from './pool/pool-fetcher.js';
+
 export {
   computeOrgAllocation,
   type OrgProvisionResult,
@@ -102,7 +71,6 @@ export {
   type PoolFetchOptions,
   type PoolOrgAuthenticator,
   type PoolOrgLoggerFactory,
-  type PoolOrgRecord,
   type PoolOrgTask,
   type PoolOrgTaskResult,
   type PoolProvisioningState,
@@ -113,10 +81,8 @@ export {
 } from './pool/types.js';
 
 // Config
-export {
-  defineOrgConfig,
-  type OrgConfig,
-} from './types.js';
+export { defineOrgConfig, type OrgConfig } from './types.js';
 
 // Utilities
-export {generatePassword} from './utils/password-generator.js';
+export { default as generatePassword } from './utils/password-generator.js';
+export { default as setAlias } from './utils/set-alias.js';

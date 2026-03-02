@@ -1,11 +1,20 @@
 import type {Logger} from '@b64/sfpm-core';
 import {escapeSOQL, soql} from '@b64/sfpm-core';
-import type {Org} from '@salesforce/core';
+import {StateAggregator, type Org} from '@salesforce/core';
 import {EventEmitter} from 'node:events';
 
-import type {DevHub, DevHubServiceEvents, JwtAuthConfig, SendEmailOptions, ShareOrgOptions} from '../types.js';
+import type {DevHub, DevHubEvents, JwtAuthConfig, ShareOrgOptions} from '../types.js';
 import {OrgError} from '../types.js';
 import type {PoolOrg} from '../pool-org.js';
+
+/**
+ * Options for sending an email through the hub org's REST API.
+ */
+export interface SendEmailOptions {
+  body: string;
+  subject: string;
+  to: string;
+}
 
 /**
  * Service that wraps a Salesforce DevHub / Production org.
@@ -30,26 +39,24 @@ import type {PoolOrg} from '../pool-org.js';
  * const email = await hub.getUserEmail('user@example.com');
  * ```
  */
-export default class DevHubService extends EventEmitter<DevHubServiceEvents> implements DevHub {
+export default class DevHubService extends EventEmitter<DevHubEvents> implements DevHub {
   private readonly conn;
   private readonly hubOrg: Org;
-  private readonly hubUsername: string;
   private readonly logger?: Logger;
 
   constructor(hubOrg: Org, logger?: Logger) {
     super();
     this.hubOrg = hubOrg;
     this.conn = hubOrg.getConnection();
-    this.hubUsername = hubOrg.getUsername() ?? '';
     this.logger = logger;
   }
 
   public getJwtConfig(): JwtAuthConfig {
-    const fields = this.conn.getAuthInfoFields();
+    const authInfo = this.conn.getAuthInfoFields();
     return {
-      clientId: fields.clientId ?? '',
-      loginUrl: fields.loginUrl,
-      privateKeyPath: fields.privateKey ?? '',
+      clientId: authInfo.clientId ?? '',
+      loginUrl: authInfo.loginUrl,
+      privateKeyPath: authInfo.privateKey ?? '',
     };
   }
 
@@ -62,10 +69,6 @@ export default class DevHubService extends EventEmitter<DevHubServiceEvents> imp
     }
 
     return result.records[0].Email;
-  }
-
-  public getUsername(): string {
-    return this.hubUsername;
   }
 
   async sendEmail(options: SendEmailOptions): Promise<void> {
@@ -96,8 +99,10 @@ export default class DevHubService extends EventEmitter<DevHubServiceEvents> imp
   public async shareOrg(org: PoolOrg, options: ShareOrgOptions): Promise<void> {
     const {emailAddress} = options;
 
+    const username: string = this.hubOrg.getUsername()!;
+
     const body = [
-      `${this.hubUsername} has fetched a new org from the pool!`,
+      `${username} has fetched a new org from the pool!`,
       '',
       'All post-provisioning scripts have been successfully completed in this org!',
       '',
@@ -111,7 +116,7 @@ export default class DevHubService extends EventEmitter<DevHubServiceEvents> imp
     try {
       await this.sendEmail({
         body,
-        subject: `${this.hubUsername} created you a new Salesforce org`,
+        subject: `${username} created you a new Salesforce org`,
         to: emailAddress,
       });
 

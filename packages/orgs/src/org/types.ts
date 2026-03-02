@@ -2,12 +2,8 @@ import { PoolOrg } from '../index.js';
 
 export {DEFAULT_SCRATCH_ORG, type ScratchOrgDefaults} from './scratch/types.js';
 export type {
-  ScratchOrgCreateOptions as CreateScratchOrgOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
+  ScratchOrgCreateOptions as CreateScratchOrgOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult
 } from './scratch/types.js';
-
-// ============================================================================
-// Authentication
-// ============================================================================
 
 /**
  * JWT bearer flow configuration.
@@ -39,22 +35,7 @@ export interface JwtAuthConfig {
   privateKeyPath: string;
 }
 
-// ============================================================================
-// Hub Org Abstraction
-// ============================================================================
 
-/**
- * Abstraction over hub-level operations on a Salesforce org.
- *
- * Covers capabilities that belong to the hub itself rather than to any
- * specific pool org type (scratch org or sandbox): authentication
- * config, user lookups, and email.
- *
- * The pool layer (`OrgProvider` facets) handles all SObject queries;
- * `DevHub` handles everything else.
- *
- * Concrete implementation: `DevHubService` in `services/devhub-service.ts`.
- */
 export interface DevHub {
   /**
    * Retrieve JWT auth configuration for the hub.
@@ -65,13 +46,10 @@ export interface DevHub {
    */
   getJwtConfig(): JwtAuthConfig;
   getUserEmail(username: string): Promise<string>;
-  getUsername(): string;
   shareOrg(org: PoolOrg, options: ShareOrgOptions): Promise<void>;
 }
 
-/**
- * Result from password generation.
- */
+
 export interface PasswordResult {
   password: string | undefined;
 }
@@ -82,7 +60,13 @@ export interface PasswordResult {
  *
  * Mirrors the picklist on the DevHub's `ScratchOrgInfo.Allocation_Status__c`.
  */
-export type AllocationStatus = 'Allocate' | 'Assigned' | 'Available' | 'In Progress' | 'Return';
+export enum AllocationStatus {
+  Allocated = 'Allocated',
+  Assigned = 'Assigned',
+  Available = 'Available',
+  InProgress = 'In Progress',
+  Return = 'Return',
+}
 
 /**
  * Options for sharing org credentials via email.
@@ -91,32 +75,14 @@ export interface ShareOrgOptions {
   emailAddress: string;
 }
 
-/** @deprecated Use {@link ShareOrgOptions} instead. */
-export type ShareScratchOrgOptions = ShareOrgOptions;
-
-/**
- * Options for sending an email through the hub org's REST API.
- */
-export interface SendEmailOptions {
-  body: string;
-  subject: string;
-  to: string;
-}
-
 /**
  * Event map for `DevHubService`. Used with `EventEmitter` for
  * type-safe event handling.
  */
-export interface DevHubServiceEvents {
+export interface DevHubEvents {
   'org:share:complete': [payload: {emailAddress: string; timestamp: Date; username: string}];
 }
 
-/** @deprecated Use {@link DevHubServiceEvents} instead. */
-export type OrgServiceEvents = DevHubServiceEvents;
-
-// ============================================================================
-// Errors
-// ============================================================================
 
 /**
  * Error that occurs during org operations (create, delete, share, etc.).

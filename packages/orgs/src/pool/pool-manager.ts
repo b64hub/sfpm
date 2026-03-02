@@ -3,7 +3,7 @@ import type {Logger} from '@b64/sfpm-core';
 import {EventEmitter} from 'node:events';
 
 import type {OrgCreateOptions, OrgProvider} from '../org/org-provider.js';
-import type {PoolOrg} from '../org/pool-org.js';
+import type {PoolOrg, PoolOrgRecord} from '../org/pool-org.js';
 
 import {
   OrgError,
@@ -13,11 +13,11 @@ import {
   type PoolConfig,
   type PoolDeleteOptions,
   type PoolOrgLoggerFactory,
-  type PoolOrgRecord,
   type PoolOrgTask,
   type PoolOrgTaskResult,
   type PoolSizingConfig,
 } from './types.js';
+import { OrgTypes } from '@salesforce/core';
 
 // ============================================================================
 // Constants
@@ -386,7 +386,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * `OrgCreateOptions` used by the provider.
    */
   private buildCreateOptions(config: PoolConfig, alias: string): OrgCreateOptions {
-    if (config.type === 'sandbox') {
+    if (config.type === OrgTypes.Sandbox) {
       return {
         activationUserGroupId: config.sandbox.groupId,
         alias,

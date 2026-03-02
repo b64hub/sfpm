@@ -1,58 +1,6 @@
-/**
- * Re-exports from domain-specific type modules.
- *
- * Consumers should prefer importing directly from the domain modules:
- * - `@b64/sfpm-orgs/org/types` — org-layer types (DevHub, OrgError, etc.)
- * - `@b64/sfpm-orgs/pool/types` — pool types (PoolConfig, etc.)
- *
- * This barrel re-export exists for backward compatibility.
- */
-
-// Scratch org types
-export type {ScratchOrg} from './org/scratch/types.js';
-
-// Org-layer types
-export type {
-  AllocationStatus,
-  CreateScratchOrgOptions,
-  DevHub,
-  JwtAuthConfig,
-  DevHubServiceEvents,
-  OrgServiceEvents,
-  PasswordResult,
-  ScratchOrgCreateRequest,
-  ScratchOrgCreateResult,
-  ScratchOrgDefaults,
-  ScratchOrgUsage,
-  SendEmailOptions,
-  ShareScratchOrgOptions,
-} from './org/types.js';
-
-export {DEFAULT_SCRATCH_ORG, OrgError} from './org/types.js';
-
-// Pool-layer types
-export type {
-  PoolConfig,
-  PoolDeleteOptions,
-  PoolFetchOptions,
-  PoolOrgAuthenticator,
-  PoolOrgLoggerFactory,
-  PoolOrgRecord,
-  PoolOrgTask,
-  PoolOrgTaskResult,
-  PoolProvisioningState,
-  PoolSizingConfig,
-  PostClaimAction,
-} from './pool/types.js';
-
-export {DEFAULT_POOL_SIZING} from './pool/types.js';
-
-// ============================================================================
-// Org Configuration for sfpm.config.ts
-// ============================================================================
-
-import type {ScratchOrgDefaults} from './org/types.js';
-import type {PoolConfig} from './pool/types.js';
+import { SandboxDefaults } from "./org/sandbox/types.js";
+import { ScratchOrgDefaults } from "./org/scratch/types.js";
+import { PoolConfig } from "./pool/types.js";
 
 /**
  * Org-level configuration that plugs into `sfpm.config.ts`.
@@ -88,8 +36,8 @@ export interface OrgConfig {
   /** Pool configuration(s). A single pool or an array of named pools. */
   pool?: PoolConfig | PoolConfig[];
 
-  /** Default scratch org settings applied to all create operations */
   scratchOrg?: Partial<ScratchOrgDefaults>;
+  sandbox?: Partial<SandboxDefaults>;
 }
 
 /**

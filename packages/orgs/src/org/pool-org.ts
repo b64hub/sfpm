@@ -1,17 +1,6 @@
-import type {Sandbox} from './sandbox/types.js';
-import type {ScratchOrg} from './scratch/types.js';
-
-// ============================================================================
-// PoolOrg — Base interface for pool-managed orgs
-// ============================================================================
-
-/**
- * The org type discriminant values.
- *
- * Defined up front so that `PoolOrg.kind` can reference it without
- * circular derivation.
- */
-export type OrgType = 'sandbox' | 'scratchOrg';
+import type { Sandbox } from './sandbox/types.js';
+import type { ScratchOrg } from './scratch/types.js';
+import { OrgTypes } from '@salesforce/core';
 
 /**
  * Authentication fields stored against a pool-managed org.
@@ -54,8 +43,8 @@ export interface PoolOrgInfo {
  * behind the `OrgProvider` interface.
  *
  * Concrete subtypes:
- * - {@link ScratchOrg} — `orgType: 'scratchOrg'`
- * - {@link Sandbox}    — `orgType: 'sandbox'`, adds `pool.groupId`
+ * - {@link ScratchOrg} — `orgType: OrgTypes.Scratch`
+ * - {@link Sandbox}    — `orgType: OrgTypes.Sandbox`, adds `pool.groupId`
  *
  * Use the `orgType` discriminant only when you genuinely need type-specific
  * behaviour.  The vast majority of pool code should depend on `PoolOrg`
@@ -65,14 +54,31 @@ export interface PoolOrg {
   auth: PoolOrgAuth;
   expiry?: number;
   orgId: string;
-  readonly orgType: OrgType;
+  readonly orgType: OrgTypes;
   pool?: PoolOrgInfo;
   recordId?: string;
 }
 
-// ============================================================================
-// Type Guards
-// ============================================================================
+/**
+ * Record shape for updating org pool metadata
+ */
+export interface PoolOrgRecord {
+  allocationStatus: string;
+  id: string;
+  password?: string;
+  authUrl?: string;
+  poolTag: string;
+}
+
+/**
+ * Pool org usage count for a single user.
+ */
+export interface PoolOrgUsage {
+  /** Number of active scratch orgs owned by this user */
+  count: number;
+  /** The user's signup email address */
+  email: string;
+}
 
 /**
  * Narrow a `PoolOrg` to `Sandbox`.
@@ -85,7 +91,7 @@ export interface PoolOrg {
  * ```
  */
 export function isSandbox(org: PoolOrg): org is Sandbox {
-  return org.orgType === 'sandbox';
+  return org.orgType === OrgTypes.Sandbox;
 }
 
 /**
@@ -99,5 +105,5 @@ export function isSandbox(org: PoolOrg): org is Sandbox {
  * ```
  */
 export function isScratchOrg(org: PoolOrg): org is ScratchOrg {
-  return org.orgType === 'scratchOrg';
+  return org.orgType === OrgTypes.Scratch;
 }

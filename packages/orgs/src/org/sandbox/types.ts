@@ -1,8 +1,5 @@
 import type {PoolOrg, PoolOrgInfo} from '../pool-org.js';
-
-// ============================================================================
-// Sandbox Domain Types
-// ============================================================================
+import { OrgTypes, SandboxInfo } from '@salesforce/core';
 
 /**
  * Pool metadata for a sandbox, extending the base with sandbox-specific fields.
@@ -19,20 +16,16 @@ export interface SandboxPoolInfo extends PoolOrgInfo {
  * `pool` shape that includes `groupId`.
  */
 export interface Sandbox extends PoolOrg {
-  readonly orgType: 'sandbox';
+  readonly orgType: OrgTypes.Sandbox;
   pool?: SandboxPoolInfo;
 }
-
-// ============================================================================
-// Sandbox Configuration
-// ============================================================================
 
 /**
  * Sandbox license types supported by Salesforce.
  *
  * Maps to the `LicenseType` field on `SandboxInfo`.
  */
-export type SandboxLicenseType = 'DEVELOPER' | 'DEVELOPER PRO' | 'FULL' | 'PARTIAL';
+export type SandboxLicenseType = SandboxInfo['LicenseType'];
 
 /**
  * Sandbox creation defaults used when provisioning sandboxes for a pool.
@@ -91,10 +84,6 @@ export const DEFAULT_SANDBOX: Required<Pick<SandboxDefaults, 'autoActivate' | 'l
   maxRetries: 3,
   waitMinutes: 30,
 };
-
-// ============================================================================
-// Sandbox Create Types
-// ============================================================================
 
 /**
  * Configuration for creating a sandbox.

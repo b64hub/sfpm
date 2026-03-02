@@ -16,7 +16,7 @@ import {User} from '@salesforce/core';
  * console.log('Generated:', password);
  * ```
  */
-export async function generatePassword(conditions?: Record<string, unknown>): Promise<string> {
+export default async function generatePassword(conditions?: Record<string, unknown>): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- User.generatePasswordUtf8 accepts any
   const passwordBuffer = User.generatePasswordUtf8(conditions as any);
 

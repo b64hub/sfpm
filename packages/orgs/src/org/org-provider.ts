@@ -1,12 +1,7 @@
-import type {PoolOrgRecord} from '../pool/types.js';
-import type {PoolOrg} from './pool-org.js';
+import type {PoolOrg, PoolOrgUsage, PoolOrgRecord} from './pool-org.js';
 import type {SandboxCreateOptions} from './sandbox/types.js';
 import type {ScratchOrgCreateOptions} from './scratch/types.js';
 import type {PasswordResult} from './types.js';
-
-// ============================================================================
-// Pool-need facets — each expresses a specific pool concern
-// ============================================================================
 
 /**
  * The pool's need to find and claim available orgs.
@@ -18,7 +13,7 @@ export interface PoolOrgClaimer {
   /**
    * Claim an org for use (optimistic concurrency).
    *
-   * Sets the org's allocation status to `'Allocate'`. Returns `true`
+   * Sets the org's allocation status to `'Allocated'`. Returns `true`
    * if the claim succeeded, `false` if another consumer claimed it first.
    */
   claimOrg(id: string): Promise<boolean>;
@@ -56,13 +51,6 @@ export interface PoolOrgProvisioner<TCreateOptions = OrgCreateOptions> {
    */
   deleteOrgs(recordIds: string[]): Promise<void>;
 
-  /**
-   * Generate and set a password for an org user.
-   *
-   * For scratch orgs, generates a random password and sets it via SOAP.
-   * For sandboxes, this may be a no-op (sandbox users inherit production passwords).
-   */
-  generatePassword(username: string): Promise<PasswordResult>;
 
   /** Count active orgs with a given pool tag */
   getActiveCountByTag(tag: string): Promise<number>;
@@ -88,6 +76,14 @@ export interface PoolOrgProvisioner<TCreateOptions = OrgCreateOptions> {
 
   /** Check if an org is still active (not deleted) */
   isOrgActive(username: string): Promise<boolean>;
+
+  /**
+   * Generate and set a password for an org user.
+   *
+   * For scratch orgs, generates a random password and sets it via SOAP.
+   * For sandboxes, this may be a no-op (sandbox users inherit production passwords).
+   */
+  setPassword(username: string, password?: string): Promise<PasswordResult>;
 
   /** Update org pool metadata (tag, status, auth info) */
   updatePoolMetadata(records: PoolOrgRecord[]): Promise<void>;
@@ -117,7 +113,7 @@ export interface PoolOrgInspector {
    * Queries active orgs and groups by user, returning the count per
    * user ordered by usage descending. Useful for reporting and capacity planning.
    */
-  getOrgUsageByUser(): Promise<OrgUsage[]>;
+  getOrgUsageByUser(): Promise<PoolOrgUsage[]>;
 
   /**
    * Update fields on an org info record.
@@ -130,10 +126,6 @@ export interface PoolOrgInspector {
    */
   updateOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean>;
 }
-
-// ============================================================================
-// OrgProvider — Full intersection of all pool needs
-// ============================================================================
 
 /**
  * Unified provider interface for org-type-specific pool operations.
@@ -170,9 +162,6 @@ export type OrgProvider<TCreateOptions = OrgCreateOptions> =
   PoolOrgInspector &
   PoolOrgProvisioner<TCreateOptions>;
 
-// ============================================================================
-// OrgProvider Supporting Types
-// ============================================================================
 
 /**
  * Union of all org-type-specific create options.
@@ -182,16 +171,3 @@ export type OrgProvider<TCreateOptions = OrgCreateOptions> =
  * to their specific options type for compile-time safety.
  */
 export type OrgCreateOptions = SandboxCreateOptions | ScratchOrgCreateOptions;
-
-/**
- * Org usage count for a single user.
- *
- * Returned by `OrgProvider.getOrgUsageByUser()`. Generalizes over
- * org-type-specific usage tracking (e.g., `ActiveScratchOrg` counts).
- */
-export interface OrgUsage {
-  /** Number of active orgs owned by this user */
-  count: number;
-  /** The user's email address */
-  email: string;
-}

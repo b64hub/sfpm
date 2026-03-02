@@ -1,25 +1,21 @@
 import {escapeSOQL, soql} from '@b64/sfpm-core';
 import {
-  AuthInfo, Connection, Org, StateAggregator,
+  AuthInfo, Connection, Org, OrgTypes, StateAggregator,
 } from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
 
-import type {PoolOrgRecord} from '../../pool/types.js';
-import type {OrgProvider, OrgUsage} from '../org-provider.js';
-import type {PoolOrg} from '../pool-org.js';
-import type {
-  AllocationStatus, JwtAuthConfig, PasswordResult, SendEmailOptions,
+import type {OrgProvider} from '../org-provider.js';
+import type {PoolOrg, PoolOrgUsage, PoolOrgRecord} from '../pool-org.js';
+import {
+  AllocationStatus, PasswordResult
 } from '../types.js';
 
-import {generatePassword} from '../../utils/password-generator.js';
+import generatePassword from '../../utils/password-generator.js';
+import setAlias from '../../utils/set-alias.js';
 import {OrgError} from '../types.js';
 import {
-  type ScratchOrg, type ScratchOrgCreateOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult, ScratchOrgUsage,
+  type ScratchOrg, type ScratchOrgCreateOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult,
 } from './types.js';
-
-// ============================================================================
-// Record types – raw Salesforce SObject shapes
-// ============================================================================
 
 /**
  * Raw ScratchOrgInfo record shape as returned from SOQL queries.
@@ -35,7 +31,6 @@ export interface ScratchOrgInfoRecord {
   ExpirationDate?: string;
   Id?: string;
   LoginUrl?: string;
-  // Password__c?: string;
   ScratchOrg?: string;
   SignupEmail?: string;
   SignupUsername?: string;
@@ -66,11 +61,12 @@ export const SCRATCH_ORG_INFO_FIELDS: (keyof ScratchOrgInfoRecord)[] = [
   'SignupUsername',
 ];
 
-export const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = ['Allocate', 'Assigned', 'Available', 'In Progress', 'Return'];
-
-// ============================================================================
-// ScratchOrgProvider
-// ============================================================================
+const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
+  AllocationStatus.Available,
+  AllocationStatus.Allocated,
+  AllocationStatus.InProgress,
+  AllocationStatus.Return,
+];
 
 /**
  * Provider for managing scratch orgs in a pool.
@@ -84,7 +80,6 @@ export const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = ['Allocate', 'As
 export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateOptions> {
   private readonly conn;
   private readonly hubOrg;
-  private readonly hubUsername: string;
 
   constructor(hubOrg: Org) {
     if (!hubOrg.isDevHubOrg) {
@@ -93,17 +88,12 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
 
     this.conn = hubOrg.getConnection();
     this.hubOrg = hubOrg;
-    this.hubUsername = hubOrg.getUsername() ?? '';
   }
-
-  // ==========================================================================
-  // OrgProvider — Pool operations
-  // ==========================================================================
 
   async claimOrg(id: string): Promise<boolean> {
     try {
       const result = await this.conn.sobject('ScratchOrgInfo').update({
-        Allocation_Status__c: 'Allocate' as const, // eslint-disable-line camelcase -- Salesforce custom field
+        Allocation_Status__c: 'Allocated' as const, // eslint-disable-line camelcase -- Salesforce custom field
         Id: id,
       });
       return result.success === true;
@@ -125,7 +115,7 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
 
     const result = await this.createScratchOrg(request);
 
-    await this.setAlias(result.username, options.alias);
+    await setAlias(result.username, options.alias);
 
     const scratchOrg: ScratchOrg = {
       auth: {
@@ -134,10 +124,10 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
         username: result.username,
       },
       orgId: result.orgId,
-      orgType: 'scratchOrg',
+      orgType: OrgTypes.Scratch,
     };
 
-    const passwordResult = await this.generatePassword(scratchOrg.auth.username);
+    const passwordResult = await this.setPassword(scratchOrg.auth.username);
     if (passwordResult.password) {
       scratchOrg.auth.password = passwordResult.password;
     }
@@ -152,10 +142,10 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     }
   }
 
-  async generatePassword(username: string): Promise<PasswordResult> {
-    const password = await generatePassword();
-    await this.setUserPassword(username, password);
-    return {password};
+  async setPassword(username: string, password?: string): Promise<PasswordResult> {
+    const newPassword = password ?? await generatePassword();
+    await this.setUserPassword(username, newPassword);
+    return {password: newPassword};
   }
 
   async getActiveCountByTag(tag: string): Promise<number> {
@@ -172,8 +162,10 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
       String.raw`(Allocation_Status__c = 'Available' OR Allocation_Status__c = 'In Progress')`,
     ];
 
+    const username: string = this.hubOrg.getUsername()!;
+
     if (myPool) {
-      conditions.push(`CreatedById = '${escapeSOQL(this.hubUsername)}'`);
+      conditions.push(`CreatedById = '${escapeSOQL(username)}'`);
     }
 
     const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
@@ -181,21 +173,13 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     return result.records.map(r => mapToScratchOrg(r));
   }
 
-  /** Retrieve JWT auth configuration for the hub. */
-  getJwtConfig(): JwtAuthConfig {
-    const fields = this.conn.getAuthInfoFields();
-    return {
-      clientId: fields.clientId ?? '',
-      loginUrl: fields.loginUrl,
-      privateKeyPath: fields.privateKey ?? '',
-    };
-  }
-
   async getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
     let query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Allocation_Status__c = 'Active'`;
 
+    const username: string = this.hubOrg.getUsername()!;
+
     if (myPool) {
-      query += ` AND CreatedById = '${escapeSOQL(this.hubUsername)}'`;
+      query += ` AND CreatedById = '${escapeSOQL(username)}'`;
     }
 
     query += ' ORDER BY CreatedDate DESC';
@@ -211,7 +195,7 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
   }
 
   /** Get org usage counts grouped by user email. */
-  async getOrgUsageByUser(): Promise<OrgUsage[]> {
+  async getOrgUsageByUser(): Promise<PoolOrgUsage[]> {
     const query = soql`SELECT count(Id) In_Use, SignupEmail FROM ActiveScratchOrg GROUP BY SignupEmail ORDER BY count(Id) DESC`;
     const result = await this.conn.query<{In_Use: number; SignupEmail: string}>(query);
     return result.records.map(r => ({count: r.In_Use, email: r.SignupEmail}));
@@ -262,58 +246,14 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     return result.records[0]?.Id;
   }
 
-  // ==========================================================================
-  // DevHub utilities (shared, not org-type-specific)
-  // ==========================================================================
-
-  /** Look up a user's email address by username. */
-  async getUserEmail(username: string): Promise<string> {
-    const query = soql`SELECT Email FROM User WHERE Username = '${escapeSOQL(username)}'`;
-    const result = await this.conn.query<{Email: string}>(query);
-
-    if (result.records.length === 0) {
-      throw new OrgError('fetch', `No user found with username ${username} in the DevHub.`);
-    }
-
-    return result.records[0].Email;
-  }
-
-  getUsername(): string {
-    return this.hubUsername;
-  }
-
   async isOrgActive(username: string): Promise<boolean> {
     const query = soql`SELECT Id FROM ActiveScratchOrg WHERE SignupUsername = '${escapeSOQL(username)}'`;
     const result = await this.conn.query<{Id: string}>(query);
     return result.totalSize > 0;
   }
 
-  /** Send a simple email via the connected org's REST API. */
-  async sendEmail(options: SendEmailOptions): Promise<void> {
-    const apiVersion = this.conn.getApiVersion();
-    await this.conn.request({
-      body: JSON.stringify({
-        inputs: [
-          {
-            emailAddresses: options.to,
-            emailBody: options.body,
-            emailSubject: options.subject,
-          },
-        ],
-      }),
-      method: 'POST',
-      url: `/services/data/v${apiVersion}/actions/standard/emailSimple`,
-    });
-  }
-
-  /** Set a local alias for a username. */
-  async setAlias(username: string, alias: string): Promise<void> {
-    const stateAggregator = await StateAggregator.getInstance();
-    await stateAggregator.aliases.setAndSave(alias, username);
-  }
-
   /** Set a password for a user via the org's SOAP API. */
-  async setUserPassword(username: string, password: string): Promise<void> {
+  private async setUserPassword(username: string, password: string): Promise<void> {
     const scratchOrgAuthInfo = await AuthInfo.create({username});
     const scratchOrgConnection = await Org.create({
       connection: await Connection.create({authInfo: scratchOrgAuthInfo}),
@@ -374,9 +314,6 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     }
   }
 
-  // ==========================================================================
-  // Private helpers
-  // ==========================================================================
 
   private async createScratchOrg(request: ScratchOrgCreateRequest): Promise<ScratchOrgCreateResult> {
     const result = await this.hubOrg.scratchOrgCreate({
@@ -424,10 +361,6 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
   }
 }
 
-// ============================================================================
-// Internal helpers
-// ============================================================================
-
 function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
   const orgId = record.ScratchOrg ?? '';
   const username = record.SignupUsername ?? '';
@@ -443,7 +376,7 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
     },
     expiry: record.ExpirationDate ? parseExpirationDate(record.ExpirationDate) : undefined,
     orgId,
-    orgType: 'scratchOrg',
+    orgType: OrgTypes.Scratch,
     pool: {
       status,
       tag,

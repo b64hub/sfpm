@@ -157,19 +157,6 @@ export const DEFAULT_POOL_SIZING: Required<Pick<PoolSizingConfig, 'batchSize' | 
   minAllocation: 0,
 };
 
-// ============================================================================
-// Pool Infrastructure
-// ============================================================================
-
-/**
- * Record shape for updating org pool metadata in the hub.
- */
-export interface PoolOrgRecord {
-  allocationStatus: string;
-  id: string;
-  password?: string;
-  poolTag: string;
-}
 
 /**
  * Handles authentication to orgs fetched from a pool.

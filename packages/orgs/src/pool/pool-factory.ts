@@ -1,8 +1,7 @@
 import type {Logger} from '@b64/sfpm-core';
-import type {Org} from '@salesforce/core';
+import type {Org, OrgTypes} from '@salesforce/core';
 
 import type {OrgProvider} from '../org/org-provider.js';
-import type {OrgType} from '../org/pool-org.js';
 import type {
   PoolOrgTask,
 } from './types.js';
@@ -13,10 +12,6 @@ import AuthService from '../org/services/auth-service.js';
 import DevHubService from '../org/services/devhub-service.js';
 import PoolFetcher from './pool-fetcher.js';
 import PoolManager from './pool-manager.js';
-
-// ============================================================================
-// Pool Factory
-// ============================================================================
 
 /**
  * Result from `createPoolServices()`. Provides the wired-up pool
@@ -47,7 +42,7 @@ export interface CreatePoolServicesOptions {
    * - `'scratchOrg'` (default) — selects `ScratchOrgProvider` + JWT auth
    * - `'sandbox'` — selects `SandboxProvider` + auth URL auth
    */
-  poolType?: OrgType;
+  poolType?: OrgTypes;
   /** Tasks to run on each provisioned org */
   tasks?: PoolOrgTask[];
 }
@@ -80,6 +75,10 @@ export interface CreatePoolServicesOptions {
 export function createPoolServices(options: CreatePoolServicesOptions): PoolServices {
   const {hubOrg, logger, poolType = 'scratchOrg', tasks} = options;
 
+  if (!hubOrg.getUsername()) {
+    throw new Error('Hub org must be authenticated and have a username');
+  }
+
   // Hub service for JWT config, email, and user lookups
   const devHub = new DevHubService(hubOrg, logger);
 
@@ -88,10 +87,9 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
     ? new SandboxProvider(hubOrg)
     : new ScratchOrgProvider(hubOrg);
 
-  // Create authenticator — always AuthService with auth URL primary, JWT fallback
   const jwtConfig = devHub.getJwtConfig();
   const authenticator = new AuthService(
-    devHub.getUsername(),
+    hubOrg.getUsername()!,
     jwtConfig.clientId ? jwtConfig : undefined,
   );
 
