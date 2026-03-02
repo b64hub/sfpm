@@ -7,6 +7,7 @@ import type {OrgCreateOptions, OrgProvider} from '../org/org-provider.js';
 import type {PoolOrg, PoolOrgRecord} from '../org/pool-org.js';
 
 import {
+  AllocationStatus,
   OrgError,
 } from '../org/types.js';
 import {
@@ -248,7 +249,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
         // eslint-disable-next-line no-await-in-loop -- sequential deletion avoids overwhelming the DevHub API
         await this.provider.deleteOrgs([org.recordId]);
         if (org.pool) {
-          org.pool.status = 'Deleted';
+          org.pool.status = AllocationStatus.Return;
         }
 
         deleted.push(org);
@@ -403,7 +404,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   private buildCreateOptions(config: PoolConfig, alias: string): OrgCreateOptions {
     if (config.type === OrgTypes.Sandbox) {
       return {
-        activationUserGroupId: config.sandbox.groupId,
+        activationUserGroupName: config.sandbox.groupName,
         alias,
         apexClassId: config.sandbox.apexClassId,
         autoActivate: config.sandbox.autoActivate,
@@ -415,7 +416,6 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       };
     }
 
-    // Scratch org
     return {
       alias,
       definitionFile: config.scratchOrg.definitionFile,
@@ -469,10 +469,6 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     return allResults;
   }
 
-  // --------------------------------------------------------------------------
-  // Private — Config to OrgCreateOptions mapping
-  // --------------------------------------------------------------------------
-
   /**
    * Create a single org and return the result.
    * Never throws — returns an `OrgProvisionResult` with error info on failure.
@@ -487,7 +483,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       const createOptions = this.buildCreateOptions(config, alias);
       const org = await this.provider.createOrg(createOptions);
 
-      org.pool = {status: 'In Progress', tag: config.tag, timestamp: Date.now()};
+      org.pool = {status: AllocationStatus.InProgress, tag: config.tag, timestamp: Date.now()};
 
       this.emit('pool:org:created', {
         alias,
@@ -500,7 +496,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const timedOut = message.includes('timed out');
-      const waitMinutes = config.type === 'scratchOrg'
+      const waitMinutes = config.type === OrgTypes.Scratch
         ? config.scratchOrg.waitMinutes
         : config.sandbox.waitMinutes;
 
@@ -578,7 +574,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     const records: PoolOrgRecord[] = enrichedOrgs
     .filter(org => org.recordId)
     .map(org => ({
-      allocationStatus: 'In Progress' as const,
+      allocationStatus: AllocationStatus.InProgress as const,
       id: org.recordId!,
       password: org.auth.password,
       poolTag: tag,

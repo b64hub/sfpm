@@ -19,7 +19,7 @@ export default class PoolProvision extends SfpmCommand {
     'batch-size': Flags.integer({description: 'max concurrent org creations (default: 5)', min: 1}),
     'definition-file': Flags.string({char: 'd', description: 'scratch org definition file'}),
     'expiry-days': Flags.integer({description: 'scratch org expiry in days (default: 7)', min: 1}),
-    'group-id': Flags.string({description: 'sandbox activation user group ID'}),
+    'group-name': Flags.string({description: 'sandbox activation user group name'}),
     json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
     'license-type': Flags.string({description: 'sandbox license type', options: ['DEVELOPER', 'DEVELOPER PRO', 'FULL', 'PARTIAL']}),
     max: Flags.integer({description: 'maximum number of orgs to allocate', min: 1, required: true}),
@@ -104,7 +104,7 @@ export default class PoolProvision extends SfpmCommand {
     if (poolType === OrgTypes.Sandbox) {
       return {
         sandbox: {
-          groupId: flags['group-id'] as string | undefined,
+          groupName: flags['group-name'] as string | undefined,
           licenseType: (flags['license-type'] as SandboxLicenseType | undefined) ?? 'DEVELOPER',
           namePattern: (flags['sandbox-name-pattern'] as string | undefined) ?? 'SB',
           sourceSandboxName: flags['source-sandbox'] as string | undefined,

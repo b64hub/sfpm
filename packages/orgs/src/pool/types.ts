@@ -96,7 +96,7 @@ export interface PoolConfigBase {
  * @example
  * ```typescript
  * const pool: ScratchOrgPoolConfig = {
- *   type: 'scratchOrg',
+ *   type: 'scratch',
  *   tag: 'dev-pool',
  *   scratchOrg: {
  *     definitionFile: 'config/project-scratch-def.json',

@@ -1,5 +1,6 @@
+import {OrgTypes, SandboxInfo} from '@salesforce/core';
+
 import type {PoolOrg, PoolOrgInfo} from '../pool-org.js';
-import { OrgTypes, SandboxInfo } from '@salesforce/core';
 
 /**
  * Pool metadata for a sandbox, extending the base with sandbox-specific fields.
@@ -36,9 +37,9 @@ export type SandboxLicenseType = SandboxInfo['LicenseType'];
  * @example
  * ```typescript
  * const defaults: SandboxDefaults = {
- *   namePattern: 'SB',
+ *   namePattern: 'DEVBOX',
  *   licenseType: 'DEVELOPER',
- *   groupId: '0GR000000000001',
+ *   groupName: 'Sandbox_Developer_Group',
  * };
  * ```
  */
@@ -47,14 +48,15 @@ export interface SandboxDefaults {
   apexClassId?: string;
   /** Whether to auto-activate the sandbox after creation (default: true) */
   autoActivate?: boolean;
+  definitionFile?: string;
   /**
-   * ID of the group whose members can access created sandboxes.
+   * Name of the group whose members can access created sandboxes.
    *
    * Maps to `SandboxRequest.ActivationUserGroupId`. In a pool scenario
    * this allows a CICD user to create sandboxes that team members can
    * later claim and access without ownership transfer.
    */
-  groupId?: string;
+  groupName?: string;
   /** Sandbox license type (default: 'DEVELOPER') */
   licenseType: SandboxLicenseType;
   /** Max retries on transient creation failures (default: 3) */
@@ -78,8 +80,9 @@ export interface SandboxDefaults {
 }
 
 /** Default sandbox creation settings. */
-export const DEFAULT_SANDBOX: Required<Pick<SandboxDefaults, 'autoActivate' | 'licenseType' | 'maxRetries' | 'waitMinutes'>> = {
+export const DEFAULT_SANDBOX: Required<Pick<SandboxDefaults, 'autoActivate' | 'groupName' | 'licenseType' | 'maxRetries' | 'waitMinutes'>> = {
   autoActivate: true,
+  groupName: 'Sandbox_Developer_Group',
   licenseType: 'DEVELOPER',
   maxRetries: 3,
   waitMinutes: 30,
@@ -135,8 +138,8 @@ export interface SandboxCreateResult {
  * creation methods internally.
  */
 export interface SandboxCreateOptions {
-  /** Group ID for sandbox access */
-  activationUserGroupId?: string;
+  /** Group name for sandbox access */
+  activationUserGroupName?: string;
   /** Local alias for the sandbox */
   alias: string;
   /** Apex class ID for post-copy script */

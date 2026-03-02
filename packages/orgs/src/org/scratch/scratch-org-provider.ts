@@ -364,7 +364,7 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
   const orgId = record.ScratchOrg ?? '';
   const username = record.SignupUsername ?? '';
   const tag = record.Tag__c ?? '';
-  const status = record.Allocation_Status__c ?? '';
+  const status = (record.Allocation_Status__c ?? undefined) as AllocationStatus;
 
   return {
     auth: {
