@@ -19,6 +19,7 @@ export default [
       '@typescript-eslint/no-explicit-any': 'warn', // Allow any but warn about it
       '@typescript-eslint/no-unused-vars': ['warn', {argsIgnorePattern: '^_'}],
       '@stylistic/indent': 'warn',
+      '@stylistic/indent-binary-ops': ['error', 2],
       'unicorn/filename-case': [
         'error',
         {

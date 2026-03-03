@@ -1,7 +1,7 @@
 {
-  "name": "@b64/sfpm-profiles",
+  "name": "@b64/sfpm-hooks",
   "version": "0.1.0",
-  "description": "Profile cleaning and reconciliation plugin for SFPM",
+  "description": "Common hooks for Salesforce Package management",
   "type": "module",
   "scripts": {
     "build": "tsc -b",
@@ -10,12 +10,16 @@
   "keywords": [
     "sfpm",
     "salesforce",
-    "profiles"
+    "hooks",
+    "profiles",
+    "typescript"
   ],
   "author": "b64",
   "license": "MIT",
   "dependencies": {
-    "@b64/sfpm-core": "workspace:^0.1.0"
+    "@b64/sfpm-core": "workspace:^0.1.0",
+    "@salesforce/core": "^8.25.0",
+    "fast-xml-parser": "^5.3.3"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
