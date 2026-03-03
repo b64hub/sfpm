@@ -1,7 +1,7 @@
-import {HookContext, LifecycleHooks} from '@b64/sfpm-core';
-import {Connection} from '@salesforce/core';
+import {HookContext, LifecycleHooks, Logger} from '@b64/sfpm-core';
+import {Connection, Org} from '@salesforce/core';
 
-import type {OrgMetadataProvider, ProfileHooksOptions} from './types.js';
+import type {ProfileHooksOptions} from './types.js';
 
 import {OrgMetadataResolver} from './org-metadata-resolver.js';
 import {collectPackageMetadata, findProfilesDirectory, ProfileCleaner} from './profile-cleaner.js';
@@ -67,7 +67,7 @@ export function profileHooks(options?: ProfileHooksOptions): LifecycleHooks {
 
           // Create org resolver if scope is 'org' and a Salesforce connection is available
           const scope = options?.scope ?? 'source';
-          let orgResolver: OrgMetadataProvider | undefined;
+          let orgResolver: OrgMetadataResolver | undefined;
 
           if (scope === 'org') {
             orgResolver = resolveOrgMetadata(context, logger);
@@ -105,39 +105,21 @@ export function profileHooks(options?: ProfileHooksOptions): LifecycleHooks {
 // ============================================================================
 
 /**
- * Attempt to extract an org metadata provider from the hook context.
+ * Attempt to create an org metadata resolver from the hook context.
  *
- * The context may carry a pre-built {@link OrgMetadataProvider}, or a
- * `Connection` from `@salesforce/core` under `orgConnection` or `connection`.
+ * Expects the orchestrator to place an `Org` instance from `@salesforce/core`
+ * on `context.org`. The resolver is built from the org's connection.
  */
 function resolveOrgMetadata(
   context: HookContext,
   logger?: {debug: (msg: string) => void},
-): OrgMetadataProvider | undefined {
-  // Pre-built resolver takes priority
-  if (context.orgResolver && isOrgMetadataProvider(context.orgResolver)) {
-    return context.orgResolver;
-  }
+): OrgMetadataResolver | undefined {
+  const {org} = context;
 
-  // Try known connection properties
-  const connection = (context.orgConnection as Connection | undefined)
-    ?? (context.connection as Connection | undefined);
-
-  if (connection instanceof Connection) {
-    return new OrgMetadataResolver(connection, logger as import('@b64/sfpm-core').Logger | undefined);
+  if (org instanceof Org) {
+    const connection = org.getConnection();
+    return new OrgMetadataResolver(connection, logger as Logger | undefined);
   }
 
   return undefined;
-}
-
-/**
- * Type guard for {@link OrgMetadataProvider}.
- */
-function isOrgMetadataProvider(value: unknown): value is OrgMetadataProvider {
-  return (
-    typeof value === 'object'
-    && value !== null
-    && 'getOrgComponents' in value
-    && typeof (value as OrgMetadataProvider).getOrgComponents === 'function'
-  );
 }
