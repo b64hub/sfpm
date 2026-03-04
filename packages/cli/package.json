@@ -11,6 +11,7 @@
   "dependencies": {
     "@b64/sfpm-core": "workspace:^0.1.0",
     "@b64/sfpm-orgs": "workspace:^",
+    "@b64/sfpm-sfdmu": "workspace:^",
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-plugins": "^5",
