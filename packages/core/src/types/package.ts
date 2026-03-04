@@ -118,27 +118,58 @@ export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions
   postInstallScript?: string;
 }
 
-export interface SfpmDataPackageMetadata {
+/**
+ * Content descriptor for data packages.
+ * Intentionally separate from SfpmPackageContent — data packages have no
+ * Salesforce metadata components, apex, or manifests.
+ */
+export interface SfpmDataPackageContent {
+  /** Relative path to the data directory within the package (from packageDefinition.path) */
+  dataDirectory: string;
+  /** Total number of files in the data directory */
+  fileCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Package Metadata Hierarchy
+//
+//   SfpmPackageMetadataBase         (universal: identity, orchestration, source)
+//     ├── SfpmPackageMetadata       (source/unlocked: + content + validation)
+//     │     └── SfpmUnlockedPackageMetadata (+ unlocked identity)
+//     └── SfpmDataPackageMetadata   (data: + data-specific content)
+// ---------------------------------------------------------------------------
+
+/**
+ * Base metadata shared by **all** package types (source, unlocked, data, …).
+ * Contains only universally applicable sections.
+ */
+export interface SfpmPackageMetadataBase {
   [key: string]: any;
   identity: SfpmPackageIdentity;
+  orchestration: SfpmPackageOrchestration;
   source: SfpmPackageSource;
 }
 
 /**
- * The "Source of Truth" for the JSON Artifact.
- * This represents the metadata file stored in the artifact.
+ * Metadata for source and unlocked packages.
+ * Adds Salesforce-specific content (component manifest, apex, metadata counts)
+ * and validation (code-coverage, test results).
  */
-export interface SfpmPackageMetadata {
-  [key: string]: any;
+export interface SfpmPackageMetadata extends SfpmPackageMetadataBase {
   content: SfpmPackageContent;
-  identity: SfpmPackageIdentity;
-  orchestration: SfpmPackageOrchestration;
-  source: SfpmPackageSource;
   validation: SfpmPackageValidation;
 }
 
 export interface SfpmUnlockedPackageMetadata extends SfpmPackageMetadata {
   identity: SfpmUnlockedPackageIdentity;
+}
+
+/**
+ * Metadata for data packages.
+ * Contains data-specific content with no Salesforce metadata components.
+ */
+export interface SfpmDataPackageMetadata extends SfpmPackageMetadataBase {
+  content: SfpmDataPackageContent;
 }
 
 /**
