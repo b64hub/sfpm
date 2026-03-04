@@ -1,4 +1,5 @@
 import {ComponentSet, SourceComponent} from '@salesforce/source-deploy-retrieve';
+import fg from 'fast-glob';
 import {
   get, merge, omit, set,
 } from 'lodash-es';
@@ -553,8 +554,7 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
    * Counts the files in the data directory for metadata.
    */
   public async countFiles(): Promise<number> {
-    const fg = await import('fast-glob');
-    const files = await fg.default(['**/*'], {
+    const files = await fg(['**/*'], {
       cwd: this.dataDirectory,
       dot: false,
       onlyFiles: true,

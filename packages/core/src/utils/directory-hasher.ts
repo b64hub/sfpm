@@ -36,7 +36,7 @@ export class DirectoryHasher {
       hash.update(relativePath);
 
       const absolutePath = path.join(directory, relativePath);
-      // eslint-disable-next-line no-await-in-loop
+      // eslint-disable-next-line no-await-in-loop -- sequential read required for deterministic hash ordering
       const content = await fs.readFile(absolutePath);
       hash.update(content);
     }
