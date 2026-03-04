@@ -1,0 +1,40 @@
+{
+  "name": "@b64/sfpm-sfdmu",
+  "version": "0.1.0",
+  "description": "SFDMU adapter for SFPM data packages — builds and installs data using Salesforce Data Move Utility",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "sfpm",
+    "salesforce",
+    "sfdmu",
+    "data",
+    "migration"
+  ],
+  "author": "b64",
+  "license": "MIT",
+  "dependencies": {
+    "@b64/sfpm-core": "workspace:^0.1.0",
+    "@salesforce/core": "^8.24.2",
+    "fs-extra": "^11.3.3"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "vitest": "^4.0.17"
+  }
+}
