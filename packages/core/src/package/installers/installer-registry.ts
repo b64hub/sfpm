@@ -32,19 +32,19 @@ export type InstallerConstructor = new (
  * Registry to store and retrieve package installers by type
  */
 export class InstallerRegistry {
-  private static installers = new Map<Omit<PackageType, 'data' | 'diff'>, InstallerConstructor>();
+  private static installers = new Map<Omit<PackageType, 'diff'>, InstallerConstructor>();
 
   /**
    * Retrieves an installer for a specific package type
    */
-  public static getInstaller(type: Omit<PackageType, 'data' | 'diff'>): InstallerConstructor | undefined {
+  public static getInstaller(type: Omit<PackageType, 'diff'>): InstallerConstructor | undefined {
     return InstallerRegistry.installers.get(type);
   }
 
   /**
    * Registers an installer for a specific package type
    */
-  public static register(type: Omit<PackageType, 'data' | 'diff'>, installer: InstallerConstructor) {
+  public static register(type: Omit<PackageType, 'diff'>, installer: InstallerConstructor) {
     InstallerRegistry.installers.set(type, installer);
   }
 }
@@ -56,7 +56,7 @@ export class InstallerRegistry {
  * it casts internally so concrete constructors (which narrow the installable
  * parameter) don't clash with the broader {@link InstallerConstructor} union.
  */
-export function RegisterInstaller(type: Omit<PackageType, 'data' | 'diff'>) {
+export function RegisterInstaller(type: Omit<PackageType, 'diff'>) {
   return (constructor: new (...args: any[]) => Installer) => {
     InstallerRegistry.register(type, constructor as InstallerConstructor);
   };

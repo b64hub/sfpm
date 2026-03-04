@@ -1,17 +1,21 @@
 import {ComponentSet, SourceComponent} from '@salesforce/source-deploy-retrieve';
+import fg from 'fast-glob';
 import {
   get, merge, omit, set,
 } from 'lodash-es';
 import path from 'node:path';
 
 import ProjectConfig from '../project/project-config.js';
+import {VersionManager} from '../project/version-manager.js';
 import {
-  MetadataFile, PackageType, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageOrchestration, SfpmUnlockedPackageBuildOptions, SfpmUnlockedPackageMetadata,
+  MetadataFile, PackageType, SfpmDataPackageMetadata, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageMetadataBase, SfpmPackageOrchestration, SfpmUnlockedPackageBuildOptions, SfpmUnlockedPackageMetadata,
 } from '../types/package.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {SourceHasher} from '../utils/source-hasher.js';
-import {ManagedPackageRef, VersionInstallable, type SourceDeployable} from './installers/types.js';
-import { VersionManager } from '../project/version-manager.js';
+import {
+  type DataDeployable, ManagedPackageRef, type SourceDeployable, VersionInstallable,
+} from './installers/types.js';
 
 const TEST_COVERAGE_THRESHOLD = 75;
 const DEFAULT_API_VERSION = '65.0';
@@ -44,17 +48,16 @@ const PROFILE_SUPPORTED_METADATA_TYPES = new Set([
 ]);
 
 export default abstract class SfpmPackage {
-  protected _metadata: SfpmPackageMetadata;
+  protected _metadata: SfpmPackageMetadataBase;
   protected _packageDefinition?: PackageDefinition;
   public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
   public projectDefinition?: ProjectDefinition;
   public projectDirectory: string;
   public stagingDirectory: string | undefined;
 
-  constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadata>) {
+  constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadataBase>) {
     this.projectDirectory = projectDirectory;
     this._metadata = {
-      content: {...metadata?.content},
       identity: {
         packageName,
         packageType: '',
@@ -62,9 +65,8 @@ export default abstract class SfpmPackage {
       },
       orchestration: {...metadata?.orchestration},
       source: {...metadata?.source},
-      validation: {...metadata?.validation},
-      ...omit(metadata, ['identity', 'source', 'content', 'validation', 'orchestration']),
-    } as SfpmPackageMetadata;
+      ...omit(metadata, ['identity', 'source', 'orchestration']),
+    } as SfpmPackageMetadataBase;
   }
 
   get apiVersion(): string {
@@ -83,7 +85,7 @@ export default abstract class SfpmPackage {
     return this.packageDefinition?.dependencies;
   }
 
-  get metadata(): SfpmPackageMetadata {
+  get metadata(): SfpmPackageMetadataBase {
     return this._metadata;
   }
 
@@ -192,13 +194,21 @@ export default abstract class SfpmPackage {
    * @param sourceHash - Optional source hash to include
    * @returns SFPM metadata object for package.json
    */
-  public async toJson(): Promise<SfpmPackageMetadata> {
+  public async toJson(): Promise<SfpmPackageMetadataBase> {
     return this.metadata
   }
 }
 
 export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceDeployable {
   protected _componentSet?: ComponentSet;
+  protected declare _metadata: SfpmPackageMetadata;
+
+  constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadata>) {
+    super(packageName, projectDirectory, metadata);
+    // Ensure content and validation sections exist
+    this._metadata.content = {...metadata?.content} as SfpmPackageContent;
+    this._metadata.validation = {...metadata?.validation};
+  }
 
   get apexClasses(): SourceComponent[] {
     return this.getComponentSet()
@@ -495,7 +505,83 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 }
 
-export class SfpmDataPackage extends SfpmPackage {
+export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
+  constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadataBase>) {
+    super(packageName, projectDirectory, metadata);
+    this._metadata.identity.packageType = PackageType.Data;
+  }
+
+  /**
+   * Absolute path to the data directory.
+   * Before staging: resolves from project source.
+   * After staging: resolves from the staging area.
+   */
+  get dataDirectory(): string {
+    const packagePath = this.packageDefinition?.path;
+    if (!packagePath) {
+      throw new Error('Data package must have a path defined in packageDefinition');
+    }
+
+    if (this.stagingDirectory) {
+      return path.join(this.stagingDirectory, packagePath);
+    }
+
+    return path.join(this.projectDirectory, packagePath);
+  }
+
+  override get metadata(): SfpmPackageMetadataBase {
+    return this._metadata;
+  }
+
+  /**
+   * Alias for the version property, satisfying the DataDeployable interface.
+   */
+  get versionNumber(): string | undefined {
+    return this.version;
+  }
+
+  /**
+   * Calculate source hash by hashing all files in the data directory recursively.
+   * This is content-agnostic — it hashes every file regardless of type.
+   */
+  public async calculateSourceHash(): Promise<string> {
+    const hash = await DirectoryHasher.calculate(this.dataDirectory);
+    this.sourceHash = hash;
+    return hash;
+  }
+
+  /**
+   * Counts the files in the data directory for metadata.
+   */
+  public async countFiles(): Promise<number> {
+    const files = await fg(['**/*'], {
+      cwd: this.dataDirectory,
+      dot: false,
+      onlyFiles: true,
+    });
+    return files.length;
+  }
+
+  override async toJson(): Promise<SfpmDataPackageMetadata> {
+    const fileCount = await this.countFiles();
+
+    return {
+      content: {
+        dataDirectory: this.packageDefinition?.path || '',
+        fileCount,
+      },
+      identity: {
+        packageName: this.name,
+        packageType: PackageType.Data,
+        versionNumber: this.version,
+      },
+      orchestration: {
+        buildOptions: this.packageDefinition?.packageOptions?.build as any,
+        deploymentOptions: this.packageDefinition?.packageOptions?.deploy,
+      },
+      source: this._metadata.source,
+    };
+  }
 }
 
 export class SfpmUnlockedPackage extends SfpmMetadataPackage {
@@ -533,7 +619,7 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
   }
 
   override setBuildNumber(buildNumber: string): void {
-    return;
+
   }
 
   override setOrchestrationOptions(options: Partial<SfpmUnlockedPackageBuildOptions>): void {
@@ -600,7 +686,7 @@ export class PackageFactory {
       const managedRef = this.createManagedRef(packageName);
       if (managedRef) {
         throw new Error(`Package "${packageName}" is a managed dependency, not a local package. `
-        	+ 'Use createManagedRef() instead.');
+          + 'Use createManagedRef() instead.');
       }
 
       throw new Error(`Package ${packageName} not found in project definition`);

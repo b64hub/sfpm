@@ -1,46 +1,45 @@
-import { ComponentSet, MetadataComponent, registry } from '@salesforce/source-deploy-retrieve';
-import SfpmPackage, { SfpmMetadataPackage } from '../sfpm-package.js';
-import { PackageType, SfpmPackageContent, SfpmPackageMetadata } from '../../types/package.js';
-import { PackageAnalyzer } from './analyzer-registry.js';
+import {ComponentSet, MetadataComponent, registry} from '@salesforce/source-deploy-retrieve';
 
-import { Logger } from '../../types/logger.js';
+import {Logger} from '../../types/logger.js';
+import {PackageType, SfpmPackageContent} from '../../types/package.js';
+import SfpmPackage, {SfpmMetadataPackage} from '../sfpm-package.js';
+import {PackageAnalyzer} from './analyzer-registry.js';
 
-const PICKLIST_TYPES = ['Picklist', 'MultiselectPicklist'];
+const PICKLIST_TYPES = new Set(['MultiselectPicklist', 'Picklist']);
 
 export default class PicklistAnalyzer implements PackageAnalyzer {
-    private logger?: Logger;
+  private logger?: Logger;
 
-    constructor(logger?: Logger) {
-        this.logger = logger;
+  constructor(logger?: Logger) {
+    this.logger = logger;
+  }
+
+  public async analyze(sfpmPackage: SfpmMetadataPackage): Promise<Partial<SfpmPackageContent>> {
+    if (!sfpmPackage.customFields) {
+      return {};
     }
 
-    public isEnabled(sfpmPackage: SfpmMetadataPackage): boolean {
-        return sfpmPackage.type != PackageType.Data;
-    }
-          
-    public async analyze(sfpmPackage: SfpmMetadataPackage): Promise<Partial<SfpmPackageContent>> {
+    const picklists: MetadataComponent[] = [];
 
-        if (!sfpmPackage.customFields) {
-            return {};
+    try {
+      for (const field of sfpmPackage.customFields) {
+        // eslint-disable-next-line no-await-in-loop
+        const customField = (await field.parseXml()).CustomField as any;
+
+        if (customField && PICKLIST_TYPES.has(customField.type)) {
+          picklists.push(field);
         }
-
-        const picklists: MetadataComponent[] = [];
-        
-        try {
-            
-            for (const field of sfpmPackage.customFields) {
-                let customField = (await field.parseXml()).CustomField as any;
-
-                if (customField && PICKLIST_TYPES.includes(customField.type)) {
-                    picklists.push(field);
-                }
-            }
-        } catch (error) {
-            this.logger?.trace(`Unable to process Picklist update due to ${error}`);
-        }
-
-        sfpmPackage.setPicklists(picklists.map(p => p.fullName));
-
-        return {};
+      }
+    } catch (error) {
+      this.logger?.trace(`Unable to process Picklist update due to ${error}`);
     }
+
+    sfpmPackage.setPicklists(picklists.map(p => p.fullName));
+
+    return {};
+  }
+
+  public isEnabled(sfpmPackage: SfpmMetadataPackage): boolean {
+    return sfpmPackage.type !== PackageType.Data;
+  }
 }

@@ -36,6 +36,21 @@ export interface SourceDeployable {
 }
 
 /**
+ * A package that can be installed via data loading tools (e.g. SFDMU).
+ *
+ * Core is intentionally content-agnostic — it only exposes the directory
+ * containing the data files. Concrete adapters (like @b64/sfpm-sfdmu)
+ * interpret the directory contents (export.json, CSVs, etc.).
+ */
+export interface DataDeployable {
+  artifact?: ArtifactProvenance;
+  /** Absolute path to the directory containing the data files */
+  dataDirectory: string;
+  packageName: string;
+  versionNumber?: string;
+}
+
+/**
  * Lightweight reference to an external managed/subscriber package.
  *
  * Unlike the SfpmPackage hierarchy (which models local source packages used

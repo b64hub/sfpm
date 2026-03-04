@@ -4,6 +4,8 @@ import {
 import {
   Args, Flags,
 } from '@oclif/core'
+// Register SFDMU data builder (side-effect import triggers decorator registration)
+import '@b64/sfpm-sfdmu'
 
 import SfpmCommand from '../sfpm-command.js'
 import {BuildProgressRenderer, OutputMode} from '../ui/build-progress-renderer.js'
