@@ -1,7 +1,9 @@
 import {SfProject} from '@salesforce/core';
 
+import {SfpmConfig} from '../types/config.js';
 import {PackageType} from '../types/package.js';
 import {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {loadSfpmConfig} from './config-loader.js';
 import ProjectConfig from './project-config.js';
 import {ProjectGraph} from './project-graph.js';
 import {VersionManager} from './version-manager.js';
@@ -10,10 +12,12 @@ export default class ProjectService {
   private static instance: ProjectService | undefined;
   private readonly graph: ProjectGraph;
   private readonly projectConfig: ProjectConfig;
+  private readonly sfpmConfig: SfpmConfig;
 
-  private constructor(projectConfig: ProjectConfig, graph: ProjectGraph) {
+  private constructor(projectConfig: ProjectConfig, graph: ProjectGraph, sfpmConfig: SfpmConfig) {
     this.projectConfig = projectConfig;
     this.graph = graph;
+    this.sfpmConfig = sfpmConfig;
   }
 
   /**
@@ -40,8 +44,9 @@ export default class ProjectService {
     const projectConfig = new ProjectConfig(sfProject);
     const definition = projectConfig.getProjectDefinition();
     const graph = new ProjectGraph(definition);
+    const sfpmConfig = await loadSfpmConfig(sfProject.getPath());
 
-    return new ProjectService(projectConfig, graph);
+    return new ProjectService(projectConfig, graph, sfpmConfig);
   }
 
   /**
@@ -50,12 +55,20 @@ export default class ProjectService {
    * @param project - SfProject instance
    * @returns Fully initialized ProjectService instance
    */
-  public static createFromProject(project: SfProject): ProjectService {
+  /**
+   * Creates and initializes a new ProjectService instance from an existing SfProject.
+   * Note: This is synchronous and uses an empty SfpmConfig. Prefer `create()` for full config loading.
+   *
+   * @param project - SfProject instance
+   * @param sfpmConfig - Optional SfpmConfig (defaults to empty config)
+   * @returns Fully initialized ProjectService instance
+   */
+  public static createFromProject(project: SfProject, sfpmConfig: SfpmConfig = {}): ProjectService {
     const projectConfig = new ProjectConfig(project);
     const definition = projectConfig.getProjectDefinition();
     const graph = new ProjectGraph(definition);
 
-    return new ProjectService(projectConfig, graph);
+    return new ProjectService(projectConfig, graph, sfpmConfig);
   }
 
   /**
@@ -121,6 +134,26 @@ export default class ProjectService {
   }
 
   /**
+   * Returns the npm scope for publishing packages from sfpm.config.ts.
+   *
+   * @throws Error if npm scope is not configured
+   */
+  public getNpmScope(): string {
+    if (!this.sfpmConfig.npmScope) {
+      throw new Error('npm scope not configured. Add npmScope to sfpm.config.ts (e.g., npmScope: "@myorg")');
+    }
+
+    return this.sfpmConfig.npmScope;
+  }
+
+  /**
+   * Returns the npm scope if configured, undefined otherwise.
+   */
+  public getNpmScopeOrUndefined(): string | undefined {
+    return this.sfpmConfig.npmScope;
+  }
+
+  /**
    * Returns the ProjectConfig instance managed by this service
    */
   public getProjectConfig(): ProjectConfig {
@@ -132,6 +165,13 @@ export default class ProjectService {
    */
   public getProjectGraph(): ProjectGraph {
     return this.graph;
+  }
+
+  /**
+   * Returns the SfpmConfig loaded from sfpm.config.ts.
+   */
+  public getSfpmConfig(): SfpmConfig {
+    return this.sfpmConfig;
   }
 
   /**
