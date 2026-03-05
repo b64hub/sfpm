@@ -46,7 +46,7 @@ export class ForceIgnoreStep implements AssemblyStep {
         for (const stage of stages) {
             const stageIgnorePath = ignoreFilesConfig[stage];
             if (stageIgnorePath) {
-                await this.copyIgnoreFileForStage(options, forceIgnoresDir, stage, stageIgnorePath, rootForceIgnore);
+                await this.copyIgnoreFileForStage(forceIgnoresDir, stage, stageIgnorePath, rootForceIgnore);
             }
         }
     }
