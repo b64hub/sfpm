@@ -7,7 +7,7 @@ import {
 } from '../types/logger.js'
 import {PackageType} from '../types/package.js';
 import {
-  ManagedPackageDefinition, PackageDefinition, ProjectDefinition, ProjectDefinitionSchema, SfpmPluginConfig, SUBSCRIBER_PKG_VERSION_ID_PREFIX,
+  ManagedPackageDefinition, PackageDefinition, ProjectDefinition, ProjectDefinitionSchema, SUBSCRIBER_PKG_VERSION_ID_PREFIX,
 } from '../types/project.js';
 
 /**
@@ -158,28 +158,6 @@ export default class ProjectConfig {
   }
 
   /**
-   * Returns the npm scope for publishing packages.
-   * This is required for npm registry integration.
-   * @throws Error if npm scope is not configured
-   */
-  public getNpmScope(): string {
-    const config = this.getSfpmConfig();
-    if (!config?.npmScope) {
-      throw new Error('npm scope not configured. Add plugins.sfpm.npmScope to sfdx-project.json (e.g., "@myorg")');
-    }
-
-    return config.npmScope;
-  }
-
-  /**
-   * Returns the npm scope if configured, undefined otherwise.
-   * Use this for optional scope access without throwing.
-   */
-  public getNpmScopeOrUndefined(): string | undefined {
-    return this.getSfpmConfig()?.npmScope;
-  }
-
-  /**
    * Finds a package definition by name.
    * Searches through packageDirectories for a matching 'package' field.
    */
@@ -273,13 +251,6 @@ export default class ProjectConfig {
     pruned.packageDirectories = pruneOptions.removeCustomProperties ? [this.pruneForSalesforce(filteredPackages[0], pruneOptions.isOrgDependent)] : filteredPackages;
 
     return pruned;
-  }
-
-  /**
-   * Returns the SFPM plugin configuration
-   */
-  public getSfpmConfig(): SfpmPluginConfig | undefined {
-    return this.getProjectDefinition().plugins?.sfpm;
   }
 
   // =========================================================================

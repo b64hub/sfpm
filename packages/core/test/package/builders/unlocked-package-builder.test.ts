@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import UnlockedPackageBuilder from '../../../src/package/builders/unlocked-package-builder.js';
+import { BuilderOptions } from '../../../src/package/builders/builder-registry.js';
 import { SfpmUnlockedPackage } from '../../../src/package/sfpm-package.js';
 import { PackageType } from '../../../src/types/package.js';
 import { Org, SfProject, Lifecycle } from '@salesforce/core';
@@ -63,6 +64,7 @@ describe('UnlockedPackageBuilder', () => {
     let mockProject: any;
     let mockProjectJson: any;
     let lifecycleListeners: Record<string, Function> = {};
+    let builderOptions: BuilderOptions;
 
     beforeEach(() => {
         // Setup Logger
@@ -95,14 +97,13 @@ describe('UnlockedPackageBuilder', () => {
             }
         });
 
-        // Mock project definition with npm scope for artifact assembly
-        mockSfpmPackage.projectDefinition = {
-            plugins: {
-                sfpm: {
-                    npmScope: '@testorg'
-                }
-            }
-        } as any;
+        // Set required staging directory for build
+        mockSfpmPackage.stagingDirectory = '/tmp/project';
+
+        // Builder options with npm scope for artifact assembly
+        builderOptions = {
+            npmScope: '@testorg'
+        };
 
         // Setup Org Mock
         mockConnection = { getApiVersion: () => '50.0' };
@@ -139,7 +140,7 @@ describe('UnlockedPackageBuilder', () => {
         (Lifecycle.getInstance as any).mockReturnValue(mockLifecycle);
 
 
-        builder = new UnlockedPackageBuilder('/tmp/project', mockSfpmPackage, mockLogger);
+        builder = new UnlockedPackageBuilder('/tmp/project', mockSfpmPackage, builderOptions, mockLogger);
     });
 
     afterEach(() => {
@@ -221,7 +222,8 @@ describe('UnlockedPackageBuilder', () => {
                 } as any
             }
         });
-        builder = new UnlockedPackageBuilder('/tmp/project', mockSfpmPackage, mockLogger);
+        mockSfpmPackage.stagingDirectory = '/tmp/project';
+        builder = new UnlockedPackageBuilder('/tmp/project', mockSfpmPackage, builderOptions, mockLogger);
 
         // Mock result
         (PackageVersion.create as any).mockResolvedValue({

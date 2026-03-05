@@ -3,13 +3,14 @@ import EventEmitter from 'node:events';
 
 import {GitService} from '../git/git-service.js';
 import ProjectConfig from '../project/project-config.js';
+import {IgnoreFilesConfig} from '../types/config.js';
 import {NoSourceChangesError} from '../types/errors.js';
 import {AllBuildEvents} from '../types/events.js';
 import {Logger} from '../types/logger.js';
 import {PackageType} from '../types/package.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
-import {Builder, BuilderRegistry} from './builders/builder-registry.js';
+import {Builder, BuilderOptions, BuilderRegistry} from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory} from './sfpm-package.js';
 
 export interface BuildOptions {
@@ -18,9 +19,13 @@ export interface BuildOptions {
   devhubUsername?: string;
   /** Force build even if no source changes detected */
   force?: boolean;
+  /** Ignore files configuration for assembly */
+  ignoreFilesConfig?: IgnoreFilesConfig;
   installationKey?: string;
   installationKeyBypass?: boolean;
   isSkipValidation?: boolean;
+  /** npm scope for package publishing (e.g., "@myorg") */
+  npmScope?: string;
   orgDefinitionPath?: string;
 }
 
@@ -131,9 +136,16 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       throw error;
     }
 
+    // Build options for the builder from sfpm.config.ts
+    const builderOptions: BuilderOptions = {
+      ignoreFilesConfig: this.options.ignoreFilesConfig,
+      npmScope: this.options.npmScope,
+    };
+
     const builderInstance: Builder = new BuilderClass(
       sfpmPackage.stagingDirectory,
       sfpmPackage,
+      builderOptions,
       this.logger,
     );
 
@@ -240,6 +252,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         this.projectConfig,
         {
           destructiveManifestPath: this.options.destructiveManifestPath,
+          ignoreFilesConfig: this.options.ignoreFilesConfig,
           orgDefinitionPath: this.options.orgDefinitionPath,
           versionNumber: sfpmPackage.version,
         },

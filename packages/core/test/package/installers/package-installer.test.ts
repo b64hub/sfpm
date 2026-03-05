@@ -52,7 +52,6 @@ describe('PackageInstaller', () => {
 
         mockProjectConfig = {
             projectPath: '/test/project',
-            getNpmScope: vi.fn().mockReturnValue('@test'),
         };
 
         mockPackage = {
@@ -94,7 +93,7 @@ describe('PackageInstaller', () => {
 
         installer = new PackageInstaller(
             mockProjectConfig,
-            { targetOrg: 'testOrg', installationKey: 'test-key' },
+            { targetOrg: 'testOrg', installationKey: 'test-key', npmScope: '@test' },
             mockLogger
         );
 

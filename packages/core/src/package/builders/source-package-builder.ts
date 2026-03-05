@@ -5,23 +5,23 @@ import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {BuildTask} from '../package-builder.js';
 import SfpmPackage, {SfpmSourcePackage} from '../sfpm-package.js';
-import {Builder, RegisterBuilder} from './builder-registry.js';
+import {Builder, BuilderOptions, RegisterBuilder} from './builder-registry.js';
 import SourceHashTask from './tasks/source-hash-task.js';
 
-export interface SourcePackageBuilderOptions {
-}
-
+// eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Source)
 export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents> implements Builder {
   public postBuildTasks: BuildTask[] = [];
   public preBuildTasks: BuildTask[] = [];
   private logger?: Logger;
+  private options: BuilderOptions;
   private sfpmPackage: SfpmSourcePackage;
   private workingDirectory: string;
 
   constructor(
     workingDirectory: string,
     sfpmPackage: SfpmPackage,
+    options: BuilderOptions,
     logger?: Logger,
   ) {
     super();
@@ -31,6 +31,7 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
 
     this.workingDirectory = workingDirectory;
     this.sfpmPackage = sfpmPackage;
+    this.options = options;
     this.logger = logger;
 
     // Add source hash check to prevent redundant builds
@@ -77,6 +78,7 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
       });
 
       try {
+        // eslint-disable-next-line no-await-in-loop -- we want to run tasks sequentially and stop on first failure
         await task.exec();
 
         this.emit('task:complete', {
@@ -112,6 +114,7 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
       });
 
       try {
+        // eslint-disable-next-line no-await-in-loop -- we want to run tasks sequentially and stop on first failure
         await task.exec();
 
         this.emit('task:complete', {
