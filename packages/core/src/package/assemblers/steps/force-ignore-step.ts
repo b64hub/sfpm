@@ -1,5 +1,6 @@
 import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
 import { Logger } from "../../../types/logger.js";
+import { IgnoreFilesConfig } from "../../../types/config.js";
 import ProjectConfig from "../../../project/project-config.js";
 import fs from 'fs-extra';
 import path from 'path';
@@ -19,9 +20,8 @@ export class ForceIgnoreStep implements AssemblyStep {
         const forceIgnoresDir = path.join(output.stagingDirectory, 'forceignores');
         await fs.ensureDir(forceIgnoresDir);
 
-        const projectDef = this.projectConfig.getProjectDefinition();
         const rootForceIgnore = path.join(this.projectConfig.projectDirectory, '.forceignore');
-        const ignoreFilesConfig = projectDef.plugins?.sfpm?.ignoreFiles;
+        const ignoreFilesConfig = options.ignoreFilesConfig;
 
         try {
             await this.assembleStageIgnoreFiles(options, forceIgnoresDir, ignoreFilesConfig, rootForceIgnore);
@@ -34,31 +34,40 @@ export class ForceIgnoreStep implements AssemblyStep {
     private async assembleStageIgnoreFiles(
         options: AssemblyOptions,
         forceIgnoresDir: string,
-        ignoreFilesConfig: any,
+        ignoreFilesConfig: IgnoreFilesConfig | undefined,
         rootForceIgnore: string
     ) {
-        const stages = ['prepare', 'validate', 'quickbuild', 'build'];
+        // Infer stages from the config keys — no hardcoded stage list
+        if (!ignoreFilesConfig) {
+            return;
+        }
+
+        const stages = Object.keys(ignoreFilesConfig) as (keyof IgnoreFilesConfig)[];
         for (const stage of stages) {
-            await this.copyIgnoreFileForStage(options, forceIgnoresDir, stage, ignoreFilesConfig?.[stage], rootForceIgnore);
+            const stageIgnorePath = ignoreFilesConfig[stage];
+            if (stageIgnorePath) {
+                await this.copyIgnoreFileForStage(options, forceIgnoresDir, stage, stageIgnorePath, rootForceIgnore);
+            }
         }
     }
 
     private async copyIgnoreFileForStage(
-        options: AssemblyOptions,
         forceIgnoresDir: string,
         stage: string,
         stageSpecificIgnorePath: string | undefined,
         rootForceIgnore: string
     ) {
-        const destIgnorePath = path.join(forceIgnoresDir, `.${stage}ignore`);
+        const destIgnorePath = path.join(forceIgnoresDir, `.forceignore.${stage}`);
 
         if (stageSpecificIgnorePath) {
             const resolvedStageIgnorePath = path.join(this.projectConfig.projectDirectory, stageSpecificIgnorePath);
 
             if (await fs.pathExists(resolvedStageIgnorePath)) {
                 await fs.copy(resolvedStageIgnorePath, destIgnorePath);
-            } else if (await fs.pathExists(path.join(this.projectConfig.projectDirectory, 'forceignores', `.${stage}ignore`))) {
-                await fs.copy(path.join(this.projectConfig.projectDirectory, 'forceignores', `.${stage}ignore`), destIgnorePath);
+            // eslint-disable-next-line no-await-in-loop -- we want to check for each stage-specific file sequentially
+            } else if (await fs.pathExists(path.join(this.projectConfig.projectDirectory, 'forceignores', `.forceignore.${stage}`))) {
+                // Fallback: check forceignores/ directory for convention-based file
+                await fs.copy(path.join(this.projectConfig.projectDirectory, 'forceignores', `.forceignore.${stage}`), destIgnorePath);
             } else {
                 throw new Error(`${resolvedStageIgnorePath} does not exist`);
             }

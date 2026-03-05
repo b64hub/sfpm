@@ -1,4 +1,5 @@
 import { ConvertResult } from '@salesforce/source-deploy-retrieve';
+import { IgnoreFilesConfig } from '../../types/config.js';
 
 
 export interface AssemblyOptions {
@@ -6,6 +7,8 @@ export interface AssemblyOptions {
     orgDefinitionPath?: string;
     destructiveManifestPath?: string;
     replacementForceignorePath?: string;
+    /** Stage-specific ignore files from sfpm.config.ts */
+    ignoreFilesConfig?: IgnoreFilesConfig;
 }
 
 export interface AssemblyOutput {
