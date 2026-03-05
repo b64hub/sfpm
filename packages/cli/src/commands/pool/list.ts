@@ -33,7 +33,7 @@ export default class PoolList extends SfpmCommand {
     const {flags} = await this.parse(PoolList);
     const mode = flags.json ? 'json' as const : flags.quiet ? 'quiet' as const : 'interactive' as const;
 
-    const spinner = mode === 'interactive' ? ora('Connecting to hub org...').start() : undefined;
+    const spinner = mode === 'interactive' ? ora('Connecting to devhub...').start() : undefined;
 
     try {
       const devhub = await Org.create({aliasOrUsername: flags['target-dev-hub']});
@@ -41,7 +41,7 @@ export default class PoolList extends SfpmCommand {
         devhub,
         poolType: flags.type as OrgTypes,
       });
-      spinner?.succeed('Connected to hub org');
+      spinner?.succeed('Connected to devhub');
 
       const querySpinner = mode === 'interactive' ? ora(`Fetching orgs for pool "${flags.tag}"...`).start() : undefined;
       const orgs = await manager.list(flags.tag, flags['my-pool']);
@@ -66,7 +66,7 @@ export default class PoolList extends SfpmCommand {
         }
       }
     } catch (error) {
-      spinner?.fail('Failed');
+      spinner?.fail('Failed to connect to devhub');
       throw error;
     }
   }
