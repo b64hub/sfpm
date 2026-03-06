@@ -23,10 +23,15 @@ export class SourceHasher {
       hash.update(`${component.type.name}:${component.fullName}`);
 
       // Hash the metadata XML file if present
+      // Skip directories (some edge cases might have xml as a folder reference)
       if (component.xml) {
         // eslint-disable-next-line no-await-in-loop -- we want to hash each file sequentially to manage memory usage
-        const xmlContent = await fs.readFile(component.xml, 'utf8');
-        hash.update(xmlContent);
+        const xmlStat = await fs.stat(component.xml).catch(() => null);
+        if (xmlStat?.isFile()) {
+          // eslint-disable-next-line no-await-in-loop -- we want to hash each file sequentially to manage memory usage
+          const xmlContent = await fs.readFile(component.xml, 'utf8');
+          hash.update(xmlContent);
+        }
       }
 
       // Hash the actual source content if present (e.g., .cls, .trigger, .js files)

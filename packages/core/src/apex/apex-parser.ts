@@ -20,6 +20,16 @@ export class ApexParser {
   }
 
   public async classify(filePath: string): Promise<ApexClassInfo> {
+    const stat = await fs.stat(filePath).catch(() => null);
+    if (!stat?.isFile()) {
+      return {
+        isTest: false,
+        name: 'Unknown',
+        path: path.basename(filePath),
+        type: 'Class',
+      };
+    }
+
     const sourceCode = await fs.readFile(filePath, 'utf8');
     const info = await this.getInfo(sourceCode);
     info.path = path.basename(filePath);
