@@ -122,7 +122,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
             ? path.join(this.workingDirectory, buildOptions.configFilePath)
             : undefined,
           installationkey: buildOptions?.installationkey,
-          installationkeybypass: buildOptions?.installationkeybypass,
+          installationkeybypass: buildOptions?.installationkey ? undefined : true,
           packageId: this.sfpmPackage.packageId,
           postinstallscript: buildOptions?.postInstallScript,
           project: sfProject as any,

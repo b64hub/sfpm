@@ -30,7 +30,6 @@ export default class Build extends SfpmCommand {
     force: Flags.boolean({char: 'f', description: 'build even if no source changes detected'}),
     'include-dependencies': Flags.boolean({description: 'build the specified packages and their transitive dependencies'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key'}),
-    'installation-key-bypass': Flags.boolean({description: 'bypass installation key'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'skip-validation': Flags.boolean({description: 'skip validation'}),
@@ -76,7 +75,6 @@ export default class Build extends SfpmCommand {
       force: flags.force,
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       installationKey: flags['installation-key'],
-      installationKeyBypass: flags['installation-key-bypass'],
       isSkipValidation: flags['skip-validation'],
       npmScope: sfpmConfig.npmScope,
     }

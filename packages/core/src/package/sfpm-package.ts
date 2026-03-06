@@ -623,12 +623,10 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
   }
 
   override setOrchestrationOptions(options: Partial<SfpmUnlockedPackageBuildOptions>): void {
-    if (options.installationkey !== undefined) {
+    if (options.installationkey === undefined) {
+      set(this.metadata, 'orchestration.buildOptions.installationkeybypass', true);
+    } else {
       set(this.metadata, 'orchestration.buildOptions.installationkey', options.installationkey);
-    }
-
-    if (options.installationkeybypass !== undefined) {
-      set(this.metadata, 'orchestration.buildOptions.installationkeybypass', options.installationkeybypass);
     }
 
     if (options.isSkipValidation !== undefined) {

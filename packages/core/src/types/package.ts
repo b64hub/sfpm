@@ -112,7 +112,6 @@ export interface SfpmPackageBuildOptions {
 export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions {
   configFilePath?: string;
   installationkey?: string;
-  installationkeybypass?: boolean;
   isAsyncValidation?: boolean;
   isSkipValidation?: boolean;
   postInstallScript?: string;
