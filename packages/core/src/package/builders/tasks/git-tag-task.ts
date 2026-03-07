@@ -1,7 +1,7 @@
 import { BuildTask } from "../../package-builder.js";
 import SfpmPackage from "../../sfpm-package.js";
 import Git from "../../../git/git.js";
-import { VersionManager } from "../../../project/version-manager.js";
+import { toVersionFormat } from "../../../utils/version-utils.js";
 import { Logger } from "../../../types/logger.js";
 
 
@@ -15,7 +15,7 @@ export default class GitTagTask implements BuildTask {
 
 
     public async exec(): Promise<void> {
-        const normalizedVersion = VersionManager.normalizeVersion(this.sfpmPackage.version || '0.0.0.1');
+        const normalizedVersion = toVersionFormat(this.sfpmPackage.version || '0.0.0.1', 'semver');
         const tagname = `${this.sfpmPackage.packageName}@${normalizedVersion}`;
 
         this.logger?.info(`Tagging package ${this.sfpmPackage.packageName} with ${tagname}`);

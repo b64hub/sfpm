@@ -5,7 +5,7 @@ import {EventEmitter} from 'node:events';
 import path from 'node:path';
 
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
-import {VersionManager} from '../project/version-manager.js';
+import {toVersionFormat} from '../utils/version-utils.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 import {NpmPackageJson} from '../types/npm.js';
@@ -82,7 +82,7 @@ export default class ArtifactAssembler extends EventEmitter {
   ) {
     super();
     this.options = options;
-    this.packageVersionNumber = VersionManager.normalizeVersion(sfpmPackage.version || '0.0.0.1');
+    this.packageVersionNumber = toVersionFormat(sfpmPackage.version || '0.0.0.1', 'semver');
 
     // Create repository for artifact operations
     this.repository = new ArtifactRepository(projectDirectory, logger);

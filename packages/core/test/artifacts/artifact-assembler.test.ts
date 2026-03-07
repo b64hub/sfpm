@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import path from 'path';
 import * as fs from 'fs-extra';
 import * as childProcess from 'child_process';
-import { VersionManager } from '../../src/project/version-manager.js';
+import { toVersionFormat } from '../../src/utils/version-utils.js';
 import { PackageType } from '../../src/types/package.js';
 
 // Create a mock repository instance that we can control
@@ -52,10 +52,8 @@ vi.mock('../../src/artifacts/artifact-repository.js', () => {
     };
 });
 
-vi.mock('../../src/project/version-manager.js', () => ({
-    VersionManager: {
-        normalizeVersion: vi.fn()
-    }
+vi.mock('../../src/utils/version-utils.js', () => ({
+    toVersionFormat: vi.fn()
 }));
 
 // Import after mocks are set up
@@ -127,7 +125,7 @@ describe('ArtifactAssembler', () => {
             license: 'MIT'
         };
 
-        vi.mocked(VersionManager.normalizeVersion).mockReturnValue(version);
+        vi.mocked(toVersionFormat).mockReturnValue(version);
 
         // Mock execSync to return tarball filename from npm pack
         vi.mocked(childProcess.execSync).mockReturnValue(`testorg-${packageName}-${version}.tgz\n`);

@@ -87,3 +87,5 @@ export * from './types/package.js';
 export * from './types/project.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
 export {escapeSOQL, soql} from './utils/soql.js';
+export {toSalesforceVersion, toVersionFormat} from './utils/version-utils.js';
+export type {VersionFormatOptions} from './utils/version-utils.js';

@@ -65,7 +65,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    */
   public async buildPackage(
     packageName: string,
-    projectDirectory: string = process.cwd(),
+    projectDirectory: string,
   ) {
     // Use PackageFactory to create a fully-configured package
     const packageFactory = new PackageFactory(this.projectConfig);

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GitTagTask from '../../../../src/package/builders/tasks/git-tag-task.js';
 import Git from '../../../../src/git/git.js';
-import { VersionManager } from '../../../../src/project/version-manager.js';
+import { toVersionFormat } from '../../../../src/utils/version-utils.js';
 
 vi.mock('../../../../src/git/git.js');
-vi.mock('../../../../src/project/version-manager.js');
+vi.mock('../../../../src/utils/version-utils.js');
 
 describe('GitTagTask', () => {
     let mockSfpmPackage: any;
@@ -36,7 +36,7 @@ describe('GitTagTask', () => {
             warn: vi.fn()
         };
 
-        vi.mocked(VersionManager.normalizeVersion).mockReturnValue(normalizedVersion);
+        vi.mocked(toVersionFormat).mockReturnValue(normalizedVersion);
 
         // Mock Git.initiateRepo static method
         mockGitInstance = {
@@ -50,7 +50,7 @@ describe('GitTagTask', () => {
     it('should create a tag with the correct convention', async () => {
         await task.exec();
 
-        expect(VersionManager.normalizeVersion).toHaveBeenCalledWith(version);
+        expect(toVersionFormat).toHaveBeenCalledWith(version, 'semver');
         expect(Git.initiateRepo).toHaveBeenCalledWith(mockLogger);
 
         expect(mockGitInstance.addAnnotatedTag).toHaveBeenCalledWith(
@@ -66,6 +66,6 @@ describe('GitTagTask', () => {
         mockSfpmPackage.version = undefined;
         await task.exec();
 
-        expect(VersionManager.normalizeVersion).toHaveBeenCalledWith('0.0.0.1');
+        expect(toVersionFormat).toHaveBeenCalledWith('0.0.0.1', 'semver');
     });
 });

@@ -6,7 +6,7 @@ import {
 import path from 'node:path';
 
 import ProjectConfig from '../project/project-config.js';
-import {VersionManager} from '../project/version-manager.js';
+import {toVersionFormat} from '../utils/version-utils.js';
 import {
   MetadataFile, PackageType, SfpmDataPackageMetadata, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageMetadataBase, SfpmPackageOrchestration, SfpmUnlockedPackageBuildOptions, SfpmUnlockedPackageMetadata, VersionFormat,
 } from '../types/package.js';
@@ -154,7 +154,7 @@ export default abstract class SfpmPackage {
   }
 
   set version(val: string) {
-    this._metadata.identity.versionNumber = VersionManager.normalizeVersion(val);
+    this._metadata.identity.versionNumber = toVersionFormat(val, 'semver');
   }
 
   /**
@@ -173,17 +173,7 @@ export default abstract class SfpmPackage {
   ): string | undefined {
     const raw = this.version;
     if (!raw) return undefined;
-
-    const includeBuild = options?.includeBuildNumber ?? true;
-
-    if (!includeBuild) {
-      // Strip build segment: take only major.minor.patch
-      return raw.replace(/[-.]([\dA-Za-z]+)$/, '');
-    }
-
-    return format === 'salesforce'
-      ? VersionManager.toSalesforceVersion(raw)
-      : raw;
+    return toVersionFormat(raw, format, {includeBuildNumber: options?.includeBuildNumber});
   }
 
   public setBuildNumber(buildNumber: string): void {

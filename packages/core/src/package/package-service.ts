@@ -1,7 +1,7 @@
 import {Org} from '@salesforce/core';
 import semver from 'semver';
 
-import {VersionManager} from '../project/version-manager.js';
+import {formatVersion} from '../utils/version-utils.js';
 import {Logger} from '../types/logger.js';
 import {PackageType} from '../types/package.js';
 import {soql} from '../utils/soql.js';
@@ -213,8 +213,8 @@ export class PackageService {
 
       if (records.length > 1) {
         return records.sort((a, b) => {
-          const v1 = VersionManager.formatVersion(a.MajorVersion, a.MinorVersion, a.PatchVersion, a.BuildNumber);
-          const v2 = VersionManager.formatVersion(b.MajorVersion, b.MinorVersion, b.PatchVersion, b.BuildNumber);
+          const v1 = formatVersion(a.MajorVersion, a.MinorVersion, a.PatchVersion, a.BuildNumber);
+          const v2 = formatVersion(b.MajorVersion, b.MinorVersion, b.PatchVersion, b.BuildNumber);
           return semver.rcompare(v1, v2);
         });
       }
@@ -376,7 +376,7 @@ export class PackageService {
       const packages: SubscriberPackage[] = [];
 
       for (const record of records) {
-        const packageVersionNumber = VersionManager.formatVersion(
+        const packageVersionNumber = formatVersion(
           record.SubscriberPackageVersion.MajorVersion,
           record.SubscriberPackageVersion.MinorVersion,
           record.SubscriberPackageVersion.PatchVersion,

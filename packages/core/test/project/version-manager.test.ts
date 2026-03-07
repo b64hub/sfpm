@@ -108,7 +108,7 @@ describe('VersionManager', () => {
         });
 
         test('throws on unsupported format', () => {
-            expect(() => VersionManager.toSalesforceVersion('not-a-version')).toThrow('Cannot convert version');
+            expect(() => VersionManager.toSalesforceVersion('not-a-version')).toThrow('Invalid version format');
         });
     });
 });

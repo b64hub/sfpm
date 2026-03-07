@@ -15,7 +15,7 @@ import {
     readNpmrcRegistry,
     normalizeRegistryUrl 
 } from './registry/index.js';
-import { VersionManager } from '../project/version-manager.js';
+import { toVersionFormat } from '../utils/version-utils.js';
 
 /**
  * Events emitted by the ArtifactResolver
@@ -619,7 +619,7 @@ export class ArtifactResolver extends EventEmitter {
         }
 
         const cleanedVersions = versions
-            .map((v) => ({ original: v, cleaned: VersionManager.cleanVersion(v) }))
+            .map((v) => ({ original: v, cleaned: toVersionFormat(v, 'semver', { strict: false, resolveTokens: true }) }))
             .filter((v) => semver.valid(v.cleaned));
 
         if (cleanedVersions.length === 0) {
@@ -630,7 +630,7 @@ export class ArtifactResolver extends EventEmitter {
             return this.findHighestVersion(versions, includePrerelease);
         }
 
-        const cleanedRequested = VersionManager.cleanVersion(requestedVersion);
+        const cleanedRequested = toVersionFormat(requestedVersion, 'semver', { strict: false, resolveTokens: true });
 
         const exactMatch = cleanedVersions.find((v) => v.cleaned === cleanedRequested);
         if (exactMatch) {
@@ -665,7 +665,7 @@ export class ArtifactResolver extends EventEmitter {
         }
 
         const sorted = versions
-            .map((v) => ({ original: v, cleaned: VersionManager.cleanVersion(v) }))
+            .map((v) => ({ original: v, cleaned: toVersionFormat(v, 'semver', { strict: false, resolveTokens: true }) }))
             .filter((v) => semver.valid(v.cleaned))
             .sort((a, b) => semver.rcompare(a.cleaned, b.cleaned));
 
