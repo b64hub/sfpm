@@ -179,7 +179,7 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
       artifact: this.sfpmPackage.sourceHash && this.sfpmPackage.commitId
         ? {commitId: this.sfpmPackage.commitId, sourceHash: this.sfpmPackage.sourceHash, tag: this.sfpmPackage.tag}
         : undefined,
-      installationKey: buildOptions?.installationkey,
+      installationKey: buildOptions?.installationKey,
       packageName: this.sfpmPackage.packageName,
       packageVersionId: versionId,
       versionNumber: this.sfpmPackage.version,

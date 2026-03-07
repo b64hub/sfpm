@@ -96,6 +96,41 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
   }
 
   /**
+   * Converts an npm/semver-style version to the Salesforce 4-part format.
+   * e.g. `0.1.0-NEXT` → `0.1.0.NEXT`, `1.2.3-7` → `1.2.3.7`
+   *
+   * If the version is already in Salesforce format (dot-separated 4 parts),
+   * it is returned as-is.
+   *
+   * @param version - Version string in npm format (major.minor.patch-build)
+   * @returns Version string in Salesforce format (major.minor.patch.build)
+   */
+  public static toSalesforceVersion(version: string): string {
+    if (!version) return '0.0.0.NEXT';
+
+    // Already in Salesforce format (4 dot-separated parts)?
+    if (/^\d+\.\d+\.\d+\.(\d+|NEXT|LATEST)$/i.test(version)) {
+      return version;
+    }
+
+    // npm/semver format: major.minor.patch-build → major.minor.patch.build
+    const match = version.match(/^(\d+\.\d+\.\d+)-(\d+|NEXT|LATEST)$/i);
+    if (match) {
+      return `${match[1]}.${match[2]}`;
+    }
+
+    // Plain 3-part semver without prerelease → append .NEXT
+    if (/^\d+\.\d+\.\d+$/.test(version)) {
+      return `${version}.NEXT`;
+    }
+
+    throw new Error(
+      `Cannot convert version "${version}" to Salesforce format. ` +
+      `Expected major.minor.patch-build (e.g. 0.1.0-NEXT) or major.minor.patch.build (e.g. 0.1.0.NEXT).`,
+    );
+  }
+
+  /**
    * Normalizes and validates a version string.
    * Converts 4-part Salesforce versions (major.minor.patch.build)
    * to a semver compatible format (major.minor.patch-build).

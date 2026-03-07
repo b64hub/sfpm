@@ -8,7 +8,7 @@ import path from 'node:path';
 import ProjectConfig from '../project/project-config.js';
 import {VersionManager} from '../project/version-manager.js';
 import {
-  MetadataFile, PackageType, SfpmDataPackageMetadata, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageMetadataBase, SfpmPackageOrchestration, SfpmUnlockedPackageBuildOptions, SfpmUnlockedPackageMetadata,
+  MetadataFile, PackageType, SfpmDataPackageMetadata, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageMetadataBase, SfpmPackageOrchestration, SfpmUnlockedPackageBuildOptions, SfpmUnlockedPackageMetadata, VersionFormat,
 } from '../types/package.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
@@ -155,6 +155,35 @@ export default abstract class SfpmPackage {
 
   set version(val: string) {
     this._metadata.identity.versionNumber = VersionManager.normalizeVersion(val);
+  }
+
+  /**
+   * Returns the version number in the requested format.
+   *
+   * @param format - `'semver'` (default) for semver with hyphen (`1.0.0-NEXT`),
+   *                 `'salesforce'` for 4-part dot-separated (`1.0.0.NEXT`).
+   * @param options.includeBuildNumber - Whether to include the build segment
+   *                                     (default: `true`). When `false`, returns
+   *                                     only `major.minor.patch`.
+   * @returns Formatted version string, or `undefined` if no version is set.
+   */
+  public getVersionNumber(
+    format: VersionFormat = 'semver',
+    options?: {includeBuildNumber?: boolean},
+  ): string | undefined {
+    const raw = this.version;
+    if (!raw) return undefined;
+
+    const includeBuild = options?.includeBuildNumber ?? true;
+
+    if (!includeBuild) {
+      // Strip build segment: take only major.minor.patch
+      return raw.replace(/[-.]([\dA-Za-z]+)$/, '');
+    }
+
+    return format === 'salesforce'
+      ? VersionManager.toSalesforceVersion(raw)
+      : raw;
   }
 
   public setBuildNumber(buildNumber: string): void {
@@ -623,10 +652,10 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
   }
 
   override setOrchestrationOptions(options: Partial<SfpmUnlockedPackageBuildOptions>): void {
-    if (options.installationkey === undefined) {
-      set(this.metadata, 'orchestration.buildOptions.installationkeybypass', true);
+    if (options.installationKey === undefined) {
+      set(this.metadata, 'orchestration.buildOptions.installationKeyBypass', true);
     } else {
-      set(this.metadata, 'orchestration.buildOptions.installationkey', options.installationkey);
+      set(this.metadata, 'orchestration.buildOptions.installationKey', options.installationKey);
     }
 
     if (options.isSkipValidation !== undefined) {

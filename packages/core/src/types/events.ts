@@ -69,6 +69,7 @@ export interface AnalyzerStartEvent extends BaseEvent {
 
 export interface AnalyzerCompleteEvent extends BaseEvent {
   analyzerName: string;
+  error?: string;
   findings?: Record<string, any>;
 }
 

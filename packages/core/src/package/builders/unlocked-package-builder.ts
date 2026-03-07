@@ -113,28 +113,38 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     lifecycle.on('packageVersionCreate:progress', progressListener);
 
     try {
+
+      const packageVersionCreateOptions: Record<string, unknown> = {
+        connection: this.devhubOrg!.getConnection(),
+        project: sfProject,
+        packageId: this.sfpmPackage.packageId,
+        versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
+        codecoverage: buildOptions?.isCoverageEnabled ?? false,
+        skipvalidation: buildOptions?.isSkipValidation ?? false,
+        asyncvalidation: buildOptions?.isAsyncValidation ?? false,
+        installationkey: buildOptions?.installationKey,
+        installationkeybypass: buildOptions?.installationKey ? undefined : true,
+        ...(buildOptions?.definitionFile
+          ? {definitionfile: path.join(this.workingDirectory, buildOptions.definitionFile)}
+          : {}),
+        ...(this.sfpmPackage.metadata.source?.tag
+          ? {tag: this.sfpmPackage.metadata.source.tag}
+          : {}),
+      };
+
+      this.logger?.debug(
+        `PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, ` +
+        `version=${this.sfpmPackage.version}, skipvalidation=${buildOptions?.isSkipValidation ?? false}, ` +
+        `definitionfile=${buildOptions?.definitionFile ?? '(not set)'}`,
+      );
+
       const result = await PackageVersion.create(
-        {
-          asyncvalidation: buildOptions?.isAsyncValidation,
-          codecoverage: buildOptions?.isCoverageEnabled,
-          connection: this.devhubOrg!.getConnection() as any,
-          definitionfile: buildOptions?.configFilePath
-            ? path.join(this.workingDirectory, buildOptions.configFilePath)
-            : undefined,
-          installationkey: buildOptions?.installationkey,
-          installationkeybypass: buildOptions?.installationkey ? undefined : true,
-          packageId: this.sfpmPackage.packageId,
-          postinstallscript: buildOptions?.postInstallScript,
-          project: sfProject as any,
-          skipvalidation: buildOptions?.isSkipValidation,
-          tag: this.sfpmPackage.metadata.source?.tag,
-          versionnumber: this.sfpmPackage.version,
-        },
+        packageVersionCreateOptions as any,
         {frequency: pollingFrequency, timeout: waitTime},
       );
 
-      // Result details are emitted via events for structured handling
-      this.logger?.debug(`Package Result: ${JSON.stringify(result)}`);
+      // Log key result fields (avoid JSON.stringify as result may contain circular Connection refs)
+      this.logger?.debug(`Package Result: Status=${result.Status}, VersionId=${result.SubscriberPackageVersionId}, Version=${result.VersionNumber}`);
 
       if (result.SubscriberPackageVersionId) {
         this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
@@ -175,7 +185,13 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
         throw new Error('This package has not meet the minimum coverage requirement of 75%');
       }
     } catch (error: any) {
-      throw new Error(`Unable to create ${this.sfpmPackage.packageName}: ${error.message}`);
+      const details = [
+        error.message,
+        error.data ? `Data: ${JSON.stringify(error.data)}` : '',
+        error.actions?.length ? `Actions: ${error.actions.join(', ')}` : '',
+      ].filter(Boolean).join('\n');
+
+      throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${details}`, {cause: error});
     } finally {
       lifecycle.removeAllListeners('packageVersionCreate:progress');
     }

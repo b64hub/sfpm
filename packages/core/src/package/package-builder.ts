@@ -212,12 +212,15 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         } catch (error) {
           this.emit('analyzer:complete', {
             analyzerName,
+            error: error instanceof Error ? error.message : String(error),
             findings: {},
             packageName: sfpmPackage.packageName,
             timestamp: new Date(),
           });
 
-          throw error;
+          // Re-throw with analyzer context for better error messages
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`[${analyzerName}] ${message}`, {cause: error});
         }
       });
 

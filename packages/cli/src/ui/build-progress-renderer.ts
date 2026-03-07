@@ -48,6 +48,7 @@ interface TimingInfo {
   builderStart?: Date;
   buildStart?: Date;
   connectionStart?: Date;
+  createStart?: Date;
   stageStart?: Date;
 }
 
@@ -386,7 +387,7 @@ export class BuildProgressRenderer {
         `${chalk.cyan(event.packageName)} - Executing ${event.packageType} builder...`,
       );
     } else if (!this.isOrchestrating()) {
-      this.logger.log(chalk.dim(`Executing ${event.packageType} package builder...\n`));
+      this.startSpinner(`Executing ${event.packageType} package builder...`);
     }
   }
 
@@ -472,14 +473,19 @@ export class BuildProgressRenderer {
   private handleCreateComplete(event: CreateCompleteEvent): void {
     if (!this.isInteractive()) return;
 
+    const elapsed = this.timings.createStart
+      ? formatDuration(Date.now() - this.timings.createStart.getTime())
+      : '';
+    const elapsedSuffix = elapsed ? chalk.dim(` (${elapsed})`) : '';
+
     const task = this.getPackageTask(event.packageName);
     if (task) {
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} - Created ${event.versionNumber}`,
+        `${chalk.cyan(event.packageName)} - Created ${event.versionNumber}${elapsedSuffix}`,
       );
     } else if (!this.isOrchestrating()) {
-      this.stopSpinner(true, chalk.green(`Package ${event.packageName}@${event.versionNumber} successfully created with Id: ${event.packageVersionId}`));
+      this.stopSpinner(true, chalk.green(`Package ${event.packageName}@${event.versionNumber} successfully created with Id: ${event.packageVersionId}`) + elapsedSuffix);
 
       // Build package details entries
       const entries: Record<string, string> = {
@@ -519,19 +525,26 @@ export class BuildProgressRenderer {
   private handleCreateProgress(event: CreateProgressEvent): void {
     if (!this.isInteractive() || !event.message) return;
 
+    const elapsed = this.timings.createStart
+      ? formatDuration(Date.now() - this.timings.createStart.getTime())
+      : '';
+    const elapsedSuffix = elapsed ? chalk.dim(` (${elapsed})`) : '';
+
     const task = this.getPackageTask(event.packageName);
     if (task) {
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} - Creating: ${event.message}`,
+        `${chalk.cyan(event.packageName)} - Creating: ${event.message}${elapsedSuffix}`,
       );
     } else if (!this.isOrchestrating() && this.spinner) {
-      this.spinner.text = `Creating package version ${event.packageName}@${event.message}`;
+      this.spinner.text = `Creating package version: ${event.message}${elapsedSuffix}`;
     }
   }
 
   private handleCreateStart(event: CreateStartEvent): void {
     if (!this.isInteractive()) return;
+
+    this.timings.createStart = event.timestamp;
 
     const task = this.getPackageTask(event.packageName);
     if (task) {

@@ -85,4 +85,30 @@ describe('VersionManager', () => {
         expect(updatedDefinition).toBeDefined();
         expect(updatedDefinition.packageDirectories).toBeDefined();
     });
+
+    describe('toSalesforceVersion', () => {
+        test('converts npm format to Salesforce format', () => {
+            expect(VersionManager.toSalesforceVersion('0.1.0-NEXT')).toBe('0.1.0.NEXT');
+            expect(VersionManager.toSalesforceVersion('1.2.3-7')).toBe('1.2.3.7');
+            expect(VersionManager.toSalesforceVersion('1.0.0-LATEST')).toBe('1.0.0.LATEST');
+        });
+
+        test('returns Salesforce format as-is', () => {
+            expect(VersionManager.toSalesforceVersion('0.1.0.NEXT')).toBe('0.1.0.NEXT');
+            expect(VersionManager.toSalesforceVersion('1.2.3.42')).toBe('1.2.3.42');
+            expect(VersionManager.toSalesforceVersion('1.0.0.LATEST')).toBe('1.0.0.LATEST');
+        });
+
+        test('appends .NEXT to plain 3-part semver', () => {
+            expect(VersionManager.toSalesforceVersion('1.0.0')).toBe('1.0.0.NEXT');
+        });
+
+        test('returns default for empty input', () => {
+            expect(VersionManager.toSalesforceVersion('')).toBe('0.0.0.NEXT');
+        });
+
+        test('throws on unsupported format', () => {
+            expect(() => VersionManager.toSalesforceVersion('not-a-version')).toThrow('Cannot convert version');
+        });
+    });
 });
