@@ -375,9 +375,11 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
           artifactPath: error.artifactPath,
           latestVersion: error.latestVersion,
           packageName: sfpmPackage.packageName,
+          packageType: sfpmPackage.type as PackageType,
           reason: 'no-changes',
           sourceHash: error.sourceHash,
           timestamp: new Date(),
+          version: sfpmPackage.version,
         });
         return; // Exit gracefully without error
       }

@@ -105,6 +105,11 @@ export class BuildProgressRenderer {
    * Once all `analyzer:start` events arrive, subtasks are created.
    */
   private pendingAnalyzers: Map<string, {count: number; names: string[]}> = new Map();
+  /**
+   * Tracks skip reasons per package so they survive across event handlers.
+   * Populated by `build:skipped`, consumed by `orchestration:package:complete`.
+   */
+  private skippedReasons: Map<string, string> = new Map();
   private spinner?: Ora;
   private timings: TimingInfo = {
     analyzerStarts: new Map(),
@@ -398,27 +403,45 @@ export class BuildProgressRenderer {
 
     if (!this.isInteractive()) return;
 
+    const reasonLabel = event.reason === 'no-changes'
+      ? 'no source changes detected'
+      : event.reason;
+
+    // Store the reason so orchestration:package:complete can use it
+    this.skippedReasons.set(event.packageName, reasonLabel);
+
     const task = this.getPackageTask(event.packageName);
     if (task) {
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.yellow('Skipped')} ${chalk.cyan(event.packageName)} - ${event.reason === 'no-changes' ? 'no source changes' : event.reason}`,
+        `${chalk.yellow('Skipped')} ${chalk.cyan(event.packageName)} - ${reasonLabel}`,
       );
     } else if (!this.isOrchestrating()) {
+      // Stop any active spinner before showing the box
+      this.stopSpinner(true, chalk.yellow('Build skipped'));
+
       const duration = calculateDuration(this.timings.buildStart, event.timestamp);
 
       const entries: Record<string, string> = {
-        'Latest version': event.latestVersion,
-        'Source hash': event.sourceHash,
-        Status: chalk.yellow('No source changes detected'),
+        Package: chalk.cyan(event.packageName),
+        Type: event.packageType,
       };
 
-      if (event.artifactPath) {
-        entries.Artifact = event.artifactPath;
+      if (event.version) {
+        entries.Version = event.version;
       }
 
-      this.logger.log(warningBox('Build Skipped', entries));
-      this.logger.log(chalk.dim(`  Build skipped in ${duration}\n`));
+      entries['Latest Build'] = event.latestVersion;
+      entries['Source Hash'] = chalk.dim(event.sourceHash);
+
+      if (event.artifactPath) {
+        entries.Artifact = chalk.dim(event.artifactPath);
+      }
+
+      entries.Reason = chalk.yellow(reasonLabel.charAt(0).toUpperCase() + reasonLabel.slice(1));
+      entries.Duration = duration;
+
+      this.logger.log(infoBox('Build Skipped', entries));
     }
   }
 
@@ -616,10 +639,13 @@ export class BuildProgressRenderer {
     const duration = formatDuration(event.duration);
 
     if (event.skipped) {
+      const reason = this.skippedReasons.get(event.packageName);
+      const reasonSuffix = reason ? ` - ${reason}` : '';
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.yellow('Skipped')} ${chalk.cyan(event.packageName)} ${chalk.gray(`(${duration})`)}`,
+        `${chalk.yellow('Skipped')} ${chalk.cyan(event.packageName)}${reasonSuffix} ${chalk.gray(`(${duration})`)}`,
       );
+
       this.listr.resolvePackage(event.packageName);
     } else if (event.success) {
       // Title may already be set by build:complete — update with duration if not

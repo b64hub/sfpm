@@ -33,8 +33,10 @@ export interface BuildCompleteEvent extends BaseEvent {
 export interface BuildSkippedEvent extends BaseEvent {
   artifactPath?: string;
   latestVersion: string;
+  packageType: PackageType;
   reason: 'already-built' | 'no-changes';
   sourceHash: string;
+  version?: string;
 }
 
 export interface BuildErrorEvent extends BaseEvent {
