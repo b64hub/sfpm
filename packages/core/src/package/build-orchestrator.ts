@@ -66,8 +66,13 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     this.forwardBuilderEvents(builder, emitter);
 
     let success = true;
-    const skipped = false;
+    let skipped = false;
     let error: string | undefined;
+
+    // Detect build-skip before the call so the flag is captured
+    builder.on('build:skipped', () => {
+      skipped = true;
+    });
 
     try {
       await builder.buildPackage(packageName, this.projectDirectory);

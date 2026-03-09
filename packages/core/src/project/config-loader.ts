@@ -52,7 +52,9 @@ export async function loadSfpmConfig(
   logger?.debug(`Loading SFPM config from: ${configPath}`);
 
   try {
-    const jiti = createJiti(import.meta.url, {
+    // Use configPath as the resolution base so that imports in the config file
+    // resolve from the target project's node_modules, not from the sfpm monorepo
+    const jiti = createJiti(configPath, {
       fsCache: true,
       interopDefault: true,
     });

@@ -4,6 +4,10 @@ import {simpleGit} from 'simple-git';
 
 import {OrgPackageVersionFetcher} from '../types/org.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {
+  formatVersion as formatVersionUtil,
+  toVersionFormat,
+} from '../utils/version-utils.js';
 import {PackageNode, ProjectGraph} from './project-graph.js';
 
 const NEXT_SUFFIX = '.NEXT';
@@ -50,34 +54,10 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
 
   /**
    * Cleans a version string for semver comparison.
-   * Converts Salesforce 4-part format (1.0.0.16) to semver (1.0.0-16).
-   * Handles NEXT suffix by converting to 0 for comparison purposes.
-   *
-   * Unlike normalizeVersion, this method does not throw on invalid versions
-   * and is optimized for version comparison rather than storage.
-   *
-   * @param version - Version string in any supported format
-   * @returns Semver-compatible version string, or original if cannot be converted
+   * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'semver', { strict: false, resolveTokens: true })`.
    */
   public static cleanVersion(version: string): string {
-    // Already valid semver
-    if (semver.valid(version)) {
-      return version;
-    }
-
-    // Handle Salesforce format: 1.0.0.16 -> 1.0.0-16, 1.0.0.NEXT -> 1.0.0-0
-    const sfFormat = /^(\d+)\.(\d+)\.(\d+)\.(\d+|NEXT|LATEST)$/i;
-    const sfMatch = version.match(sfFormat);
-    if (sfMatch) {
-      const [, major, minor, patch, build] = sfMatch;
-      const buildNum = build.toUpperCase();
-      // Convert NEXT/LATEST to 0 for comparison (they represent unreleased versions)
-      const numericBuild = (buildNum === 'NEXT' || buildNum === 'LATEST') ? '0' : build;
-      return `${major}.${minor}.${patch}-${numericBuild}`;
-    }
-
-    // Return as-is if we can't parse it (let caller handle invalid versions)
-    return version;
+    return toVersionFormat(version, 'semver', {strict: false, resolveTokens: true});
   }
 
   /**
@@ -91,44 +71,29 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
     return new VersionManager(graph, definition);
   }
 
+  /**
+   * Formats version components into a dot-separated version string.
+   * @deprecated Import `formatVersion` from `utils/version-utils.js` instead.
+   */
   public static formatVersion(major: number, minor: number, patch: number, build: number): string {
-    return `${major}.${minor}.${patch}.${build}`;
+    return formatVersionUtil(major, minor, patch, build);
+  }
+
+  /**
+   * Converts an npm/semver-style version to the Salesforce 4-part format.
+   * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'salesforce')`.
+   */
+  public static toSalesforceVersion(version: string): string {
+    return toVersionFormat(version, 'salesforce');
   }
 
   /**
    * Normalizes and validates a version string.
-   * Converts 4-part Salesforce versions (major.minor.patch.build)
-   * to a semver compatible format (major.minor.patch-build).
-   * @param version
-   * @returns
-   * @throws if the version cannot be parsed or coerced into a valid semver string.
+   * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'semver')`.
    */
   public static normalizeVersion(version: string): string {
-    if (!version) return '0.0.0.0';
-
-    // 1. Check if it's already valid semver
-    let valid = semver.valid(version);
-    if (valid) {
-      return valid;
-    }
-
-    // 2. Handle the Salesforce 4-part format strictly
-    const segments = version.split('.');
-    if (segments.length === 4) {
-      const transformed = `${segments[0]}.${segments[1]}.${segments[2]}-${segments[3]}`;
-      valid = semver.valid(transformed);
-      if (valid) {
-        return valid;
-      }
-    }
-
-    // 3. Attempt to coerce it (handles things like 'v1.0' or just '1')
-    const coerced = semver.coerce(version);
-    if (coerced) {
-      return coerced.version;
-    }
-
-    throw new Error(`Invalid version format: ${version}. Expected major.minor.patch.build or valid semver.`);
+    if (!version) return '0.0.0.0'; // Legacy default preserved
+    return toVersionFormat(version, 'semver');
   }
 
   /**
@@ -448,6 +413,6 @@ export class VersionTracker {
   }
 
   private setNewVersion(version: string) {
-    this.newVersion = VersionManager.normalizeVersion(version);
+    this.newVersion = toVersionFormat(version, 'semver');
   }
 }

@@ -6,6 +6,13 @@ import {DeploymentOptions} from './project.js';
 export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked'}
 
 /**
+ * Version format variants used by different consumers.
+ * - `semver`:      semver with hyphen prerelease (e.g. `1.0.0-NEXT`, `1.0.0-7`)  -- npm registries, artifact paths
+ * - `salesforce`: 4-part dot-separated           (e.g. `1.0.0.NEXT`, `1.0.0.7`)  -- Salesforce Packaging API
+ */
+export type VersionFormat = 'salesforce' | 'semver';
+
+/**
  * Where the package code comes from for installation.
  * - `local`: Install directly from project source directory
  * - `artifact`: Install from built artifact (local or fetched from npm - resolver abstracts this)
@@ -110,9 +117,8 @@ export interface SfpmPackageBuildOptions {
 }
 
 export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions {
-  configFilePath?: string;
-  installationkey?: string;
-  installationkeybypass?: boolean;
+  definitionFile?: string;
+  installationKey?: string;
   isAsyncValidation?: boolean;
   isSkipValidation?: boolean;
   postInstallScript?: string;

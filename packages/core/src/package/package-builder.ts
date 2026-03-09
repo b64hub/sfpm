@@ -3,13 +3,14 @@ import EventEmitter from 'node:events';
 
 import {GitService} from '../git/git-service.js';
 import ProjectConfig from '../project/project-config.js';
+import {IgnoreFilesConfig} from '../types/config.js';
 import {NoSourceChangesError} from '../types/errors.js';
 import {AllBuildEvents} from '../types/events.js';
 import {Logger} from '../types/logger.js';
 import {PackageType} from '../types/package.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
-import {Builder, BuilderRegistry} from './builders/builder-registry.js';
+import {Builder, BuilderOptions, BuilderRegistry} from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory} from './sfpm-package.js';
 
 export interface BuildOptions {
@@ -18,9 +19,13 @@ export interface BuildOptions {
   devhubUsername?: string;
   /** Force build even if no source changes detected */
   force?: boolean;
+  /** Ignore files configuration for assembly */
+  ignoreFilesConfig?: IgnoreFilesConfig;
   installationKey?: string;
   installationKeyBypass?: boolean;
   isSkipValidation?: boolean;
+  /** npm scope for package publishing (e.g., "@myorg") */
+  npmScope?: string;
   orgDefinitionPath?: string;
 }
 
@@ -60,7 +65,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    */
   public async buildPackage(
     packageName: string,
-    projectDirectory: string = process.cwd(),
+    projectDirectory: string,
   ) {
     // Use PackageFactory to create a fully-configured package
     const packageFactory = new PackageFactory(this.projectConfig);
@@ -131,9 +136,16 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       throw error;
     }
 
+    // Build options for the builder from sfpm.config.ts
+    const builderOptions: BuilderOptions = {
+      ignoreFilesConfig: this.options.ignoreFilesConfig,
+      npmScope: this.options.npmScope,
+    };
+
     const builderInstance: Builder = new BuilderClass(
       sfpmPackage.stagingDirectory,
       sfpmPackage,
+      builderOptions,
       this.logger,
     );
 
@@ -200,12 +212,15 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         } catch (error) {
           this.emit('analyzer:complete', {
             analyzerName,
+            error: error instanceof Error ? error.message : String(error),
             findings: {},
             packageName: sfpmPackage.packageName,
             timestamp: new Date(),
           });
 
-          throw error;
+          // Re-throw with analyzer context for better error messages
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`[${analyzerName}] ${message}`, {cause: error});
         }
       });
 
@@ -240,6 +255,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         this.projectConfig,
         {
           destructiveManifestPath: this.options.destructiveManifestPath,
+          ignoreFilesConfig: this.options.ignoreFilesConfig,
           orgDefinitionPath: this.options.orgDefinitionPath,
           versionNumber: sfpmPackage.version,
         },
@@ -359,9 +375,11 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
           artifactPath: error.artifactPath,
           latestVersion: error.latestVersion,
           packageName: sfpmPackage.packageName,
+          packageType: sfpmPackage.type as PackageType,
           reason: 'no-changes',
           sourceHash: error.sourceHash,
           timestamp: new Date(),
+          version: sfpmPackage.version,
         });
         return; // Exit gracefully without error
       }

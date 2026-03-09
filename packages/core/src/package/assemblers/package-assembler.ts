@@ -30,7 +30,7 @@ const DOT_FOLDER = '.sfpm';
  * - `/[packagePath]`: Primary source metadata.
  * - `/unpackagedMetadata`: Supplemental metadata not part of the main package.
  * - `/scripts`: Pre and post-deployment scripts.
- * - `/forceignores`: Stage-specific ignore files (e.g., `.prepareignore`).
+ * - `/forceignores`: Stage-specific ignore files (e.g., `.forceignore.validate`).
  * - `.forceignore`: The root ignore file used for the final artifact.
  * - `sfdx-project.json`: A pruned version of the original manifest, specifically for this package.
  *

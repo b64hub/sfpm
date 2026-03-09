@@ -5,7 +5,7 @@ import {EventEmitter} from 'node:events';
 import path from 'node:path';
 
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
-import {VersionManager} from '../project/version-manager.js';
+import {toVersionFormat} from '../utils/version-utils.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 import {NpmPackageJson} from '../types/npm.js';
@@ -45,11 +45,13 @@ export interface ArtifactAssemblerOptions {
   homepage?: string;
   /** License identifier for package.json */
   license?: string;
-  /** Pre-classified managed dependencies (alias → packageVersionId 04t...) */
+  /** Pre-classified managed dependencies (alias -> packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
   /** npm scope for the package (e.g., "@myorg") - required */
   npmScope: string;
-  /** Pre-classified versioned dependencies (scoped npm name → semver range) */
+  /** Suppress npm pack notice output (default: true) */
+  quietPack?: boolean;
+  /** Pre-classified versioned dependencies (scoped npm name -> semver range) */
   versionedDependencies?: Record<string, string>;
 }
 
@@ -80,7 +82,7 @@ export default class ArtifactAssembler extends EventEmitter {
   ) {
     super();
     this.options = options;
-    this.packageVersionNumber = VersionManager.normalizeVersion(sfpmPackage.version || '0.0.0.1');
+    this.packageVersionNumber = toVersionFormat(sfpmPackage.version || '0.0.0.1', 'semver');
 
     // Create repository for artifact operations
     this.repository = new ArtifactRepository(projectDirectory, logger);
@@ -366,7 +368,9 @@ export default class ArtifactAssembler extends EventEmitter {
 
     try {
       // npm pack outputs the filename of the created tarball
-      const output = execSync('npm pack', {
+      // --quiet suppresses the "npm notice" lines (tarball contents, details)
+      const quiet = this.options.quietPack !== false;
+      const output = execSync(`npm pack${quiet ? ' --quiet' : ''}`, {
         cwd: stagingDir,
         encoding: 'utf8',
         timeout: 60_000,

@@ -219,10 +219,10 @@ export class Orchestrator<TContext = void> {
 
       if (outcome.status === 'fulfilled') {
         tracker.results.push(outcome.value);
-        if (outcome.value.success) {
-          succeeded.push(pkgName);
-        } else if (outcome.value.skipped) {
+        if (outcome.value.skipped) {
           skipped.push(pkgName);
+        } else if (outcome.value.success) {
+          succeeded.push(pkgName);
         } else {
           tracker.failedPackages.add(pkgName);
           failed.push(pkgName);

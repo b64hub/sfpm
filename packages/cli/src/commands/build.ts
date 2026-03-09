@@ -30,7 +30,6 @@ export default class Build extends SfpmCommand {
     force: Flags.boolean({char: 'f', description: 'build even if no source changes detected'}),
     'include-dependencies': Flags.boolean({description: 'build the specified packages and their transitive dependencies'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key'}),
-    'installation-key-bypass': Flags.boolean({description: 'bypass installation key'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'skip-validation': Flags.boolean({description: 'skip validation'}),
@@ -49,7 +48,9 @@ export default class Build extends SfpmCommand {
       this.error('At least one package name is required')
     }
 
-    const projectService = await ProjectService.getInstance(process.cwd());
+    // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
+    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectService = await ProjectService.getInstance(projectDir);
 
     const projectConfig = projectService.getProjectConfig();
     const projectGraph = projectService.getProjectGraph();
@@ -67,13 +68,15 @@ export default class Build extends SfpmCommand {
       warn: (msg: string) => this.warn(msg),
     }
 
+    const sfpmConfig = projectService.getSfpmConfig();
     const buildOptions = {
       buildNumber: flags['build-number'],
       devhubUsername: flags['target-dev-hub'],
       force: flags.force,
+      ignoreFilesConfig: sfpmConfig.ignoreFiles,
       installationKey: flags['installation-key'],
-      installationKeyBypass: flags['installation-key-bypass'],
       isSkipValidation: flags['skip-validation'],
+      npmScope: sfpmConfig.npmScope,
     }
 
     // Create and attach progress renderer
@@ -85,34 +88,12 @@ export default class Build extends SfpmCommand {
       mode,
     });
 
-    // // Single-package: use PackageBuilder directly (backwards-compatible)
-    // if (packages.length == 1) {
-    // const packageName = packages[0]
-    // const builder = new PackageBuilder(projectConfig, buildOptions, logger);
-    // renderer.attachTo(builder);
-
-    // try {
-    //   await builder.buildPackage(packageName);
-
-    //   if (flags.json) {
-    //     this.logJson(renderer.getJsonOutput());
-    //   }
-    // } catch (error) {
-    //   renderer.handleError(error as Error);
-
-    //   if (flags.json) {
-    //     this.logJson(renderer.getJsonOutput());
-    //   }
-
-    //   throw error;
-    // }
-    // }
-
     const orchestrator = new BuildOrchestrator(
       projectConfig,
       projectGraph,
       {...buildOptions, includeDependencies: flags['include-dependencies']},
       logger,
+      projectDir,
     )
 
     // Attach renderer to orchestrator — it forwards all builder events

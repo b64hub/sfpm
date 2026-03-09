@@ -26,6 +26,8 @@ export interface InstallOptions {
    * Set specific installation mode (mainly for unlocked packages, overrides auto-detection).
    */
   mode?: InstallationMode;
+  /** npm scope for resolving packages from npm registry (e.g., "@myorg") */
+  npmScope?: string;
   /**
    * Where to install from: 'local' (project source) or 'artifact'.
    */
@@ -311,7 +313,10 @@ export default class PackageInstaller extends EventEmitter {
       this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
     }
 
-    const npmScope = this.projectConfig.getNpmScope();
+    const {npmScope} = this.options;
+    if (!npmScope) {
+      throw new Error('npm scope not configured. Add npmScope to sfpm.config.ts');
+    }
 
     // Use singleton artifact service
     const artifactService = ArtifactService.getInstance()
@@ -345,7 +350,7 @@ export default class PackageInstaller extends EventEmitter {
 
     // Log install decision
     this.logger?.info(`Installing ${packageName}@${installTarget.resolved.version} `
-    	+ `(reason: ${installTarget.installReason}, source: ${installTarget.resolved.source})`);
+      + `(reason: ${installTarget.installReason}, source: ${installTarget.resolved.source})`);
     this.emitStart(sfpmPackage, installTarget);
 
     try {
