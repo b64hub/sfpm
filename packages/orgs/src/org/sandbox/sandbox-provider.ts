@@ -121,10 +121,15 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
  * });
  * ```
  */
+/** Minimum interval (ms) between automatic prune runs per provider instance. */
+const PRUNE_COOLDOWN_MS = 60_000;
+
 export default class SandboxProvider implements OrgProvider<SandboxCreateOptions> {
   private readonly conn;
   private readonly hubOrg;
   private readonly hubUsername: string;
+  /** Timestamp of the last successful prune run — used for cooldown. */
+  private lastPruneTimestamp = 0;
 
   constructor(hubOrg: Org) {
     this.conn = hubOrg.getConnection();
@@ -247,12 +252,16 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   }
 
   async getActiveCountByTag(tag: string): Promise<number> {
+    await this.pruneStalePoolRecords();
+
     const query = soql`SELECT count() FROM ${SANDBOX_POOL_ORG_OBJECT} WHERE Tag__c = '${escapeSOQL(tag)}'`;
     const result = await this.conn.query(query);
     return result.totalSize;
   }
 
   async getAvailableByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
+    await this.pruneStalePoolRecords();
+
     const escapedTag = escapeSOQL(tag);
     const conditions = [
       `Tag__c = '${escapedTag}'`,
@@ -274,6 +283,8 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   }
 
   async getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
+    await this.pruneStalePoolRecords();
+
     const conditions = [`Tag__c = '${escapeSOQL(tag)}'`];
 
     if (myPool) {
@@ -403,6 +414,11 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   }
 
   async validate(): Promise<void> {
+    // Prune stale records on validation — this is typically the first
+    // operation in a pool lifecycle (PoolManager.provision calls validate
+    // before anything else).
+    await this.pruneStalePoolRecords();
+
     let describe;
     try {
       describe = await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).describe();
@@ -468,6 +484,11 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
    *
    * Queries `SandboxInfo` by org IDs found on the pool records, then
    * merges both result sets into `Sandbox` domain objects.
+   *
+   * Pool records whose `Org_Id__c` has no matching active `SandboxInfo`
+   * record are silently dropped — they represent stale shadow records
+   * for sandboxes that were deleted or expired outside of pool management.
+   * These will be cleaned up by the next prune cycle.
    */
   private async enrichPoolRecords(poolRecords: SandboxPoolOrgRecord[]): Promise<Sandbox[]> {
     const orgIds = poolRecords
@@ -490,7 +511,15 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       }
     }
 
-    return poolRecords.map(poolRec => {
+    // Only return pool records that have a matching SandboxInfo — stale
+    // records (deleted / expired sandboxes) are filtered out so that
+    // callers never see phantom orgs.
+    return poolRecords
+    .filter(poolRec => {
+      if (!poolRec.Org_Id__c) return true; // no org ID yet (e.g. In Progress)
+      return infoMap.has(poolRec.Org_Id__c);
+    })
+    .map(poolRec => {
       const info = poolRec.Org_Id__c ? infoMap.get(poolRec.Org_Id__c) : undefined;
       return mapFromPoolRecord(poolRec, info);
     });
@@ -515,6 +544,77 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     }
 
     return result.records[0].Id;
+  }
+
+  /**
+   * Remove `Sandbox_Pool_Org__c` records whose associated sandbox no
+   * longer exists or has been deleted.
+   *
+   * Compares all pool records' `Org_Id__c` values against `SandboxInfo`
+   * to find stale references, then bulk-deletes them.  Runs at most once
+   * per {@link PRUNE_COOLDOWN_MS} within the same provider instance so
+   * that repeated pool operations in a single session do not hammer the
+   * API.
+   *
+   * This is intentionally fire-and-forget: failures are swallowed so that
+   * pruning never blocks the primary operation.
+   */
+  private async pruneStalePoolRecords(): Promise<void> {
+    // Cooldown — skip if we pruned recently
+    if (Date.now() - this.lastPruneTimestamp < PRUNE_COOLDOWN_MS) return;
+
+    try {
+      // 1. Fetch all pool records
+      const poolQuery = soql`SELECT Id, Org_Id__c FROM ${SANDBOX_POOL_ORG_OBJECT}`;
+      const poolResult = await this.conn.query<{Id: string; Org_Id__c?: string}>(poolQuery);
+
+      if (poolResult.records.length === 0) {
+        this.lastPruneTimestamp = Date.now();
+        return;
+      }
+
+      // 2. Collect org IDs that have a value
+      const orgIdToPoolIds = new Map<string, string[]>();
+      const noOrgIdPoolIds: string[] = [];
+
+      for (const rec of poolResult.records) {
+        if (rec.Org_Id__c) {
+          const list = orgIdToPoolIds.get(rec.Org_Id__c) ?? [];
+          list.push(rec.Id);
+          orgIdToPoolIds.set(rec.Org_Id__c, list);
+        } else {
+          // Pool records with no Org_Id__c are stale by definition
+          noOrgIdPoolIds.push(rec.Id);
+        }
+      }
+
+      // 3. Query SandboxInfo to see which org IDs still exist
+      const stalePoolIds: string[] = [...noOrgIdPoolIds];
+
+      if (orgIdToPoolIds.size > 0) {
+        const orgIdList = [...orgIdToPoolIds.keys()].map(id => `'${escapeSOQL(id)}'`).join(',');
+        const infoQuery = soql`SELECT SandboxOrganization FROM SandboxInfo WHERE SandboxOrganization IN (${orgIdList})`;
+        const infoResult = await this.conn.query<{SandboxOrganization: string}>(infoQuery);
+
+        const activeOrgIds = new Set(infoResult.records.map(r => r.SandboxOrganization));
+
+        for (const [orgId, poolIds] of orgIdToPoolIds) {
+          if (!activeOrgIds.has(orgId)) {
+            stalePoolIds.push(...poolIds);
+          }
+        }
+      }
+
+      // 4. Bulk-delete stale pool records
+      if (stalePoolIds.length > 0) {
+        await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).destroy(stalePoolIds);
+      }
+
+      this.lastPruneTimestamp = Date.now();
+    } catch {
+      // Pruning is best-effort — never break the primary operation
+      this.lastPruneTimestamp = Date.now();
+    }
   }
 
   /**

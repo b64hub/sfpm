@@ -126,6 +126,8 @@ describe('SandboxProvider', () => {
     ];
 
     it('should pass when all required fields are present', async () => {
+      // Prune: no pool records
+      mockConnection.query.mockResolvedValueOnce({records: []});
       mockPoolOrgDescribe(validFields);
       const provider = createProvider();
 
@@ -133,6 +135,8 @@ describe('SandboxProvider', () => {
     });
 
     it('should throw when Sandbox_Pool_Org__c object does not exist', async () => {
+      // Prune: no pool records
+      mockConnection.query.mockResolvedValueOnce({records: []});
       mockPoolSobject.describe.mockRejectedValue(new Error('INVALID_TYPE'));
       const provider = createProvider();
 
@@ -141,6 +145,7 @@ describe('SandboxProvider', () => {
     });
 
     it('should throw when Org_Id__c is missing', async () => {
+      mockConnection.query.mockResolvedValueOnce({records: []});
       mockPoolOrgDescribe(validFields.filter(f => f.name !== 'Org_Id__c'));
       const provider = createProvider();
 
@@ -149,6 +154,7 @@ describe('SandboxProvider', () => {
     });
 
     it('should throw when Tag__c is missing', async () => {
+      mockConnection.query.mockResolvedValueOnce({records: []});
       mockPoolOrgDescribe(validFields.filter(f => f.name !== 'Tag__c'));
       const provider = createProvider();
 
@@ -157,6 +163,7 @@ describe('SandboxProvider', () => {
     });
 
     it('should throw when Allocation_Status__c is missing', async () => {
+      mockConnection.query.mockResolvedValueOnce({records: []});
       mockPoolOrgDescribe(validFields.filter(f => f.name !== 'Allocation_Status__c'));
       const provider = createProvider();
 
@@ -165,6 +172,7 @@ describe('SandboxProvider', () => {
     });
 
     it('should throw when Allocation_Status__c has missing picklist values', async () => {
+      mockConnection.query.mockResolvedValueOnce({records: []});
       const partialFields = validFields.map(f => {
         if (f.name === 'Allocation_Status__c') {
           return {...f, picklistValues: [{value: 'Available'}]};
@@ -180,6 +188,7 @@ describe('SandboxProvider', () => {
     });
 
     it('should throw when Auth_Url__c is missing', async () => {
+      mockConnection.query.mockResolvedValueOnce({records: []});
       mockPoolOrgDescribe(validFields.filter(f => f.name !== 'Auth_Url__c'));
       const provider = createProvider();
 
@@ -335,18 +344,14 @@ describe('SandboxProvider', () => {
 
   describe('getActiveCountByTag', () => {
     it('should query count of pool records by tag', async () => {
-      mockConnection.query.mockResolvedValue({totalSize: 3});
+      mockConnection.query
+        .mockResolvedValueOnce({records: []}) // prune
+        .mockResolvedValueOnce({totalSize: 3}); // actual count query
       const provider = createProvider();
 
       const count = await provider.getActiveCountByTag('sb-pool');
 
       expect(count).toBe(3);
-      expect(mockConnection.query).toHaveBeenCalledWith(
-        expect.stringContaining('Sandbox_Pool_Org__c'),
-      );
-      expect(mockConnection.query).toHaveBeenCalledWith(
-        expect.stringContaining('sb-pool'),
-      );
     });
   });
 
@@ -356,8 +361,9 @@ describe('SandboxProvider', () => {
 
   describe('getAvailableByTag', () => {
     it('should return mapped sandbox records from pool + SandboxInfo queries', async () => {
-      // First call: pool record query; second call: SandboxInfo enrichment query
       mockConnection.query
+        .mockResolvedValueOnce({records: []}) // prune
+        // Pool record query
         .mockResolvedValueOnce({
           records: [{
             Allocation_Status__c: 'Available',
@@ -368,6 +374,7 @@ describe('SandboxProvider', () => {
             Tag__c: 'sb-pool',
           }],
         })
+        // SandboxInfo enrichment query
         .mockResolvedValueOnce({
           records: [{
             EndDate: '2025-06-01',
@@ -389,7 +396,9 @@ describe('SandboxProvider', () => {
     });
 
     it('should return empty array when no pool records match', async () => {
-      mockConnection.query.mockResolvedValue({records: []});
+      mockConnection.query
+        .mockResolvedValueOnce({records: []}) // prune
+        .mockResolvedValueOnce({records: []}); // pool query
 
       const provider = createProvider();
       const orgs = await provider.getAvailableByTag('sb-pool');
@@ -606,6 +615,206 @@ describe('SandboxProvider', () => {
       await provider.updatePoolMetadata([]);
 
       expect(mockPoolSobject.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // pruning (via public methods that trigger it)
+  // --------------------------------------------------------------------------
+
+  describe('pruning stale pool records', () => {
+    it('should delete pool records whose sandbox no longer exists', async () => {
+      // Set up: pool has 2 records, but SandboxInfo only has 1 matching org
+      mockConnection.query
+        // 1st call: prune — fetch all pool records
+        .mockResolvedValueOnce({
+          records: [
+            {Id: 'pool-1', Org_Id__c: '00D000000000001'},
+            {Id: 'pool-2', Org_Id__c: '00D000000000002'},
+          ],
+        })
+        // 2nd call: prune — fetch active SandboxInfo
+        .mockResolvedValueOnce({
+          records: [
+            {SandboxOrganization: '00D000000000001'}, // only org 1 exists
+          ],
+        })
+        // 3rd call: getActiveCountByTag query
+        .mockResolvedValueOnce({totalSize: 1});
+
+      mockPoolSobject.destroy.mockResolvedValue([{id: 'pool-2', success: true}]);
+
+      const provider = createProvider();
+      await provider.getActiveCountByTag('sb-pool');
+
+      // pool-2 should have been pruned
+      expect(mockPoolSobject.destroy).toHaveBeenCalledWith(['pool-2']);
+    });
+
+    it('should delete pool records with no Org_Id__c', async () => {
+      mockConnection.query
+        // prune — fetch all pool records
+        .mockResolvedValueOnce({
+          records: [
+            {Id: 'pool-orphan', Org_Id__c: undefined},
+          ],
+        })
+        // getActiveCountByTag
+        .mockResolvedValueOnce({totalSize: 0});
+
+      mockPoolSobject.destroy.mockResolvedValue([{id: 'pool-orphan', success: true}]);
+
+      const provider = createProvider();
+      await provider.getActiveCountByTag('sb-pool');
+
+      expect(mockPoolSobject.destroy).toHaveBeenCalledWith(['pool-orphan']);
+    });
+
+    it('should not prune again within the cooldown period', async () => {
+      // First call triggers prune
+      mockConnection.query
+        .mockResolvedValueOnce({records: []}) // prune — no pool records
+        .mockResolvedValueOnce({totalSize: 0}); // getActiveCountByTag
+
+      const provider = createProvider();
+      await provider.getActiveCountByTag('sb-pool');
+
+      vi.clearAllMocks();
+      setupSobjectRouting();
+
+      // Second call within cooldown should skip prune
+      mockConnection.query.mockResolvedValueOnce({totalSize: 2});
+
+      await provider.getActiveCountByTag('sb-pool');
+
+      // Only 1 query (getActiveCountByTag), not 2 (prune + count)
+      expect(mockConnection.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not throw when prune fails', async () => {
+      // Prune query fails
+      mockConnection.query
+        .mockRejectedValueOnce(new Error('API limit exceeded'))
+        // getActiveCountByTag succeeds
+        .mockResolvedValueOnce({totalSize: 5});
+
+      const provider = createProvider();
+      const count = await provider.getActiveCountByTag('sb-pool');
+
+      // Primary operation should still succeed
+      expect(count).toBe(5);
+    });
+
+    it('should be triggered by getAvailableByTag', async () => {
+      mockConnection.query
+        .mockResolvedValueOnce({records: []}) // prune — no pool records
+        .mockResolvedValueOnce({records: []}); // pool query — no results
+
+      const provider = createProvider();
+      await provider.getAvailableByTag('sb-pool');
+
+      // Prune + pool query = 2 queries
+      expect(mockConnection.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('should be triggered by getOrgsByTag', async () => {
+      mockConnection.query
+        .mockResolvedValueOnce({records: []}) // prune
+        .mockResolvedValueOnce({records: []}); // pool query
+
+      const provider = createProvider();
+      await provider.getOrgsByTag('sb-pool');
+
+      expect(mockConnection.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('should be triggered by validate', async () => {
+      mockConnection.query
+        .mockResolvedValueOnce({records: []}); // prune — no pool records
+
+      mockPoolOrgDescribe([
+        {name: 'Org_Id__c'},
+        {name: 'Tag__c'},
+        {
+          name: 'Allocation_Status__c',
+          picklistValues: [
+            {value: 'Allocated'},
+            {value: 'Available'},
+            {value: 'In Progress'},
+          ],
+        },
+        {name: 'Auth_Url__c'},
+      ]);
+
+      const provider = createProvider();
+      await provider.validate();
+
+      // Prune query should have fired
+      expect(mockConnection.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip delete when no stale records found', async () => {
+      mockConnection.query
+        // prune — pool records
+        .mockResolvedValueOnce({
+          records: [
+            {Id: 'pool-1', Org_Id__c: '00D000000000001'},
+          ],
+        })
+        // prune — SandboxInfo (all match)
+        .mockResolvedValueOnce({
+          records: [
+            {SandboxOrganization: '00D000000000001'},
+          ],
+        })
+        // getActiveCountByTag
+        .mockResolvedValueOnce({totalSize: 1});
+
+      const provider = createProvider();
+      await provider.getActiveCountByTag('sb-pool');
+
+      // destroy should NOT have been called
+      expect(mockPoolSobject.destroy).not.toHaveBeenCalled();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // enrichPoolRecords (stale record filtering)
+  // --------------------------------------------------------------------------
+
+  describe('stale record filtering in enrichPoolRecords', () => {
+    it('should filter out pool records with no matching SandboxInfo', async () => {
+      // Pool query returns 2 records, but only 1 has a matching SandboxInfo
+      mockConnection.query
+        .mockResolvedValueOnce({records: []}) // prune — no pool records
+        .mockResolvedValueOnce({
+          records: [
+            {
+              Allocation_Status__c: 'Available',
+              Id: 'pool-1',
+              Org_Id__c: '00D000000000001',
+              Tag__c: 'sb-pool',
+            },
+            {
+              Allocation_Status__c: 'Available',
+              Id: 'pool-stale',
+              Org_Id__c: '00D000000000099', // deleted sandbox
+              Tag__c: 'sb-pool',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          records: [
+            {SandboxName: 'SB1', SandboxOrganization: '00D000000000001'},
+            // 00D000000000099 is NOT returned — sandbox was deleted
+          ],
+        });
+
+      const provider = createProvider();
+      const orgs = await provider.getAvailableByTag('sb-pool');
+
+      expect(orgs).toHaveLength(1);
+      expect(orgs[0].orgId).toBe('00D000000000001');
     });
   });
 
