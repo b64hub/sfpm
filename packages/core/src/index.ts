@@ -53,21 +53,21 @@ export {GitService} from './git/git-service.js';
 export {default as Git} from './git/git.js';
 // Lifecycle engine and config
 export {LifecycleEngine} from './lifecycle/lifecycle-engine.js';
+export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions} from './orchestrator/build-orchestrator.js';
+export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './orchestrator/install-orchestrator.js';
+export {
+  type OrchestrationTask, Orchestrator, type OrchestratorEmitter, type OrchestratorOptions,
+} from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
-export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions} from './package/build-orchestrator.js';
 export {
   type Builder, type BuilderConstructor, BuilderRegistry, RegisterBuilder,
 } from './package/builders/builder-registry.js';
-export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './package/install-orchestrator.js';
 export {
   type Installer, type InstallerConstructor, InstallerRegistry, RegisterInstaller,
 } from './package/installers/installer-registry.js';
 export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
-export {
-  type OrchestrationTask, Orchestrator, type OrchestratorEmitter, type OrchestratorOptions,
-} from './package/orchestrator.js';
 export {type BuildTask, PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {PackageFactory, SfpmDataPackage, default as SfpmPackage} from './package/sfpm-package.js';

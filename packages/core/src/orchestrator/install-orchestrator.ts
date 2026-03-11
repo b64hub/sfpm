@@ -2,6 +2,7 @@ import {Org} from '@salesforce/core';
 import EventEmitter from 'node:events';
 
 import {ArtifactService} from '../artifacts/artifact-service.js';
+import PackageInstaller, {InstallOptions} from '../package/package-installer.js';
 import ProjectConfig from '../project/project-config.js';
 import {ProjectGraph} from '../project/project-graph.js';
 import {
@@ -18,7 +19,6 @@ import {
   OrchestratorEmitter,
   OrchestratorOptions,
 } from './orchestrator.js';
-import PackageInstaller, {InstallOptions} from './package-installer.js';
 
 export interface InstallOrchestratorOptions extends InstallOptions, OrchestratorOptions {}
 

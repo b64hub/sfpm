@@ -113,17 +113,16 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     lifecycle.on('packageVersionCreate:progress', progressListener);
 
     try {
-
       const packageVersionCreateOptions: Record<string, unknown> = {
-        connection: this.devhubOrg!.getConnection(),
-        project: sfProject,
-        packageId: this.sfpmPackage.packageId,
-        versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
-        codecoverage: buildOptions?.isCoverageEnabled ?? false,
-        skipvalidation: buildOptions?.isSkipValidation ?? false,
         asyncvalidation: buildOptions?.isAsyncValidation ?? false,
+        codecoverage: buildOptions?.isCoverageEnabled ?? false,
+        connection: this.devhubOrg!.getConnection(),
         installationkey: buildOptions?.installationKey,
         installationkeybypass: buildOptions?.installationKey ? undefined : true,
+        packageId: this.sfpmPackage.packageId,
+        project: sfProject,
+        skipvalidation: buildOptions?.isSkipValidation ?? false,
+        versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
         ...(buildOptions?.definitionFile
           ? {definitionfile: path.join(this.workingDirectory, buildOptions.definitionFile)}
           : {}),
@@ -132,11 +131,9 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
           : {}),
       };
 
-      this.logger?.debug(
-        `PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, ` +
-        `version=${this.sfpmPackage.version}, skipvalidation=${buildOptions?.isSkipValidation ?? false}, ` +
-        `definitionfile=${buildOptions?.definitionFile ?? '(not set)'}`,
-      );
+      this.logger?.debug(`PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, `
+        + `version=${this.sfpmPackage.version}, skipvalidation=${buildOptions?.isSkipValidation ?? false}, `
+        + `definitionfile=${buildOptions?.definitionFile ?? '(not set)'}`);
 
       const result = await PackageVersion.create(
         packageVersionCreateOptions as any,
@@ -191,10 +188,30 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
         error.actions?.length ? `Actions: ${error.actions.join(', ')}` : '',
       ].filter(Boolean).join('\n');
 
+      this.logger?.error(`Error during package creation: ${details}`);
       throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${details}`, {cause: error});
     } finally {
       lifecycle.removeAllListeners('packageVersionCreate:progress');
     }
+  }
+
+  private emitTaskCompleteEvent(taskName: string, taskType: 'post-build' | 'pre-build', success: boolean): void {
+    this.emit('task:complete', {
+      packageName: this.sfpmPackage.packageName,
+      success,
+      taskName,
+      taskType,
+      timestamp: new Date(),
+    });
+  }
+
+  private emitTaskEvent(taskName: string, taskType: 'post-build' | 'pre-build', success: boolean): void {
+    this.emit('task:start', {
+      packageName: this.sfpmPackage.packageName,
+      taskName,
+      taskType,
+      timestamp: new Date(),
+    });
   }
 
   /**
@@ -243,32 +260,14 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     for (const task of this.postBuildTasks) {
       const taskName = task.constructor.name;
 
-      this.emit('task:start', {
-        packageName: this.sfpmPackage.packageName,
-        taskName,
-        taskType: 'post-build',
-        timestamp: new Date(),
-      });
-
+      this.emitTaskEvent(taskName, 'post-build', true);
       try {
         // eslint-disable-next-line no-await-in-loop -- we want to run tasks sequentially and stop on first failure
         await task.exec();
 
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: true,
-          taskName,
-          taskType: 'post-build',
-          timestamp: new Date(),
-        });
+        this.emitTaskCompleteEvent(taskName, 'post-build', true);
       } catch (error) {
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: false,
-          taskName,
-          taskType: 'post-build',
-          timestamp: new Date(),
-        });
+        this.emitTaskCompleteEvent(taskName, 'post-build', false);
 
         throw error;
       }
@@ -282,39 +281,17 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
 
     await this.pruneOrgDependentPackage();
 
-    const allDependencies = await ProjectService.getPackageDependencies(this.sfpmPackage.name);
-
     for (const task of this.preBuildTasks) {
       const taskName = task.constructor.name;
 
-      this.emit('task:start', {
-        packageName: this.sfpmPackage.packageName,
-        taskName,
-        taskType: 'pre-build',
-        timestamp: new Date(),
-      });
-
+      this.emitTaskEvent(taskName, 'pre-build', true);
       try {
         // eslint-disable-next-line no-await-in-loop -- we want to run tasks sequentially and stop on first failure
         await task.exec();
-
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: true,
-          taskName,
-          taskType: 'pre-build',
-          timestamp: new Date(),
-        });
+        this.emitTaskCompleteEvent(taskName, 'pre-build', true);
       } catch (error) {
         const success = error instanceof Error && (error as any).code === 'BUILD_NOT_REQUIRED';
-
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success,
-          taskName,
-          taskType: 'pre-build',
-          timestamp: new Date(),
-        });
+        this.emitTaskCompleteEvent(taskName, 'pre-build', success);
 
         throw error;
       }

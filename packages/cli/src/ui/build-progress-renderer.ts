@@ -387,10 +387,14 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
+      const statusText = `Executing ${event.packageType} builder...`;
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} - Executing ${event.packageType} builder...`,
+        `${chalk.cyan(event.packageName)} - ${statusText}`,
       );
+      if (this.listr.hasSubtasks(event.packageName)) {
+        this.listr.updateSentinelTitle(event.packageName, statusText);
+      }
     } else if (!this.isOrchestrating()) {
       this.startSpinner(`Executing ${event.packageType} package builder...`);
     }
@@ -555,10 +559,14 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
+      const statusText = `Creating: ${event.message}${elapsedSuffix}`;
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} - Creating: ${event.message}${elapsedSuffix}`,
+        `${chalk.cyan(event.packageName)} - ${statusText}`,
       );
+      if (this.listr.hasSubtasks(event.packageName)) {
+        this.listr.updateSentinelTitle(event.packageName, statusText);
+      }
     } else if (!this.isOrchestrating() && this.spinner) {
       this.spinner.text = `Creating package version: ${event.message}${elapsedSuffix}`;
     }
@@ -571,10 +579,14 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
+      const statusText = `Creating version ${event.versionNumber}...`;
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} - Creating version ${event.versionNumber}...`,
+        `${chalk.cyan(event.packageName)} - ${statusText}`,
       );
+      if (this.listr.hasSubtasks(event.packageName)) {
+        this.listr.updateSentinelTitle(event.packageName, statusText);
+      }
     } else if (!this.isOrchestrating()) {
       this.startSpinner(`Creating package version ${event.packageName}@${event.versionNumber}`);
     }
@@ -708,10 +720,14 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
+      const statusText = 'Staging...';
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} - Staging...`,
+        `${chalk.cyan(event.packageName)} - ${statusText}`,
       );
+      if (this.listr.hasSubtasks(event.packageName)) {
+        this.listr.updateSentinelTitle(event.packageName, statusText);
+      }
     } else if (!this.isOrchestrating()) {
       this.startSpinner('Staging package');
     }
@@ -745,10 +761,14 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
+      const statusText = `${event.taskType}: ${event.taskName}`;
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} - ${event.taskType}: ${event.taskName}`,
+        `${chalk.cyan(event.packageName)} - ${statusText}`,
       );
+      if (this.listr.hasSubtasks(event.packageName)) {
+        this.listr.updateSentinelTitle(event.packageName, statusText);
+      }
     } else if (!this.isOrchestrating()) {
       this.startSpinner(`  ${chalk.cyan(event.taskType)}: ${event.taskName}`);
     }

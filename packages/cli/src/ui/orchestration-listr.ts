@@ -86,7 +86,6 @@ export class OrchestrationListrManager {
   private readonly enableSubtasks: boolean;
   private levelDeferreds: Deferred[] = [];
   private readonly levelTitleFn: LevelTitleFn;
-
   /**
    * Pre-created deferreds for each package in the *current* level.
    * Populated synchronously in `onLevelStart` so resolve/reject are
@@ -109,6 +108,13 @@ export class OrchestrationListrManager {
    * Created in `start()`, destroyed in `destroy()`.
    */
   private rootListr?: Listr;
+  /**
+   * Sentinel task references keyed by package name.
+   * The sentinel keeps the sub-Listr alive after all named subtasks resolve.
+   * Initially title-less (invisible); the renderer can give it a visible
+   * title so listr2 renders a spinner during post-subtask phases.
+   */
+  private sentinelTasks: Map<string, any> = new Map();
   /**
    * Per-package, per-subtask deferreds. Created synchronously in
    * `setPackageSubtasks` so they're available before Listr tasks execute.
@@ -140,6 +146,7 @@ export class OrchestrationListrManager {
     this.packageDeferreds.clear();
     this.packageTasks.clear();
     this.packageStructureDeferreds.clear();
+    this.sentinelTasks.clear();
     this.subtaskDeferreds.clear();
     this.subtaskTasks.clear();
   }
@@ -196,6 +203,7 @@ export class OrchestrationListrManager {
     this.packageDeferreds.clear();
     this.packageTasks.clear();
     this.packageStructureDeferreds.clear();
+    this.sentinelTasks.clear();
     this.subtaskDeferreds.clear();
     this.subtaskTasks.clear();
     for (const name of event.packages) {
@@ -369,9 +377,13 @@ export class OrchestrationListrManager {
                             })),
                             {
                               // Sentinel task — keeps the sub-Listr alive until the
-                              // package fully completes. Title-less tasks are not
-                              // rendered by listr2's default renderer.
-                              task: () => this.packageDeferreds.get(name)!.promise,
+                            // package fully completes. Initially title-less
+                            // (invisible); the renderer gives it a visible title
+                            // during post-subtask phases so a spinner appears.
+                              task: (_c3: any, _t3: any) => {
+                                this.sentinelTasks.set(name, _t3);
+                                return this.packageDeferreds.get(name)!.promise;
+                              },
                               title: '' as any,
                             },
                           ],
@@ -416,6 +428,22 @@ export class OrchestrationListrManager {
    */
   public updatePackageTitle(packageName: string, title: string): void {
     const task = this.packageTasks.get(packageName);
+    if (task) {
+      task.title = title;
+    }
+  }
+
+  /**
+   * Update the title of the sentinel task for a package.
+   * Once a non-empty title is set, the sentinel becomes visible in the
+   * Listr UI and renders with a spinner — useful for post-subtask phases
+   * (e.g. package version creation) where all named subtasks are already
+   * complete.
+   *
+   * No-op if the sentinel task hasn't been registered yet.
+   */
+  public updateSentinelTitle(packageName: string, title: string): void {
+    const task = this.sentinelTasks.get(packageName);
     if (task) {
       task.title = title;
     }
