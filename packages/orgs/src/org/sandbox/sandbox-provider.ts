@@ -499,7 +499,7 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       return poolRecords.map(r => mapFromPoolRecord(r));
     }
 
-    const orgIdList = orgIds.map(id => `'${escapeSOQL(id)}'`).join(',');
+    const orgIdList = orgIds.map(orgId => `'${escapeSOQL(orgId!)}'`).join(',');
     const infoQuery = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE SandboxOrganization IN (${orgIdList})`;
     const infoResult = await this.conn.query<SandboxInfoRecord>(infoQuery);
 
