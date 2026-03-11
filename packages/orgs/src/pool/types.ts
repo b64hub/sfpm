@@ -155,9 +155,10 @@ export const DEFAULT_POOL_SIZING: Required<Pick<PoolSizingConfig, 'batchSize' | 
  * Handles authentication to orgs fetched from a pool.
  *
  * The primary authentication mechanism is the SFDX auth URL stored
- * on the org's hub record (`Auth_Url__c`). When an auth URL is not
- * available, implementations may fall back to JWT `parentUsername`
- * (scratch orgs) or other mechanisms.
+ * on the org's hub record (`Auth_Url__c` on `ScratchOrgInfo` for
+ * scratch orgs, or `Sandbox_Pool_Org__c` for sandboxes). When an
+ * auth URL is not available, implementations may fall back to JWT
+ * `parentUsername` (scratch orgs) or other mechanisms.
  *
  * Implement at the CLI layer where `@salesforce/core` is available.
  * The adapter is provided via DI to `PoolFetcher`.

@@ -1,4 +1,4 @@
-import type {PoolOrg, PoolOrgUsage, PoolOrgRecord} from './pool-org.js';
+import type {PoolOrg, PoolOrgRecord, PoolOrgUsage} from './pool-org.js';
 import type {SandboxCreateOptions} from './sandbox/types.js';
 import type {ScratchOrgCreateOptions} from './scratch/types.js';
 import type {PasswordResult} from './types.js';
@@ -51,7 +51,6 @@ export interface PoolOrgProvisioner<TCreateOptions = OrgCreateOptions> {
    */
   deleteOrgs(recordIds: string[]): Promise<void>;
 
-
   /** Count active orgs with a given pool tag */
   getActiveCountByTag(tag: string): Promise<number>;
 
@@ -100,20 +99,20 @@ export interface PoolOrgProvisioner<TCreateOptions = OrgCreateOptions> {
  */
 export interface PoolOrgInspector {
   /**
-   * Find active orgs that have no pool tag.
-   *
-   * Returns orgs created outside of the pool lifecycle or whose
-   * pool tag was cleared. Useful for cleanup operations.
-   */
-  getOrphanedOrgs(): Promise<PoolOrg[]>;
-
-  /**
    * Get org usage counts grouped by user email.
    *
    * Queries active orgs and groups by user, returning the count per
    * user ordered by usage descending. Useful for reporting and capacity planning.
    */
   getOrgUsageByUser(): Promise<PoolOrgUsage[]>;
+
+  /**
+   * Find active orgs that have no pool tag.
+   *
+   * Returns orgs created outside of the pool lifecycle or whose
+   * pool tag was cleared. Useful for cleanup operations.
+   */
+  getOrphanedOrgs(): Promise<PoolOrg[]>;
 
   /**
    * Update fields on an org info record.
@@ -144,8 +143,8 @@ export interface PoolOrgInspector {
  * Implementors:
  * - `ScratchOrgProvider` — Queries `ScratchOrgInfo` / `ActiveScratchOrg`;
  *   creates via `Org.scratchOrgCreate()`
- * - `SandboxProvider` — Queries `SandboxInfo` / `SandboxProcess`;
- *   creates via `Org.createSandbox()`
+ * - `SandboxProvider` — Queries `Sandbox_Pool_Org__c` (pool metadata)
+ *   and `SandboxInfo` (standard fields); creates via `Org.createSandbox()`
  *
  * @example
  * ```typescript
@@ -157,11 +156,10 @@ export interface PoolOrgInspector {
  * const manager = new PoolManager({ provider, logger });
  * ```
  */
-export type OrgProvider<TCreateOptions = OrgCreateOptions> =
-  PoolOrgClaimer &
-  PoolOrgInspector &
-  PoolOrgProvisioner<TCreateOptions>;
-
+export type OrgProvider<TCreateOptions = OrgCreateOptions>
+  = PoolOrgClaimer
+    & PoolOrgInspector
+    & PoolOrgProvisioner<TCreateOptions>;
 
 /**
  * Union of all org-type-specific create options.

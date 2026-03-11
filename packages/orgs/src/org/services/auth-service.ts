@@ -14,7 +14,8 @@ import type {JwtAuthConfig} from '../types.js';
  * Supports two authentication mechanisms, tried in order:
  *
  * 1. **Auth URL** (default) — If the org has an `auth.authUrl` (stored
- *    as `Auth_Url__c` on the hub record), `AuthInfo.create({ authUrl })`
+ *    as `Auth_Url__c` on the hub record — `ScratchOrgInfo` for scratch
+ *    orgs, `Sandbox_Pool_Org__c` for sandboxes), `AuthInfo.create({ authUrl })`
  *    is used. This works for both scratch orgs and sandboxes, and is the
  *    recommended approach in CI/CD where the creating user and the
  *    claiming user are different.
@@ -116,9 +117,7 @@ export default class AuthService implements PoolOrgAuthenticator {
       }
     }
 
-    throw new Error(
-      `No authentication method available for ${org.auth.username}. `
-      + 'Provide an auth URL (Auth_Url__c) on the hub record or configure JWT.',
-    );
+    throw new Error(`No authentication method available for ${org.auth.username}. `
+      + 'Provide an auth URL (Auth_Url__c) on the hub record or configure JWT.');
   }
 }
