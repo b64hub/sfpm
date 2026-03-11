@@ -1,8 +1,9 @@
-import {ComponentSet, MetadataComponent, registry} from '@salesforce/source-deploy-retrieve';
+import {MetadataComponent} from '@salesforce/source-deploy-retrieve';
+
+import type {SfpmMetadataPackage} from '../sfpm-package.js';
 
 import {Logger} from '../../types/logger.js';
 import {PackageType, SfpmPackageContent} from '../../types/package.js';
-import SfpmPackage, {SfpmMetadataPackage} from '../sfpm-package.js';
 import {PackageAnalyzer} from './analyzer-registry.js';
 
 const PICKLIST_TYPES = new Set(['MultiselectPicklist', 'Picklist']);
