@@ -5,7 +5,7 @@ import {ArtifactService} from '../../artifacts/artifact-service.js';
 import {Logger} from '../../types/logger.js';
 import {InstallationSource, PackageType} from '../../types/package.js';
 import {SfpmSourcePackage} from '../sfpm-package.js';
-import {Installer, RegisterInstaller} from './installer-registry.js';
+import {Installer, type InstallerExecResult, RegisterInstaller} from './installer-registry.js';
 // Import strategy implementation
 import SourceDeployer from './strategies/source-deployer.js';
 
@@ -20,9 +20,10 @@ export interface InstallTask {
 
 /**
  * Adapter that bridges {@link SfpmSourcePackage} with the
- * {@link SourceDeployStrategy}. Source packages always use source
+ * {@link SourceDeployer} strategy. Source packages always use source
  * deployment — there is no version-install path.
  */
+// eslint-disable-next-line new-cap
 @RegisterInstaller(PackageType.Source)
 export default class SourcePackageInstaller extends EventEmitter implements Installer {
   public postInstallTasks: InstallTask[] = [];
@@ -38,7 +39,7 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
   constructor(targetOrg: string, sfpmPackage: SfpmSourcePackage, logger?: Logger, options?: SourcePackageInstallerOptions) {
     super();
     if (!(sfpmPackage instanceof SfpmSourcePackage)) {
-      throw new TypeError(`SourcePackageInstaller received incompatible package type: ${(sfpmPackage as any).constructor.name}`);
+      throw new TypeError(`SourcePackageInstaller received incompatible package type: ${(sfpmPackage as unknown as {constructor: {name: string}}).constructor.name}`);
     }
 
     this.targetOrg = targetOrg;
@@ -73,12 +74,14 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
     });
   }
 
-  public async exec(): Promise<void> {
+  public async exec(): Promise<InstallerExecResult> {
     this.logger?.info(`Installing source package: ${this.sfpmPackage.packageName}`);
 
     await this.runPreInstallTasks();
-    await this.installPackage();
+    const result = await this.installPackage();
     await this.runPostInstallTasks();
+
+    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -99,16 +102,18 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
     return InstallationSource.Local;
   }
 
-  private async installPackage(): Promise<void> {
+  private async installPackage(): Promise<InstallerExecResult> {
     this.logger?.info('Using installation mode: source-deploy');
     // SfpmSourcePackage implements SourceDeployable via SfpmMetadataPackage
-    await this.sourceDeployer.install(this.sfpmPackage, this.targetOrg);
+    return this.sourceDeployer.install(this.sfpmPackage, this.targetOrg);
   }
 
   private async runPostInstallTasks(): Promise<void> {
     for (const task of this.postInstallTasks) {
       const taskName = task.constructor.name;
       this.logger?.info(`Running post-install task: ${taskName}`);
+      // Tasks must run sequentially (order matters for pre/post hooks)
+      // eslint-disable-next-line no-await-in-loop
       await task.exec();
     }
   }
@@ -117,6 +122,8 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
     for (const task of this.preInstallTasks) {
       const taskName = task.constructor.name;
       this.logger?.info(`Running pre-install task: ${taskName}`);
+      // Tasks must run sequentially (order matters for pre/post hooks)
+      // eslint-disable-next-line no-await-in-loop
       await task.exec();
     }
   }

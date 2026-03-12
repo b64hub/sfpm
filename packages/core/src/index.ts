@@ -37,7 +37,11 @@ export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type Change
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
 
 export {ArtifactResolver} from './artifacts/artifact-resolver.js';
-export {ArtifactService, type InstallTarget} from './artifacts/artifact-service.js';
+/* eslint-disable camelcase */
+export {
+  type ArtifactHistoryOptions, ArtifactService, type InstallTarget, type SfpmArtifactHistory__c,
+} from './artifacts/artifact-service.js';
+/* eslint-enable camelcase */
 export {
   type DownloadResult,
   type NpmConfigResult,
@@ -63,7 +67,7 @@ export {
   type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry, type BuildTask, RegisterBuilder,
 } from './package/builders/builder-registry.js';
 export {
-  type Installer, type InstallerConstructor, InstallerRegistry, RegisterInstaller,
+  type Installer, type InstallerConstructor, type InstallerExecResult, InstallerRegistry, RegisterInstaller,
 } from './package/installers/installer-registry.js';
 export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
@@ -86,6 +90,7 @@ export * from './types/npm.js';
 export * from './types/package.js';
 export * from './types/project.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
+export {getPipelineRunId} from './utils/pipeline.js';
 export {escapeSOQL, soql} from './utils/soql.js';
 export {formatVersion, toVersionFormat} from './utils/version-utils.js';
 export type {VersionFormatOptions} from './utils/version-utils.js';

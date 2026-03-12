@@ -65,7 +65,7 @@ describe('PackageInstaller', () => {
 
         mockInstallerInstance = {
             connect: vi.fn().mockResolvedValue(undefined),
-            exec: vi.fn().mockResolvedValue(undefined),
+            exec: vi.fn().mockResolvedValue({}),
         };
 
         // Create a proper constructor mock that returns the instance

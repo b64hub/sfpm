@@ -8,7 +8,7 @@ import {
   InstallationMode, InstallationSource, PackageType, SfpmUnlockedPackageBuildOptions,
 } from '../../types/package.js';
 import {SfpmUnlockedPackage} from '../sfpm-package.js';
-import {Installer, RegisterInstaller} from './installer-registry.js';
+import {Installer, type InstallerExecResult, RegisterInstaller} from './installer-registry.js';
 // Import strategy implementations
 import SourceDeployer from './strategies/source-deployer.js';
 import VersionInstaller from './strategies/version-installer.js';
@@ -28,11 +28,12 @@ export interface InstallTask {
 
 /**
  * Adapter that bridges {@link SfpmUnlockedPackage} with the typed installation
- * strategies ({@link VersionInstallStrategy} and {@link SourceDeployStrategy}).
+ * strategies ({@link VersionInstaller} and {@link SourceDeployer}).
  *
  * Routing logic (version-install vs source-deploy) lives here — the strategies
  * themselves are pure and accept only their typed payload.
  */
+// eslint-disable-next-line new-cap
 @RegisterInstaller(PackageType.Unlocked)
 export default class UnlockedPackageInstaller extends EventEmitter implements Installer {
   public postInstallTasks: InstallTask[] = [];
@@ -50,7 +51,7 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
   constructor(targetOrg: string, sfpmPackage: SfpmUnlockedPackage, logger?: Logger, options?: UnlockedPackageInstallerOptions) {
     super();
     if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
-      throw new TypeError(`UnlockedPackageInstaller received incompatible package type: ${(sfpmPackage as any).constructor.name}`);
+      throw new TypeError(`UnlockedPackageInstaller received incompatible package type: ${(sfpmPackage as unknown as {constructor: {name: string}}).constructor.name}`);
     }
 
     this.targetOrg = targetOrg;
@@ -87,12 +88,14 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
     });
   }
 
-  public async exec(): Promise<void> {
+  public async exec(): Promise<InstallerExecResult> {
     this.logger?.info(`Installing unlocked package: ${this.sfpmPackage.packageName}`);
 
     await this.runPreInstallTasks();
-    await this.installPackage();
+    const result = await this.installPackage();
     await this.runPostInstallTasks();
+
+    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -113,17 +116,17 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
     return InstallationSource.Local;
   }
 
-  private async installPackage(): Promise<void> {
+  private async installPackage(): Promise<InstallerExecResult> {
     const mode = this.resolveMode();
     this.logger?.info(`Using installation mode: ${mode}`);
 
     if (mode === InstallationMode.VersionInstall) {
       const installable = this.toVersionInstallable();
-      await this.versionInstaller.install(installable, this.targetOrg);
-    } else {
-      // SfpmUnlockedPackage implements SourceDeployable via SfpmMetadataPackage
-      await this.sourceDeployer.install(this.sfpmPackage, this.targetOrg);
+      return this.versionInstaller.install(installable, this.targetOrg);
     }
+
+    // SfpmUnlockedPackage implements SourceDeployable via SfpmMetadataPackage
+    return this.sourceDeployer.install(this.sfpmPackage, this.targetOrg);
   }
 
   /**

@@ -33,9 +33,16 @@ export interface InstallOptions {
    */
   source?: InstallationSource;
   targetOrg: string;
+  /**
+   * When true, creates an `Sfpm_Artifact_History__c` record after each artifact upsert.
+   * Read from `sfpmConfig.artifacts?.trackHistory` and passed through by the CLI/Actions layer.
+   */
+  trackHistory?: boolean;
 }
 
 export interface InstallResult {
+  /** Salesforce deploy ID or PackageInstallRequest ID (when available) */
+  deployId?: string;
   installed: boolean;
   packageName: string;
   skipped: boolean;
@@ -366,14 +373,22 @@ export default class PackageInstaller extends EventEmitter {
       this.forwardInstallerEvents(installer, packageName);
 
       await installer.connect(this.options.targetOrg);
-      await installer.exec();
+      const execResult = await installer.exec();
 
       await artifactService.upsertArtifact(sfpmPackage);
+
+      // Create history record when opt-in tracking is enabled
+      if (this.options.trackHistory) {
+        await artifactService.createHistoryRecord(sfpmPackage, {
+          deployId: execResult.deployId,
+        });
+      }
 
       this.emitComplete(sfpmPackage, installTarget);
       this.logger?.info(`Successfully installed ${packageName}@${sfpmPackage.version}`);
 
       return {
+        deployId: execResult.deployId,
         installed: true,
         packageName,
         skipped: false,

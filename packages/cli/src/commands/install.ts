@@ -68,13 +68,16 @@ export default class Install extends SfpmCommand {
       warn: (msg: string) => this.warn(msg),
     }
 
+    const sfpmConfig = projectService.getSfpmConfig();
+
     const installOptions = {
       force: flags.force,
       installationKey: flags['installation-key'],
       mode: flags.mode as InstallationMode | undefined,
-      npmScope: projectService.getSfpmConfig().npmScope,
+      npmScope: sfpmConfig.npmScope,
       source: flags.source as InstallationSource | undefined,
       targetOrg: flags['target-org'],
+      trackHistory: sfpmConfig.artifacts?.trackHistory,
     }
 
     const renderer = new InstallProgressRenderer({

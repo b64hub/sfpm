@@ -3,7 +3,7 @@ import EventEmitter from 'node:events';
 
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
-import {Installer, RegisterInstaller} from './installer-registry.js';
+import {Installer, type InstallerExecResult, RegisterInstaller} from './installer-registry.js';
 import VersionInstaller from './strategies/version-installer.js';
 import {ManagedPackageRef, type VersionInstallable} from './types.js';
 
@@ -15,6 +15,7 @@ import {ManagedPackageRef, type VersionInstallable} from './types.js';
  * {@link VersionInstallable} payload (typically a {@link ManagedPackageRef})
  * to the {@link VersionInstaller}.
  */
+// eslint-disable-next-line new-cap
 @RegisterInstaller(PackageType.Managed)
 export default class ManagedPackageInstaller extends EventEmitter implements Installer {
   private readonly installable: VersionInstallable;
@@ -47,8 +48,8 @@ export default class ManagedPackageInstaller extends EventEmitter implements Ins
     });
   }
 
-  public async exec(): Promise<void> {
+  public async exec(): Promise<InstallerExecResult> {
     this.logger?.info(`Installing managed package: ${this.installable.packageName}`);
-    await new VersionInstaller(this.logger, this).install(this.installable, this.targetOrg);
+    return new VersionInstaller(this.logger, this).install(this.installable, this.targetOrg);
   }
 }

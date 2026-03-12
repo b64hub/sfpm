@@ -5,6 +5,35 @@ import {LifecycleHooks} from './lifecycle.js';
 // ============================================================================
 
 /**
+ * Configuration for artifact-related features.
+ *
+ * @example
+ * ```typescript
+ * // sfpm.config.ts
+ * import { defineConfig } from '@b64/sfpm-core';
+ *
+ * export default defineConfig({
+ *   artifacts: {
+ *     trackHistory: true,
+ *   },
+ * });
+ * ```
+ */
+export interface ArtifactsConfig {
+  /**
+   * When enabled, creates an `Sfpm_Artifact_History__c` record in the target org
+   * each time an artifact is installed or updated.
+   *
+   * This is opt-in because the custom object must be deployed to the target org
+   * separately (it is not part of the core SFPM package). If the object does not
+   * exist in the org, history creation silently skips with a warning.
+   *
+   * @default false
+   */
+  trackHistory?: boolean;
+}
+
+/**
  * Stage-specific .forceignore file mappings.
  * Each stage can have a custom ignore file for fine-grained control
  * over which metadata is included during that lifecycle phase.
@@ -56,6 +85,19 @@ export interface SfpmConfig {
    * (e.g., `orgs`). Use the module's `define*Config()` helper for type safety.
    */
   [key: string]: unknown;
+
+  /**
+   * Artifact-related configuration.
+   * Controls optional features like history tracking in the target org.
+   *
+   * @example
+   * ```typescript
+   * artifacts: {
+   *   trackHistory: true,
+   * }
+   * ```
+   */
+  artifacts?: ArtifactsConfig;
 
   /**
    * Lifecycle hooks to activate.
