@@ -260,6 +260,8 @@ export class OrchestrationListrManager {
    * populated the packageTasks map.
    */
   public resolvePackage(packageName: string): void {
+    // Ensure the structure deferred is settled to unblock the package task
+    this.skipPackageSubtasks(packageName);
     // Resolve any pending subtask deferreds
     const subtaskDefs = this.subtaskDeferreds.get(packageName);
     if (subtaskDefs) {
