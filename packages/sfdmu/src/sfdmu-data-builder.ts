@@ -1,9 +1,6 @@
-import EventEmitter from 'node:events';
-import fs from 'fs-extra';
-import path from 'path';
-
 import {
   type Builder,
+  type BuilderOptions,
   type BuildTask,
   type Logger,
   PackageType,
@@ -11,6 +8,9 @@ import {
   SfpmDataPackage,
   type SfpmPackage,
 } from '@b64/sfpm-core';
+import fs from 'fs-extra';
+import EventEmitter from 'node:events';
+import path from 'node:path';
 
 import type {SfdmuExportJson} from './types.js';
 
@@ -37,6 +37,7 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
   constructor(
     workingDirectory: string,
     sfpmPackage: SfpmPackage,
+    _options: BuilderOptions,
     logger?: Logger,
   ) {
     super();
@@ -57,12 +58,18 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
   }
 
   /**
-   * Execute the build pipeline: pre-build tasks -> validate -> post-build tasks.
+   * Execute the build: validate SFDMU export.json and data files.
+   *
+   * Pre/post build tasks are handled by PackageBuilder — this method
+   * contains only the SFDMU-specific validation logic.
    */
   public async exec(): Promise<void> {
-    await this.runPreBuildTasks();
     await this.validate();
-    await this.runPostBuildTasks();
+  }
+
+  private async findCsvFiles(): Promise<string[]> {
+    const files = await fs.readdir(this.workingDirectory);
+    return files.filter(f => f.toLowerCase().endsWith('.csv'));
   }
 
   /**
@@ -82,12 +89,10 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
     const exportJsonPath = path.join(this.workingDirectory, 'export.json');
 
     // Validate export.json exists
-    // eslint-disable-next-line no-await-in-loop
+
     if (!await fs.pathExists(exportJsonPath)) {
-      const error = new Error(
-        `export.json not found at ${exportJsonPath}. ` +
-        'SFDMU data packages must contain an export.json file in the package directory.',
-      );
+      const error = new Error(`export.json not found at ${exportJsonPath}. `
+        + 'SFDMU data packages must contain an export.json file in the package directory.');
 
       this.emit('task:complete', {
         packageName: this.sfpmPackage.packageName,
@@ -116,14 +121,14 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
       this.logger?.info(`SFDMU export.json validated: ${sObjectNames.length} sObject(s) configured: ${sObjectNames.join(', ')}`);
 
       // Log CSV files found
-      // eslint-disable-next-line no-await-in-loop
+
       const csvFiles = await this.findCsvFiles();
       if (csvFiles.length > 0) {
         this.logger?.info(`Found ${csvFiles.length} CSV file(s): ${csvFiles.join(', ')}`);
       }
     } catch (error) {
       if (error instanceof SyntaxError) {
-        throw new Error(`export.json contains invalid JSON: ${error.message}`);
+        throw new TypeError(`export.json contains invalid JSON: ${error.message}`);
       }
 
       throw error;
@@ -136,80 +141,5 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
       taskType: 'build',
       timestamp: new Date(),
     });
-  }
-
-  private async findCsvFiles(): Promise<string[]> {
-    const files = await fs.readdir(this.workingDirectory);
-    return files.filter(f => f.toLowerCase().endsWith('.csv'));
-  }
-
-  private async runPostBuildTasks(): Promise<void> {
-    for (const task of this.postBuildTasks) {
-      const taskName = task.constructor.name;
-
-      this.emit('task:start', {
-        packageName: this.sfpmPackage.packageName,
-        taskName,
-        taskType: 'post-build',
-        timestamp: new Date(),
-      });
-
-      try {
-        await task.exec();
-
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: true,
-          taskName,
-          taskType: 'post-build',
-          timestamp: new Date(),
-        });
-      } catch (error) {
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: false,
-          taskName,
-          taskType: 'post-build',
-          timestamp: new Date(),
-        });
-
-        throw error;
-      }
-    }
-  }
-
-  private async runPreBuildTasks(): Promise<void> {
-    for (const task of this.preBuildTasks) {
-      const taskName = task.constructor.name;
-
-      this.emit('task:start', {
-        packageName: this.sfpmPackage.packageName,
-        taskName,
-        taskType: 'pre-build',
-        timestamp: new Date(),
-      });
-
-      try {
-        await task.exec();
-
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: true,
-          taskName,
-          taskType: 'pre-build',
-          timestamp: new Date(),
-        });
-      } catch (error) {
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: false,
-          taskName,
-          taskType: 'pre-build',
-          timestamp: new Date(),
-        });
-
-        throw error;
-      }
-    }
   }
 }

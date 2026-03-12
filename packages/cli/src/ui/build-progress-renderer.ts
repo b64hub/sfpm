@@ -407,9 +407,11 @@ export class BuildProgressRenderer {
 
     if (!this.isInteractive()) return;
 
-    const reasonLabel = event.reason === 'no-changes'
-      ? 'no source changes detected'
-      : event.reason;
+    const reasonLabels: Record<string, string> = {
+      'empty-package': 'package contains no deployable components',
+      'no-changes': 'no source changes detected',
+    };
+    const reasonLabel = reasonLabels[event.reason] ?? event.reason;
 
     // Store the reason so orchestration:package:complete can use it
     this.skippedReasons.set(event.packageName, reasonLabel);
@@ -435,8 +437,13 @@ export class BuildProgressRenderer {
         entries.Version = event.version;
       }
 
-      entries['Latest Build'] = event.latestVersion;
-      entries['Source Hash'] = chalk.dim(event.sourceHash);
+      if (event.latestVersion) {
+        entries['Latest Build'] = event.latestVersion;
+      }
+
+      if (event.sourceHash) {
+        entries['Source Hash'] = chalk.dim(event.sourceHash);
+      }
 
       if (event.artifactPath) {
         entries.Artifact = chalk.dim(event.artifactPath);

@@ -1,7 +1,7 @@
 import ArtifactAssembler, {ArtifactAssemblerOptions} from '../../../artifacts/artifact-assembler.js';
 import ProjectService from '../../../project/project-service.js';
-import {BuildTask} from '../../package-builder.js';
 import SfpmPackage from '../../sfpm-package.js';
+import {BuildTask} from '../builder-registry.js';
 
 export interface AssembleArtifactTaskOptions {
   /** Additional keywords for package.json */

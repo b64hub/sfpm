@@ -6,6 +6,10 @@ import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import SfpmPackage from '../sfpm-package.js';
 
+export interface BuildTask {
+  exec(): Promise<void>;
+}
+
 /**
  * Interface for specific package builder implementations (Strategy Pattern)
  * Builders can emit events by extending EventEmitter
@@ -13,6 +17,10 @@ import SfpmPackage from '../sfpm-package.js';
 export interface Builder {
   connect(username: string): Promise<void>;
   exec(): Promise<any>;
+  /** Tasks to run after the core build logic */
+  postBuildTasks?: BuildTask[];
+  /** Tasks to run before the core build logic */
+  preBuildTasks?: BuildTask[];
 }
 
 /**

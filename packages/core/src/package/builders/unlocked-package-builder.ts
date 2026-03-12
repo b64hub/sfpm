@@ -9,9 +9,10 @@ import ProjectService from '../../project/project-service.js';
 import {UnlockedBuildEvents} from '../../types/events.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, SfpmUnlockedPackageBuildOptions} from '../../types/package.js';
-import {BuildTask} from '../package-builder.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
-import {Builder, BuilderOptions, RegisterBuilder} from './builder-registry.js';
+import {
+  Builder, BuilderOptions, BuildTask, RegisterBuilder,
+} from './builder-registry.js';
 import AssembleArtifactTask, {AssembleArtifactTaskOptions} from './tasks/assemble-artifact-task.js';
 import GitTagTask from './tasks/git-tag-task.js';
 import SourceHashTask from './tasks/source-hash-task.js';
@@ -70,9 +71,13 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       throw new Error('Must run connect() before exec()');
     }
 
-    await this.runPreBuildTasks();
+    // Update working directory to staging if available
+    if (this.sfpmPackage.stagingDirectory) {
+      this.workingDirectory = this.sfpmPackage.stagingDirectory;
+    }
+
+    await this.pruneOrgDependentPackage();
     await this.buildPackage();
-    await this.runPostBuildTasks();
   }
 
   private async buildPackage(): Promise<void> {
@@ -175,7 +180,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
           // We could fetch more info here if needed
         }
       } else {
-        throw new Error(`Package creation failed or timed out. Status: ${result.Status}`);
+        throw new Error(`Package creation failed or timed out.\n${result.Error?.join('\n')}`);
       }
 
       if (buildOptions?.isCoverageEnabled && !this.sfpmPackage.isOrgDependent && !buildOptions?.isAsyncValidation && !result.HasPassedCodeCoverageCheck) {
@@ -193,25 +198,6 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     } finally {
       lifecycle.removeAllListeners('packageVersionCreate:progress');
     }
-  }
-
-  private emitTaskCompleteEvent(taskName: string, taskType: 'post-build' | 'pre-build', success: boolean): void {
-    this.emit('task:complete', {
-      packageName: this.sfpmPackage.packageName,
-      success,
-      taskName,
-      taskType,
-      timestamp: new Date(),
-    });
-  }
-
-  private emitTaskEvent(taskName: string, taskType: 'post-build' | 'pre-build', success: boolean): void {
-    this.emit('task:start', {
-      packageName: this.sfpmPackage.packageName,
-      taskName,
-      taskType,
-      timestamp: new Date(),
-    });
   }
 
   /**
@@ -254,47 +240,5 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       prunedFiles: 1,
       timestamp: new Date(),
     });
-  }
-
-  private async runPostBuildTasks(): Promise<void> {
-    for (const task of this.postBuildTasks) {
-      const taskName = task.constructor.name;
-
-      this.emitTaskEvent(taskName, 'post-build', true);
-      try {
-        // eslint-disable-next-line no-await-in-loop -- we want to run tasks sequentially and stop on first failure
-        await task.exec();
-
-        this.emitTaskCompleteEvent(taskName, 'post-build', true);
-      } catch (error) {
-        this.emitTaskCompleteEvent(taskName, 'post-build', false);
-
-        throw error;
-      }
-    }
-  }
-
-  private async runPreBuildTasks(): Promise<void> {
-    if (this.sfpmPackage.stagingDirectory) {
-      this.workingDirectory = this.sfpmPackage.stagingDirectory;
-    }
-
-    await this.pruneOrgDependentPackage();
-
-    for (const task of this.preBuildTasks) {
-      const taskName = task.constructor.name;
-
-      this.emitTaskEvent(taskName, 'pre-build', true);
-      try {
-        // eslint-disable-next-line no-await-in-loop -- we want to run tasks sequentially and stop on first failure
-        await task.exec();
-        this.emitTaskCompleteEvent(taskName, 'pre-build', true);
-      } catch (error) {
-        const success = error instanceof Error && (error as any).code === 'BUILD_NOT_REQUIRED';
-        this.emitTaskCompleteEvent(taskName, 'pre-build', success);
-
-        throw error;
-      }
-    }
   }
 }

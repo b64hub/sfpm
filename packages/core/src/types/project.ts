@@ -46,11 +46,10 @@ export interface DeploymentOptions {
   },
 }
 
-// Our Orchestration tool expects packages to have a name (package) and we add custom metadata.
-// We explicitly include 'package', 'versionNumber', 'path' and 'dependencies' here because
-// PackageDir is a union in @salesforce/core, and not all members of that union have these properties.
-// We define this as an interface that structurally matches the versioned package variant of PackageDir
-// plus our custom extensions, avoiding union distribution issues while maintaining compatibility.
+/**
+ * Versioned package directory entry with SFPM extensions.
+ * Extracts the named+versioned variant of PackageDir to avoid union distribution issues.
+ */
 export interface PackageDefinition extends Extract<PackageDir, {package: string, path: string; versionNumber: string,}> {
   packageOptions?: PackageOptions;
   type?: PackageType;

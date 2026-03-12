@@ -3,9 +3,10 @@ import EventEmitter from 'node:events';
 import {SourceBuildEvents} from '../../types/events.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
-import {BuildTask} from '../package-builder.js';
 import SfpmPackage, {SfpmSourcePackage} from '../sfpm-package.js';
-import {Builder, BuilderOptions, RegisterBuilder} from './builder-registry.js';
+import {
+  Builder, BuilderOptions, BuildTask, RegisterBuilder,
+} from './builder-registry.js';
 import SourceHashTask from './tasks/source-hash-task.js';
 
 // eslint-disable-next-line new-cap
@@ -39,7 +40,9 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
     this.preBuildTasks.push(new SourceHashTask(this.sfpmPackage, projectDir, this.logger));
   }
 
-  public async buildPackage(): Promise<void> {
+  public async connect(username: string): Promise<void> {}
+
+  public async exec(): Promise<void> {
     this.emit('source:assemble:start', {
       packageName: this.sfpmPackage.packageName,
       sourcePath: this.workingDirectory,
@@ -54,90 +57,6 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
       sourcePath: this.workingDirectory,
       timestamp: new Date(),
     });
-  }
-
-  public async connect(username: string): Promise<void> {
-
-  }
-
-  public async exec(): Promise<void> {
-    await this.runPreBuildTasks();
-    await this.buildPackage();
-    await this.runPostBuildTasks();
-  }
-
-  public async runPostBuildTasks() {
-    for (const task of this.postBuildTasks) {
-      const taskName = task.constructor.name;
-
-      this.emit('task:start', {
-        packageName: this.sfpmPackage.packageName,
-        taskName,
-        taskType: 'post-build',
-        timestamp: new Date(),
-      });
-
-      try {
-        // eslint-disable-next-line no-await-in-loop -- we want to run tasks sequentially and stop on first failure
-        await task.exec();
-
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: true,
-          taskName,
-          taskType: 'post-build',
-          timestamp: new Date(),
-        });
-      } catch (error) {
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: false,
-          taskName,
-          taskType: 'post-build',
-          timestamp: new Date(),
-        });
-
-        throw error;
-      }
-    }
-  }
-
-  public async runPreBuildTasks() {
-    for (const task of this.preBuildTasks) {
-      const taskName = task.constructor.name;
-
-      this.emit('task:start', {
-        packageName: this.sfpmPackage.packageName,
-        taskName,
-        taskType: 'pre-build',
-        timestamp: new Date(),
-      });
-
-      try {
-        // eslint-disable-next-line no-await-in-loop -- we want to run tasks sequentially and stop on first failure
-        await task.exec();
-
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: true,
-          taskName,
-          taskType: 'pre-build',
-          timestamp: new Date(),
-        });
-      } catch (error) {
-        const success = error instanceof Error && (error as any).code === 'BUILD_NOT_REQUIRED';
-
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success,
-          taskName,
-          taskType: 'pre-build',
-          timestamp: new Date(),
-        });
-
-        throw error;
-      }
-    }
   }
 
   private handleApexTestClasses(sfpmPackage: SfpmSourcePackage) {

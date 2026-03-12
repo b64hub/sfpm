@@ -10,7 +10,9 @@ import {Logger} from '../types/logger.js';
 import {PackageType} from '../types/package.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
-import {Builder, BuilderOptions, BuilderRegistry} from './builders/builder-registry.js';
+import {
+  Builder, BuilderOptions, BuilderRegistry, BuildTask,
+} from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory} from './sfpm-package.js';
 
 export interface BuildOptions {
@@ -27,10 +29,6 @@ export interface BuildOptions {
   /** npm scope for package publishing (e.g., "@myorg") */
   npmScope?: string;
   orgDefinitionPath?: string;
-}
-
-export interface BuildTask {
-  exec(): Promise<void>;
 }
 
 /**
@@ -55,7 +53,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    * @deprecated Use BuildOrchestrator.buildAll() for multi-package builds.
    * This stub exists for backwards compatibility — the CLI drives the orchestrator directly.
    */
-  public async build(): Promise<void> { }
+  public async build(): Promise<void> {}
 
   /**
    * @description Build a single package by name
@@ -63,10 +61,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    * @param projectDirectory
    * @returns
    */
-  public async buildPackage(
-    packageName: string,
-    projectDirectory: string,
-  ) {
+  public async buildPackage(packageName: string, projectDirectory: string) {
     // Use PackageFactory to create a fully-configured package
     const packageFactory = new PackageFactory(this.projectConfig);
     const sfpmPackage = packageFactory.createFromName(packageName);
@@ -110,6 +105,19 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     });
 
     await this.stagePackage(sfpmPackage);
+
+    // Skip empty packages before running analyzers or builder
+    if (await this.isPackageEmpty(sfpmPackage)) {
+      this.emit('build:skipped', {
+        packageName: sfpmPackage.packageName,
+        packageType: sfpmPackage.type as PackageType,
+        reason: 'empty-package',
+        timestamp: new Date(),
+        version: sfpmPackage.version,
+      });
+      return;
+    }
+
     await this.runAnalyzers(sfpmPackage);
 
     if (!sfpmPackage.stagingDirectory) {
@@ -150,8 +158,8 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     );
 
     // Skip source hash check when force is enabled
-    if (this.options.force && 'preBuildTasks' in builderInstance) {
-      (builderInstance as any).preBuildTasks = [];
+    if (this.options.force && builderInstance.preBuildTasks) {
+      builderInstance.preBuildTasks = builderInstance.preBuildTasks.filter(task => task.constructor.name !== 'SourceHashTask');
       this.logger?.info('Force build enabled - skipping source change detection');
     }
 
@@ -340,11 +348,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     }
   }
 
-  private async executeBuilder(
-    sfpmPackage: SfpmPackage,
-    builderInstance: Builder,
-    builderName: string,
-  ): Promise<any> {
+  private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<any> {
     this.emit('builder:start', {
       builderName,
       packageName: sfpmPackage.packageName,
@@ -358,7 +362,9 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     }
 
     try {
+      await this.runTasks(sfpmPackage, builderInstance.preBuildTasks ?? [], 'pre-build');
       const result = await builderInstance.exec();
+      await this.runTasks(sfpmPackage, builderInstance.postBuildTasks ?? [], 'post-build');
 
       this.emit('builder:complete', {
         builderName,
@@ -392,6 +398,54 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         timestamp: new Date(),
       });
       throw error;
+    }
+  }
+
+  /** Check whether a staged package contains zero deployable components or files. */
+  private async isPackageEmpty(sfpmPackage: SfpmPackage): Promise<boolean> {
+    return (await sfpmPackage.componentCount()) === 0;
+  }
+
+  /** Run a list of build tasks sequentially, emitting task:start/task:complete events. */
+  private async runTasks(
+    sfpmPackage: SfpmPackage,
+    tasks: BuildTask[],
+    taskType: 'post-build' | 'pre-build',
+  ): Promise<void> {
+    for (const task of tasks) {
+      const taskName = task.constructor.name;
+
+      this.emit('task:start', {
+        packageName: sfpmPackage.packageName,
+        taskName,
+        taskType,
+        timestamp: new Date(),
+      });
+
+      try {
+        // eslint-disable-next-line no-await-in-loop -- tasks run sequentially, stop on first failure
+        await task.exec();
+
+        this.emit('task:complete', {
+          packageName: sfpmPackage.packageName,
+          success: true,
+          taskName,
+          taskType,
+          timestamp: new Date(),
+        });
+      } catch (error) {
+        const success = error instanceof Error && (error as any).code === 'BUILD_NOT_REQUIRED';
+
+        this.emit('task:complete', {
+          packageName: sfpmPackage.packageName,
+          success,
+          taskName,
+          taskType,
+          timestamp: new Date(),
+        });
+
+        throw error;
+      }
     }
   }
 }

@@ -60,7 +60,7 @@ export {
 } from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
 export {
-  type Builder, type BuilderConstructor, BuilderRegistry, RegisterBuilder,
+  type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry, type BuildTask, RegisterBuilder,
 } from './package/builders/builder-registry.js';
 export {
   type Installer, type InstallerConstructor, InstallerRegistry, RegisterInstaller,
@@ -68,7 +68,7 @@ export {
 export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
-export {type BuildTask, PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
+export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {PackageFactory, SfpmDataPackage, default as SfpmPackage} from './package/sfpm-package.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
