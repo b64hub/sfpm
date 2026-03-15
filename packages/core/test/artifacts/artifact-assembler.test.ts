@@ -8,6 +8,8 @@ import { PackageType } from '../../src/types/package.js';
 // Create a mock repository instance that we can control
 const mockRepository = {
     getVersionPath: vi.fn(),
+    getArtifactPath: vi.fn(),
+    getRelativeArtifactPath: vi.fn(),
     getArtifactZipPath: vi.fn(),
     getArtifactTgzPath: vi.fn(),
     getManifest: vi.fn(),
@@ -74,6 +76,8 @@ describe('ArtifactAssembler', () => {
 
         // Configure mock repository for this test
         mockRepository.getVersionPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}`);
+        mockRepository.getArtifactPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}/artifact.tgz`);
+        mockRepository.getRelativeArtifactPath.mockImplementation((pkg: string, ver: string) => `${pkg}/${ver}/artifact.tgz`);
         mockRepository.getArtifactTgzPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}/artifact.tgz`);
         mockRepository.getArtifactZipPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}/artifact.zip`);
         mockRepository.getManifest.mockResolvedValue(undefined);
@@ -151,7 +155,6 @@ describe('ArtifactAssembler', () => {
             vi.mocked(fs.pathExists).mockResolvedValue(true);
             vi.mocked(fs.remove).mockResolvedValue(undefined as any);
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
-            vi.mocked(fs.writeFile).mockResolvedValue(undefined as any);
             vi.mocked(fs.move).mockResolvedValue(undefined as any);
 
             const result = await assembler.assemble();
@@ -172,7 +175,7 @@ describe('ArtifactAssembler', () => {
             
             // Should run npm pack
             expect(childProcess.execSync).toHaveBeenCalledWith(
-                'npm pack',
+                'npm pack --quiet',
                 expect.objectContaining({ cwd: '/tmp/staging' })
             );
             
@@ -224,7 +227,6 @@ describe('ArtifactAssembler', () => {
                     name: `@testorg/${packageName}`,
                     version,
                     description: 'Test package',
-                    main: 'index.js',
                     keywords: expect.arrayContaining(['sfpm', 'salesforce', 'test']),
                     license: 'MIT',
                     author: 'Test Author',
@@ -238,9 +240,16 @@ describe('ArtifactAssembler', () => {
         });
 
         it('should include optionalDependencies for versioned dependencies', async () => {
-            mockSfpmPackage.dependencies = [
-                { package: 'dep-package', versionNumber: '1.0.0.1' }
-            ];
+            // Recreate assembler with versioned dependencies in options
+            assembler = new ArtifactAssembler(
+                mockSfpmPackage,
+                projectDirectory,
+                {
+                    ...mockOptions,
+                    versionedDependencies: { '@testorg/dep-package': '^1.0.0' },
+                },
+                mockLogger,
+            );
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
 
             await (assembler as any).generatePackageJson('/tmp/staging');
@@ -256,15 +265,17 @@ describe('ArtifactAssembler', () => {
             );
         });
 
-        it('should include managedDependencies for pinned dependencies without versionNumber', async () => {
-            mockSfpmPackage.dependencies = [
-                { package: 'Nebula Logger@4.16.0' }
-            ];
-            mockSfpmPackage.projectDefinition = {
-                packageAliases: {
-                    'Nebula Logger@4.16.0': '04taA000005CtsHQAS'
-                }
-            };
+        it('should include managedDependencies for pinned dependencies', async () => {
+            // Recreate assembler with managed dependencies in options
+            assembler = new ArtifactAssembler(
+                mockSfpmPackage,
+                projectDirectory,
+                {
+                    ...mockOptions,
+                    managedDependencies: { 'Nebula Logger@4.16.0': '04taA000005CtsHQAS' },
+                },
+                mockLogger,
+            );
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
 
             await (assembler as any).generatePackageJson('/tmp/staging');
@@ -318,10 +329,10 @@ describe('ArtifactAssembler', () => {
 
             expect(result).toBe(`testorg-${packageName}-${version}.tgz`);
             expect(childProcess.execSync).toHaveBeenCalledWith(
-                'npm pack',
+                'npm pack --quiet',
                 expect.objectContaining({
                     cwd: '/tmp/staging',
-                    encoding: 'utf-8'
+                    encoding: 'utf8'
                 })
             );
         });

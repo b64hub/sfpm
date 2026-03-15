@@ -34,6 +34,7 @@ export class SfpmCore extends EventEmitter<AllBuildEvents> {
   }
 }
 export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
+export {extractPackageVersionId, extractSourceHash, fromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions} from './artifacts/npm-package-adapter.js';
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
 
 export {ArtifactResolver} from './artifacts/artifact-resolver.js';
