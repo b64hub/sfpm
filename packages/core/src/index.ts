@@ -34,15 +34,15 @@ export class SfpmCore extends EventEmitter<AllBuildEvents> {
   }
 }
 export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
-export {extractPackageVersionId, extractSourceHash, fromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions} from './artifacts/npm-package-adapter.js';
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
-
 export {ArtifactResolver} from './artifacts/artifact-resolver.js';
-/* eslint-disable camelcase */
+
 export {
-  type ArtifactHistoryOptions, ArtifactService, type InstallTarget, type SfpmArtifactHistory__c,
+  type ArtifactHistoryOptions, ArtifactService, type InstallTarget, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
 } from './artifacts/artifact-service.js';
-/* eslint-enable camelcase */
+export {
+  extractPackageVersionId, extractSourceHash, fromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions,
+} from './artifacts/npm-package-adapter.js';
 export {
   type DownloadResult,
   type NpmConfigResult,
@@ -74,7 +74,9 @@ export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
 export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
+export {PackageCreator} from './package/package-creator.js';
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
+export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
 export {PackageFactory, SfpmDataPackage, default as SfpmPackage} from './package/sfpm-package.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export {default as ProjectConfig} from './project/project-config.js';
@@ -82,6 +84,7 @@ export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
 export * from './project/version-manager.js';
 export * from './types/artifact.js';
+export * from './types/bootstrap.js';
 export * from './types/config.js';
 export * from './types/errors.js';
 export * from './types/events.js';
