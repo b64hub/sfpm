@@ -35,7 +35,7 @@ export default class AssembleArtifactTask implements BuildTask {
 
   public async exec(): Promise<void> {
     // Classify dependencies using ProjectService (raw sfdx-project.json names)
-    const {managed, versioned} = await ProjectService.classifyDependencies(this.sfpmPackage.packageName);
+    const {managed, versioned} = await ProjectService.classifyDependencies(this.sfpmPackage.packageName, this.projectDirectory);
 
     // Apply npm scope to versioned dependency names for package.json
     const {npmScope} = this.options;

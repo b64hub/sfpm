@@ -1,9 +1,16 @@
+import {createJiti} from 'jiti'
 import {existsSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {createJiti} from 'jiti'
+import {fileURLToPath} from 'node:url';
 
 import {SfpmConfig} from '../types/config.js';
 import {Logger} from '../types/logger.js';
+
+/**
+ * Resolve this package's own entry point so jiti can alias `@b64/sfpm-core`
+ * even when the target project hasn't installed it (e.g. bootstrap temp dirs).
+ */
+const CORE_ENTRY_POINT = fileURLToPath(new URL('../index.js', import.meta.url));
 
 /**
  * Config file names searched in priority order.
@@ -53,8 +60,13 @@ export async function loadSfpmConfig(
 
   try {
     // Use configPath as the resolution base so that imports in the config file
-    // resolve from the target project's node_modules, not from the sfpm monorepo
+    // resolve from the target project's node_modules, not from the sfpm monorepo.
+    // Alias @b64/sfpm-core to this package so config files can always import it,
+    // even when the project hasn't installed it (e.g. cloned bootstrap repos).
     const jiti = createJiti(configPath, {
+      alias: {
+        '@b64/sfpm-core': CORE_ENTRY_POINT,
+      },
       fsCache: true,
       interopDefault: true,
     });
@@ -68,13 +80,11 @@ export async function loadSfpmConfig(
 
     // Support factory functions: export default defineConfig(() => ({ ... }))
     const config = typeof configOrFactory === 'function'
-      ? await (configOrFactory as () => SfpmConfig | Promise<SfpmConfig>)()
+      ? await (configOrFactory as () => Promise<SfpmConfig> | SfpmConfig)()
       : configOrFactory as SfpmConfig;
 
     if (!config || typeof config !== 'object') {
-      throw new Error(
-        `Config file '${configPath}' must export an object (use defineConfig() for type safety).`,
-      );
+      throw new Error(`Config file '${configPath}' must export an object (use defineConfig() for type safety).`);
     }
 
     logger?.debug(`Loaded SFPM config with ${config.hooks?.length ?? 0} hook set(s)`);
@@ -99,5 +109,6 @@ export function resolveConfigPath(projectRoot: string): string | undefined {
       return fullPath;
     }
   }
+
   return undefined;
 }
