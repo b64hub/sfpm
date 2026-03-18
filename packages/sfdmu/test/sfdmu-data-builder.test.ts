@@ -83,16 +83,16 @@ describe('SfdmuDataBuilder', () => {
 
   it('should throw TypeError for non-data packages', () => {
     const badPackage = {constructor: {name: 'SfpmSourcePackage'}} as any;
-    expect(() => new SfdmuDataBuilder('/tmp', badPackage)).toThrow('incompatible package type');
+    expect(() => new SfdmuDataBuilder('/tmp', badPackage, {})).toThrow('incompatible package type');
   });
 
   it('should not throw on connect (no-op)', async () => {
-    const builder = new SfdmuDataBuilder(path.join(tmpDir, 'data'), dataPackage);
+    const builder = new SfdmuDataBuilder(path.join(tmpDir, 'data'), dataPackage, {});
     await expect(builder.connect('devhub')).resolves.not.toThrow();
   });
 
   it('should throw when export.json is missing', async () => {
-    const builder = new SfdmuDataBuilder(path.join(tmpDir, 'data'), dataPackage);
+    const builder = new SfdmuDataBuilder(path.join(tmpDir, 'data'), dataPackage, {});
     await expect(builder.exec()).rejects.toThrow('export.json not found');
   });
 
@@ -105,7 +105,7 @@ describe('SfdmuDataBuilder', () => {
       }),
     );
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage);
+    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
     await expect(builder.exec()).resolves.not.toThrow();
   });
 
@@ -113,7 +113,7 @@ describe('SfdmuDataBuilder', () => {
     const dataDir = path.join(tmpDir, 'data');
     await fs.writeFile(path.join(dataDir, 'export.json'), 'not json');
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage);
+    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
     await expect(builder.exec()).rejects.toThrow('invalid JSON');
   });
 
@@ -121,7 +121,7 @@ describe('SfdmuDataBuilder', () => {
     const dataDir = path.join(tmpDir, 'data');
     await fs.writeFile(path.join(dataDir, 'export.json'), JSON.stringify({objects: []}));
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage);
+    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
     await expect(builder.exec()).rejects.toThrow('must not be empty');
   });
 
@@ -129,7 +129,7 @@ describe('SfdmuDataBuilder', () => {
     const dataDir = path.join(tmpDir, 'data');
     await fs.writeFile(path.join(dataDir, 'export.json'), JSON.stringify({foo: 'bar'}));
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage);
+    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
     await expect(builder.exec()).rejects.toThrow('must contain an "objects" array');
   });
 
@@ -142,7 +142,7 @@ describe('SfdmuDataBuilder', () => {
       }),
     );
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage);
+    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
     const events: string[] = [];
 
     builder.on('task:start', () => events.push('start'));

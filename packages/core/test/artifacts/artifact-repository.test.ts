@@ -5,17 +5,22 @@ import { ArtifactRepository } from '../../src/artifacts/artifact-repository.js';
 import { ArtifactManifest } from '../../src/types/artifact.js';
 import { PackageType } from '../../src/types/package.js';
 
-// Mock package.json content for tgz extraction
+// Mock package.json content for tgz extraction (nested sfpm structure)
 const mockPackageJson = {
     name: '@testorg/test-package',
     version: '1.0.0-1',
     sfpm: {
-        packageType: PackageType.Unlocked,
-        packageName: 'test-package',
-        versionNumber: '1.0.0-1',
-        packageId: '0Ho1234567890',
-        packageVersionId: '04t1234567890',
-        generatedAt: Date.now(),
+        identity: {
+            packageName: 'test-package',
+            packageType: PackageType.Unlocked,
+            versionNumber: '1.0.0-1',
+            packageId: '0Ho1234567890',
+            packageVersionId: '04t1234567890',
+        },
+        orchestration: {},
+        source: {
+            sourceHash: 'abc123',
+        },
     }
 };
 
@@ -81,7 +86,7 @@ describe('ArtifactRepository', () => {
         });
 
         it('should return correct artifact tgz path', () => {
-            expect(repository.getArtifactTgzPath('my-package', '1.0.0-1')).toBe(
+            expect(repository.getArtifactPath('my-package', '1.0.0-1')).toBe(
                 path.join(projectDirectory, 'artifacts', 'my-package', '1.0.0-1', 'artifact.tgz')
             );
         });

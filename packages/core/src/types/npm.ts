@@ -10,6 +10,11 @@ import {PackageType, SfpmPackageMetadataBase} from './package.js';
 /**
  * The "sfpm" property in package.json.
  * Contains all SFPM-specific metadata that doesn't map to standard npm fields.
+ *
+ * @deprecated This flat interface is no longer used. The `sfpm` property in
+ * package.json now stores a nested `SfpmPackageMetadataBase` directly
+ * (identity, source, orchestration, content, validation). Use the
+ * npm-package-adapter module to read/write between NpmPackageJson and domain models.
  */
 export interface NpmPackageSfpmMetadata {
   /** Salesforce API version */
@@ -59,8 +64,6 @@ export interface NpmPackageJson {
   keywords?: string[];
   /** License identifier */
   license?: string;
-  /** Main entry point (stub for SFPM packages) */
-  main?: string;
   /**
    * Managed package dependencies pinned to a subscriber packageVersionId (04t...).
    * These are Salesforce managed packages identified by their alias in

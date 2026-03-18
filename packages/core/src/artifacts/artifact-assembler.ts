@@ -8,8 +8,8 @@ import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm
 import {toVersionFormat} from '../utils/version-utils.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
-import {NpmPackageJson} from '../types/npm.js';
 import {ArtifactRepository} from './artifact-repository.js';
+import {toNpmPackageJson} from './npm-package-adapter.js';
 
 /**
  * Interface for providing changelogs.
@@ -114,19 +114,16 @@ export default class ArtifactAssembler extends EventEmitter {
       // 4. Generate changelog
       await this.generateChangelog(stagingDir);
 
-      // 5. Create an empty index.js (npm requires a main entry point)
-      await this.createStubEntryPoint(stagingDir);
-
-      // 6. Run npm pack in staging directory
+      // 5. Run npm pack in staging directory
       const tarballName = await this.runNpmPack(stagingDir);
 
-      // 7. Move tarball to version directory
+      // 6. Move tarball to version directory
       const artifactPath = await this.moveTarball(stagingDir, tarballName);
 
-      // 8. Calculate artifact hash and finalize
+      // 7. Calculate artifact hash and finalize
       const artifactHash = await this.finalizeArtifact(artifactPath, currentSourceHash);
 
-      // 9. Cleanup staging directory
+      // 8. Cleanup staging directory
       await fs.remove(stagingDir);
 
       this.emitComplete(artifactPath, currentSourceHash, artifactHash, startTime);
@@ -167,14 +164,6 @@ export default class ArtifactAssembler extends EventEmitter {
 
     this.logger?.debug(`Calculated source hash: ${hash}`);
     return hash;
-  }
-
-  /**
-   * Create a stub index.js file (npm pack requires main entry point).
-   */
-  private async createStubEntryPoint(stagingDir: string): Promise<void> {
-    const indexPath = path.join(stagingDir, 'index.js');
-    await fs.writeFile(indexPath, '// SFPM Package - See sfpm metadata in package.json\n');
   }
 
   private emitComplete(artifactPath: string, sourceHash: string, artifactHash: string, startTime: number): void {
@@ -238,71 +227,15 @@ export default class ArtifactAssembler extends EventEmitter {
 
   /**
    * Generate package.json in the staging directory.
-   * Constructs the full npm package.json with sfpm metadata from the package.
+   * Delegates to the npm-package-adapter for package.json construction.
    */
   private async generatePackageJson(stagingDir: string): Promise<void> {
-    const {additionalKeywords, author, homepage, license, npmScope} = this.options;
-    const pkg = this.sfpmPackage;
+    const packageJson = await toNpmPackageJson(
+      this.sfpmPackage,
+      this.packageVersionNumber,
+      this.options,
+    );
 
-    // Get sfpm metadata from the package and strip empty properties
-    const sfpmMeta = removeEmptyValues(await pkg.toJson());
-
-    // Use pre-classified dependency maps (resolved by caller via ProjectConfig)
-    const optionalDependencies = this.options.versionedDependencies ?? {};
-    const managedDependencies = this.options.managedDependencies ?? {};
-
-    // Build keywords
-    const keywords = ['sfpm', 'salesforce', String(pkg.type), ...(additionalKeywords || [])];
-
-    // Get the package source path (e.g., "force-app", "src", etc.)
-    const packageSourcePath = pkg.packageDefinition?.path || 'force-app';
-
-    // Construct package.json
-    const packageJson: NpmPackageJson = {
-      description: pkg.packageDefinition?.versionDescription || `SFPM ${pkg.type} package: ${pkg.packageName}`,
-      files: [
-        `${packageSourcePath}/**`,
-        'scripts/**',
-        'manifest/**',
-        'config/**',
-        'sfdx-project.json',
-        '.forceignore',
-        'changelog.json',
-      ],
-      keywords,
-      license: license || 'UNLICENSED',
-      main: 'index.js',
-      name: `${npmScope}/${pkg.packageName}`,
-      sfpm: sfpmMeta,
-      version: this.packageVersionNumber,
-    };
-
-    // Add optional fields
-    if (author) {
-      packageJson.author = author;
-    }
-
-    if (homepage) {
-      packageJson.homepage = homepage;
-    }
-
-    if (Object.keys(optionalDependencies).length > 0) {
-      packageJson.optionalDependencies = optionalDependencies;
-    }
-
-    if (Object.keys(managedDependencies).length > 0) {
-      packageJson.managedDependencies = managedDependencies;
-    }
-
-    // Add repository if available
-    if (pkg.metadata?.source?.repositoryUrl) {
-      packageJson.repository = {
-        type: 'git',
-        url: pkg.metadata.source.repositoryUrl,
-      };
-    }
-
-    // Write package.json
     const packageJsonPath = path.join(stagingDir, 'package.json');
     await fs.writeJson(packageJsonPath, packageJson, {spaces: 2});
     this.logger?.debug(`Generated package.json at ${packageJsonPath}`);
@@ -400,46 +333,4 @@ export default class ArtifactAssembler extends EventEmitter {
       });
     }
   }
-}
-
-/**
- * Recursively removes empty values from an object to simplify the output.
- * Removes: empty arrays [], empty objects {}, null, and undefined.
- * Preserves: non-empty values, booleans, numbers (including 0), and non-empty strings.
- */
-function removeEmptyValues<T>(obj: T): T {
-  if (obj === null || obj === undefined) {
-    return obj;
-  }
-
-  if (Array.isArray(obj)) {
-    return obj.length === 0 ? undefined as unknown as T : obj;
-  }
-
-  if (typeof obj === 'object') {
-    const cleaned: Record<string, any> = {};
-
-    for (const [key, value] of Object.entries(obj as Record<string, any>)) {
-      const cleanedValue = removeEmptyValues(value);
-
-      // Skip undefined, null, empty arrays, and empty objects
-      if (cleanedValue === undefined || cleanedValue === null) {
-        continue;
-      }
-
-      if (Array.isArray(cleanedValue) && cleanedValue.length === 0) {
-        continue;
-      }
-
-      if (typeof cleanedValue === 'object' && !Array.isArray(cleanedValue) && Object.keys(cleanedValue).length === 0) {
-        continue;
-      }
-
-      cleaned[key] = cleanedValue;
-    }
-
-    return (Object.keys(cleaned).length === 0 ? {} : cleaned) as T;
-  }
-
-  return obj;
 }

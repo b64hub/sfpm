@@ -20,7 +20,7 @@ export default class SourceDeployer {
     this.eventEmitter = eventEmitter;
   }
 
-  public async install(deployable: SourceDeployable, targetOrg: string): Promise<void> {
+  public async install(deployable: SourceDeployable, targetOrg: string): Promise<{deployId?: string}> {
     const {componentSet, packageName} = deployable;
 
     this.logger?.info(`Using source deployment strategy for package: ${packageName}`);
@@ -61,14 +61,19 @@ export default class SourceDeployer {
       const failures = result.response.details?.componentFailures;
       const failuresArray = Array.isArray(failures) ? failures : failures ? [failures] : [];
       const errorMessages = failuresArray
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DeployMessage shape varies across SDR versions
       .map((failure: any) => `${failure.fullName}: ${failure.problem}`)
       .join('\n') || 'Unknown deployment error';
 
       throw new Error(`Source deployment failed:\n${errorMessages}`);
     }
 
+    const deployId = result.response.id;
+
     this.emitComplete(packageName, true);
     this.logger?.info('Source deployment completed successfully');
+
+    return {deployId};
   }
 
   private emitComplete(packageName: string, success: boolean): void {

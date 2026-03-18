@@ -35,9 +35,14 @@ export class SfpmCore extends EventEmitter<AllBuildEvents> {
 }
 export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
-
 export {ArtifactResolver} from './artifacts/artifact-resolver.js';
-export {ArtifactService, type InstallTarget} from './artifacts/artifact-service.js';
+
+export {
+  type ArtifactHistoryOptions, ArtifactService, type InstallTarget, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
+} from './artifacts/artifact-service.js';
+export {
+  extractPackageVersionId, extractSourceHash, fromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions,
+} from './artifacts/npm-package-adapter.js';
 export {
   type DownloadResult,
   type NpmConfigResult,
@@ -53,23 +58,25 @@ export {GitService} from './git/git-service.js';
 export {default as Git} from './git/git.js';
 // Lifecycle engine and config
 export {LifecycleEngine} from './lifecycle/lifecycle-engine.js';
+export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions} from './orchestrator/build-orchestrator.js';
+export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './orchestrator/install-orchestrator.js';
+export {
+  type OrchestrationTask, Orchestrator, type OrchestratorEmitter, type OrchestratorOptions,
+} from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
-export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions} from './package/build-orchestrator.js';
 export {
-  type Builder, type BuilderConstructor, BuilderRegistry, RegisterBuilder,
+  type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry, type BuildTask, RegisterBuilder,
 } from './package/builders/builder-registry.js';
-export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './package/install-orchestrator.js';
 export {
-  type Installer, type InstallerConstructor, InstallerRegistry, RegisterInstaller,
+  type Installer, type InstallerConstructor, type InstallerExecResult, InstallerRegistry, RegisterInstaller,
 } from './package/installers/installer-registry.js';
 export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
-export {
-  type OrchestrationTask, Orchestrator, type OrchestratorEmitter, type OrchestratorOptions,
-} from './package/orchestrator.js';
-export {type BuildTask, PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
+export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
+export {PackageCreator} from './package/package-creator.js';
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
+export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
 export {PackageFactory, SfpmDataPackage, default as SfpmPackage} from './package/sfpm-package.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export {default as ProjectConfig} from './project/project-config.js';
@@ -77,6 +84,7 @@ export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
 export * from './project/version-manager.js';
 export * from './types/artifact.js';
+export * from './types/bootstrap.js';
 export * from './types/config.js';
 export * from './types/errors.js';
 export * from './types/events.js';
@@ -86,6 +94,7 @@ export * from './types/npm.js';
 export * from './types/package.js';
 export * from './types/project.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
+export {getPipelineRunId} from './utils/pipeline.js';
 export {escapeSOQL, soql} from './utils/soql.js';
 export {formatVersion, toVersionFormat} from './utils/version-utils.js';
 export type {VersionFormatOptions} from './utils/version-utils.js';

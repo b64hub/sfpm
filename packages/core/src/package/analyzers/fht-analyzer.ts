@@ -1,73 +1,43 @@
-import { PackageAnalyzer, RegisterAnalyzer } from "./analyzer-registry.js";
-import { PackageType, SfpmPackageContent } from "../../types/package.js";
-import { SfpmMetadataPackage } from "../sfpm-package.js";
-import path from 'path';
-import fs from 'fs-extra';
-import yaml from 'js-yaml';
+import type {SfpmMetadataPackage} from '../sfpm-package.js';
 
-import { Logger } from "../../types/logger.js";
-import { MetadataComponent } from "@salesforce/source-deploy-retrieve";
+import {Logger} from '../../types/logger.js';
+import {PackageType, SfpmPackageContent} from '../../types/package.js';
+import {PackageAnalyzer, RegisterAnalyzer} from './analyzer-registry.js';
 
-
-const FHT_FILE_NAME = 'history-tracking.yml';
-
+// eslint-disable-next-line new-cap
 @RegisterAnalyzer()
 export default class FHTAnalyzer implements PackageAnalyzer {
-    private logger?: Logger;
+  private logger?: Logger;
 
-    constructor(logger?: Logger) {
-        this.logger = logger;
+  constructor(logger?: Logger) {
+    this.logger = logger;
+  }
+
+  public async analyze(sfpmPackage: SfpmMetadataPackage): Promise<Partial<SfpmPackageContent>> {
+    if (!sfpmPackage.customFields?.length) {
+      return {};
     }
 
-    public isEnabled(sfpmPackage: SfpmMetadataPackage): boolean {
-        return (sfpmPackage.type !== PackageType.Data);
-    }
+    try {
+      const fhtFieldNames: string[] = [];
 
-    public async analyze(sfpmPackage: SfpmMetadataPackage): Promise<Partial<SfpmPackageContent>> {
-        if (!sfpmPackage.packageDirectory) {
-            return {};
+      for (const customField of sfpmPackage.customFields) {
+        // eslint-disable-next-line no-await-in-loop
+        const customFieldXml = (await customField.parseXml() as any).CustomField;
+        if (customFieldXml?.trackHistory) {
+          fhtFieldNames.push(customField.fullName);
         }
+      }
 
-        try {
-            const fhtConfig = await this.readYaml(path.join(
-                sfpmPackage.packageDirectory,
-                'postDeploy', FHT_FILE_NAME
-            ));
-
-            const enabledFields = await this.fhtEnabledFields(sfpmPackage);
-            const fhtFields = enabledFields.filter(f => fhtConfig.includes(f.fullName));
-
-            return {
-                fields: {
-                    fht: fhtFields.map(f => f.fullName)
-                }
-            } as Partial<SfpmPackageContent>;
-
-        } catch (error) {
-            this.logger?.trace(`Unable to process Field History Tracking due to ${error}`);
-        }
-
-        return {};
+      sfpmPackage.setFhtFields(fhtFieldNames);
+    } catch (error) {
+      this.logger?.trace(`Unable to process Field History Tracking due to ${error}`);
     }
 
-    private async readYaml(path: string): Promise<string[]> {
-        if (!(await fs.exists(path))) {
-            throw new Error(`No file found at ${path}`);
-        }
-        const config = yaml.load((await fs.readFile(path, 'utf-8'))) as { [key: string]: string[] };
-        return Object.values(config).flat();
-    }
+    return {};
+  }
 
-    private async fhtEnabledFields(sfpmPackage: SfpmMetadataPackage): Promise<MetadataComponent[]> {
-        const fhtFields: MetadataComponent[] = [];
-
-        for (const customField of sfpmPackage.customFields) {
-            const customFieldXml = (await customField.parseXml() as any).CustomField;
-            if (customFieldXml.trackHistory) {
-                fhtFields.push(customField);
-            }
-        }
-
-        return fhtFields;
-    }
+  public isEnabled(sfpmPackage: SfpmMetadataPackage): boolean {
+    return (sfpmPackage.type !== PackageType.Data);
+  }
 }

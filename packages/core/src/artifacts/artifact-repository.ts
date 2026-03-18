@@ -8,6 +8,7 @@ import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 import {NpmPackageJson} from '../types/npm.js';
 import {SfpmPackageMetadataBase} from '../types/package.js';
+import {extractPackageVersionId, extractSourceHash, fromNpmPackageJson} from './npm-package-adapter.js';
 
 /**
  * The hidden folder for SFPM configuration and temporary files
@@ -302,12 +303,12 @@ export class ArtifactRepository {
       let packageVersionId: string | undefined;
 
       if (packageJson?.sfpm) {
-        metadata = this.convertNpmMetadataToSfpm(packageJson);
-        packageVersionId = packageJson.sfpm.packageVersionId;
+        metadata = fromNpmPackageJson(packageJson);
+        packageVersionId = extractPackageVersionId(packageJson);
       }
 
       // Use sourceHash from metadata if available, otherwise fall back to artifactHash
-      const sourceHash = metadata?.source?.sourceHash || artifactHash;
+      const sourceHash = (packageJson && extractSourceHash(packageJson)) || artifactHash;
 
       // Build version entry
       const versionEntry: ArtifactVersionEntry = {
@@ -406,39 +407,8 @@ export class ArtifactRepository {
     return crypto.createHash('sha256').update(content).digest('hex');
   }
 
-  /**
-   * Convert npm package.json with sfpm metadata to SfpmPackageMetadataBase
-   */
-  private convertNpmMetadataToSfpm(packageJson: NpmPackageJson): SfpmPackageMetadataBase {
-    const {sfpm} = packageJson;
-
-    // Parse name to get package name (remove scope)
-    const packageName = packageJson.name.includes('/')
-      ? packageJson.name.split('/')[1]
-      : packageJson.name;
-
-    // If full metadata is embedded, use it directly
-    if (sfpm.metadata) {
-      return sfpm.metadata;
-    }
-
-    // Otherwise, reconstruct base metadata from sfpm properties
-    return {
-      identity: {
-        apiVersion: sfpm.apiVersion,
-        packageName,
-        packageType: sfpm.packageType as any,
-        versionNumber: packageJson.version,
-        ...(sfpm.packageId && {packageId: sfpm.packageId}),
-        ...(sfpm.packageVersionId && {packageVersionId: sfpm.packageVersionId}),
-        ...(sfpm.isOrgDependent !== undefined && {isOrgDependent: sfpm.isOrgDependent}),
-      },
-      orchestration: {},
-      source: {
-        commitSHA: sfpm.commitId,
-      },
-    } as SfpmPackageMetadataBase;
-  }
+  // Metadata conversion is now handled by the npm-package-adapter module.
+  // See: fromNpmPackageJson() and extractPackageVersionId()
 
   /**
    * Create a unique temporary directory for downloads/extraction.
@@ -473,8 +443,7 @@ export class ArtifactRepository {
         return undefined;
       }
 
-      // Convert NpmPackageSfpmMetadata to SfpmPackageMetadataBase
-      return this.convertNpmMetadataToSfpm(packageJson);
+      return fromNpmPackageJson(packageJson);
     } catch (error) {
       this.logger?.debug(`Failed to extract metadata from tarball ${tarballPath}: ${error instanceof Error ? error.message : String(error)}`);
       return undefined;

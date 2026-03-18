@@ -10,15 +10,18 @@ import {generatePassword} from '../../index.js';
 import {AllocationStatus, OrgError, PasswordResult} from '../types.js';
 import {DEFAULT_SANDBOX} from './types.js';
 
+// ============================================================================
+// Record shapes
+// ============================================================================
+
 /**
- * Raw SandboxInfo record shape as returned from SOQL queries.
+ * Raw `SandboxInfo` record — standard Tooling API fields only.
  *
- * Standard fields plus custom pool fields (`Tag__c`, `Allocation_Status__c`,
- * `Auth_Url__c`) that must be deployed to the production org.
+ * `SandboxInfo` is a Tooling API object and does **not** support custom
+ * fields.  Pool metadata is stored on the separate shadow object
+ * {@link SandboxPoolOrgRecord | Sandbox_Pool_Org__c}.
  */
 export interface SandboxInfoRecord {
-  Allocation_Status__c?: string;
-  Auth_Url__c?: string;
   AutoActivate?: boolean;
   CopyProgress?: number;
   CreatedDate?: string;
@@ -29,12 +32,36 @@ export interface SandboxInfoRecord {
   SandboxName?: string;
   SandboxOrganization?: string;
   Status?: string;
+}
+
+/**
+ * Raw `Sandbox_Pool_Org__c` record shape.
+ *
+ * This is a custom object deployed to the production org that acts as a
+ * "shadow" record for pool-managed sandboxes.  It holds the pool metadata
+ * that cannot live directly on SandboxInfo (a Tooling API object).
+ *
+ * Fields:
+ * - `Org_Id__c`  — Plain Text(18) holding the sandbox's 18-char org ID
+ *   (matches `SandboxInfo.SandboxOrganization`).
+ * - `Tag__c`     — Pool tag for grouping sandboxes.
+ * - `Allocation_Status__c` — Picklist tracking the allocation lifecycle.
+ * - `Auth_Url__c` — SFDX auth URL for authenticating to the sandbox.
+ */
+export interface SandboxPoolOrgRecord {
+  Allocation_Status__c?: string;
+  Auth_Url__c?: string;
+  CreatedDate?: string;
+  Id?: string;
+  Name?: string;
+  Org_Id__c?: string;
   Tag__c?: string;
 }
 
+/** The custom object API name used for sandbox pool metadata. */
+const SANDBOX_POOL_ORG_OBJECT = 'Sandbox_Pool_Org__c';
+
 const SANDBOX_INFO_FIELDS: (keyof SandboxInfoRecord)[] = [
-  'Allocation_Status__c',
-  'Auth_Url__c',
   'AutoActivate',
   'CreatedDate',
   'EndDate',
@@ -43,6 +70,14 @@ const SANDBOX_INFO_FIELDS: (keyof SandboxInfoRecord)[] = [
   'SandboxName',
   'SandboxOrganization',
   'Status',
+];
+
+const SANDBOX_POOL_ORG_FIELDS: (keyof SandboxPoolOrgRecord)[] = [
+  'Allocation_Status__c',
+  'Auth_Url__c',
+  'CreatedDate',
+  'Id',
+  'Org_Id__c',
   'Tag__c',
 ];
 
@@ -56,11 +91,21 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
  * Provider for managing sandboxes in a pool.
  *
  * Uses the `@salesforce/core` SDK's `Org.createSandbox()`, `Org.cloneSandbox()`,
- * and sandbox query methods — never creates `SandboxInfo` records directly.
- * Custom pool fields (`Tag__c`, `Allocation_Status__c`, `Auth_Url__c`) are
- * updated via SOQL/DML on `SandboxInfo` after the SDK handles lifecycle.
+ * and sandbox query methods for lifecycle operations (create, clone, delete,
+ * status checks).
  *
- * The hub org must be a **production org** with sandbox licenses.
+ * Pool metadata (`Tag__c`, `Allocation_Status__c`, `Auth_Url__c`) is stored
+ * on a separate **`Sandbox_Pool_Org__c`** custom object rather than on
+ * `SandboxInfo` directly.  `SandboxInfo` is a Tooling API object that does
+ * not support custom fields — the shadow object bridges this gap by holding
+ * an `Org_Id__c` plain-text field that references the sandbox's 18-char
+ * org ID from `SandboxInfo.SandboxOrganization`.
+ *
+ * Sandboxes created outside of pool provisioning will not have a
+ * corresponding `Sandbox_Pool_Org__c` record, and that is expected.
+ *
+ * The hub org must be a **production org** with sandbox licenses and
+ * the `Sandbox_Pool_Org__c` custom object deployed.
  *
  * @example
  * ```typescript
@@ -76,10 +121,15 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
  * });
  * ```
  */
+/** Minimum interval (ms) between automatic prune runs per provider instance. */
+const PRUNE_COOLDOWN_MS = 60_000;
+
 export default class SandboxProvider implements OrgProvider<SandboxCreateOptions> {
   private readonly conn;
   private readonly hubOrg;
   private readonly hubUsername: string;
+  /** Timestamp of the last successful prune run — used for cooldown. */
+  private lastPruneTimestamp = 0;
 
   constructor(hubOrg: Org) {
     this.conn = hubOrg.getConnection();
@@ -89,8 +139,8 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
 
   async claimOrg(id: string): Promise<boolean> {
     try {
-      const result = await this.conn.sobject('SandboxInfo').update({
-        Allocation_Status__c: 'Allocate' as const, // eslint-disable-line camelcase -- Salesforce custom field
+      const result = await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).update({
+        Allocation_Status__c: 'Allocated' as const, // eslint-disable-line camelcase -- Salesforce custom field
         Id: id,
       });
       return result.success === true;
@@ -134,6 +184,13 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     // Derive the sandbox username (production username + sandbox name suffix)
     const sandboxUsername = orgId ? await this.resolveSandboxUsername(sandboxName) : '';
 
+    // Create the shadow pool record for tracking this sandbox
+    const poolRecord = await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).create({
+      Allocation_Status__c: AllocationStatus.InProgress, // eslint-disable-line camelcase -- Salesforce custom field
+      Org_Id__c: orgId, // eslint-disable-line camelcase -- Salesforce custom field
+      Tag__c: '', // eslint-disable-line camelcase -- Salesforce custom field (set later by updatePoolMetadata)
+    });
+
     const sandbox: Sandbox = {
       auth: {
         alias: options.alias,
@@ -148,6 +205,7 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
         tag: '',
         timestamp: Date.now(),
       },
+      recordId: poolRecord.id,
     };
 
     return sandbox;
@@ -156,37 +214,54 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   async deleteOrgs(recordIds: string[]): Promise<void> {
     for (const recordId of recordIds) {
       try {
-        // Look up the sandbox to get its name, then use SDK to delete
+        // Look up the pool record to get the sandbox org ID
         // eslint-disable-next-line no-await-in-loop
-        const sandboxInfo = (await this.conn.sobject('SandboxInfo').retrieve(recordId)) as {
+        const poolRecord = (await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).retrieve(recordId)) as {
           Id: string;
-          SandboxName: string;
+          Org_Id__c: string;
         };
-        if (sandboxInfo?.SandboxName) {
+
+        if (poolRecord?.Org_Id__c) {
+          // Find the sandbox name via SandboxProcess, then delete via SDK
           // eslint-disable-next-line no-await-in-loop
-          const process = await this.hubOrg.querySandboxProcessBySandboxName(sandboxInfo.SandboxName);
-          if (process?.SandboxOrganization) {
+          const sandboxInfoResult = await this.conn.query<{Id: string; SandboxName: string}>(soql`SELECT Id, SandboxName FROM SandboxInfo WHERE SandboxOrganization = '${escapeSOQL(poolRecord.Org_Id__c)}'`);
+          const sandboxName = sandboxInfoResult.records[0]?.SandboxName;
+          if (sandboxName) {
             // eslint-disable-next-line no-await-in-loop
-            const sandboxOrg = await Org.create({aliasOrUsername: process.SandboxOrganization});
-            // eslint-disable-next-line no-await-in-loop
-            await sandboxOrg.deleteFrom(this.hubOrg);
+            const process = await this.hubOrg.querySandboxProcessBySandboxName(sandboxName);
+            if (process?.SandboxOrganization) {
+              // eslint-disable-next-line no-await-in-loop
+              const sandboxOrg = await Org.create({aliasOrUsername: process.SandboxOrganization});
+              // eslint-disable-next-line no-await-in-loop
+              await sandboxOrg.deleteFrom(this.hubOrg);
+            }
           }
         }
       } catch {
-        // If SDK deletion fails, fall back to destroying the SandboxInfo record
+        // Best-effort sandbox deletion — always clean up the pool record
+      }
+
+      try {
+        // Always delete the shadow pool record
         // eslint-disable-next-line no-await-in-loop
-        await this.conn.sobject('SandboxInfo').destroy(recordId);
+        await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).destroy(recordId);
+      } catch {
+        // Pool record may already have been deleted
       }
     }
   }
 
   async getActiveCountByTag(tag: string): Promise<number> {
-    const query = soql`SELECT count() FROM SandboxInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Status = 'Active'`;
+    await this.pruneStalePoolRecords();
+
+    const query = soql`SELECT count() FROM ${SANDBOX_POOL_ORG_OBJECT} WHERE Tag__c = '${escapeSOQL(tag)}'`;
     const result = await this.conn.query(query);
     return result.totalSize;
   }
 
   async getAvailableByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
+    await this.pruneStalePoolRecords();
+
     const escapedTag = escapeSOQL(tag);
     const conditions = [
       `Tag__c = '${escapedTag}'`,
@@ -197,21 +272,31 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       conditions.push(`CreatedById = '${escapeSOQL(this.hubUsername)}'`);
     }
 
-    const query = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
-    const result = await this.conn.query<SandboxInfoRecord>(query);
-    return result.records.map(r => mapToSandbox(r));
+    // Query pool records
+    const poolQuery = soql`SELECT ${SANDBOX_POOL_ORG_FIELDS.join(', ')} FROM ${SANDBOX_POOL_ORG_OBJECT} WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
+    const poolResult = await this.conn.query<SandboxPoolOrgRecord>(poolQuery);
+
+    if (poolResult.records.length === 0) return [];
+
+    // Enrich with SandboxInfo data
+    return this.enrichPoolRecords(poolResult.records);
   }
 
   async getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
+    await this.pruneStalePoolRecords();
+
     const conditions = [`Tag__c = '${escapeSOQL(tag)}'`];
 
     if (myPool) {
       conditions.push(`CreatedById = '${escapeSOQL(this.hubUsername)}'`);
     }
 
-    const query = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
-    const result = await this.conn.query<SandboxInfoRecord>(query);
-    return result.records.map(r => mapToSandbox(r));
+    const poolQuery = soql`SELECT ${SANDBOX_POOL_ORG_FIELDS.join(', ')} FROM ${SANDBOX_POOL_ORG_OBJECT} WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
+    const poolResult = await this.conn.query<SandboxPoolOrgRecord>(poolQuery);
+
+    if (poolResult.records.length === 0) return [];
+
+    return this.enrichPoolRecords(poolResult.records);
   }
 
   async getOrgUsageByUser(): Promise<PoolOrgUsage[]> {
@@ -220,29 +305,47 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     return [];
   }
 
-  /** Find active sandboxes that have no pool tag. */
+  /**
+   * Find active sandboxes that have no corresponding pool record.
+   *
+   * Performs an in-memory diff: queries all active `SandboxInfo` records
+   * and all `Sandbox_Pool_Org__c` records, then returns sandboxes whose
+   * org ID is not tracked by any pool record.
+   */
   async getOrphanedOrgs(): Promise<PoolOrg[]> {
-    const query = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE Tag__c = null ORDER BY CreatedDate DESC`;
-    const result = await this.conn.query<SandboxInfoRecord>(query);
-    return result.records.map(r => mapToSandbox(r));
+    // Fetch all active sandboxes
+    const sandboxQuery = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE Status = 'Active' ORDER BY CreatedDate DESC`;
+    const sandboxResult = await this.conn.query<SandboxInfoRecord>(sandboxQuery);
+
+    if (sandboxResult.records.length === 0) return [];
+
+    // Fetch all known pool org IDs
+    const poolQuery = soql`SELECT Org_Id__c FROM ${SANDBOX_POOL_ORG_OBJECT}`;
+    const poolResult = await this.conn.query<{Org_Id__c: string}>(poolQuery);
+
+    const managedOrgIds = new Set(poolResult.records.map(r => r.Org_Id__c));
+
+    // Return sandboxes not tracked by the pool
+    return sandboxResult.records
+    .filter(r => r.SandboxOrganization && !managedOrgIds.has(r.SandboxOrganization))
+    .map(r => mapFromSandboxInfo(r));
   }
 
   async getRecordIds(orgs: PoolOrg[]): Promise<PoolOrg[]> {
     if (orgs.length === 0) return orgs;
 
-    // For sandboxes, the SandboxInfo Id IS the record Id — already populated
-    // from the query. But if missing, look up by sandbox org ID.
+    // Look up Sandbox_Pool_Org__c records by org ID
     const missingIds = orgs.filter(org => !org.recordId && org.orgId);
     if (missingIds.length === 0) return orgs;
 
     const orgIdList = missingIds.map(org => `'${escapeSOQL(org.orgId)}'`).join(',');
-    const query = soql`SELECT Id, SandboxOrganization FROM SandboxInfo WHERE SandboxOrganization IN (${orgIdList})`;
-    const result = await this.conn.query<{Id: string; SandboxOrganization: string}>(query);
+    const query = soql`SELECT Id, Org_Id__c FROM ${SANDBOX_POOL_ORG_OBJECT} WHERE Org_Id__c IN (${orgIdList})`;
+    const result = await this.conn.query<{Id: string; Org_Id__c: string}>(query);
 
     const idMap = new Map<string, string>();
     for (const record of result.records) {
-      if (record.SandboxOrganization) {
-        idMap.set(record.SandboxOrganization, record.Id);
+      if (record.Org_Id__c) {
+        idMap.set(record.Org_Id__c, record.Id);
       }
     }
 
@@ -291,7 +394,7 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     return {password: newPassword};
   }
 
-  /** Update fields on a SandboxInfo record. */
+  /** Update fields on a SandboxInfo record (standard fields only). */
   async updateOrgInfo(fields: Record<string, unknown> & {Id: string}): Promise<boolean> {
     const result = await this.conn.sobject('SandboxInfo').update(fields);
     return result.success === true;
@@ -302,22 +405,46 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
 
     const updates = records.map(r => ({
       Allocation_Status__c: r.allocationStatus, // eslint-disable-line camelcase -- Salesforce custom field
+      Auth_Url__c: r.authUrl, // eslint-disable-line camelcase -- Salesforce custom field
       Id: r.id,
       Tag__c: r.poolTag, // eslint-disable-line camelcase -- Salesforce custom field
     }));
 
-    await this.conn.sobject('SandboxInfo').update(updates);
+    await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).update(updates);
   }
 
   async validate(): Promise<void> {
-    const describe = await this.conn.sobject('SandboxInfo').describe();
+    // Prune stale records on validation — this is typically the first
+    // operation in a pool lifecycle (PoolManager.provision calls validate
+    // before anything else).
+    await this.pruneStalePoolRecords();
+
+    let describe;
+    try {
+      describe = await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).describe();
+    } catch {
+      throw new OrgError(
+        'prerequisite',
+        `The custom object "${SANDBOX_POOL_ORG_OBJECT}" was not found. `
+        + 'Deploy the sfpm sandbox pool custom object to your production org before running sandbox pool operations.',
+      );
+    }
+
+    const orgIdField = describe.fields.find(f => f.name === 'Org_Id__c');
+    if (!orgIdField) {
+      throw new OrgError(
+        'prerequisite',
+        `${SANDBOX_POOL_ORG_OBJECT} is missing the "Org_Id__c" field. `
+        + 'Deploy the sfpm sandbox pool custom object to your production org.',
+      );
+    }
 
     const tagField = describe.fields.find(f => f.name === 'Tag__c');
     if (!tagField) {
       throw new OrgError(
         'prerequisite',
-        'SandboxInfo is missing the "Tag__c" custom field. '
-        + 'Deploy the sfpm pool custom fields to your production org before running sandbox pool operations.',
+        `${SANDBOX_POOL_ORG_OBJECT} is missing the "Tag__c" field. `
+        + 'Deploy the sfpm sandbox pool custom object to your production org.',
       );
     }
 
@@ -325,8 +452,8 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     if (!allocationField) {
       throw new OrgError(
         'prerequisite',
-        'SandboxInfo is missing the "Allocation_Status__c" custom field. '
-        + 'Deploy the sfpm pool custom fields to your production org before running sandbox pool operations.',
+        `${SANDBOX_POOL_ORG_OBJECT} is missing the "Allocation_Status__c" field. `
+        + 'Deploy the sfpm sandbox pool custom object to your production org.',
       );
     }
 
@@ -336,8 +463,8 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     if (missing.length > 0) {
       throw new OrgError(
         'prerequisite',
-        `Allocation_Status__c on SandboxInfo is missing required picklist values: ${missing.join(', ')}. `
-        + 'Update the picklist on SandboxInfo in your production org.',
+        `Allocation_Status__c on ${SANDBOX_POOL_ORG_OBJECT} is missing required picklist values: ${missing.join(', ')}. `
+        + `Update the picklist on ${SANDBOX_POOL_ORG_OBJECT} in your production org.`,
         {context: {existing: [...picklistValues], missing}},
       );
     }
@@ -346,10 +473,56 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     if (!authUrlField) {
       throw new OrgError(
         'prerequisite',
-        'SandboxInfo is missing the "Auth_Url__c" custom field. '
-        + 'Deploy the sfpm pool custom fields to your production org before running sandbox pool operations.',
+        `${SANDBOX_POOL_ORG_OBJECT} is missing the "Auth_Url__c" field. `
+        + 'Deploy the sfpm sandbox pool custom object to your production org.',
       );
     }
+  }
+
+  /**
+   * Enrich pool records with standard `SandboxInfo` fields.
+   *
+   * Queries `SandboxInfo` by org IDs found on the pool records, then
+   * merges both result sets into `Sandbox` domain objects.
+   *
+   * Pool records whose `Org_Id__c` has no matching active `SandboxInfo`
+   * record are silently dropped — they represent stale shadow records
+   * for sandboxes that were deleted or expired outside of pool management.
+   * These will be cleaned up by the next prune cycle.
+   */
+  private async enrichPoolRecords(poolRecords: SandboxPoolOrgRecord[]): Promise<Sandbox[]> {
+    const orgIds = poolRecords
+    .map(r => r.Org_Id__c)
+    .filter(Boolean);
+
+    if (orgIds.length === 0) {
+      return poolRecords.map(r => mapFromPoolRecord(r));
+    }
+
+    const orgIdList = orgIds.map(orgId => `'${escapeSOQL(orgId!)}'`).join(',');
+    const infoQuery = soql`SELECT ${SANDBOX_INFO_FIELDS.join(', ')} FROM SandboxInfo WHERE SandboxOrganization IN (${orgIdList})`;
+    const infoResult = await this.conn.query<SandboxInfoRecord>(infoQuery);
+
+    // Index SandboxInfo records by org ID for fast lookup
+    const infoMap = new Map<string, SandboxInfoRecord>();
+    for (const record of infoResult.records) {
+      if (record.SandboxOrganization) {
+        infoMap.set(record.SandboxOrganization, record);
+      }
+    }
+
+    // Only return pool records that have a matching SandboxInfo — stale
+    // records (deleted / expired sandboxes) are filtered out so that
+    // callers never see phantom orgs.
+    return poolRecords
+    .filter(poolRec => {
+      if (!poolRec.Org_Id__c) return true; // no org ID yet (e.g. In Progress)
+      return infoMap.has(poolRec.Org_Id__c);
+    })
+    .map(poolRec => {
+      const info = poolRec.Org_Id__c ? infoMap.get(poolRec.Org_Id__c) : undefined;
+      return mapFromPoolRecord(poolRec, info);
+    });
   }
 
   /**
@@ -374,6 +547,77 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   }
 
   /**
+   * Remove `Sandbox_Pool_Org__c` records whose associated sandbox no
+   * longer exists or has been deleted.
+   *
+   * Compares all pool records' `Org_Id__c` values against `SandboxInfo`
+   * to find stale references, then bulk-deletes them.  Runs at most once
+   * per {@link PRUNE_COOLDOWN_MS} within the same provider instance so
+   * that repeated pool operations in a single session do not hammer the
+   * API.
+   *
+   * This is intentionally fire-and-forget: failures are swallowed so that
+   * pruning never blocks the primary operation.
+   */
+  private async pruneStalePoolRecords(): Promise<void> {
+    // Cooldown — skip if we pruned recently
+    if (Date.now() - this.lastPruneTimestamp < PRUNE_COOLDOWN_MS) return;
+
+    try {
+      // 1. Fetch all pool records
+      const poolQuery = soql`SELECT Id, Org_Id__c FROM ${SANDBOX_POOL_ORG_OBJECT}`;
+      const poolResult = await this.conn.query<{Id: string; Org_Id__c?: string}>(poolQuery);
+
+      if (poolResult.records.length === 0) {
+        this.lastPruneTimestamp = Date.now();
+        return;
+      }
+
+      // 2. Collect org IDs that have a value
+      const orgIdToPoolIds = new Map<string, string[]>();
+      const noOrgIdPoolIds: string[] = [];
+
+      for (const rec of poolResult.records) {
+        if (rec.Org_Id__c) {
+          const list = orgIdToPoolIds.get(rec.Org_Id__c) ?? [];
+          list.push(rec.Id);
+          orgIdToPoolIds.set(rec.Org_Id__c, list);
+        } else {
+          // Pool records with no Org_Id__c are stale by definition
+          noOrgIdPoolIds.push(rec.Id);
+        }
+      }
+
+      // 3. Query SandboxInfo to see which org IDs still exist
+      const stalePoolIds: string[] = [...noOrgIdPoolIds];
+
+      if (orgIdToPoolIds.size > 0) {
+        const orgIdList = [...orgIdToPoolIds.keys()].map(id => `'${escapeSOQL(id)}'`).join(',');
+        const infoQuery = soql`SELECT SandboxOrganization FROM SandboxInfo WHERE SandboxOrganization IN (${orgIdList})`;
+        const infoResult = await this.conn.query<{SandboxOrganization: string}>(infoQuery);
+
+        const activeOrgIds = new Set(infoResult.records.map(r => r.SandboxOrganization));
+
+        for (const [orgId, poolIds] of orgIdToPoolIds) {
+          if (!activeOrgIds.has(orgId)) {
+            stalePoolIds.push(...poolIds);
+          }
+        }
+      }
+
+      // 4. Bulk-delete stale pool records
+      if (stalePoolIds.length > 0) {
+        await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).destroy(stalePoolIds);
+      }
+
+      this.lastPruneTimestamp = Date.now();
+    } catch {
+      // Pruning is best-effort — never break the primary operation
+      this.lastPruneTimestamp = Date.now();
+    }
+  }
+
+  /**
    * Resolve the sandbox username from the sandbox name.
    *
    * The sandbox username is `<production-username>.<sandboxname>`.
@@ -384,16 +628,50 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   }
 }
 
-/** Map a SandboxInfo SOQL record to the domain `Sandbox` type. */
-function mapToSandbox(record: SandboxInfoRecord): Sandbox {
-  const orgId = record.SandboxOrganization ?? '';
-  const sandboxName = record.SandboxName ?? '';
-  const tag = record.Tag__c ?? '';
-  const status = (record.Allocation_Status__c ?? '') as AllocationStatus;
+// ============================================================================
+// Mapping helpers
+// ============================================================================
+
+/**
+ * Map a `Sandbox_Pool_Org__c` record (with optional `SandboxInfo` enrichment)
+ * to the domain `Sandbox` type.
+ */
+function mapFromPoolRecord(poolRecord: SandboxPoolOrgRecord, info?: SandboxInfoRecord): Sandbox {
+  const orgId = poolRecord.Org_Id__c ?? info?.SandboxOrganization ?? '';
+  const sandboxName = info?.SandboxName ?? '';
+  const tag = poolRecord.Tag__c ?? '';
+  const status = (poolRecord.Allocation_Status__c ?? '') as AllocationStatus;
 
   return {
     auth: {
-      authUrl: record.Auth_Url__c,
+      authUrl: poolRecord.Auth_Url__c,
+      loginUrl: 'https://test.salesforce.com',
+      username: sandboxName ? `${sandboxName}` : '',
+    },
+    expiry: info?.EndDate ? new Date(info.EndDate).getTime() : undefined,
+    orgId,
+    orgType: OrgTypes.Sandbox,
+    pool: {
+      status,
+      tag,
+      timestamp: poolRecord.CreatedDate ? new Date(poolRecord.CreatedDate).getTime() : Date.now(),
+    },
+    recordId: poolRecord.Id,
+  };
+}
+
+/**
+ * Map a plain `SandboxInfo` record to a `Sandbox` domain object.
+ *
+ * Used for orphaned sandboxes that have no pool record — pool metadata
+ * fields are left empty.
+ */
+function mapFromSandboxInfo(record: SandboxInfoRecord): Sandbox {
+  const orgId = record.SandboxOrganization ?? '';
+  const sandboxName = record.SandboxName ?? '';
+
+  return {
+    auth: {
       loginUrl: 'https://test.salesforce.com',
       username: sandboxName ? `${sandboxName}` : '',
     },
@@ -401,10 +679,9 @@ function mapToSandbox(record: SandboxInfoRecord): Sandbox {
     orgId,
     orgType: OrgTypes.Sandbox,
     pool: {
-      status,
-      tag,
+      status: '' as AllocationStatus,
+      tag: '',
       timestamp: record.CreatedDate ? new Date(record.CreatedDate).getTime() : Date.now(),
     },
-    recordId: record.Id,
   };
 }

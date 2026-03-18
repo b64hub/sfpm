@@ -27,7 +27,7 @@ export default class VersionInstaller {
     this.eventEmitter = eventEmitter;
   }
 
-  public async install(installable: VersionInstallable, targetOrg: string): Promise<void> {
+  public async install(installable: VersionInstallable, targetOrg: string): Promise<{deployId?: string}> {
     const {installationKey, packageName, packageVersionId} = installable;
 
     if (!packageVersionId) {
@@ -76,6 +76,8 @@ export default class VersionInstaller {
     this.emitComplete(packageName, true);
 
     this.logger?.info('Package installation completed successfully');
+
+    return {deployId: requestId};
   }
 
   private emitComplete(packageName: string, success: boolean): void {
@@ -116,7 +118,7 @@ export default class VersionInstaller {
         throw new Error(`Could not retrieve PackageInstallRequest: ${requestId}`);
       }
 
-      const status = (record as any).Status;
+      const status = (record as Record<string, unknown>).Status as string;
 
       this.logger?.info(`Installation status: ${status}`);
       this.emitProgress(packageName, status, attempts + 1, maxAttempts);
@@ -126,7 +128,7 @@ export default class VersionInstaller {
       }
 
       // Wait 5 seconds before next poll
-      // eslint-disable-next-line no-await-in-loop
+      // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
       await new Promise(resolve => setTimeout(resolve, 5000));
       attempts++;
     }

@@ -92,10 +92,11 @@ describe('PackageAssembler', () => {
 
         // Verify core orchestration steps
         expect(mockedFs.emptyDir).toHaveBeenCalledWith(stagingPath);
-        // Copy source
+        // Copy source (with optional filter for build ignore)
         expect(mockedFs.copy).toHaveBeenCalledWith(
             path.join('/root', 'force-app'),
-            path.join(stagingPath, 'force-app')
+            path.join(stagingPath, 'force-app'),
+            expect.objectContaining({ filter: expect.any(Function) })
         );
         // Write manifest
         expect(mockedFs.writeJSON).toHaveBeenCalledWith(

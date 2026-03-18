@@ -58,7 +58,7 @@ describe('SfpmDataPackage', () => {
   });
 
   it('should count files in data directory', async () => {
-    const count = await dataPackage.countFiles();
+    const count = await dataPackage.componentCount();
     expect(count).toBe(2); // export.json + Account.csv
   });
 

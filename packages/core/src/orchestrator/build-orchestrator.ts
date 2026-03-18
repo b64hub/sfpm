@@ -1,6 +1,7 @@
 import EventEmitter from 'node:events';
 
 import {GitService} from '../git/git-service.js';
+import {BuildOptions, PackageBuilder} from '../package/package-builder.js';
 import ProjectConfig from '../project/project-config.js';
 import {ProjectGraph} from '../project/project-graph.js';
 import {
@@ -16,7 +17,6 @@ import {
   OrchestratorEmitter,
   OrchestratorOptions,
 } from './orchestrator.js';
-import {BuildOptions, PackageBuilder} from './package-builder.js';
 
 export interface BuildOrchestratorOptions extends BuildOptions, OrchestratorOptions {}
 

@@ -6,6 +6,7 @@ import {
 } from '../types/artifact.js';
 import {Logger} from '../types/logger.js';
 import {InstalledArtifact} from '../types/package.js';
+import {getPipelineRunId} from '../utils/pipeline.js';
 import {soql} from '../utils/soql.js';
 import {ArtifactRepository} from './artifact-repository.js';
 import {ArtifactResolver} from './artifact-resolver.js';
@@ -17,6 +18,30 @@ export interface SfpmArtifact__c {
   Name: string;
   Tag__c: string;
   Version__c: string;
+}
+
+/**
+ * Record shape for the optional `Sfpm_Artifact_History__c` custom object.
+ * Created each time an artifact is installed/updated when history tracking is enabled.
+ * Uses standard `CreatedDate` for timestamping (auto-populated by Salesforce).
+ */
+
+export interface SfpmArtifactHistory__c {
+  Checksum__c: string;
+  Commit_Id__c: string;
+  Deploy_Id__c?: string;
+  Name: string;
+  Pipeline_Run_Id__c?: string;
+  Tag__c: string;
+  Version__c: string;
+}
+
+/**
+ * Options for creating an artifact history record.
+ */
+export interface ArtifactHistoryOptions {
+  /** Salesforce deploy ID or PackageInstallRequest ID */
+  deployId?: string;
 }
 
 /**
@@ -109,6 +134,53 @@ export class ArtifactService {
   public clearCache(): void {
     this.installedArtifactsCache = null;
     this.cacheLoadAttempted = false;
+  }
+
+  /**
+   * Create an `Sfpm_Artifact_History__c` record in the target org.
+   *
+   * This is an opt-in feature controlled by `artifacts.trackHistory` in sfpm.config.ts.
+   * It degrades gracefully — if the custom object is not deployed to the target org
+   * the error is caught and a warning is logged.
+   *
+   * @param sfpmPackage - Package that was just installed/updated
+   * @param options - Optional context: deployId from the Salesforce deployment
+   * @returns Record ID of the created history record, or undefined on failure
+   */
+  public async createHistoryRecord(
+    sfpmPackage: SfpmPackage,
+    options?: ArtifactHistoryOptions,
+  ): Promise<string | undefined> {
+    if (!this.org) {
+      throw new Error('Org connection required for createHistoryRecord');
+    }
+
+    try {
+      /* eslint-disable camelcase */
+      const historyData: SfpmArtifactHistory__c = {
+        Checksum__c: sfpmPackage.sourceHash || '',
+        Commit_Id__c: sfpmPackage.commitId || '',
+        Deploy_Id__c: options?.deployId,
+        Name: sfpmPackage.name,
+        Pipeline_Run_Id__c: getPipelineRunId(),
+        Tag__c: sfpmPackage.tag,
+        Version__c: sfpmPackage.version || '',
+      };
+      /* eslint-enable camelcase */
+
+      const result = await this.org
+      .getConnection()
+      .sobject('Sfpm_Artifact_History__c')
+      .create(historyData);
+      const resultId = Array.isArray(result) ? result[0].id! : result.id!;
+
+      this.logger?.info(`Created artifact history record for ${sfpmPackage.name}@${sfpmPackage.version}: ${resultId}`);
+      return resultId;
+    } catch {
+      this.logger?.warn(`Unable to create artifact history record for ${sfpmPackage.name} — `
+        + 'Sfpm_Artifact_History__c may not be deployed to this org');
+      return undefined;
+    }
   }
 
   public async getInstalledPackages(orderBy: string = 'Name'): Promise<InstalledArtifact[]> {
@@ -312,7 +384,7 @@ export class ArtifactService {
 
       this.logger?.info(`Existing artifact record id for ${sfpmPackage.name} in Org for ${sfpmPackage.version}: ${artifactId || 'N/A'}`);
 
-      /** eslint-expect-error camelcase */
+      /* eslint-disable camelcase */
       const artifactData = {
         Checksum__c: sfpmPackage.sourceHash,
         Commit_Id__c: sfpmPackage.commitId || '',
@@ -320,7 +392,7 @@ export class ArtifactService {
         Tag__c: sfpmPackage.tag,
         Version__c: sfpmPackage.version,
       };
-      /** eslint-expect-error camelcase */
+      /* eslint-enable camelcase */
       let resultId: string;
 
       if (artifactId) {
@@ -360,8 +432,8 @@ export class ArtifactService {
       return resultId;
     } catch {
       this.logger?.warn('Unable to update sfpm artifacts in the org, skipping updates\n'
-      	+ '1. sfpm artifact package is not installed in the org\n'
-      	+ '2. The required prerequisite object is not deployed to this org');
+        + '1. sfpm artifact package is not installed in the org\n'
+        + '2. The required prerequisite object is not deployed to this org');
       return undefined;
     }
   }

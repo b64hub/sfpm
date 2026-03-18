@@ -16,7 +16,8 @@ export {
   type PoolOrgUsage,
 } from './org/pool-org.js';
 
-export { default as SandboxProvider } from './org/sandbox/sandbox-provider.js';
+export {default as SandboxProvider} from './org/sandbox/sandbox-provider.js';
+export {type SandboxPoolOrgRecord} from './org/sandbox/sandbox-provider.js';
 export {
   DEFAULT_SANDBOX,
   type Sandbox,
@@ -29,9 +30,9 @@ export {
 } from './org/sandbox/types.js';
 
 export {
-  default as ScratchOrgProvider,
   type ActiveScratchOrgRecord,
   type ScratchOrgInfoRecord,
+  default as ScratchOrgProvider,
 } from './org/scratch/scratch-org-provider.js';
 export {
   DEFAULT_SCRATCH_ORG,
@@ -41,14 +42,16 @@ export {
   type ScratchOrgCreateResult,
 } from './org/scratch/types.js';
 
-export { default as AuthService } from './org/services/auth-service.js';
-export { default as DevHubService } from './org/services/devhub-service.js';
+export {default as AuthService} from './org/services/auth-service.js';
+export {default as DevHubService} from './org/services/devhub-service.js';
 
-export { ORG_PHASES, type OrgPhase, PREPARE_PHASE, VALIDATE_PHASE } from './phases.js';
+export {
+  ORG_PHASES, type OrgPhase, PREPARE_PHASE, VALIDATE_PHASE,
+} from './phases.js';
 
-export { createPoolServices, type CreatePoolServicesOptions, type PoolServices } from './pool/pool-factory.js';
+export {createPoolServices, type CreatePoolServicesOptions, type PoolServices} from './pool/pool-factory.js';
 
-export { default as PoolFetcher, type PoolFetcherEvents } from './pool/pool-fetcher.js';
+export {default as PoolFetcher, type PoolFetcherEvents} from './pool/pool-fetcher.js';
 
 export {
   computeOrgAllocation,
@@ -81,8 +84,8 @@ export {
 } from './pool/types.js';
 
 // Config
-export { defineOrgConfig, type OrgConfig } from './types.js';
+export {defineOrgConfig, type OrgConfig} from './types.js';
 
 // Utilities
-export { default as generatePassword } from './utils/password-generator.js';
-export { default as setAlias } from './utils/set-alias.js';
+export {default as generatePassword} from './utils/password-generator.js';
+export {default as setAlias} from './utils/set-alias.js';

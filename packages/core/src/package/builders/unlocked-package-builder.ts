@@ -9,9 +9,10 @@ import ProjectService from '../../project/project-service.js';
 import {UnlockedBuildEvents} from '../../types/events.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, SfpmUnlockedPackageBuildOptions} from '../../types/package.js';
-import {BuildTask} from '../package-builder.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
-import {Builder, BuilderOptions, RegisterBuilder} from './builder-registry.js';
+import {
+  Builder, BuilderOptions, BuildTask, RegisterBuilder,
+} from './builder-registry.js';
 import AssembleArtifactTask, {AssembleArtifactTaskOptions} from './tasks/assemble-artifact-task.js';
 import GitTagTask from './tasks/git-tag-task.js';
 import SourceHashTask from './tasks/source-hash-task.js';
@@ -70,9 +71,13 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       throw new Error('Must run connect() before exec()');
     }
 
-    await this.runPreBuildTasks();
+    // Update working directory to staging if available
+    if (this.sfpmPackage.stagingDirectory) {
+      this.workingDirectory = this.sfpmPackage.stagingDirectory;
+    }
+
+    await this.pruneOrgDependentPackage();
     await this.buildPackage();
-    await this.runPostBuildTasks();
   }
 
   private async buildPackage(): Promise<void> {
@@ -113,17 +118,16 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     lifecycle.on('packageVersionCreate:progress', progressListener);
 
     try {
-
       const packageVersionCreateOptions: Record<string, unknown> = {
-        connection: this.devhubOrg!.getConnection(),
-        project: sfProject,
-        packageId: this.sfpmPackage.packageId,
-        versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
-        codecoverage: buildOptions?.isCoverageEnabled ?? false,
-        skipvalidation: buildOptions?.isSkipValidation ?? false,
         asyncvalidation: buildOptions?.isAsyncValidation ?? false,
+        codecoverage: buildOptions?.isCoverageEnabled ?? false,
+        connection: this.devhubOrg!.getConnection(),
         installationkey: buildOptions?.installationKey,
         installationkeybypass: buildOptions?.installationKey ? undefined : true,
+        packageId: this.sfpmPackage.packageId,
+        project: sfProject,
+        skipvalidation: buildOptions?.isSkipValidation ?? false,
+        versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
         ...(buildOptions?.definitionFile
           ? {definitionfile: path.join(this.workingDirectory, buildOptions.definitionFile)}
           : {}),
@@ -132,11 +136,9 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
           : {}),
       };
 
-      this.logger?.debug(
-        `PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, ` +
-        `version=${this.sfpmPackage.version}, skipvalidation=${buildOptions?.isSkipValidation ?? false}, ` +
-        `definitionfile=${buildOptions?.definitionFile ?? '(not set)'}`,
-      );
+      this.logger?.debug(`PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, `
+        + `version=${this.sfpmPackage.version}, skipvalidation=${buildOptions?.isSkipValidation ?? false}, `
+        + `definitionfile=${buildOptions?.definitionFile ?? '(not set)'}`);
 
       const result = await PackageVersion.create(
         packageVersionCreateOptions as any,
@@ -178,7 +180,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
           // We could fetch more info here if needed
         }
       } else {
-        throw new Error(`Package creation failed or timed out. Status: ${result.Status}`);
+        throw new Error(`Package creation failed or timed out.\n${result.Error?.join('\n')}`);
       }
 
       if (buildOptions?.isCoverageEnabled && !this.sfpmPackage.isOrgDependent && !buildOptions?.isAsyncValidation && !result.HasPassedCodeCoverageCheck) {
@@ -191,6 +193,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
         error.actions?.length ? `Actions: ${error.actions.join(', ')}` : '',
       ].filter(Boolean).join('\n');
 
+      this.logger?.error(`Error during package creation: ${details}`);
       throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${details}`, {cause: error});
     } finally {
       lifecycle.removeAllListeners('packageVersionCreate:progress');
@@ -237,87 +240,5 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       prunedFiles: 1,
       timestamp: new Date(),
     });
-  }
-
-  private async runPostBuildTasks(): Promise<void> {
-    for (const task of this.postBuildTasks) {
-      const taskName = task.constructor.name;
-
-      this.emit('task:start', {
-        packageName: this.sfpmPackage.packageName,
-        taskName,
-        taskType: 'post-build',
-        timestamp: new Date(),
-      });
-
-      try {
-        // eslint-disable-next-line no-await-in-loop -- we want to run tasks sequentially and stop on first failure
-        await task.exec();
-
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: true,
-          taskName,
-          taskType: 'post-build',
-          timestamp: new Date(),
-        });
-      } catch (error) {
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: false,
-          taskName,
-          taskType: 'post-build',
-          timestamp: new Date(),
-        });
-
-        throw error;
-      }
-    }
-  }
-
-  private async runPreBuildTasks(): Promise<void> {
-    if (this.sfpmPackage.stagingDirectory) {
-      this.workingDirectory = this.sfpmPackage.stagingDirectory;
-    }
-
-    await this.pruneOrgDependentPackage();
-
-    const allDependencies = await ProjectService.getPackageDependencies(this.sfpmPackage.name);
-
-    for (const task of this.preBuildTasks) {
-      const taskName = task.constructor.name;
-
-      this.emit('task:start', {
-        packageName: this.sfpmPackage.packageName,
-        taskName,
-        taskType: 'pre-build',
-        timestamp: new Date(),
-      });
-
-      try {
-        // eslint-disable-next-line no-await-in-loop -- we want to run tasks sequentially and stop on first failure
-        await task.exec();
-
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success: true,
-          taskName,
-          taskType: 'pre-build',
-          timestamp: new Date(),
-        });
-      } catch (error) {
-        const success = error instanceof Error && (error as any).code === 'BUILD_NOT_REQUIRED';
-
-        this.emit('task:complete', {
-          packageName: this.sfpmPackage.packageName,
-          success,
-          taskName,
-          taskType: 'pre-build',
-          timestamp: new Date(),
-        });
-
-        throw error;
-      }
-    }
   }
 }

@@ -1,0 +1,224 @@
+/**
+ * Adapter for converting between npm package.json and SFPM domain models.
+ *
+ * Responsibilities:
+ * - Write: SfpmPackage → NpmPackageJson (for artifact assembly / npm publish)
+ * - Read:  NpmPackageJson → SfpmPackageMetadataBase (for artifact resolution / install)
+ *
+ * Design decisions:
+ * - Standard npm fields (name, version, repository, description) live at the top level
+ * - All SFPM-specific metadata lives under the `sfpm` property as a nested structure
+ *   matching `SfpmPackageMetadataBase` (identity, source, orchestration, content, validation)
+ * - No duplication: `repository.url` at top level, `source.repositoryUrl` excluded from sfpm
+ * - `source.commit` (renamed from `commitSHA` internally) in sfpm for brevity
+ */
+import {NpmPackageJson} from '../types/npm.js';
+import {
+  SfpmPackageMetadataBase,
+  SfpmUnlockedPackageIdentity,
+} from '../types/package.js';
+import SfpmPackage from '../package/sfpm-package.js';
+
+// ---------------------------------------------------------------------------
+// Write path: SfpmPackage → NpmPackageJson
+// ---------------------------------------------------------------------------
+
+/**
+ * Options for generating a package.json from an SfpmPackage.
+ * Only includes fields relevant to the package.json content — assembly concerns
+ * (changelog provider, quietPack, etc.) stay in ArtifactAssemblerOptions.
+ */
+export interface ToNpmPackageJsonOptions {
+  /** Additional keywords for package.json */
+  additionalKeywords?: string[];
+  /** Author string for package.json */
+  author?: string;
+  /** Homepage URL (e.g., AppExchange listing, project docs) */
+  homepage?: string;
+  /** License identifier for package.json */
+  license?: string;
+  /** Pre-classified managed dependencies (alias → packageVersionId 04t...) */
+  managedDependencies?: Record<string, string>;
+  /** npm scope for the package (e.g., "@myorg") — required */
+  npmScope: string;
+  /** Pre-classified versioned dependencies (scoped npm name → semver range) */
+  versionedDependencies?: Record<string, string>;
+}
+
+/**
+ * Build a complete npm package.json from an SfpmPackage and its metadata.
+ *
+ * Convention:
+ * - Standard npm fields (name, version, repository, description) at top level
+ * - SFPM-specific metadata under `sfpm` as nested `SfpmPackageMetadataBase`
+ * - `repositoryUrl` promoted to top-level `repository`, removed from `sfpm.source`
+ */
+export async function toNpmPackageJson(
+  pkg: SfpmPackage,
+  version: string,
+  options: ToNpmPackageJsonOptions,
+): Promise<NpmPackageJson> {
+  const {additionalKeywords, author, homepage, license, npmScope} = options;
+
+  // Get sfpm metadata from the package and strip empty properties
+  const sfpmMeta = removeEmptyValues(await pkg.toJson());
+
+  // Remove repositoryUrl from sfpm.source — it lives at the npm top-level `repository`
+  if (sfpmMeta?.source?.repositoryUrl) {
+    const {repositoryUrl: _, ...rest} = sfpmMeta.source;
+    sfpmMeta.source = rest;
+  }
+
+  const optionalDependencies = options.versionedDependencies ?? {};
+  const managedDependencies = options.managedDependencies ?? {};
+
+  const keywords = ['sfpm', 'salesforce', String(pkg.type), ...(additionalKeywords || [])];
+  const packageSourcePath = pkg.packageDefinition?.path || 'force-app';
+
+  const packageJson: NpmPackageJson = {
+    description: pkg.packageDefinition?.versionDescription || `SFPM ${pkg.type} package: ${pkg.packageName}`,
+    files: [
+      `${packageSourcePath}/**`,
+      'scripts/**',
+      'manifest/**',
+      'config/**',
+      'sfdx-project.json',
+      '.forceignore',
+      'changelog.json',
+    ],
+    keywords,
+    license: license || 'UNLICENSED',
+    name: `${npmScope}/${pkg.packageName}`,
+    sfpm: sfpmMeta,
+    version,
+  };
+
+  if (author) {
+    packageJson.author = author;
+  }
+
+  if (homepage) {
+    packageJson.homepage = homepage;
+  }
+
+  if (Object.keys(optionalDependencies).length > 0) {
+    packageJson.optionalDependencies = optionalDependencies;
+  }
+
+  if (Object.keys(managedDependencies).length > 0) {
+    packageJson.managedDependencies = managedDependencies;
+  }
+
+  // Add repository if available (npm convention — top-level field)
+  if (pkg.metadata?.source?.repositoryUrl) {
+    packageJson.repository = {
+      type: 'git',
+      url: pkg.metadata.source.repositoryUrl,
+    };
+  }
+
+  return packageJson;
+}
+
+// ---------------------------------------------------------------------------
+// Read path: NpmPackageJson → SfpmPackageMetadataBase
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert an npm package.json (with sfpm metadata) back to an SfpmPackageMetadataBase.
+ *
+ * Handles the nested structure where sfpm properties are stored under
+ * `sfpm.identity`, `sfpm.source`, `sfpm.orchestration`, etc.
+ *
+ * Also reconstructs `source.repositoryUrl` from the top-level `repository` field
+ * when present, so domain code can access it uniformly.
+ */
+export function fromNpmPackageJson(packageJson: NpmPackageJson): SfpmPackageMetadataBase {
+  const {sfpm} = packageJson;
+
+  // The sfpm property IS the SfpmPackageMetadataBase — use it directly.
+  // Fill in any fields derivable from top-level npm properties.
+  const metadata: SfpmPackageMetadataBase = {
+    ...sfpm,
+    identity: {
+      ...sfpm.identity,
+      // Ensure version is always present (top-level npm version is authoritative)
+      versionNumber: sfpm.identity?.versionNumber || packageJson.version,
+    },
+    source: {
+      ...sfpm.source,
+    },
+  };
+
+  // Reconstruct repositoryUrl from npm top-level field if not already set
+  if (!metadata.source.repositoryUrl && packageJson.repository?.url) {
+    metadata.source.repositoryUrl = packageJson.repository.url;
+  }
+
+  return metadata;
+}
+
+// ---------------------------------------------------------------------------
+// Extraction helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the packageVersionId (04t...) from an npm package.json.
+ * Returns undefined if the package is not an unlocked package or has no version ID.
+ */
+export function extractPackageVersionId(packageJson: NpmPackageJson): string | undefined {
+  const identity = packageJson.sfpm?.identity as SfpmUnlockedPackageIdentity | undefined;
+  return identity?.packageVersionId;
+}
+
+/**
+ * Extract the sourceHash from an npm package.json's sfpm metadata.
+ */
+export function extractSourceHash(packageJson: NpmPackageJson): string | undefined {
+  return packageJson.sfpm?.source?.sourceHash;
+}
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursively removes empty values from an object to keep serialized JSON clean.
+ * Removes: empty arrays [], empty objects {}, null, and undefined.
+ * Preserves: non-empty values, booleans, numbers (including 0), and non-empty strings.
+ */
+function removeEmptyValues<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.length === 0 ? undefined as unknown as T : obj;
+  }
+
+  if (typeof obj === 'object') {
+    const cleaned: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(obj as Record<string, any>)) {
+      const cleanedValue = removeEmptyValues(value);
+
+      if (cleanedValue === undefined || cleanedValue === null) {
+        continue;
+      }
+
+      if (Array.isArray(cleanedValue) && cleanedValue.length === 0) {
+        continue;
+      }
+
+      if (typeof cleanedValue === 'object' && !Array.isArray(cleanedValue) && Object.keys(cleanedValue).length === 0) {
+        continue;
+      }
+
+      cleaned[key] = cleanedValue;
+    }
+
+    return (Object.keys(cleaned).length === 0 ? {} : cleaned) as T;
+  }
+
+  return obj;
+}

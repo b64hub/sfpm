@@ -6,13 +6,13 @@ import {
 import path from 'node:path';
 
 import ProjectConfig from '../project/project-config.js';
-import {toVersionFormat} from '../utils/version-utils.js';
 import {
   MetadataFile, PackageType, SfpmDataPackageMetadata, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageMetadataBase, SfpmPackageOrchestration, SfpmUnlockedPackageBuildOptions, SfpmUnlockedPackageMetadata, VersionFormat,
 } from '../types/package.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {SourceHasher} from '../utils/source-hasher.js';
+import {toVersionFormat} from '../utils/version-utils.js';
 import {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, VersionInstallable,
 } from './installers/types.js';
@@ -156,6 +156,9 @@ export default abstract class SfpmPackage {
   set version(val: string) {
     this._metadata.identity.versionNumber = toVersionFormat(val, 'semver');
   }
+
+  /** Returns the number of deployable components (metadata) or files (data) in the package. */
+  public abstract componentCount(): Promise<number>;
 
   /**
    * Returns the version number in the requested format.
@@ -379,6 +382,11 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     return hash;
   }
 
+  /** Returns the number of metadata components in the package. */
+  public async componentCount(): Promise<number> {
+    return this.getComponentSet().size;
+  }
+
   public getComponentSet(): ComponentSet {
     if (!this.packageDirectory || !this.stagingDirectory) {
       throw new Error('Package must be staged for build and have a defined path');
@@ -569,10 +577,8 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
     return hash;
   }
 
-  /**
-   * Counts the files in the data directory for metadata.
-   */
-  public async countFiles(): Promise<number> {
+  /** Returns the number of data files in the package. */
+  public async componentCount(): Promise<number> {
     const files = await fg(['**/*'], {
       cwd: this.dataDirectory,
       dot: false,
@@ -582,7 +588,7 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
   }
 
   override async toJson(): Promise<SfpmDataPackageMetadata> {
-    const fileCount = await this.countFiles();
+    const fileCount = await this.componentCount();
 
     return {
       content: {

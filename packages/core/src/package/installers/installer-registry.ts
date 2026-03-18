@@ -5,12 +5,21 @@ import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 
 /**
+ * Result returned by an installer after execution.
+ * Captures deployment metadata that callers (e.g., history tracking) may use.
+ */
+export interface InstallerExecResult {
+  /** Salesforce deploy ID (source deploys) or PackageInstallRequest ID (version installs) */
+  deployId?: string;
+}
+
+/**
  * Interface for specific package installer implementations (Strategy Pattern)
  * Installers can emit events by extending EventEmitter
  */
 export interface Installer {
   connect(username: string): Promise<void>;
-  exec(): Promise<any>;
+  exec(): Promise<InstallerExecResult>;
 }
 
 /**
@@ -25,6 +34,7 @@ export type InstallerConstructor = new (
   targetOrg: string,
   installable: ManagedPackageRef | SfpmPackage,
   logger?: Logger,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- rest params must accept any shape for concrete installer variance
   ...rest: any[]
 ) => Installer;
 
@@ -57,6 +67,7 @@ export class InstallerRegistry {
  * parameter) don't clash with the broader {@link InstallerConstructor} union.
  */
 export function RegisterInstaller(type: Omit<PackageType, 'diff'>) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- decorator must accept any constructor shape
   return (constructor: new (...args: any[]) => Installer) => {
     InstallerRegistry.register(type, constructor as InstallerConstructor);
   };
