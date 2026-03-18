@@ -1,9 +1,10 @@
 // ── Browserforce ────────────────────────────────────────────────────────────
 export {browserforceHooks} from './browserforce/browserforce-plugin.js';
 export type {BrowserforceHooksOptions, BrowserforcePlanEntry} from './browserforce/types.js';
-// ── Flow Activation ─────────────────────────────────────────────────────────
 export {flowActivationHooks} from './flows/flow-activation-plugin.js';
-export type {FlowActivationHooksOptions} from './flows/types.js';
+// ── Flow Activation ─────────────────────────────────────────────────────────
+export {FlowActivator} from './flows/flow-activator.js';
+export type {FlowActivationHooksOptions, FlowDefinitionRecord, PackageFlowEntry} from './flows/types.js';
 // ── LWC Tailwind ────────────────────────────────────────────────────────────
 export {lwcTailwindHooks} from './lwc/lwc-tailwind-plugin.js';
 
@@ -13,9 +14,10 @@ export type {LwcTypescriptHooksOptions} from './lwc/types.js';
 
 export type {LwcTailwindHooksOptions} from './lwc/types.js';
 // ── Picklist ────────────────────────────────────────────────────────────────
+export {PicklistEnabler} from './picklist/picklist-enabler.js';
 export {picklistHooks} from './picklist/picklist-plugin.js';
 
-export type {PicklistHooksOptions} from './picklist/types.js';
+export type {PicklistFieldData, PicklistHooksOptions, PicklistValue} from './picklist/types.js';
 // ── Profiles ────────────────────────────────────────────────────────────────
 export {OrgMetadataResolver} from './profiles/org-metadata-resolver.js';
 
