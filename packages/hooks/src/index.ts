@@ -54,6 +54,7 @@ export type {
 
 // ── Scripts ─────────────────────────────────────────────────────────────────
 export {scriptHooks} from './scripts/script-plugin.js';
+export {ScriptRunner} from './scripts/script-runner.js';
 export type {ScriptDefinition, ScriptHooksOptions, ScriptType} from './scripts/types.js';
 
 // ── Standard Value Set ──────────────────────────────────────────────────────

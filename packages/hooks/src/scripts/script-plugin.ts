@@ -1,6 +1,9 @@
 import {HookContext, LifecycleHooks} from '@b64/sfpm-core';
+import {Org} from '@salesforce/core';
 
 import type {ScriptDefinition, ScriptHooksOptions, ScriptType} from './types.js';
+
+import {ScriptRunner} from './script-runner.js';
 
 const EXTENSION_MAP: Record<string, ScriptType> = {
   '.apex': 'apex',
@@ -58,6 +61,7 @@ function resolveScriptType(script: ScriptDefinition): ScriptType {
  * ```
  */
 export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
+  const failOnError = options.failOnError ?? true;
   const preScripts = options.scripts.filter(s => s.timing === 'pre');
   const postScripts = options.scripts.filter(s => (s.timing ?? 'post') === 'post');
 
@@ -65,23 +69,9 @@ export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
 
   if (preScripts.length > 0) {
     hooks.push({
+
       async handler(context: HookContext) {
-        const {logger, packageName} = context;
-
-        for (const script of preScripts) {
-          if (script.packageName && script.packageName !== packageName) continue;
-
-          const scriptType = resolveScriptType(script);
-          logger?.info(`Script [pre]: running ${scriptType} script '${script.path}' for '${packageName}'`);
-
-          // TODO: Execute shell scripts via child_process.spawn
-          // TODO: Execute TypeScript scripts via jiti or tsx
-          // TODO: Execute JavaScript scripts via child_process.fork
-          // TODO: Execute Apex scripts via Tooling API anonymous execute
-          // TODO: Inject environment variables (target org, package info)
-          // TODO: Enforce script.timeout
-          // TODO: Handle failures based on options.failOnError
-        }
+        await executeScripts(preScripts, 'pre', context, failOnError);
       },
       phase: 'install',
       timing: 'pre' as const,
@@ -90,23 +80,9 @@ export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
 
   if (postScripts.length > 0) {
     hooks.push({
+
       async handler(context: HookContext) {
-        const {logger, packageName} = context;
-
-        for (const script of postScripts) {
-          if (script.packageName && script.packageName !== packageName) continue;
-
-          const scriptType = resolveScriptType(script);
-          logger?.info(`Script [post]: running ${scriptType} script '${script.path}' for '${packageName}'`);
-
-          // TODO: Execute shell scripts via child_process.spawn
-          // TODO: Execute TypeScript scripts via jiti or tsx
-          // TODO: Execute JavaScript scripts via child_process.fork
-          // TODO: Execute Apex scripts via Tooling API anonymous execute
-          // TODO: Inject environment variables (target org, package info)
-          // TODO: Enforce script.timeout
-          // TODO: Handle failures based on options.failOnError
-        }
+        await executeScripts(postScripts, 'post', context, failOnError);
       },
       phase: 'install',
       timing: 'post' as const,
@@ -117,4 +93,62 @@ export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
     hooks,
     name: 'scripts',
   };
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Execute a list of scripts sequentially within a hook handler.
+ */
+async function executeScripts(
+  scripts: ScriptDefinition[],
+  timing: 'post' | 'pre',
+  context: HookContext,
+  failOnError: boolean,
+): Promise<void> {
+  const {logger, packageName} = context;
+  const projectDir = (context.projectDir as string | undefined) ?? process.cwd();
+  const targetOrg = resolveTargetOrg(context);
+  const runner = new ScriptRunner(logger);
+
+  for (const script of scripts) {
+    if (script.packageName && script.packageName !== packageName) continue;
+
+    const scriptType = resolveScriptType(script);
+    logger?.info(`Script [${timing}]: running ${scriptType} script '${script.path}' for '${packageName}'`);
+
+    // eslint-disable-next-line no-await-in-loop -- sequential execution required
+    const result = await runner.run(script, scriptType, {
+      custom: script.env,
+      packageName: packageName as string | undefined,
+      projectDir,
+      stagingDirectory: context.stagingDirectory as string | undefined,
+      targetOrg,
+    }, projectDir);
+
+    if (!result.success) {
+      const message = `Script '${script.path}' failed:\n${result.stderr || result.stdout}`;
+
+      if (failOnError) {
+        throw new Error(message);
+      }
+
+      logger?.warn(message);
+    }
+  }
+}
+
+/**
+ * Resolve the target org username from the hook context.
+ */
+function resolveTargetOrg(context: HookContext): string | undefined {
+  const {org} = context;
+
+  if (org instanceof Org) {
+    return org.getUsername();
+  }
+
+  return undefined;
 }
