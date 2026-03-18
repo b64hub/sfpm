@@ -57,5 +57,6 @@ export {scriptHooks} from './scripts/script-plugin.js';
 export type {ScriptDefinition, ScriptHooksOptions, ScriptType} from './scripts/types.js';
 
 // ── Standard Value Set ──────────────────────────────────────────────────────
+export {StandardValueSetDeployer} from './standard-value-set/standard-value-set-deployer.js';
 export {standardValueSetHooks} from './standard-value-set/standard-value-set-plugin.js';
-export type {StandardValueSetHooksOptions} from './standard-value-set/types.js';
+export type {StandardValueSetDeployResult, StandardValueSetHooksOptions} from './standard-value-set/types.js';
