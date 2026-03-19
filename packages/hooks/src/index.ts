@@ -13,11 +13,17 @@ export {lwcTypescriptHooks} from './lwc/lwc-typescript-plugin.js';
 export type {LwcTypescriptHooksOptions} from './lwc/types.js';
 
 export type {LwcTailwindHooksOptions} from './lwc/types.js';
+// ── Permission Set ──────────────────────────────────────────────────────────
+export {PermissionSetAssigner} from './permissionset/permset-assigner.js';
+export {permissionSetHooks} from './permissionset/permset-plugin.js';
+
+export type {PermissionSetHooksOptions, PermSetAssignmentEntry, PermSetAssignmentResult} from './permissionset/types.js';
+
 // ── Picklist ────────────────────────────────────────────────────────────────
 export {PicklistEnabler} from './picklist/picklist-enabler.js';
 export {picklistHooks} from './picklist/picklist-plugin.js';
-
 export type {PicklistFieldData, PicklistHooksOptions, PicklistValue} from './picklist/types.js';
+
 // ── Profiles ────────────────────────────────────────────────────────────────
 export {OrgMetadataResolver} from './profiles/org-metadata-resolver.js';
 
