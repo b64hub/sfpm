@@ -1,60 +1,106 @@
-import { AssemblyStep, AssemblyOptions, AssemblyOutput } from "../types.js";
-import { Logger } from "../../../types/logger.js";
-import ProjectConfig from "../../../project/project-config.js";
 import * as fs from 'fs-extra';
-import path from 'path';
+import path from 'node:path';
+
+import ProjectConfig from '../../../project/project-config.js';
+import {Logger} from '../../../types/logger.js';
+import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 
 /**
- * @description Copies pre and post-deployment scripts to the `/scripts` subdirectory in the staging area.
- * It renames the scripts to 'preDeployment' and 'postDeployment' for standardized discovery by installers.
+ * Copies pre and post-deployment scripts from the per-package hook config
+ * (`packageOptions.hooks.scripts`) into the staging `/scripts` directory.
+ *
+ * Scripts are organized into `/scripts/pre/` and `/scripts/post/` subdirectories,
+ * preserving original filenames.
+ *
+ * Accepts both string paths and `{ path: string }` objects so users can configure:
+ * ```jsonc
+ * // sfdx-project.json
+ * {
+ *   "packageOptions": {
+ *     "hooks": {
+ *       "scripts": {
+ *         "pre": ["scripts/setup.sh"],
+ *         "post": ["scripts/seed.ts", "scripts/activate.apex"]
+ *       }
+ *     }
+ *   }
+ * }
+ * ```
  */
 export class ScriptAssemblyStep implements AssemblyStep {
-    constructor(
-        private packageName: string,
-        private projectConfig: ProjectConfig,
-        private logger?: Logger
-    ) { }
+  constructor(
+    private packageName: string,
+    private projectConfig: ProjectConfig,
+    private logger?: Logger,
+  ) {}
 
-    /**
-     * @description Executes the script assembly operation.
-     * @param options Shared assembly configuration.
-     * @param output Shared assembly output.
-     */
-    public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
-        const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
-        const preDeploymentScript = packageDefinition.packageOptions?.deploy?.pre?.script;
-        const postDeploymentScript = packageDefinition.packageOptions?.deploy?.post?.script;
+  public async execute(_options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
+    const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
+    const hooksConfig = packageDefinition.packageOptions?.hooks;
 
-        if (!preDeploymentScript && !postDeploymentScript) {
-            return;
-        }
+    if (!hooksConfig) return;
 
-        const scriptsDir = path.join(output.stagingDirectory, 'scripts');
-        await fs.ensureDir(scriptsDir);
+    const scriptsConfig = hooksConfig.scripts;
+    if (!scriptsConfig || typeof scriptsConfig === 'boolean') return;
 
-        if (preDeploymentScript) {
-            await this.copyScript(options, scriptsDir, preDeploymentScript, 'preDeployment');
-            output.scripts = { ...output.scripts, preDeployment: path.join(scriptsDir, 'preDeployment') };
-        }
+    const config = scriptsConfig as Record<string, unknown>;
+    const preScripts = normalizeScriptPaths(config.pre);
+    const postScripts = normalizeScriptPaths(config.post);
 
-        if (postDeploymentScript) {
-            await this.copyScript(options, scriptsDir, postDeploymentScript, 'postDeployment');
-            output.scripts = { ...output.scripts, postDeployment: path.join(scriptsDir, 'postDeployment') };
-        }
+    if (preScripts.length === 0 && postScripts.length === 0) return;
+
+    const scriptsDir = path.join(output.stagingDirectory, 'scripts');
+
+    if (preScripts.length > 0) {
+      const preDir = path.join(scriptsDir, 'pre');
+      await fs.ensureDir(preDir);
+      for (const scriptPath of preScripts) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.copyScript(preDir, scriptPath);
+      }
+
+      output.scripts = {...output.scripts, pre: preScripts.map(p => path.join('scripts', 'pre', path.basename(p)))};
     }
 
-    private async copyScript(options: AssemblyOptions, scriptsDir: string, scriptPath: string, scriptLabel: string): Promise<void> {
-        const resolvedPath = path.isAbsolute(scriptPath)
-            ? scriptPath
-            : path.join(this.projectConfig.projectDirectory, scriptPath);
+    if (postScripts.length > 0) {
+      const postDir = path.join(scriptsDir, 'post');
+      await fs.ensureDir(postDir);
+      for (const scriptPath of postScripts) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.copyScript(postDir, scriptPath);
+      }
 
-        try {
-            if (!(await fs.pathExists(resolvedPath))) {
-                throw new Error(`${scriptLabel}Script ${resolvedPath} does not exist`);
-            }
-            await fs.copy(resolvedPath, path.join(scriptsDir, scriptLabel));
-        } catch (error: any) {
-            throw new Error(`[ScriptAssemblyStep] ${error.message}`);
-        }
+      output.scripts = {...output.scripts, post: postScripts.map(p => path.join('scripts', 'post', path.basename(p)))};
     }
+  }
+
+  private async copyScript(targetDir: string, scriptPath: string): Promise<void> {
+    const resolvedPath = path.isAbsolute(scriptPath)
+      ? scriptPath
+      : path.join(this.projectConfig.projectDirectory, scriptPath);
+
+    if (!(await fs.pathExists(resolvedPath))) {
+      throw new Error(`[ScriptAssemblyStep] Script '${resolvedPath}' does not exist`);
+    }
+
+    const fileName = path.basename(resolvedPath);
+    await fs.copy(resolvedPath, path.join(targetDir, fileName));
+    this.logger?.debug(`Copied script '${scriptPath}' to ${targetDir}`);
+  }
+}
+
+/**
+ * Normalise script config values into a flat string array of paths.
+ * Accepts: `string`, `string[]`, `Array<{ path: string }>`, or mixed.
+ */
+function normalizeScriptPaths(value: unknown): string[] {
+  if (!value) return [];
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) {
+    return value
+    .map(v => (typeof v === 'string' ? v : (v as {path?: string}).path))
+    .filter(Boolean);
+  }
+
+  return [];
 }

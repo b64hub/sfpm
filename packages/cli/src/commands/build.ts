@@ -1,5 +1,5 @@
 import {
-  BuildOrchestrator, Logger, ProjectService,
+  BuildOrchestrator, LifecycleEngine, Logger, ProjectService,
 } from '@b64/sfpm-core'
 import {
   Args, Flags,
@@ -69,6 +69,13 @@ export default class Build extends SfpmCommand {
     }
 
     const sfpmConfig = projectService.getSfpmConfig();
+
+    // Create lifecycle engine and register hooks from config
+    const lifecycle = new LifecycleEngine({logger});
+    for (const hooks of sfpmConfig.hooks ?? []) {
+      lifecycle.use(hooks);
+    }
+
     const buildOptions = {
       buildNumber: flags['build-number'],
       devhubUsername: flags['target-dev-hub'],
@@ -94,6 +101,7 @@ export default class Build extends SfpmCommand {
       {...buildOptions, includeDependencies: flags['include-dependencies']},
       logger,
       projectDir,
+      lifecycle,
     )
 
     // Attach renderer to orchestrator — it forwards all builder events
