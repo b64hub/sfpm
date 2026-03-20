@@ -102,7 +102,7 @@ export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
           if (scripts.length === 0) return;
           await executeScripts(scripts, 'pre', context, failOnError);
         },
-        phase: 'install',
+        operation: 'install',
         timing: 'pre' as const,
       },
       {
@@ -111,7 +111,7 @@ export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
           if (scripts.length === 0) return;
           await executeScripts(scripts, 'post', context, failOnError);
         },
-        phase: 'install',
+        operation: 'install',
         timing: 'post' as const,
       },
     ],

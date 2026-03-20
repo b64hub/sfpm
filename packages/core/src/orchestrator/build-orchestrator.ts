@@ -123,16 +123,16 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
   }
 
   /**
-   * Build a {@link HookContext} for lifecycle hooks at the build phase.
+   * Build a {@link HookContext} for lifecycle hooks at the build operation.
    */
   private buildHookContext(packageName: string): HookContext {
     const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
 
     return {
       logger: this.logger,
+      operation: 'build',
       packageName,
       packageType: packageDefinition.type,
-      phase: 'build',
       projectDir: this.projectDirectory,
       sfpmPackage: {packageDefinition},
       stage: this.lifecycle?.stage ?? 'local',

@@ -136,7 +136,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
   }
 
   /**
-   * Build a {@link HookContext} for lifecycle hooks at the install phase.
+   * Build a {@link HookContext} for lifecycle hooks at the install operation.
    * Provides the package definition, org, logger, and project directory.
    */
   private buildHookContext(packageName: string, context: InstallContext): HookContext {
@@ -144,10 +144,10 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
 
     return {
       logger: this.logger,
+      operation: 'install',
       org: context.org,
       packageName,
       packageType: packageDefinition.type,
-      phase: 'install',
       sfpmPackage: {packageDefinition},
       stage: this.lifecycle?.stage ?? 'local',
       timing: '',

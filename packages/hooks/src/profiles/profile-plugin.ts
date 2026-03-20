@@ -91,7 +91,7 @@ export function profileHooks(options?: ProfileHooksOptions): LifecycleHooks {
             logger?.debug(`Profiles: no profiles needed cleaning for '${packageName}'`);
           }
         },
-        phase: 'install',
+        operation: 'install',
         timing: 'pre',
       },
     ],

@@ -25,7 +25,7 @@ function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     packageName: 'test-package',
     packageType: 'Source',
-    phase: 'install',
+    operation: 'install',
     timing: 'pre',
     ...overrides,
   };
@@ -38,7 +38,7 @@ describe('profileHooks', () => {
     expect(hooks.name).toBe('profiles');
     expect(hooks.hooks).toBeDefined();
     expect(hooks.hooks).toHaveLength(1);
-    expect(hooks.hooks[0].phase).toBe('install');
+    expect(hooks.hooks[0].operation).toBe('install');
     expect(hooks.hooks[0].timing).toBe('pre');
     expect(hooks.hooks[0].handler).toBeTypeOf('function');
   });

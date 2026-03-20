@@ -102,7 +102,7 @@ export function permissionSetHooks(options?: PermissionSetHooksOptions): Lifecyc
 
           handleResult(result, 'pre', packageName, failOnError, logger);
         },
-        phase: 'install',
+        operation: 'install',
         timing: 'pre' as const,
       },
       {
@@ -128,7 +128,7 @@ export function permissionSetHooks(options?: PermissionSetHooksOptions): Lifecyc
 
           handleResult(result, 'post', packageName, failOnError, logger);
         },
-        phase: 'install',
+        operation: 'install',
         timing: 'post' as const,
       },
     ],

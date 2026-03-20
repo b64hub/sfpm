@@ -38,13 +38,13 @@ interface RegisteredHook {
   hooksName: string;
   /** Insertion index for stable sort tie-breaking */
   insertionIndex: number;
+  /** The lifecycle operation (e.g., 'build', 'install') */
+  operation: string;
   /** Per-hook ordering within a timing slot */
   order: 'default' | 'post' | 'pre';
-  /** The lifecycle phase (e.g., 'build', 'install') */
-  phase: string;
   /** Lifecycle stages this hook applies to (empty = all stages) */
   stages: string[];
-  /** The timing within the phase (e.g., 'pre', 'post') */
+  /** The timing within the operation (e.g., 'pre', 'post') */
   timing: string;
 }
 
@@ -70,12 +70,12 @@ function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
 /**
  * Lifecycle engine that manages hook registration and sequential execution.
  *
- * The engine is phase-agnostic — it does not define or enforce any specific
- * phases. Any `phase:timing` combination is valid; the engine simply stores
- * hooks and executes them when `run()` is called with a matching phase and
+ * The engine is operation-agnostic — it does not define or enforce any specific
+ * operations. Any `operation:timing` combination is valid; the engine simply stores
+ * hooks and executes them when `run()` is called with a matching operation and
  * timing. Core orchestrators call `run('build', 'pre', ctx)` and
  * `run('install', 'post', ctx)`; other modules (orgs) can use their own
- * phases ('prepare', 'validate') with the same engine.
+ * operations with the same engine.
  *
  * All hooks run **sequentially** in sorted order. For fire-and-forget
  * notifications, use the EventEmitter system instead.
@@ -85,13 +85,13 @@ function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
  *
  * @example
  * ```typescript
- * const lifecycle = new LifecycleEngine();
+ * const lifecycle = new LifecycleEngine({ stage: 'validate' });
  *
  * // Register hooks
  * lifecycle.use(profileHooks({ reconcile: true }));
  *
  * // Execute hooks at the appropriate lifecycle point
- * await lifecycle.run('install', 'pre', { phase: 'install', timing: 'pre' });
+ * await lifecycle.run('install', 'pre', context);
  * ```
  */
 export class LifecycleEngine {
@@ -131,10 +131,10 @@ export class LifecycleEngine {
   }
 
   /**
-   * Get all unique phase names that have at least one hook registered.
+   * Get all unique operation names that have at least one hook registered.
    */
-  getRegisteredPhases(): string[] {
-    return [...new Set(this.hooks.map(h => h.phase))];
+  getRegisteredOperations(): string[] {
+    return [...new Set(this.hooks.map(h => h.operation))];
   }
 
   // --------------------------------------------------------------------------
@@ -142,11 +142,11 @@ export class LifecycleEngine {
   // --------------------------------------------------------------------------
 
   /**
-   * Check if any hooks are registered for a given phase and timing.
+   * Check if any hooks are registered for a given operation and timing.
    * Useful for orchestrators to skip hook invocation overhead when no hooks exist.
    */
-  hasHooks(phase: string, timing: string): boolean {
-    return this.hooks.some(h => h.phase === phase && h.timing === timing);
+  hasHooks(operation: string, timing: string): boolean {
+    return this.hooks.some(h => h.operation === operation && h.timing === timing);
   }
 
   // --------------------------------------------------------------------------
@@ -176,24 +176,24 @@ export class LifecycleEngine {
   }
 
   /**
-   * Execute all hooks registered for a given phase and timing, sequentially.
+   * Execute all hooks registered for a given operation and timing, sequentially.
    *
    * Hooks are sorted by: enforce → order → insertion order.
    * Filtered hooks are skipped. If no hooks match, returns immediately.
    *
-   * @param phase - The lifecycle phase (e.g., 'build', 'install')
-   * @param timing - The timing within the phase (e.g., 'pre', 'post')
+   * @param operation - The lifecycle operation (e.g., 'build', 'install')
+   * @param timing - The timing within the operation (e.g., 'pre', 'post')
    * @param context - The hook context with package and environment information
    */
-  async run(phase: string, timing: string, context: HookContext): Promise<void> {
+  async run(operation: string, timing: string, context: HookContext): Promise<void> {
     const enrichedContext = {...context, stage: this._stage};
-    const matching = this.getMatchingHooks(phase, timing, enrichedContext);
+    const matching = this.getMatchingHooks(operation, timing, enrichedContext);
 
     if (matching.length === 0) {
       return;
     }
 
-    this.logger?.debug(`Lifecycle: running ${matching.length} hook(s) for '${phase}:${timing}'`
+    this.logger?.debug(`Lifecycle: running ${matching.length} hook(s) for '${operation}:${timing}'`
       + (context.packageName ? ` on package '${context.packageName}'` : '')
       + ` [stage=${this._stage}]`);
 
@@ -203,7 +203,7 @@ export class LifecycleEngine {
         await hook.handler(enrichedContext);
       } catch (error) {
         this.logger?.error(`Lifecycle: hook from '${hook.hooksName}' failed `
-          + `at '${hook.phase}:${hook.timing}'`
+          + `at '${hook.operation}:${hook.timing}'`
           + (context.packageName ? ` for package '${context.packageName}'` : '')
           + `: ${error instanceof Error ? error.message : String(error)}`);
         throw error;
@@ -214,9 +214,9 @@ export class LifecycleEngine {
   /**
    * Register a set of lifecycle hooks with the engine.
    *
-   * Each `HookRegistration` in the set specifies the phase, timing, handler,
+   * Each `HookRegistration` in the set specifies the operation, timing, handler,
    * and optional ordering/filter options. The engine stores them internally
-   * and executes them when `run()` is called with a matching phase and timing.
+   * and executes them when `run()` is called with a matching operation and timing.
    */
   use(lifecycleHooks: LifecycleHooks): void {
     const enforce = lifecycleHooks.enforce ?? 'default';
@@ -228,8 +228,8 @@ export class LifecycleEngine {
         handler: registration.handler,
         hooksName: lifecycleHooks.name,
         insertionIndex: this.insertionCounter++,
+        operation: registration.operation,
         order: registration.options?.order ?? 'default',
-        phase: registration.phase,
         stages: registration.options?.stages ?? [],
         timing: registration.timing,
       };
@@ -244,22 +244,22 @@ export class LifecycleEngine {
   // Private Helpers
   // --------------------------------------------------------------------------
 
-  private getMatchingHooks(phase: string, timing: string, context: HookContext): RegisteredHook[] {
-    const candidates = this.hooks.filter(h => h.phase === phase && h.timing === timing);
+  private getMatchingHooks(operation: string, timing: string, context: HookContext): RegisteredHook[] {
+    const candidates = this.hooks.filter(h => h.operation === operation && h.timing === timing);
     const sorted = sortHooks(candidates);
 
     // Apply stage, per-package enabled check, and filters
     return sorted.filter(h => {
       // Check stage filter — if hook is restricted to specific stages, skip if not matching
       if (h.stages.length > 0 && !h.stages.includes(this._stage)) {
-        this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${phase}:${timing}' — `
+        this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${operation}:${timing}' — `
           + `stage '${this._stage}' not in [${h.stages.join(', ')}]`);
         return false;
       }
 
       // Check per-package hook config — if disabled, skip without running filter
       if (!isHookEnabled(context, h.hooksName)) {
-        this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${phase}:${timing}' — `
+        this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${operation}:${timing}' — `
           + 'disabled via packageOptions.hooks'
           + (context.packageName ? ` for package '${context.packageName}'` : ''));
         return false;
@@ -267,7 +267,7 @@ export class LifecycleEngine {
 
       // eslint-disable-next-line unicorn/no-array-callback-reference -- h.filter is not Array.filter
       if (h.filter && !h.filter(context)) {
-        this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${phase}:${timing}' — `
+        this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${operation}:${timing}' — `
           + 'filter returned false'
           + (context.packageName ? ` for package '${context.packageName}'` : ''));
         return false;

@@ -43,7 +43,7 @@ export function lwcTailwindHooks(options?: LwcTailwindHooksOptions): LifecycleHo
 
           logger?.debug(`LWC Tailwind: completed for '${packageName}'`);
         },
-        phase: 'build',
+        operation: 'build',
         timing: 'pre',
       },
     ],

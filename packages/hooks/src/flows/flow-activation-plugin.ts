@@ -111,7 +111,7 @@ export function flowActivationHooks(options?: FlowActivationHooksOptions): Lifec
             logger?.debug(`FlowActivation: all flows for '${packageName}' are already in sync`);
           }
         },
-        phase: 'install',
+        operation: 'install',
         timing: 'post',
       },
     ],

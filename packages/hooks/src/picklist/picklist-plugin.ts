@@ -122,7 +122,7 @@ export function picklistHooks(options?: PicklistHooksOptions): LifecycleHooks {
             logger?.debug(`Picklist: all picklists for '${packageName}' are already in sync`);
           }
         },
-        phase: 'install',
+        operation: 'install',
         timing: 'post',
       },
     ],

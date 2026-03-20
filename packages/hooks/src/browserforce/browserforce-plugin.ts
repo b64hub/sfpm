@@ -53,7 +53,7 @@ export function browserforceHooks(options: BrowserforceHooksOptions): LifecycleH
 
           logger?.debug(`Browserforce: completed for '${packageName}'`);
         },
-        phase: 'install',
+        operation: 'install',
         timing: 'post',
       },
     ],

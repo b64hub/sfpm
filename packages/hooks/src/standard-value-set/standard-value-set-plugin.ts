@@ -107,7 +107,7 @@ export function standardValueSetHooks(options?: StandardValueSetHooksOptions): L
               + `(${result.componentsDeployed}/${result.componentsTotal} deployed)`);
           }
         },
-        phase: 'install',
+        operation: 'install',
         timing: 'post',
       },
     ],

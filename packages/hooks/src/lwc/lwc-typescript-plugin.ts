@@ -96,7 +96,7 @@ export function lwcTypescriptHooks(options?: LwcTypescriptHooksOptions): Lifecyc
 
           logger?.debug(`LWC TypeScript: completed for '${packageName}'`);
         },
-        phase: 'build',
+        operation: 'build',
         timing: 'pre',
       },
     ],
