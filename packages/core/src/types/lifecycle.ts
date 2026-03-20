@@ -16,20 +16,22 @@ import {Logger} from './logger.js';
  * data without requiring type changes in core.
  */
 export interface HookContext {
-  /** The lifecycle phase being executed (e.g., 'build', 'install') */
-  phase: string;
-  /** The timing within the phase (e.g., 'pre', 'post') */
-  timing: string;
+  /** Arbitrary phase-specific data — orchestrators extend this at integration time */
+  [key: string]: unknown;
+  /** Logger instance for the current operation */
+  logger?: Logger;
   /** Current package name being processed */
   packageName?: string;
   /** Package type identifier (e.g., 'Source', 'Unlocked') */
   packageType?: string;
+  /** The lifecycle phase being executed (e.g., 'build', 'install') */
+  phase: string;
   /** Project root directory */
   projectDir?: string;
-  /** Logger instance for the current operation */
-  logger?: Logger;
-  /** Arbitrary phase-specific data — orchestrators extend this at integration time */
-  [key: string]: unknown;
+  /** The lifecycle stage that triggered this invocation (e.g., 'validate', 'deploy', 'local') */
+  stage: string;
+  /** The timing within the phase (e.g., 'pre', 'post') */
+  timing: string;
 }
 
 // ============================================================================
@@ -51,25 +53,40 @@ export type HookHandler = (context: HookContext) => Promise<void> | void;
  */
 export interface HookOptions {
   /**
-   * Per-hook ordering within a timing slot.
-   * - `'pre'`: runs before default-ordered handlers
-   * - `'post'`: runs after default-ordered handlers
-   * - `undefined`: runs in registration order between 'pre' and 'post'
-   */
-  order?: 'pre' | 'post';
-
-  /**
    * Optional filter predicate. If provided, the hook only runs
    * when the filter returns true for the given context.
    * Enables per-package or per-type control.
    */
   filter?: (context: HookContext) => boolean;
+
+  /**
+   * Per-hook ordering within a timing slot.
+   * - `'pre'`: runs before default-ordered handlers
+   * - `'post'`: runs after default-ordered handlers
+   * - `undefined`: runs in registration order between 'pre' and 'post'
+   */
+  order?: 'post' | 'pre';
+
+  /**
+   * Restrict this hook to specific lifecycle stages.
+   * When omitted, the hook runs on **all** stages.
+   * When set, the hook only executes when the engine's stage is in this list.
+   *
+   * @example `['deploy', 'local']` — skip during validate and provision
+   */
+  stages?: string[];
 }
 
 /**
  * A single hook registration combining a phase:timing target with a handler.
  */
 export interface HookRegistration {
+  /** The handler function to execute */
+  handler: HookHandler;
+
+  /** Optional execution options (ordering, filtering) */
+  options?: HookOptions;
+
   /** Phase name (e.g., 'build', 'install', 'validate', 'prepare') */
   phase: string;
 
@@ -81,12 +98,6 @@ export interface HookRegistration {
    * Modules may define custom timings for their own phases.
    */
   timing: string;
-
-  /** The handler function to execute */
-  handler: HookHandler;
-
-  /** Optional execution options (ordering, filtering) */
-  options?: HookOptions;
 }
 
 // ============================================================================
@@ -124,15 +135,15 @@ export interface HookRegistration {
  * ```
  */
 export interface LifecycleHooks {
-  /** Unique name identifying this set of hooks */
-  name: string;
-
   /**
    * Set-level ordering. Sets with `enforce: 'pre'` have all their hooks
    * run before normal sets; `enforce: 'post'` run after.
    */
-  enforce?: 'pre' | 'post';
+  enforce?: 'post' | 'pre';
 
   /** The hook registrations provided by this module */
   hooks: HookRegistration[];
+
+  /** Unique name identifying this set of hooks */
+  name: string;
 }

@@ -71,7 +71,7 @@ export default class Build extends SfpmCommand {
     const sfpmConfig = projectService.getSfpmConfig();
 
     // Create lifecycle engine and register hooks from config
-    const lifecycle = new LifecycleEngine({logger});
+    const lifecycle = new LifecycleEngine({logger, stage: 'build'});
     for (const hooks of sfpmConfig.hooks ?? []) {
       lifecycle.use(hooks);
     }

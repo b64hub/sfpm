@@ -2,6 +2,7 @@ import {Org} from '@salesforce/core';
 import EventEmitter from 'node:events';
 
 import {ArtifactService} from '../artifacts/artifact-service.js';
+import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import PackageInstaller, {InstallOptions} from '../package/package-installer.js';
 import ProjectConfig from '../project/project-config.js';
 import {ProjectGraph} from '../project/project-graph.js';
@@ -11,6 +12,7 @@ import {
   OrchestrationResult,
   PackageResult,
 } from '../types/events.js';
+import {HookContext} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {InstallationSource} from '../types/package.js';
 import {
@@ -42,6 +44,7 @@ interface InstallContext {
  * delegates individual package installs to PackageInstaller.
  */
 export class InstallOrchestrationTask implements OrchestrationTask<InstallContext> {
+  private readonly lifecycle: LifecycleEngine | undefined;
   private readonly logger: Logger | undefined;
   private readonly options: InstallOptions;
   private readonly projectConfig: ProjectConfig;
@@ -50,10 +53,12 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     projectConfig: ProjectConfig,
     options: InstallOptions,
     logger?: Logger,
+    lifecycle?: LifecycleEngine,
   ) {
     this.projectConfig = projectConfig;
     this.options = options;
     this.logger = logger;
+    this.lifecycle = lifecycle;
   }
 
   async processSinglePackage(
@@ -63,6 +68,18 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     emitter: OrchestratorEmitter,
   ): Promise<PackageResult> {
     const start = Date.now();
+
+    // Check if this package should be skipped for the current lifecycle stage
+    if (this.lifecycle) {
+      const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+      const skipStages = packageDefinition.packageOptions?.skip ?? [];
+      if (skipStages.includes(this.lifecycle.stage)) {
+        this.logger?.info(`Skipping '${packageName}' — stage '${this.lifecycle.stage}' is in skip list`);
+        return {
+          duration: 0, packageName, skipped: true, success: true,
+        };
+      }
+    }
 
     const installer = new PackageInstaller(
       this.projectConfig,
@@ -78,9 +95,21 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     let error: string | undefined;
 
     try {
+      // Run pre-install hooks
+      if (this.lifecycle) {
+        const hookContext = this.buildHookContext(packageName, context);
+        await this.lifecycle.run('install', 'pre', hookContext);
+      }
+
       const result = await installer.installPackage(packageName);
       if (result.skipped) {
         skipped = true;
+      }
+
+      // Run post-install hooks
+      if (this.lifecycle && !result.skipped) {
+        const hookContext = this.buildHookContext(packageName, context);
+        await this.lifecycle.run('install', 'post', hookContext);
       }
     } catch (error_) {
       success = false;
@@ -104,6 +133,25 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     .setLogger(this.logger);
 
     return {artifactService, org};
+  }
+
+  /**
+   * Build a {@link HookContext} for lifecycle hooks at the install phase.
+   * Provides the package definition, org, logger, and project directory.
+   */
+  private buildHookContext(packageName: string, context: InstallContext): HookContext {
+    const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+
+    return {
+      logger: this.logger,
+      org: context.org,
+      packageName,
+      packageType: packageDefinition.type,
+      phase: 'install',
+      sfpmPackage: {packageDefinition},
+      stage: this.lifecycle?.stage ?? 'local',
+      timing: '',
+    };
   }
 
   private forwardInstallerEvents(installer: PackageInstaller, emitter: OrchestratorEmitter): void {
@@ -151,9 +199,10 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
     graph: ProjectGraph,
     options: InstallOrchestratorOptions,
     logger?: Logger,
+    lifecycle?: LifecycleEngine,
   ) {
     super();
-    const task = new InstallOrchestrationTask(projectConfig, options, logger);
+    const task = new InstallOrchestrationTask(projectConfig, options, logger, lifecycle);
     this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: true}, task, logger, this);
   }
 
@@ -170,12 +219,14 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
     graph: ProjectGraph,
     options: Omit<InstallOrchestratorOptions, 'source'> & {source?: never},
     logger?: Logger,
+    lifecycle?: LifecycleEngine,
   ): InstallOrchestrator {
     return new InstallOrchestrator(
       projectConfig,
       graph,
       {...options, source: InstallationSource.Artifact},
       logger,
+      lifecycle,
     );
   }
 
@@ -188,12 +239,14 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
     graph: ProjectGraph,
     options: Omit<InstallOrchestratorOptions, 'mode' | 'source'> & {mode?: never; source?: never},
     logger?: Logger,
+    lifecycle?: LifecycleEngine,
   ): InstallOrchestrator {
     return new InstallOrchestrator(
       projectConfig,
       graph,
       {...options, source: InstallationSource.Local},
       logger,
+      lifecycle,
     );
   }
 

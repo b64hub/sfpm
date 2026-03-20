@@ -168,6 +168,13 @@ async function executeScripts(
   for (const script of scripts) {
     if (script.packageName && script.packageName !== packageName) continue;
 
+    // Per-script stage filtering
+    const currentStage = context.stage as string | undefined;
+    if (script.stages && script.stages.length > 0 && currentStage && !script.stages.includes(currentStage)) {
+      logger?.debug(`Script [${timing}]: skipping '${script.path}' — stage '${currentStage}' not in [${script.stages.join(', ')}]`);
+      continue;
+    }
+
     const scriptType = resolveScriptType(script);
     logger?.info(`Script [${timing}]: running ${scriptType} script '${script.path}' for '${packageName}'`);
 

@@ -32,6 +32,14 @@ export interface ScriptDefinition {
   path: string;
 
   /**
+   * Restrict this script to specific lifecycle stages.
+   * When omitted, the script runs on **all** stages.
+   *
+   * @example `['deploy', 'local']` — skip during validate and provision
+   */
+  stages?: string[];
+
+  /**
    * Timeout in milliseconds. Defaults to 5 minutes.
    * @default 300_000
    */

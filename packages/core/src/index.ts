@@ -59,6 +59,7 @@ export {default as Git} from './git/git.js';
 // Lifecycle engine and config
 export {isHookEnabled, type ResolvedHookConfig, resolveHookConfig} from './lifecycle/hook-config.js';
 export {LifecycleEngine} from './lifecycle/lifecycle-engine.js';
+export {DEFAULT_STAGE, type Stage, Stages} from './lifecycle/stages.js';
 export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions} from './orchestrator/build-orchestrator.js';
 export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './orchestrator/install-orchestrator.js';
 export {

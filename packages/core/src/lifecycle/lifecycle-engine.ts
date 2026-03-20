@@ -5,6 +5,7 @@ import {
 } from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {isHookEnabled} from './hook-config.js';
+import {DEFAULT_STAGE} from './stages.js';
 
 // ============================================================================
 // Internal Hook Entry
@@ -41,6 +42,8 @@ interface RegisteredHook {
   order: 'default' | 'post' | 'pre';
   /** The lifecycle phase (e.g., 'build', 'install') */
   phase: string;
+  /** Lifecycle stages this hook applies to (empty = all stages) */
+  stages: string[];
   /** The timing within the phase (e.g., 'pre', 'post') */
   timing: string;
 }
@@ -92,12 +95,19 @@ function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
  * ```
  */
 export class LifecycleEngine {
+  private readonly _stage: string;
   private readonly hooks: RegisteredHook[] = [];
   private insertionCounter = 0;
   private readonly logger?: Logger;
 
-  constructor(options?: {logger?: Logger}) {
+  constructor(options?: {logger?: Logger; stage?: string}) {
     this.logger = options?.logger;
+    this._stage = options?.stage ?? DEFAULT_STAGE;
+  }
+
+  /** The lifecycle stage for this invocation (e.g., 'validate', 'deploy', 'local'). */
+  get stage(): string {
+    return this._stage;
   }
 
   // --------------------------------------------------------------------------
@@ -176,19 +186,21 @@ export class LifecycleEngine {
    * @param context - The hook context with package and environment information
    */
   async run(phase: string, timing: string, context: HookContext): Promise<void> {
-    const matching = this.getMatchingHooks(phase, timing, context);
+    const enrichedContext = {...context, stage: this._stage};
+    const matching = this.getMatchingHooks(phase, timing, enrichedContext);
 
     if (matching.length === 0) {
       return;
     }
 
     this.logger?.debug(`Lifecycle: running ${matching.length} hook(s) for '${phase}:${timing}'`
-      + (context.packageName ? ` on package '${context.packageName}'` : ''));
+      + (context.packageName ? ` on package '${context.packageName}'` : '')
+      + ` [stage=${this._stage}]`);
 
     for (const hook of matching) {
       try {
         // eslint-disable-next-line no-await-in-loop -- hooks must run sequentially in defined order
-        await hook.handler(context);
+        await hook.handler(enrichedContext);
       } catch (error) {
         this.logger?.error(`Lifecycle: hook from '${hook.hooksName}' failed `
           + `at '${hook.phase}:${hook.timing}'`
@@ -218,6 +230,7 @@ export class LifecycleEngine {
         insertionIndex: this.insertionCounter++,
         order: registration.options?.order ?? 'default',
         phase: registration.phase,
+        stages: registration.options?.stages ?? [],
         timing: registration.timing,
       };
 
@@ -235,8 +248,15 @@ export class LifecycleEngine {
     const candidates = this.hooks.filter(h => h.phase === phase && h.timing === timing);
     const sorted = sortHooks(candidates);
 
-    // Apply per-package enabled check and filters
+    // Apply stage, per-package enabled check, and filters
     return sorted.filter(h => {
+      // Check stage filter — if hook is restricted to specific stages, skip if not matching
+      if (h.stages.length > 0 && !h.stages.includes(this._stage)) {
+        this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${phase}:${timing}' — `
+          + `stage '${this._stage}' not in [${h.stages.join(', ')}]`);
+        return false;
+      }
+
       // Check per-package hook config — if disabled, skip without running filter
       if (!isHookEnabled(context, h.hooksName)) {
         this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${phase}:${timing}' — `
