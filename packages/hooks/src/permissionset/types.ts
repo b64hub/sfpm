@@ -6,9 +6,9 @@
  * Configuration options for the permission set assignment lifecycle hook.
  *
  * Assigns permission sets to the target org user before and/or after
- * package installation. Permission set names can be provided explicitly
- * via {@link permSets}, or read automatically from the package definition's
- * `deploy.pre.assignPermSets` / `deploy.post.assignPermSets` arrays.
+ * package installation. Permission set names can be provided globally
+ * via {@link permSets}, and/or per-package via
+ * `packageOptions.hooks["permission-set"].pre/post` in `sfdx-project.json`.
  */
 export interface PermissionSetHooksOptions {
   /**

@@ -1,4 +1,4 @@
-import {HookContext, LifecycleHooks} from '@b64/sfpm-core';
+import {HookContext, LifecycleHooks, resolveHookConfig} from '@b64/sfpm-core';
 import {Org} from '@salesforce/core';
 
 import type {ScriptDefinition, ScriptHooksOptions, ScriptType} from './types.js';
@@ -11,6 +11,30 @@ const EXTENSION_MAP: Record<string, ScriptType> = {
   '.sh': 'shell',
   '.ts': 'typescript',
 };
+
+/**
+ * Per-package hook overrides for script execution.
+ *
+ * Placed under `packageOptions.hooks["scripts"]` in `sfdx-project.json`:
+ * ```jsonc
+ * {
+ *   "hooks": {
+ *     "scripts": {
+ *       "pre": ["scripts/setup.sh"],
+ *       "post": ["scripts/seed.ts", "scripts/activate.apex"]
+ *     }
+ *   }
+ * }
+ * ```
+ *
+ * Values can be plain paths (strings) or full {@link ScriptDefinition} objects.
+ */
+interface ScriptHookOverrides {
+  /** Scripts to run after installation. */
+  post?: Array<ScriptDefinition | string>;
+  /** Scripts to run before installation. */
+  pre?: Array<ScriptDefinition | string>;
+}
 
 /**
  * Infer script type from file extension when not explicitly provided.
@@ -34,9 +58,14 @@ function resolveScriptType(script: ScriptDefinition): ScriptType {
  * user-defined scripts. Supports shell scripts (`.sh`), TypeScript
  * (`.ts`), JavaScript (`.js`), and anonymous Apex (`.apex`).
  *
- * Scripts are executed in order of definition. Each script receives
- * environment variables from the hook context (target org, package name,
- * etc.) in addition to any custom `env` overrides.
+ * Scripts are resolved from **two sources** (merged):
+ *
+ * 1. **Global options** — `scriptHooks({ scripts: [...] })` in `sfpm.config.ts`
+ * 2. **Per-package overrides** — `packageOptions.hooks["scripts"].pre/post`
+ *
+ * Per-package scripts are appended after global scripts at each timing.
+ * When a per-package `hooks["scripts"]` is set to `false`, the hook is
+ * skipped entirely for that package (handled by the lifecycle engine).
  *
  * @param options - Hook configuration options
  * @returns A LifecycleHooks instance to pass to `defineConfig({ hooks: [...] })`
@@ -62,35 +91,30 @@ function resolveScriptType(script: ScriptDefinition): ScriptType {
  */
 export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
   const failOnError = options.failOnError ?? true;
-  const preScripts = options.scripts.filter(s => s.timing === 'pre');
-  const postScripts = options.scripts.filter(s => (s.timing ?? 'post') === 'post');
-
-  const hooks = [];
-
-  if (preScripts.length > 0) {
-    hooks.push({
-
-      async handler(context: HookContext) {
-        await executeScripts(preScripts, 'pre', context, failOnError);
-      },
-      phase: 'install',
-      timing: 'pre' as const,
-    });
-  }
-
-  if (postScripts.length > 0) {
-    hooks.push({
-
-      async handler(context: HookContext) {
-        await executeScripts(postScripts, 'post', context, failOnError);
-      },
-      phase: 'install',
-      timing: 'post' as const,
-    });
-  }
+  const globalPreScripts = options.scripts.filter(s => s.timing === 'pre');
+  const globalPostScripts = options.scripts.filter(s => (s.timing ?? 'post') === 'post');
 
   return {
-    hooks,
+    hooks: [
+      {
+        async handler(context: HookContext) {
+          const scripts = resolveScripts(context, 'pre', globalPreScripts);
+          if (scripts.length === 0) return;
+          await executeScripts(scripts, 'pre', context, failOnError);
+        },
+        phase: 'install',
+        timing: 'pre' as const,
+      },
+      {
+        async handler(context: HookContext) {
+          const scripts = resolveScripts(context, 'post', globalPostScripts);
+          if (scripts.length === 0) return;
+          await executeScripts(scripts, 'post', context, failOnError);
+        },
+        phase: 'install',
+        timing: 'post' as const,
+      },
+    ],
     name: 'scripts',
   };
 }
@@ -98,6 +122,34 @@ export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/**
+ * Resolve the final script list for a given timing by merging:
+ * 1. Global scripts from `sfpm.config.ts` options (already filtered by timing)
+ * 2. Per-package overrides from `packageOptions.hooks["scripts"].pre/post`
+ */
+function resolveScripts(
+  context: HookContext,
+  timing: 'post' | 'pre',
+  globalScripts: ScriptDefinition[],
+): ScriptDefinition[] {
+  const {config} = resolveHookConfig<ScriptHookOverrides>(context, 'scripts');
+  const overrides = (timing === 'pre' ? config.pre : config.post) ?? [];
+  const packageScripts = normalizeToDefinitions(overrides, timing);
+
+  return [...globalScripts, ...packageScripts];
+}
+
+/**
+ * Normalise mixed arrays of `string | ScriptDefinition` into full `ScriptDefinition[]`.
+ */
+function normalizeToDefinitions(
+  entries: Array<ScriptDefinition | string>,
+  timing: 'post' | 'pre',
+): ScriptDefinition[] {
+  return entries.map(entry =>
+    typeof entry === 'string' ? {path: entry, timing} : entry);
+}
 
 /**
  * Execute a list of scripts sequentially within a hook handler.

@@ -1,6 +1,6 @@
-import type {DeploymentOptions, Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64/sfpm-core';
 
-import {HookContext, LifecycleHooks} from '@b64/sfpm-core';
+import {HookContext, LifecycleHooks, resolveHookConfig} from '@b64/sfpm-core';
 import {Connection, Org} from '@salesforce/core';
 
 import type {PermissionSetHooksOptions} from './types.js';
@@ -8,25 +8,40 @@ import type {PermissionSetHooksOptions} from './types.js';
 import {PermissionSetAssigner} from './permset-assigner.js';
 
 /**
- * Shape expected on the hook context's `sfpmPackage` for reading
- * permission set assignments from the package definition.
+ * Per-package hook overrides for permission set assignment.
+ *
+ * Placed under `packageOptions.hooks["permission-set"]` in `sfdx-project.json`:
+ * ```json
+ * {
+ *   "hooks": {
+ *     "permission-set": {
+ *       "pre": ["ReadOnlyUser"],
+ *       "post": ["AdminPermSet"]
+ *     }
+ *   }
+ * }
+ * ```
  */
-interface PermSetCapablePackage {
-  packageDefinition?: {
-    packageOptions?: {
-      deploy?: DeploymentOptions;
-    };
-  };
+interface PermSetHookOverrides {
+  /** Permission set API names to assign after installation. */
+  post?: string[];
+  /** Permission set API names to assign before installation. */
+  pre?: string[];
 }
 
 /**
  * Creates lifecycle hooks for assigning permission sets during installation.
  *
  * Registers hooks on `install:pre` and `install:post` that assign
- * permission sets to the target org user. Permission set names are
- * read from the package definition's `deploy.pre.assignPermSets` and
- * `deploy.post.assignPermSets` arrays. Any names in {@link options.permSets}
- * are merged into the post-install list.
+ * permission sets to the target org user.
+ *
+ * Permission set names are resolved from **two sources** (merged, deduplicated):
+ *
+ * 1. **Global options** — `permissionSetHooks({ permSets: [...] })` in `sfpm.config.ts`
+ * 2. **Per-package overrides** — `packageOptions.hooks["permission-set"].pre/post`
+ *
+ * When a per-package `hooks["permission-set"]` is set to `false`, the hook is
+ * skipped entirely for that package (handled by the lifecycle engine).
  *
  * Already-assigned permission sets are detected and skipped automatically.
  *
@@ -41,24 +56,33 @@ interface PermSetCapablePackage {
  *
  * export default defineConfig({
  *   hooks: [
- *     permissionSetHooks(),
- *     // or with explicit extras:
- *     permissionSetHooks({ permSets: ['MyAdminPermSet'] }),
+ *     permissionSetHooks({ permSets: ['SharedPermSet'], failOnError: false }),
  *   ],
  * });
+ * ```
+ *
+ * @example
+ * ```jsonc
+ * // sfdx-project.json — per-package overrides
+ * {
+ *   "packageOptions": {
+ *     "hooks": {
+ *       "permission-set": { "pre": ["ReadOnly"], "post": ["Admin"] }
+ *     }
+ *   }
+ * }
  * ```
  */
 export function permissionSetHooks(options?: PermissionSetHooksOptions): LifecycleHooks {
   const failOnError = options?.failOnError ?? false;
-  const extraPermSets = options?.permSets ?? [];
+  const globalPermSets = options?.permSets ?? [];
 
   return {
     hooks: [
       {
         async handler(context: HookContext) {
           const {logger, packageName} = context;
-          const deployOptions = resolveDeployOptions(context);
-          const prePermSets = deployOptions?.pre?.assignPermSets ?? [];
+          const prePermSets = resolvePermSets(context, 'pre', []);
 
           if (prePermSets.length === 0) {
             logger?.debug(`PermissionSet [pre]: no permission sets to assign for '${packageName}'`);
@@ -84,11 +108,7 @@ export function permissionSetHooks(options?: PermissionSetHooksOptions): Lifecyc
       {
         async handler(context: HookContext) {
           const {logger, packageName} = context;
-          const deployOptions = resolveDeployOptions(context);
-          const postPermSets = deduplicate([
-            ...(deployOptions?.post?.assignPermSets ?? []),
-            ...extraPermSets,
-          ]);
+          const postPermSets = resolvePermSets(context, 'post', globalPermSets);
 
           if (postPermSets.length === 0) {
             logger?.debug(`PermissionSet [post]: no permission sets to assign for '${packageName}'`);
@@ -121,11 +141,19 @@ export function permissionSetHooks(options?: PermissionSetHooksOptions): Lifecyc
 // ============================================================================
 
 /**
- * Extract deploy options from the package definition on the hook context.
+ * Resolve the permission set list for a given timing by merging:
+ * 1. Per-package overrides from `packageOptions.hooks["permission-set"].pre/post`
+ * 2. Global defaults from `sfpm.config.ts` options
  */
-function resolveDeployOptions(context: HookContext): DeploymentOptions | undefined {
-  const sfpmPackage = context.sfpmPackage as PermSetCapablePackage | undefined;
-  return sfpmPackage?.packageDefinition?.packageOptions?.deploy;
+function resolvePermSets(
+  context: HookContext,
+  timing: 'post' | 'pre',
+  globalPermSets: string[],
+): string[] {
+  const {config} = resolveHookConfig<PermSetHookOverrides>(context, 'permission-set');
+  const packagePermSets = (timing === 'pre' ? config.pre : config.post) ?? [];
+
+  return deduplicate([...packagePermSets, ...globalPermSets]);
 }
 
 /**
