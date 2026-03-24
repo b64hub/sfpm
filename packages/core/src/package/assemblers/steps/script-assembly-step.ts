@@ -97,9 +97,13 @@ function normalizeScriptPaths(value: unknown): string[] {
   if (!value) return [];
   if (typeof value === 'string') return [value];
   if (Array.isArray(value)) {
-    return value
-    .map(v => (typeof v === 'string' ? v : (v as {path?: string}).path))
-    .filter(Boolean);
+    const paths: string[] = [];
+    for (const entry of value) {
+      const resolved = typeof entry === 'string' ? entry : (entry as {path?: string}).path;
+      if (resolved) paths.push(resolved);
+    }
+
+    return paths;
   }
 
   return [];
