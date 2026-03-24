@@ -29,7 +29,7 @@ describe('VersionManager', () => {
         // pkg-a: 1.0.0.NEXT -> 1.1.0.NEXT
         const pkgA = result.packages.find(p => p.name === 'pkg-a');
         expect(pkgA).toBeDefined();
-        expect(pkgA?.newVersion).toBe('1.1.0-NEXT');
+        expect(pkgA?.newVersion).toBe('1.1.0.NEXT');
 
         // pkg-b should assume new version of pkg-a
         const pkgB = result.dependencies?.find(p => p.name === 'pkg-b');
@@ -50,7 +50,7 @@ describe('VersionManager', () => {
         expect(result.packagesUpdated).toBe(3);
 
         const pkgA = result.packages.find(p => p.name === 'pkg-a');
-        expect(pkgA?.newVersion).toBe('1.0.1-NEXT');
+        expect(pkgA?.newVersion).toBe('1.0.1.NEXT');
     });
 
     test('should use OrgDiffStrategy to detect updates', async () => {
@@ -72,7 +72,7 @@ describe('VersionManager', () => {
         const pkgA = result.packages.find(p => p.name === 'pkg-a');
         expect(pkgA).toBeDefined();
         // Base 1.2.0.0 + patch -> 1.2.1.NEXT
-        expect(pkgA?.newVersion).toBe('1.2.1-NEXT');
+        expect(pkgA?.newVersion).toBe('1.2.1.NEXT');
     });
 
     test('should return updated definition after bump', async () => {
@@ -84,6 +84,21 @@ describe('VersionManager', () => {
 
         expect(updatedDefinition).toBeDefined();
         expect(updatedDefinition.packageDirectories).toBeDefined();
+    });
+
+    test('should write updated dependency versions to definition', async () => {
+        const graph = new ProjectGraph(mockProject);
+        const vm = VersionManager.create(graph, mockProject);
+
+        // Bump only pkg-a; pkg-b depends on pkg-a so its dependency ref should update
+        await vm.bump('minor', { strategy: new SinglePackageStrategy('pkg-a') });
+        const updatedDefinition = vm.getUpdatedDefinition();
+
+        const pkgB = (updatedDefinition.packageDirectories as any[]).find(p => p.package === 'pkg-b');
+        expect(pkgB).toBeDefined();
+        const depOnA = pkgB.dependencies?.find((d: any) => d.package === 'pkg-a');
+        expect(depOnA).toBeDefined();
+        expect(depOnA.versionNumber).toBe('1.1.0');
     });
 
     describe('toSalesforceVersion', () => {

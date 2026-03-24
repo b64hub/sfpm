@@ -57,7 +57,7 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
    * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'semver', { strict: false, resolveTokens: true })`.
    */
   public static cleanVersion(version: string): string {
-    return toVersionFormat(version, 'semver', {strict: false, resolveTokens: true});
+    return toVersionFormat(version, 'semver', {resolveTokens: true, strict: false});
   }
 
   /**
@@ -80,20 +80,20 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
   }
 
   /**
-   * Converts an npm/semver-style version to the Salesforce 4-part format.
-   * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'salesforce')`.
-   */
-  public static toSalesforceVersion(version: string): string {
-    return toVersionFormat(version, 'salesforce');
-  }
-
-  /**
    * Normalizes and validates a version string.
    * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'semver')`.
    */
   public static normalizeVersion(version: string): string {
     if (!version) return '0.0.0.0'; // Legacy default preserved
     return toVersionFormat(version, 'semver');
+  }
+
+  /**
+   * Converts an npm/semver-style version to the Salesforce 4-part format.
+   * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'salesforce')`.
+   */
+  public static toSalesforceVersion(version: string): string {
+    return toVersionFormat(version, 'salesforce');
   }
 
   /**
@@ -279,7 +279,7 @@ export class VersionTracker {
   }
 
   get isUpdated(): boolean {
-    return this.newVersion !== null;
+    return this.newVersion !== null || this.updatedDependencies.size > 0;
   }
 
   // Proxy properties for backward compatibility and convenience
@@ -413,6 +413,6 @@ export class VersionTracker {
   }
 
   private setNewVersion(version: string) {
-    this.newVersion = toVersionFormat(version, 'semver');
+    this.newVersion = toVersionFormat(version, 'salesforce');
   }
 }
