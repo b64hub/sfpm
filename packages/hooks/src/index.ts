@@ -1,6 +1,17 @@
 // ── Browserforce ────────────────────────────────────────────────────────────
 export {browserforceHooks} from './browserforce/browserforce-plugin.js';
 export type {BrowserforceHooksOptions, BrowserforcePlanEntry} from './browserforce/types.js';
+
+// ── Feed Tracking ───────────────────────────────────────────────────────────
+export {feedTrackingHooks} from './fields/feed-tracking-plugin.js';
+
+export {fieldHistoryTrackingHooks} from './fields/field-history-tracking-plugin.js';
+// ── Field History Tracking ──────────────────────────────────────────────────
+export {FieldTrackingEnabler} from './fields/field-tracking-enabler.js';
+export type {
+  FeedTrackingHooksOptions, FieldHistoryTrackingHooksOptions, FieldTrackingResult, FieldTrackingType,
+} from './fields/types.js';
+
 export {flowActivationHooks} from './flows/flow-activation-plugin.js';
 // ── Flow Activation ─────────────────────────────────────────────────────────
 export {FlowActivator} from './flows/flow-activator.js';
