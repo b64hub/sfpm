@@ -93,6 +93,7 @@ export * from './types/events.js';
 export * from './types/lifecycle.js';
 export * from './types/logger.js';
 export * from './types/npm.js';
+export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';

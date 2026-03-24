@@ -1,5 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { VersionManager, SinglePackageStrategy, AllPackagesStrategy, OrgDiffStrategy } from '../../src/project/version-manager.js';
+import { VersionManager, SinglePackageStrategy, AllPackagesStrategy, OrgDiffStrategy, GitDiffStrategy } from '../../src/project/version-manager.js';
+import { GitService } from '../../src/git/git-service.js';
 import { ProjectDefinition } from '../../src/types/project.js';
 import { OrgPackageVersionFetcher } from '../../src/types/org.js';
 import { ProjectGraph } from '../../src/project/project-graph.js';
@@ -99,6 +100,60 @@ describe('VersionManager', () => {
         const depOnA = pkgB.dependencies?.find((d: any) => d.package === 'pkg-a');
         expect(depOnA).toBeDefined();
         expect(depOnA.versionNumber).toBe('1.1.0');
+    });
+
+    describe('GitDiffStrategy', () => {
+        function createMockGitService(changedPaths: string[]): GitService {
+            return {
+                getChangedPackagePaths: vi.fn(async (_baseRef: string, packagePaths: string[]) => {
+                    return packagePaths.filter(pkgPath => changedPaths.some(cp => cp === pkgPath));
+                }),
+            } as unknown as GitService;
+        }
+
+        test('should identify changed packages from git diff', async () => {
+            const gitService = createMockGitService(['packages/pkg-a']);
+
+            const graph = new ProjectGraph(mockProject);
+            const vm = VersionManager.create(graph, mockProject);
+            const result = await vm.bump('patch', {
+                strategy: new GitDiffStrategy('main', gitService),
+            });
+
+            expect(result.packagesUpdated).toBe(1);
+            expect(result.packages[0].name).toBe('pkg-a');
+            expect(result.packages[0].newVersion).toBe('1.0.1.NEXT');
+            expect(gitService.getChangedPackagePaths).toHaveBeenCalledWith(
+                'main',
+                expect.arrayContaining(['packages/pkg-a', 'packages/pkg-b', 'packages/pkg-c']),
+            );
+        });
+
+        test('should return no packages when no files changed', async () => {
+            const gitService = createMockGitService([]);
+
+            const graph = new ProjectGraph(mockProject);
+            const vm = VersionManager.create(graph, mockProject);
+            const result = await vm.bump('patch', {
+                strategy: new GitDiffStrategy('main', gitService),
+            });
+
+            expect(result.packagesUpdated).toBe(0);
+        });
+
+        test('should identify multiple changed packages', async () => {
+            const gitService = createMockGitService(['packages/pkg-a', 'packages/pkg-c']);
+
+            const graph = new ProjectGraph(mockProject);
+            const vm = VersionManager.create(graph, mockProject);
+            const result = await vm.bump('minor', {
+                strategy: new GitDiffStrategy('main', gitService),
+            });
+
+            expect(result.packagesUpdated).toBe(2);
+            const names = result.packages.map(p => p.name).sort();
+            expect(names).toEqual(['pkg-a', 'pkg-c']);
+        });
     });
 
     describe('toSalesforceVersion', () => {

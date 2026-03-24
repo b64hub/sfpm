@@ -1,7 +1,10 @@
 import {
-  AllPackagesStrategy, GitDiffStrategy, ProjectService, SfpmCore, SinglePackageStrategy, UpdateStrategy, VersionBumpType, VersionManager, VersionUpdateResult,
+  AllPackagesStrategy, GitDiffStrategy, GitService, OrgDiffStrategy, type OrgPackageVersionFetcher, PackageService,
+  ProjectService, SfpmCore, SinglePackageStrategy, type UpdateStrategy, type VersionBumpType,
+  type VersionManager, type VersionUpdateResult,
 } from '@b64/sfpm-core';
-import {Args, Command, Flags} from '@oclif/core'
+import {Flags} from '@oclif/core'
+import {Org} from '@salesforce/core';
 import boxen from 'boxen';
 import chalk from 'chalk';
 import treeify from 'object-treeify';
@@ -73,7 +76,7 @@ export default class ProjectVersionBump extends SfpmCommand {
   };
 
   public async execute(): Promise<void> {
-    const {args, flags} = await this.parse(ProjectVersionBump)
+    const {flags} = await this.parse(ProjectVersionBump)
 
     // If projectfile is default or a file name (not a path), use current directory
     // Otherwise use the directory containing the projectfile
@@ -103,7 +106,7 @@ export default class ProjectVersionBump extends SfpmCommand {
     });
 
     try {
-      const strategy = this.getStrategy(flags);
+      const strategy = await this.getStrategy(flags, projectPath);
       const bumpType = this.getBumpType(flags);
 
       const result = await versionManager.bump(bumpType, {
@@ -117,64 +120,74 @@ export default class ProjectVersionBump extends SfpmCommand {
 
       this.outputResult(result);
       await this.save(core.project, versionManager, flags.dryrun);
-    } catch (error: any) {
+    } catch (error: unknown) {
       spinner.fail(chalk.red('Operation failed.'));
-      this.error(error.message);
+      this.error(error instanceof Error ? error.message : String(error));
     }
   }
 
-  private getBumpType(flags: any): VersionBumpType {
+  private getBumpType(flags: {major?: boolean; minor?: boolean; versionnumber?: string}): VersionBumpType {
     if (flags.major) return 'major';
     if (flags.minor) return 'minor';
     if (flags.versionnumber) return 'custom';
     return 'patch';
   }
 
-  private getStrategy(flags: any): UpdateStrategy {
+  private async getStrategy(flags: {all?: boolean; package?: string; targetorg?: string; targetref?: string}, projectPath: string): Promise<UpdateStrategy> {
     if (flags.package) {
       return new SinglePackageStrategy(flags.package);
     }
 
     if (flags.targetref) {
-      return new GitDiffStrategy(flags.targetref);
+      const gitService = await GitService.initialize(projectPath);
+      return new GitDiffStrategy(flags.targetref, gitService);
     }
 
     if (flags.targetorg) {
-      this.warn('OrgDiffStrategy not fully implemented with real org connection yet.');
-      // strategy = new OrgDiffStrategy(...);
-      return new AllPackagesStrategy();
+      const org = await Org.create({aliasOrUsername: flags.targetorg});
+      const packageService = new PackageService(org);
+      await packageService.preloadInstalled2GPPackages();
+
+      const fetcher: OrgPackageVersionFetcher = {
+        async getInstalledVersion(packageName: string): Promise<null | string> {
+          const installed = await packageService.getAllInstalled2GPPackages();
+          const match = installed.find(pkg => pkg.name === packageName);
+          return match?.versionNumber ?? null;
+        },
+      };
+
+      return new OrgDiffStrategy(fetcher);
     }
 
     if (flags.all) {
       return new AllPackagesStrategy();
     }
 
-    // Default if nothing specified? Maybe warning or All
     return new AllPackagesStrategy();
   }
 
   private outputResult(result: VersionUpdateResult) {
     this.log(chalk.bold.cyan('\nUpdated Packages:'));
 
-    // Custom format: <package-name> <old> -> <new>
-    result.packages.forEach((pkg: any) => {
+    for (const pkg of result.packages) {
       this.log(`${chalk.blue(pkg.name)}  ${chalk.red(pkg.oldVersion)} -> ${chalk.green(pkg.newVersion)}`);
-    });
+    }
 
     if (result.dependencies && result.dependencies.length > 0) {
       this.log(chalk.bold.yellow('\nDependent Package Updates:'));
 
-      // Format: <parent> - <dep> <old> -> <new>
-      const treeData: Record<string, any> = {};
-      result.dependencies.forEach((p: any) => {
+      const treeData: Record<string, Record<string, string>> = {};
+      for (const parent of result.dependencies) {
         const depNodes: Record<string, string> = {};
-        p.dependencies?.forEach((d: any) => {
-          // We don't have old version for deps easily available effectively in current output structure
-          // Assuming d.oldVersion might be '?' or we just show new
-          depNodes[d.name] = `${chalk.green(d.newVersion)}`;
-        });
-        treeData[chalk.blue(p.name)] = depNodes;
-      });
+        if (parent.dependencies) {
+          for (const dep of parent.dependencies) {
+            depNodes[dep.name] = `${chalk.green(dep.newVersion)}`;
+          }
+        }
+
+        treeData[chalk.blue(parent.name)] = depNodes;
+      }
+
       this.log(treeify(treeData));
     }
   }
@@ -191,9 +204,9 @@ export default class ProjectVersionBump extends SfpmCommand {
       const updatedDefinition = versionManager.getUpdatedDefinition();
       await projectService.saveProjectDefinition(updatedDefinition);
       spinner.succeed(chalk.green('Project saved successfully.'));
-    } catch (error: any) {
+    } catch (error: unknown) {
       spinner.fail(chalk.red('Failed to save project.'));
-      this.error(error.message);
+      this.error(error instanceof Error ? error.message : String(error));
     }
   }
 }
