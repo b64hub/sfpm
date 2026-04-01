@@ -57,7 +57,6 @@ export function browserforceHooks(options: BrowserforceHooksOptions): LifecycleH
         timing: 'post',
       },
     ],
-
     name: 'browserforce',
   };
 }
