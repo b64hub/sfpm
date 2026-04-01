@@ -1,5 +1,5 @@
 import {
-  InstallationMode, InstallationSource, InstallOrchestrator, Logger, PackageInstaller, ProjectService,
+  InstallationMode, InstallationSource, InstallOrchestrator, LifecycleEngine, Logger, PackageInstaller, ProjectService,
 } from '@b64/sfpm-core'
 import {Args, Flags} from '@oclif/core'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
@@ -70,6 +70,12 @@ export default class Install extends SfpmCommand {
 
     const sfpmConfig = projectService.getSfpmConfig();
 
+    // Create lifecycle engine and register hooks from config
+    const lifecycle = new LifecycleEngine({logger, stage: 'local'});
+    for (const hooks of sfpmConfig.hooks ?? []) {
+      lifecycle.use(hooks);
+    }
+
     const installOptions = {
       force: flags.force,
       installationKey: flags['installation-key'],
@@ -94,6 +100,7 @@ export default class Install extends SfpmCommand {
       projectGraph,
       {...installOptions, includeDependencies: !flags['no-dependencies']},
       logger,
+      lifecycle,
     )
 
     // Attach renderer to orchestrator — it forwards all installer events

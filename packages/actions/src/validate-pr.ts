@@ -3,6 +3,7 @@ import * as github from '@actions/github';
 import {
   InstallOrchestrator,
   isStructuredLogger,
+  LifecycleEngine,
   type Logger,
   ProjectService,
 } from '@b64/sfpm-core';
@@ -119,6 +120,12 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   // ------------------------------------------------------------------
   if (isStructuredLogger(logger)) logger.group('Source Deployment');
 
+  const lifecycle = new LifecycleEngine({logger, stage: 'validate'});
+  const sfpmConfig = projectService.getSfpmConfig();
+  for (const hooks of sfpmConfig.hooks ?? []) {
+    lifecycle.use(hooks);
+  }
+
   const orchestrator = InstallOrchestrator.forSource(
     projectConfig,
     projectGraph,
@@ -127,6 +134,7 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
       targetOrg: connection.username,
     },
     logger,
+    lifecycle,
   );
 
   const renderer = new ActionsProgressRenderer(logger);

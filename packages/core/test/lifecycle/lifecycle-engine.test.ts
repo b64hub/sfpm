@@ -13,7 +13,7 @@ function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     packageName: 'test-package',
     packageType: 'Source',
-    phase: 'install',
+    operation: 'install',
     timing: 'pre',
     ...overrides,
   };
@@ -46,7 +46,7 @@ describe('LifecycleEngine', () => {
     it('should register lifecycle hooks', () => {
       const handler = vi.fn();
       engine.use(createHooks({
-        hooks: [{handler, phase: 'install', timing: 'pre'}],
+        hooks: [{handler, operation: 'install', timing: 'pre'}],
       }));
 
       expect(engine.hasHooks('install', 'pre')).toBe(true);
@@ -54,11 +54,11 @@ describe('LifecycleEngine', () => {
 
     it('should register multiple hook sets', () => {
       engine.use(createHooks({
-        hooks: [{handler: vi.fn(), phase: 'install', timing: 'pre'}],
+        hooks: [{handler: vi.fn(), operation: 'install', timing: 'pre'}],
         name: 'hooks-a',
       }));
       engine.use(createHooks({
-        hooks: [{handler: vi.fn(), phase: 'install', timing: 'pre'}],
+        hooks: [{handler: vi.fn(), operation: 'install', timing: 'pre'}],
         name: 'hooks-b',
       }));
 
@@ -77,7 +77,7 @@ describe('LifecycleEngine', () => {
   describe('hook removal', () => {
     it('should remove hooks by name', () => {
       engine.use(createHooks({
-        hooks: [{handler: vi.fn(), phase: 'install', timing: 'pre'}],
+        hooks: [{handler: vi.fn(), operation: 'install', timing: 'pre'}],
         name: 'removable',
       }));
 
@@ -94,18 +94,18 @@ describe('LifecycleEngine', () => {
 
     it('should clear all hooks', () => {
       engine.use(createHooks({
-        hooks: [{handler: vi.fn(), phase: 'install', timing: 'pre'}],
+        hooks: [{handler: vi.fn(), operation: 'install', timing: 'pre'}],
         name: 'a',
       }));
       engine.use(createHooks({
-        hooks: [{handler: vi.fn(), phase: 'build', timing: 'post'}],
+        hooks: [{handler: vi.fn(), operation: 'build', timing: 'post'}],
         name: 'b',
       }));
 
       engine.clear();
 
       expect(engine.getRegisteredHookNames()).toEqual([]);
-      expect(engine.getRegisteredPhases()).toEqual([]);
+      expect(engine.getRegisteredOperations()).toEqual([]);
     });
   });
 
@@ -122,7 +122,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push(1);
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'first',
@@ -132,7 +132,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push(2);
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'second',
@@ -142,7 +142,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push(3);
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'third',
@@ -162,7 +162,7 @@ describe('LifecycleEngine', () => {
             await new Promise(r => setTimeout(r, 20));
             order.push(1);
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'slow',
@@ -172,7 +172,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push(2);
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'fast',
@@ -188,13 +188,13 @@ describe('LifecycleEngine', () => {
       const receivedContext = vi.fn();
 
       engine.use(createHooks({
-        hooks: [{handler: receivedContext, phase: 'install', timing: 'pre'}],
+        hooks: [{handler: receivedContext, operation: 'install', timing: 'pre'}],
       }));
 
       const context = createContext({packageName: 'my-pkg'});
       await engine.run('install', 'pre', context);
 
-      expect(receivedContext).toHaveBeenCalledWith(context);
+      expect(receivedContext).toHaveBeenCalledWith({...context, stage: 'local'});
     });
 
     it('should throw on first error', async () => {
@@ -205,13 +205,13 @@ describe('LifecycleEngine', () => {
           handler() {
             throw new Error('first failed');
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'failing',
       }));
       engine.use(createHooks({
-        hooks: [{handler: secondHandler, phase: 'install', timing: 'pre'}],
+        hooks: [{handler: secondHandler, operation: 'install', timing: 'pre'}],
         name: 'second',
       }));
 
@@ -236,7 +236,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push('normal');
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'normal',
@@ -247,7 +247,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push('enforce-pre');
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'pre-hooks',
@@ -258,7 +258,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push('enforce-post');
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'post-hooks',
@@ -278,7 +278,7 @@ describe('LifecycleEngine', () => {
             order.push('order-post');
           },
           options: {order: 'post'},
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'hook-post',
@@ -289,7 +289,7 @@ describe('LifecycleEngine', () => {
             order.push('order-pre');
           },
           options: {order: 'pre'},
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'hook-pre',
@@ -299,7 +299,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push('default');
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'default',
@@ -321,7 +321,7 @@ describe('LifecycleEngine', () => {
             order.push('enforce-post:order-pre');
           },
           options: {order: 'pre'},
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'ep-op',
@@ -335,7 +335,7 @@ describe('LifecycleEngine', () => {
             order.push('enforce-pre:order-post');
           },
           options: {order: 'post'},
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'ep-op2',
@@ -347,7 +347,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push('default:default');
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'dd',
@@ -370,7 +370,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push('a');
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'a',
@@ -380,7 +380,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push('b');
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'b',
@@ -390,7 +390,7 @@ describe('LifecycleEngine', () => {
           handler() {
             order.push('c');
           },
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'c',
@@ -414,7 +414,7 @@ describe('LifecycleEngine', () => {
         hooks: [{
           handler,
           options: {filter: ctx => ctx.packageType === 'Unlocked'},
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
       }));
@@ -436,13 +436,13 @@ describe('LifecycleEngine', () => {
         hooks: [{
           handler: filteredHandler,
           options: {filter: () => false},
-          phase: 'install',
+          operation: 'install',
           timing: 'pre',
         }],
         name: 'filtered',
       }));
       engine.use(createHooks({
-        hooks: [{handler: unfilteredHandler, phase: 'install', timing: 'pre'}],
+        hooks: [{handler: unfilteredHandler, operation: 'install', timing: 'pre'}],
         name: 'unfiltered',
       }));
 
@@ -454,19 +454,19 @@ describe('LifecycleEngine', () => {
   });
 
   // --------------------------------------------------------------------------
-  // Phase-agnostic execution
+  // Operation-agnostic execution
   // --------------------------------------------------------------------------
 
-  describe('phase-agnostic execution', () => {
-    it('should run hooks for any phase:timing without prior registration', async () => {
+  describe('operation-agnostic execution', () => {
+    it('should run hooks for any operation:timing without prior registration', async () => {
       const handler = vi.fn();
 
       engine.use(createHooks({
-        hooks: [{handler, phase: 'custom-phase', timing: 'custom-timing'}],
+        hooks: [{handler, operation: 'custom-operation', timing: 'custom-timing'}],
       }));
 
-      await engine.run('custom-phase', 'custom-timing', createContext({
-        phase: 'custom-phase',
+      await engine.run('custom-operation', 'custom-timing', createContext({
+        operation: 'custom-operation',
         timing: 'custom-timing',
       }));
 
@@ -484,9 +484,9 @@ describe('LifecycleEngine', () => {
       await expect(engine.run('install', 'pre', createContext())).resolves.toBeUndefined();
     });
 
-    it('should not throw when hooks exist for different phase:timing', async () => {
+    it('should not throw when hooks exist for different operation:timing', async () => {
       engine.use(createHooks({
-        hooks: [{handler: vi.fn(), phase: 'build', timing: 'pre'}],
+        hooks: [{handler: vi.fn(), operation: 'build', timing: 'pre'}],
       }));
 
       // Run install:pre — no hooks registered for it
@@ -499,27 +499,27 @@ describe('LifecycleEngine', () => {
   // --------------------------------------------------------------------------
 
   describe('introspection', () => {
-    it('should report registered phases', () => {
+    it('should report registered operations', () => {
       engine.use(createHooks({
         hooks: [
-          {handler: vi.fn(), phase: 'build', timing: 'pre'},
-          {handler: vi.fn(), phase: 'install', timing: 'post'},
+          {handler: vi.fn(), operation: 'build', timing: 'pre'},
+          {handler: vi.fn(), operation: 'install', timing: 'post'},
         ],
       }));
 
-      const phases = engine.getRegisteredPhases();
-      expect(phases).toContain('build');
-      expect(phases).toContain('install');
-      expect(phases).toHaveLength(2);
+      const operations = engine.getRegisteredOperations();
+      expect(operations).toContain('build');
+      expect(operations).toContain('install');
+      expect(operations).toHaveLength(2);
     });
 
     it('should report registered hook names', () => {
       engine.use(createHooks({
-        hooks: [{handler: vi.fn(), phase: 'build', timing: 'pre'}],
+        hooks: [{handler: vi.fn(), operation: 'build', timing: 'pre'}],
         name: 'alpha',
       }));
       engine.use(createHooks({
-        hooks: [{handler: vi.fn(), phase: 'install', timing: 'pre'}],
+        hooks: [{handler: vi.fn(), operation: 'install', timing: 'pre'}],
         name: 'beta',
       }));
 
@@ -527,7 +527,7 @@ describe('LifecycleEngine', () => {
     });
 
     it('should return empty arrays when no hooks registered', () => {
-      expect(engine.getRegisteredPhases()).toEqual([]);
+      expect(engine.getRegisteredOperations()).toEqual([]);
       expect(engine.getRegisteredHookNames()).toEqual([]);
     });
   });
@@ -550,7 +550,7 @@ describe('LifecycleEngine', () => {
       const loggedEngine = new LifecycleEngine({logger});
 
       loggedEngine.use(createHooks({
-        hooks: [{handler: vi.fn(), phase: 'install', timing: 'pre'}],
+        hooks: [{handler: vi.fn(), operation: 'install', timing: 'pre'}],
         name: 'test-hooks',
       }));
 

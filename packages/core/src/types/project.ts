@@ -16,6 +16,25 @@ export interface PackageOptions {
   build?: BuildOptions;
   deploy?: DeploymentOptions;
   envAliased?: boolean;
+  /**
+   * Per-package hook configuration.
+   *
+   * Keys are hook names (matching `LifecycleHooks.name`). Values control
+   * whether the hook runs for this package and provide hook-specific overrides.
+   *
+   * Use `false` as shorthand to disable a hook entirely:
+   * ```json
+   * { "hooks": { "profiles": false } }
+   * ```
+   *
+   * Use an object to override specific settings:
+   * ```json
+   * { "hooks": { "permission-set": { "post": ["AdminPermSet"] } } }
+   * ```
+   *
+   * Hooks not listed here use their global defaults from `sfpm.config.ts`.
+   */
+  hooks?: Record<string, boolean | PackageHookConfig>;
   ignore?: string[];
   skip?: string[];
   validate?: any;
@@ -25,12 +44,43 @@ export interface BuildOptions {
   skipValidation?: boolean;
 }
 
+/**
+ * Per-package override for a single lifecycle hook.
+ *
+ * Placed under `packageOptions.hooks[hookName]` in `sfdx-project.json`.
+ * Each hook defines its own config shape — the only universal field is
+ * `enabled`, which controls whether the hook runs for this package.
+ *
+ * @example
+ * ```json
+ * {
+ *   "packageOptions": {
+ *     "hooks": {
+ *       "permission-set": { "post": ["AdminPermSet"] },
+ *       "profiles": false,
+ *       "flow-activation": { "enabled": true, "skipAlreadyActive": true }
+ *     }
+ *   }
+ * }
+ * ```
+ */
+export interface PackageHookConfig {
+  /** Hook-specific configuration — each hook defines its own shape. */
+  [key: string]: unknown;
+  /** Whether this hook should run for this package. Defaults to `true`. */
+  enabled?: boolean;
+}
+
+/**
+ * Build and deployment configuration for a package.
+ *
+ * Controls build-time and deploy-time behavior that is not hook-specific:
+ * script assembly, optimized deployment, etc.
+ */
 export interface DeploymentOptions {
   optimize?: boolean;
   post?: {
-    assignPermSets?: string[];
     destructiveChanges?: string;
-    script?: string;
     settings?: {
       FHT?: boolean;
       FT?: boolean;
@@ -38,10 +88,7 @@ export interface DeploymentOptions {
     // unpackagedMetadata?: { path: string };
   }
   pre?: {
-    assignPermSets?: string[];
     destructiveChanges?: string;
-    reconcileProfiles?: boolean;
-    script?: string;
     // unpackagedMetadata?: { path: string };
   },
 }
@@ -90,16 +137,11 @@ export const PackageDefinitionSchema = z.intersection(
       deploy: z.object({
         optimize: z.boolean().optional(),
         post: z.object({
-          assignPermSets: z.array(z.string()).optional(),
           destructiveChanges: z.string().optional(),
-          script: z.string().optional(),
           unpackagedMetadata: z.object({path: z.string()}).optional(),
         }).optional(),
         pre: z.object({
-          assignPermSets: z.array(z.string()).optional(),
           destructiveChanges: z.string().optional(),
-          reconcileProfiles: z.boolean().optional(),
-          script: z.string().optional(),
           settings: z.object({
             FHT: z.boolean().optional(),
           }).optional(),
@@ -107,6 +149,10 @@ export const PackageDefinitionSchema = z.intersection(
         }).optional(),
       }).optional(),
       envAliased: z.string().optional(),
+      hooks: z.record(
+        z.string(),
+        z.union([z.boolean(), z.record(z.string(), z.unknown())]),
+      ).optional(),
       ignore: z.array(z.string()).optional(),
       skip: z.array(z.string()).optional(),
     }).optional(),

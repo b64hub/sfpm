@@ -1,7 +1,7 @@
 import {EventEmitter} from 'node:events';
 import semver, {ReleaseType} from 'semver';
-import {simpleGit} from 'simple-git';
 
+import {GitService} from '../git/git-service.js';
 import {OrgPackageVersionFetcher} from '../types/org.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {
@@ -57,7 +57,7 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
    * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'semver', { strict: false, resolveTokens: true })`.
    */
   public static cleanVersion(version: string): string {
-    return toVersionFormat(version, 'semver', {strict: false, resolveTokens: true});
+    return toVersionFormat(version, 'semver', {resolveTokens: true, strict: false});
   }
 
   /**
@@ -80,20 +80,20 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
   }
 
   /**
-   * Converts an npm/semver-style version to the Salesforce 4-part format.
-   * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'salesforce')`.
-   */
-  public static toSalesforceVersion(version: string): string {
-    return toVersionFormat(version, 'salesforce');
-  }
-
-  /**
    * Normalizes and validates a version string.
    * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'semver')`.
    */
   public static normalizeVersion(version: string): string {
     if (!version) return '0.0.0.0'; // Legacy default preserved
     return toVersionFormat(version, 'semver');
+  }
+
+  /**
+   * Converts an npm/semver-style version to the Salesforce 4-part format.
+   * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'salesforce')`.
+   */
+  public static toSalesforceVersion(version: string): string {
+    return toVersionFormat(version, 'salesforce');
   }
 
   /**
@@ -196,24 +196,18 @@ export class SinglePackageStrategy implements UpdateStrategy {
 }
 
 export class GitDiffStrategy implements UpdateStrategy {
-  constructor(private baseRef: string, private gitCwd: string = '.') { }
+  constructor(private baseRef: string, private gitService: GitService) { }
 
   async getUpdatedPackages(packages: VersionTracker[]): Promise<VersionTracker[]> {
-    const git = simpleGit(this.gitCwd);
-    const changedFiles = await git.diff([
-      '--name-only',
-      this.baseRef,
-    ]);
+    const packagePaths = packages
+    .map(pkg => pkg.path)
+    .filter(Boolean);
 
-    const changedFilesList = changedFiles.split('\n').filter(Boolean);
+    const changedPaths = new Set(await this.gitService.getChangedPackagePaths(this.baseRef, packagePaths));
 
-    // Naive implementation: check if file path is within package path
-    // This assumes package path is relative to git root or project root
-    return packages.filter(pkg => {
-      if (!pkg.path) return false;
-      // Normalize paths to be sure
-      return changedFilesList.some((file: string) => file.startsWith(pkg.path));
-    });
+    if (changedPaths.size === 0) return [];
+
+    return packages.filter(pkg => pkg.path && changedPaths.has(pkg.path));
   }
 }
 
@@ -279,7 +273,7 @@ export class VersionTracker {
   }
 
   get isUpdated(): boolean {
-    return this.newVersion !== null;
+    return this.newVersion !== null || this.updatedDependencies.size > 0;
   }
 
   // Proxy properties for backward compatibility and convenience
@@ -413,6 +407,6 @@ export class VersionTracker {
   }
 
   private setNewVersion(version: string) {
-    this.newVersion = toVersionFormat(version, 'semver');
+    this.newVersion = toVersionFormat(version, 'salesforce');
   }
 }

@@ -1,6 +1,7 @@
 import EventEmitter from 'node:events';
 
 import {GitService} from '../git/git-service.js';
+import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {BuildOptions, PackageBuilder} from '../package/package-builder.js';
 import ProjectConfig from '../project/project-config.js';
 import {ProjectGraph} from '../project/project-graph.js';
@@ -10,6 +11,7 @@ import {
   OrchestrationResult,
   PackageResult,
 } from '../types/events.js';
+import {HookContext} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {
   OrchestrationTask,
@@ -31,6 +33,7 @@ export interface BuildOrchestratorOptions extends BuildOptions, OrchestratorOpti
  * to PackageBuilder, forwarding all builder events through the emitter.
  */
 export class BuildOrchestrationTask implements OrchestrationTask<GitService | undefined> {
+  private readonly lifecycle: LifecycleEngine | undefined;
   private readonly logger: Logger | undefined;
   private readonly options: BuildOptions;
   private readonly projectConfig: ProjectConfig;
@@ -41,11 +44,13 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     options: BuildOptions,
     logger?: Logger,
     projectDirectory: string = process.cwd(),
+    lifecycle?: LifecycleEngine,
   ) {
     this.projectConfig = projectConfig;
     this.options = options;
     this.logger = logger;
     this.projectDirectory = projectDirectory;
+    this.lifecycle = lifecycle;
   }
 
   async processSinglePackage(
@@ -55,6 +60,18 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     emitter: OrchestratorEmitter,
   ): Promise<PackageResult> {
     const start = Date.now();
+
+    // Check if this package should be skipped for the current lifecycle stage
+    if (this.lifecycle) {
+      const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+      const skipStages = packageDefinition.packageOptions?.skip ?? [];
+      if (skipStages.includes(this.lifecycle.stage)) {
+        this.logger?.info(`Skipping '${packageName}' — stage '${this.lifecycle.stage}' is in skip list`);
+        return {
+          duration: 0, packageName, skipped: true, success: true,
+        };
+      }
+    }
 
     const builder = new PackageBuilder(
       this.projectConfig,
@@ -75,7 +92,19 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     });
 
     try {
+      // Run pre-build hooks
+      if (this.lifecycle) {
+        const hookContext = this.buildHookContext(packageName);
+        await this.lifecycle.run('build', 'pre', hookContext);
+      }
+
       await builder.buildPackage(packageName, this.projectDirectory);
+
+      // Run post-build hooks (only if not skipped)
+      if (this.lifecycle && !skipped) {
+        const hookContext = this.buildHookContext(packageName);
+        await this.lifecycle.run('build', 'post', hookContext);
+      }
     } catch (error_) {
       success = false;
       error = error_ instanceof Error ? error_.message : String(error_);
@@ -91,6 +120,24 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
 
   async setup(): Promise<GitService | undefined> {
     return GitService.initialize(this.projectDirectory, this.logger);
+  }
+
+  /**
+   * Build a {@link HookContext} for lifecycle hooks at the build operation.
+   */
+  private buildHookContext(packageName: string): HookContext {
+    const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+
+    return {
+      logger: this.logger,
+      operation: 'build',
+      packageName,
+      packageType: packageDefinition.type,
+      projectDir: this.projectDirectory,
+      sfpmPackage: {packageDefinition},
+      stage: this.lifecycle?.stage ?? 'local',
+      timing: '',
+    };
   }
 
   private forwardBuilderEvents(builder: PackageBuilder, emitter: OrchestratorEmitter): void {
@@ -158,9 +205,10 @@ export class BuildOrchestrator extends EventEmitter<AllBuildEvents & Orchestrati
     options: BuildOrchestratorOptions,
     logger?: Logger,
     projectDirectory: string = process.cwd(),
+    lifecycle?: LifecycleEngine,
   ) {
     super();
-    const task = new BuildOrchestrationTask(projectConfig, options, logger, projectDirectory);
+    const task = new BuildOrchestrationTask(projectConfig, options, logger, projectDirectory, lifecycle);
     this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: false}, task, logger, this);
   }
 

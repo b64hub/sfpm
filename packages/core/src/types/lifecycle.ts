@@ -8,28 +8,30 @@ import {Logger} from './logger.js';
  * Context provided to lifecycle hook handlers.
  *
  * Contains the minimum information guaranteed to be available at any
- * point in the lifecycle. Phase-specific integrations will extend this
+ * point in the lifecycle. Operation-specific integrations will extend this
  * with richer context (e.g., org connection, component set, resolved artifact)
  * when the lifecycle engine is wired into orchestrators.
  *
- * The index signature allows orchestrators to pass additional phase-specific
+ * The index signature allows orchestrators to pass additional operation-specific
  * data without requiring type changes in core.
  */
 export interface HookContext {
-  /** The lifecycle phase being executed (e.g., 'build', 'install') */
-  phase: string;
-  /** The timing within the phase (e.g., 'pre', 'post') */
-  timing: string;
+  /** Arbitrary operation-specific data — orchestrators extend this at integration time */
+  [key: string]: unknown;
+  /** Logger instance for the current operation */
+  logger?: Logger;
+  /** The concrete operation being executed (e.g., 'build', 'install') */
+  operation: string;
   /** Current package name being processed */
   packageName?: string;
   /** Package type identifier (e.g., 'Source', 'Unlocked') */
   packageType?: string;
   /** Project root directory */
   projectDir?: string;
-  /** Logger instance for the current operation */
-  logger?: Logger;
-  /** Arbitrary phase-specific data — orchestrators extend this at integration time */
-  [key: string]: unknown;
+  /** The lifecycle stage that triggered this invocation (e.g., 'validate', 'deploy', 'local') */
+  stage: string;
+  /** The timing within the operation (e.g., 'pre', 'post') */
+  timing: string;
 }
 
 // ============================================================================
@@ -51,42 +53,51 @@ export type HookHandler = (context: HookContext) => Promise<void> | void;
  */
 export interface HookOptions {
   /**
-   * Per-hook ordering within a timing slot.
-   * - `'pre'`: runs before default-ordered handlers
-   * - `'post'`: runs after default-ordered handlers
-   * - `undefined`: runs in registration order between 'pre' and 'post'
-   */
-  order?: 'pre' | 'post';
-
-  /**
    * Optional filter predicate. If provided, the hook only runs
    * when the filter returns true for the given context.
    * Enables per-package or per-type control.
    */
   filter?: (context: HookContext) => boolean;
+
+  /**
+   * Per-hook ordering within a timing slot.
+   * - `'pre'`: runs before default-ordered handlers
+   * - `'post'`: runs after default-ordered handlers
+   * - `undefined`: runs in registration order between 'pre' and 'post'
+   */
+  order?: 'post' | 'pre';
+
+  /**
+   * Restrict this hook to specific lifecycle stages.
+   * When omitted, the hook runs on **all** stages.
+   * When set, the hook only executes when the engine's stage is in this list.
+   *
+   * @example `['deploy', 'local']` — skip during validate and provision
+   */
+  stages?: string[];
 }
 
 /**
- * A single hook registration combining a phase:timing target with a handler.
+ * A single hook registration combining an operation:timing target with a handler.
  */
 export interface HookRegistration {
-  /** Phase name (e.g., 'build', 'install', 'validate', 'prepare') */
-  phase: string;
-
-  /**
-   * Timing within the phase.
-   * - `'pre'`: runs before the main phase action (sequential)
-   * - `'post'`: runs after the main phase action (sequential)
-   *
-   * Modules may define custom timings for their own phases.
-   */
-  timing: string;
-
   /** The handler function to execute */
   handler: HookHandler;
 
-  /** Optional execution options (ordering, filtering) */
+  /** Operation name (e.g., 'build', 'install') */
+  operation: string;
+
+  /** Optional execution options (ordering, filtering, stage restriction) */
   options?: HookOptions;
+
+  /**
+   * Timing within the operation.
+   * - `'pre'`: runs before the main operation action (sequential)
+   * - `'post'`: runs after the main operation action (sequential)
+   *
+   * Modules may define custom timings for their own operations.
+   */
+  timing: string;
 }
 
 // ============================================================================
@@ -94,7 +105,7 @@ export interface HookRegistration {
 // ============================================================================
 
 /**
- * A named set of lifecycle hooks that participate in package lifecycle phases.
+ * A named set of lifecycle hooks that participate in package lifecycle operations.
  *
  * `LifecycleHooks` is the lightweight extension mechanism for SFPM. It allows
  * modules (profiles, orgs, etc.) to inject behavior at specific points in the
@@ -112,7 +123,7 @@ export interface HookRegistration {
  *     name: 'profiles',
  *     hooks: [
  *       {
- *         phase: 'install',
+ *         operation: 'install',
  *         timing: 'pre',
  *         handler: async (ctx) => {
  *           // runs before each package install
@@ -124,15 +135,15 @@ export interface HookRegistration {
  * ```
  */
 export interface LifecycleHooks {
-  /** Unique name identifying this set of hooks */
-  name: string;
-
   /**
    * Set-level ordering. Sets with `enforce: 'pre'` have all their hooks
    * run before normal sets; `enforce: 'post'` run after.
    */
-  enforce?: 'pre' | 'post';
+  enforce?: 'post' | 'pre';
 
   /** The hook registrations provided by this module */
   hooks: HookRegistration[];
+
+  /** Unique name identifying this set of hooks */
+  name: string;
 }

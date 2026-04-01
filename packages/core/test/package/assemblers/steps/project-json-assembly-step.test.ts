@@ -90,10 +90,9 @@ describe('ProjectJsonAssemblyStep', () => {
         expect(writtenManifest.packageDirectories[0].unpackagedMetadata).toBeUndefined();
     });
 
-    it('should inject script paths if they exist', async () => {
+    it('should not inject script paths into deploy options', async () => {
         (fs.pathExists as any).mockImplementation((p: string) => {
-            if (p === path.join('/staging', 'scripts', 'preDeployment')) return Promise.resolve(true);
-            if (p === path.join('/staging', 'scripts', 'postDeployment')) return Promise.resolve(true);
+            if (p === path.join('/staging', 'scripts', 'pre', 'setup.sh')) return Promise.resolve(true);
             return Promise.resolve(false);
         });
         (fs.writeJSON as any).mockResolvedValue(undefined);
@@ -102,21 +101,9 @@ describe('ProjectJsonAssemblyStep', () => {
 
         await step.execute(options, output);
 
-        expect(fs.writeJSON).toHaveBeenCalledWith(
-            path.join('/staging', 'sfdx-project.json'),
-            expect.objectContaining({
-                packageDirectories: [
-                    expect.objectContaining({
-                        packageOptions: expect.objectContaining({
-                            deploy: expect.objectContaining({
-                                pre: { script: path.join('scripts', 'preDeployment') },
-                                post: { script: path.join('scripts', 'postDeployment') }
-                            })
-                        })
-                    })
-                ]
-            }),
-            { spaces: 4 }
-        );
+        const writtenManifest = (fs.writeJSON as any).mock.calls[0][1];
+        const pkg = writtenManifest.packageDirectories[0];
+        expect(pkg.packageOptions?.deploy?.pre?.script).toBeUndefined();
+        expect(pkg.packageOptions?.deploy?.post?.script).toBeUndefined();
     });
 });
