@@ -657,6 +657,10 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
     if (options.isSkipValidation !== undefined) {
       set(this.metadata, 'orchestration.buildOptions.isSkipValidation', options.isSkipValidation);
     }
+
+    if (options.isAsyncValidation !== undefined) {
+      set(this.metadata, 'orchestration.buildOptions.isAsyncValidation', options.isAsyncValidation);
+    }
   }
 
   /**

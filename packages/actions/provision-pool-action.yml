@@ -1,0 +1,63 @@
+name: 'SFPM Provision Pool'
+description: 'Provision scratch orgs or sandboxes to fill a pool'
+author: 'b64'
+
+branding:
+  icon: 'plus-circle'
+  color: 'green'
+
+inputs:
+  devhub-username:
+    description: 'DevHub (or production org for sandboxes) username or alias'
+    required: true
+  pool-tag:
+    description: 'Pool tag to provision orgs for'
+    required: true
+  max-allocation:
+    description: 'Maximum number of orgs to allocate'
+    required: true
+  pool-type:
+    description: 'Pool type: scratchOrg or sandbox (default: scratchOrg)'
+    required: false
+    default: 'scratchOrg'
+  definition-file:
+    description: 'Scratch org definition file path (required for scratch org pools)'
+    required: false
+  expiry-days:
+    description: 'Scratch org expiry in days (default: 7)'
+    required: false
+  batch-size:
+    description: 'Max concurrent org creations (default: 5)'
+    required: false
+  license-type:
+    description: 'Sandbox license type: DEVELOPER, DEVELOPER PRO, FULL, PARTIAL'
+    required: false
+  sandbox-name-pattern:
+    description: 'Sandbox name prefix (e.g., SB → SB1, SB2, ...)'
+    required: false
+  source-sandbox:
+    description: 'Source sandbox name to clone from'
+    required: false
+  group-name:
+    description: 'Sandbox activation user group name'
+    required: false
+
+outputs:
+  success:
+    description: 'Whether all orgs were provisioned successfully (true/false)'
+  tag:
+    description: 'The pool tag'
+  succeeded:
+    description: 'Number of orgs successfully provisioned'
+  failed:
+    description: 'Number of orgs that failed to provision'
+  duration:
+    description: 'Total provisioning duration in milliseconds'
+  org-usernames:
+    description: 'Comma-separated list of provisioned org usernames'
+  result:
+    description: 'Full JSON result'
+
+runs:
+  using: 'node20'
+  main: 'dist/provision-pool-main.js'

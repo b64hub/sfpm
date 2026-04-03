@@ -166,6 +166,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
           hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
           packageId: result.Package2Id,
           packageName: this.sfpmPackage.packageName,
+          packageVersionCreateRequestId: result.Id,
           packageVersionId: result.SubscriberPackageVersionId,
           status: result.Status,
           subscriberPackageVersionId: result.SubscriberPackageVersionId,

@@ -1,0 +1,44 @@
+name: 'SFPM Build Resume'
+description: 'Resume build validation for unlocked packages. Polls Salesforce for async validation completion.'
+author: 'b64'
+
+branding:
+  icon: 'refresh-cw'
+  color: 'blue'
+
+inputs:
+  devhub-username:
+    description: 'DevHub username or alias (overrides cached value from build step)'
+    required: false
+  run-id:
+    description: 'GitHub Actions run ID to restore build state from (defaults to current run)'
+    required: false
+  max-wait-minutes:
+    description: 'Maximum time to poll for validation completion in minutes (default: 120)'
+    required: false
+    default: '120'
+  polling-interval-seconds:
+    description: 'Time between validation status checks in seconds (default: 30)'
+    required: false
+    default: '30'
+  project-dir:
+    description: 'Path to the SFPM project directory (defaults to workspace root)'
+    required: false
+
+outputs:
+  success:
+    description: 'Whether all validations passed (true/false)'
+  duration:
+    description: 'Total resume duration in milliseconds'
+  validated-count:
+    description: 'Number of packages that passed validation'
+  failed-count:
+    description: 'Number of packages that failed validation'
+  failed-packages:
+    description: 'Comma-separated list of packages that failed validation'
+  result:
+    description: 'Full JSON result with per-package validation outcomes'
+
+runs:
+  using: 'node20'
+  main: 'dist/build-resume-main.js'

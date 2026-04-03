@@ -25,6 +25,8 @@ export interface BuildOptions {
   ignoreFilesConfig?: IgnoreFilesConfig;
   installationKey?: string;
   installationKeyBypass?: boolean;
+  /** Use async validation for unlocked packages — returns immediately with a creation request ID */
+  isAsyncValidation?: boolean;
   isSkipValidation?: boolean;
   /** npm scope for package publishing (e.g., "@myorg") */
   npmScope?: string;
@@ -101,6 +103,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     sfpmPackage.setOrchestrationOptions({
       installationkey: this.options.installationKey,
       installationkeybypass: this.options.installationKeyBypass,
+      isAsyncValidation: this.options.isAsyncValidation,
       isSkipValidation: this.options.isSkipValidation,
     });
 

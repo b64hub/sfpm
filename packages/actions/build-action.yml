@@ -1,0 +1,50 @@
+name: 'SFPM Build'
+description: 'Build SFPM packages with async validation for unlocked packages. Returns immediately with creation request IDs while Salesforce validates in the background. Outputs artifact tarballs and caches build state for the resume step.'
+author: 'b64'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  devhub-username:
+    description: 'DevHub username or alias (required for unlocked packages)'
+    required: false
+  packages:
+    description: 'Comma-separated list of packages to build. Defaults to all packages.'
+    required: false
+  force:
+    description: 'Force build even if no source changes detected'
+    required: false
+    default: 'false'
+  include-dependencies:
+    description: 'Build transitive dependencies of requested packages (default: true)'
+    required: false
+    default: 'true'
+  build-number:
+    description: 'Build number for package versions'
+    required: false
+  installation-key:
+    description: 'Installation key for unlocked packages'
+    required: false
+  project-dir:
+    description: 'Path to the SFPM project directory (defaults to workspace root)'
+    required: false
+
+outputs:
+  success:
+    description: 'Whether all builds succeeded (true/false)'
+  artifacts-dir:
+    description: 'Path to the artifacts directory containing built tarballs'
+  duration:
+    description: 'Total build duration in milliseconds'
+  state-cached:
+    description: 'Whether build state was cached for the resume step (true/false)'
+  failed-packages:
+    description: 'Comma-separated list of packages that failed to build'
+  result:
+    description: 'Full JSON result with per-package outcomes'
+
+runs:
+  using: 'node20'
+  main: 'dist/build-main.js'
