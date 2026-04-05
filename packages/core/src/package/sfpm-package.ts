@@ -454,10 +454,15 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     const content = await this.resolveContentMetadata();
     const orchestration = await this.resolveOrchestrationMetadata();
 
-    return merge({}, this._metadata, {
+    const metadata = merge({}, this._metadata, {
       content,
       orchestration: {
         ...orchestration,
+        // Persist only build properties that describe artifact state, not runtime parameters
+        build: {
+          ...(this._metadata.orchestration?.build?.isCoverageEnabled !== undefined
+            && {isCoverageEnabled: this._metadata.orchestration.build.isCoverageEnabled}),
+        },
         install: {
           ...orchestration.install,
           isTriggerAllTests: this.isTriggerAllTests,
@@ -467,6 +472,8 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
       packageType: this.type || this.packageDefinition?.type,
       versionNumber: this.version || this.packageDefinition?.versionNumber,
     });
+
+    return metadata;
   }
 
   public updateContent(newContent: Partial<SfpmPackageContent>): void {
@@ -507,14 +514,11 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     const components = cs.getSourceComponents();
 
     return {
-      apex: {
-        all: this.apexClasses.map(f => f.fullName),
-      },
-      fields: {
-        all: this.customFields.map(f => f.fullName),
-      },
+      apex: {},
+      fields: {},
       metadataCount: components.toArray().length,
       payload: await cs.getObject(),
+      testCoverage: this.testCoverage,
     };
   }
 

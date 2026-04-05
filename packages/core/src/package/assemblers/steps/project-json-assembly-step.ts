@@ -32,9 +32,6 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
       }
 
       const pkg = prunedManifest.packageDirectories[0] as PackageDefinition;
-      if (!pkg.packageOptions) {
-        pkg.packageOptions = {};
-      }
 
       // use absolute path for unpackaged metadata
       const unpackagedMetadataDir = path.join(output.stagingDirectory, 'unpackagedMetadata');

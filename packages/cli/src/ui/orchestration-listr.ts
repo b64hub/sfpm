@@ -389,7 +389,7 @@ export class OrchestrationListrManager {
                               title: '' as any,
                             },
                           ],
-                          {concurrent: true, exitOnError: false},
+                          {concurrent: true, exitOnError: false, rendererOptions: {collapseSubtasks: true}},
                         );
                       }
                     }
@@ -405,7 +405,6 @@ export class OrchestrationListrManager {
               exitOnError: false,
               rendererOptions: {
                 collapseErrors: false,
-                collapseSubtasks: true,
               },
             },
           );

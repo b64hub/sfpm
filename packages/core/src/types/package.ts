@@ -110,7 +110,6 @@ export interface SfpmPackageOrchestration {
 
 export interface SfpmPackageBuildOptions {
   isCoverageEnabled?: boolean;
-  waitTime?: number;
 }
 
 export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions {
@@ -119,6 +118,8 @@ export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions
   isAsyncValidation?: boolean;
   isSkipValidation?: boolean;
   postInstallScript?: string;
+  /** Runtime-only: timeout in minutes for package version creation. Not persisted to artifacts. */
+  waitTime?: number;
 }
 
 /**
