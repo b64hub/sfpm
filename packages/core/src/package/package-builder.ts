@@ -31,6 +31,8 @@ export interface BuildOptions {
   /** npm scope for package publishing (e.g., "@myorg") */
   npmScope?: string;
   orgDefinitionPath?: string;
+  /** Timeout in minutes for package version creation (default: 120) */
+  waitTime?: number;
 }
 
 /**
@@ -80,7 +82,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     // Merge build options from package definition
     if (sfpmPackage.packageDefinition?.packageOptions?.build) {
       merge(sfpmPackage.metadata.orchestration, {
-        buildOptions: sfpmPackage.packageDefinition.packageOptions.build,
+        build: sfpmPackage.packageDefinition.packageOptions.build,
       });
     }
 
@@ -105,6 +107,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       installationkeybypass: this.options.installationKeyBypass,
       isAsyncValidation: this.options.isAsyncValidation,
       isSkipValidation: this.options.isSkipValidation,
+      waitTime: this.options.waitTime,
     });
 
     await this.stagePackage(sfpmPackage);

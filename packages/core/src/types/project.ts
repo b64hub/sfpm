@@ -14,7 +14,7 @@ export type PackageDir = ProjectJson['packageDirectories'][number];
 export interface PackageOptions {
   [key: string]: any;
   build?: BuildOptions;
-  deploy?: DeploymentOptions;
+  deploy?: InstallOptions;
   envAliased?: boolean;
   /**
    * Per-package hook configuration.
@@ -77,19 +77,16 @@ export interface PackageHookConfig {
  * Controls build-time and deploy-time behavior that is not hook-specific:
  * script assembly, optimized deployment, etc.
  */
-export interface DeploymentOptions {
+export interface InstallOptions {
+  isTriggerAllTests?: boolean;
   optimize?: boolean;
   post?: {
     destructiveChanges?: string;
-    settings?: {
-      FHT?: boolean;
-      FT?: boolean;
-    };
-    // unpackagedMetadata?: { path: string };
+    unpackagedMetadata?: {path: string};
   }
   pre?: {
     destructiveChanges?: string;
-    // unpackagedMetadata?: { path: string };
+    unpackagedMetadata?: {path: string};
   },
 }
 

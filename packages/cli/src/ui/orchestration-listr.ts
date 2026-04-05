@@ -405,6 +405,7 @@ export class OrchestrationListrManager {
               exitOnError: false,
               rendererOptions: {
                 collapseErrors: false,
+                collapseSubtasks: true,
               },
             },
           );

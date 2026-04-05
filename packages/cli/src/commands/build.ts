@@ -4,6 +4,7 @@ import {
 import {
   Args, Flags,
 } from '@oclif/core'
+import {ConfigAggregator} from '@salesforce/core'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
 import '@b64/sfpm-sfdmu'
 
@@ -35,6 +36,9 @@ export default class Build extends SfpmCommand {
     'skip-validation': Flags.boolean({description: 'skip validation'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
     'target-dev-hub': Flags.string({char: 'v', description: 'target dev hub username'}),
+    wait: Flags.integer({
+      char: 'w', default: 120, description: 'timeout in minutes for package version creation', min: 1,
+    }),
   }
   static override strict = false
 
@@ -76,14 +80,26 @@ export default class Build extends SfpmCommand {
       lifecycle.use(hooks);
     }
 
+    // Resolve devhub: use flag if provided, otherwise fall back to SF CLI default
+    let devhubUsername = flags['target-dev-hub']
+    if (!devhubUsername) {
+      const configAggregator = await ConfigAggregator.create()
+      devhubUsername = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined
+    }
+
+    if (!devhubUsername) {
+      this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1})
+    }
+
     const buildOptions = {
       buildNumber: flags['build-number'],
-      devhubUsername: flags['target-dev-hub'],
+      devhubUsername,
       force: flags.force,
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       installationKey: flags['installation-key'],
       isSkipValidation: flags['skip-validation'],
       npmScope: sfpmConfig.npmScope,
+      waitTime: flags.wait,
     }
 
     // Create and attach progress renderer

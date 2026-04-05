@@ -176,7 +176,7 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
       throw new Error(`Cannot version-install ${this.sfpmPackage.packageName}: no packageVersionId`);
     }
 
-    const buildOptions = this.sfpmPackage.metadata?.orchestration?.buildOptions as SfpmUnlockedPackageBuildOptions | undefined;
+    const buildOptions = this.sfpmPackage.metadata?.orchestration?.build as SfpmUnlockedPackageBuildOptions | undefined;
 
     return {
       artifact: this.sfpmPackage.sourceHash && this.sfpmPackage.commitId
