@@ -514,8 +514,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     const components = cs.getSourceComponents();
 
     return {
-      apex: {},
-      fields: {},
       metadataCount: components.toArray().length,
       payload: await cs.getObject(),
       testCoverage: this.testCoverage,
@@ -656,10 +654,6 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
 
     if (options.isAsyncValidation !== undefined) {
       set(this.metadata, 'orchestration.build.isAsyncValidation', options.isAsyncValidation);
-    }
-
-    if (options.waitTime !== undefined) {
-      set(this.metadata, 'orchestration.build.waitTime', options.waitTime);
     }
   }
 
