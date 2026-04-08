@@ -240,6 +240,6 @@ export default class PackageAssembler {
    */
   private initializeStagingArea(): string {
     const buildName = this.createBuildName();
-    return path.join(process.cwd(), DOT_FOLDER, 'tmp', 'builds', buildName);
+    return path.join(process.cwd(), DOT_FOLDER, 'tmp', 'builds', buildName, 'package');
   }
 }
