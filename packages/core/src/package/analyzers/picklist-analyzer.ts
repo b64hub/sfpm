@@ -26,7 +26,6 @@ export default class PicklistAnalyzer implements PackageAnalyzer {
       for (const field of sfpmPackage.customFields) {
         // eslint-disable-next-line no-await-in-loop
         const customField = (await field.parseXml()).CustomField as any;
-
         if (customField && PICKLIST_TYPES.has(customField.type)) {
           picklists.push(field);
         }

@@ -29,9 +29,9 @@ export default class Build extends SfpmCommand {
   static override flags = {
     'build-number': Flags.string({char: 'b', description: 'build number'}),
     force: Flags.boolean({char: 'f', description: 'build even if no source changes detected'}),
-    'include-dependencies': Flags.boolean({description: 'build the specified packages and their transitive dependencies'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
+    'no-dependencies': Flags.boolean({default: false, description: 'build the specified packages without their transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'skip-validation': Flags.boolean({description: 'skip validation'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
@@ -114,7 +114,7 @@ export default class Build extends SfpmCommand {
     const orchestrator = new BuildOrchestrator(
       projectConfig,
       projectGraph,
-      {...buildOptions, includeDependencies: flags['include-dependencies']},
+      {...buildOptions, includeDependencies: !flags['no-dependencies']},
       logger,
       projectDir,
       lifecycle,
