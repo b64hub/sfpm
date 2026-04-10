@@ -65,8 +65,8 @@ describe('SfpmDataPackage', () => {
   it('should produce correct toJson output', async () => {
     const json = await dataPackage.toJson();
 
-    expect(json.identity.packageName).toBe('my-data');
-    expect(json.identity.packageType).toBe(PackageType.Data);
+    expect(json.packageName).toBe('my-data');
+    expect(json.packageType).toBe(PackageType.Data);
     expect(json.content.dataDirectory).toBe('data');
     expect(json.content.fileCount).toBe(2);
     expect(json.source).toBeDefined();

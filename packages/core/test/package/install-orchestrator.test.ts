@@ -5,7 +5,7 @@ import {
 import type {DependencyResolution} from '../../src/project/project-graph.js';
 
 import {ArtifactService} from '../../src/artifacts/artifact-service.js';
-import {InstallOrchestrator} from '../../src/package/install-orchestrator.js';
+import {InstallOrchestrator} from '../../src/orchestrator/install-orchestrator.js';
 import PackageInstaller from '../../src/package/package-installer.js';
 import {DependencyError} from '../../src/types/errors.js';
 

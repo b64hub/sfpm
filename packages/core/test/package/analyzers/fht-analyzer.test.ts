@@ -5,11 +5,11 @@ import FHTAnalyzer from '../../../src/package/analyzers/fht-analyzer.js';
 import {SfpmMetadataPackage} from '../../../src/package/sfpm-package.js';
 import {Logger} from '../../../src/types/logger.js';
 
-function createMockField(fullName: string, trackHistory: boolean) {
+function createMockField(fullName: string, trackHistory: string | boolean) {
   return {
     fullName,
     parseXml: vi.fn().mockResolvedValue({
-      CustomField: {trackHistory},
+      CustomField: {trackHistory: String(trackHistory)},
     }),
   };
 }

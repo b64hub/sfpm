@@ -6,7 +6,7 @@ import type {DependencyResolution} from '../../src/project/project-graph.js';
 import type {OrchestrationResult, PackageResult} from '../../src/types/events.js';
 
 import {GitService} from '../../src/git/git-service.js';
-import {BuildOrchestrator} from '../../src/package/build-orchestrator.js';
+import {BuildOrchestrator} from '../../src/orchestrator/build-orchestrator.js';
 import {PackageBuilder} from '../../src/package/package-builder.js';
 import {DependencyError} from '../../src/types/errors.js';
 

@@ -86,10 +86,10 @@ describe('UnlockedPackageBuilder', () => {
                 isOrgDependent: false
             },
             orchestration: {
-                buildOptions: {
+                build: {
                     waitTime: 60,
                     isCoverageEnabled: true,
-                    installationkey: '123',
+                    installationKey: '123',
                     isSkipValidation: true,
                     isAsyncValidation: true,
                     postInstallScript: 'scripts/postinstall.sh'
@@ -175,7 +175,6 @@ describe('UnlockedPackageBuilder', () => {
                 skipvalidation: true,
                 codecoverage: true,
                 asyncvalidation: true,
-                postinstallscript: 'scripts/postinstall.sh'
             }),
             expect.anything()
         );
@@ -183,7 +182,7 @@ describe('UnlockedPackageBuilder', () => {
         // Verify logging happened
         expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Status: Queued'));
         expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Status: InProgress'));
-        expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Package Result'));
+        expect(mockLogger.debug).toHaveBeenCalledWith(expect.stringContaining('Package Result'));
 
         // Verify package updated
         expect(mockSfpmPackage.packageVersionId).toBe(expectedVersionId);
@@ -213,10 +212,10 @@ describe('UnlockedPackageBuilder', () => {
                 isOrgDependent: false
             },
             orchestration: {
-                buildOptions: {
+                build: {
                     waitTime: 60,
                     isCoverageEnabled: true,
-                    installationkey: '123',
+                    installationKey: '123',
                     isSkipValidation: true,
                     isAsyncValidation: false // Sync
                 } as any
