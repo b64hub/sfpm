@@ -1,3 +1,4 @@
+import SfpmPackage from '../package/sfpm-package.js';
 /**
  * Adapter for converting between npm package.json and SFPM domain models.
  *
@@ -8,16 +9,15 @@
  * Design decisions:
  * - Standard npm fields (name, version, repository, description) live at the top level
  * - All SFPM-specific metadata lives under the `sfpm` property as a nested structure
- *   matching `SfpmPackageMetadataBase` (identity, source, orchestration, content, validation)
+ *   matching `SfpmPackageMetadataBase` (identity, source, orchestration, content)
  * - No duplication: `repository.url` at top level, `source.repositoryUrl` excluded from sfpm
  * - `source.commit` (renamed from `commitSHA` internally) in sfpm for brevity
  */
 import {NpmPackageJson} from '../types/npm.js';
 import {
   SfpmPackageMetadataBase,
-  SfpmUnlockedPackageIdentity,
+  SfpmUnlockedPackageMetadata,
 } from '../types/package.js';
-import SfpmPackage from '../package/sfpm-package.js';
 
 // ---------------------------------------------------------------------------
 // Write path: SfpmPackage → NpmPackageJson
@@ -127,8 +127,8 @@ export async function toNpmPackageJson(
 /**
  * Convert an npm package.json (with sfpm metadata) back to an SfpmPackageMetadataBase.
  *
- * Handles the nested structure where sfpm properties are stored under
- * `sfpm.identity`, `sfpm.source`, `sfpm.orchestration`, etc.
+ * The `sfpm` property stores a flat SfpmPackageMetadataBase directly
+ * (packageName, packageType, versionNumber, source, orchestration, etc.).
  *
  * Also reconstructs `source.repositoryUrl` from the top-level `repository` field
  * when present, so domain code can access it uniformly.
@@ -136,18 +136,13 @@ export async function toNpmPackageJson(
 export function fromNpmPackageJson(packageJson: NpmPackageJson): SfpmPackageMetadataBase {
   const {sfpm} = packageJson;
 
-  // The sfpm property IS the SfpmPackageMetadataBase — use it directly.
-  // Fill in any fields derivable from top-level npm properties.
   const metadata: SfpmPackageMetadataBase = {
     ...sfpm,
-    identity: {
-      ...sfpm.identity,
-      // Ensure version is always present (top-level npm version is authoritative)
-      versionNumber: sfpm.identity?.versionNumber || packageJson.version,
-    },
     source: {
       ...sfpm.source,
     },
+    // Ensure version is always present (top-level npm version is authoritative)
+    versionNumber: sfpm.versionNumber || packageJson.version,
   };
 
   // Reconstruct repositoryUrl from npm top-level field if not already set
@@ -167,8 +162,8 @@ export function fromNpmPackageJson(packageJson: NpmPackageJson): SfpmPackageMeta
  * Returns undefined if the package is not an unlocked package or has no version ID.
  */
 export function extractPackageVersionId(packageJson: NpmPackageJson): string | undefined {
-  const identity = packageJson.sfpm?.identity as SfpmUnlockedPackageIdentity | undefined;
-  return identity?.packageVersionId;
+  const sfpm = packageJson.sfpm as SfpmUnlockedPackageMetadata | undefined;
+  return sfpm?.packageVersionId;
 }
 
 /**

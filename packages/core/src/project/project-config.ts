@@ -288,8 +288,11 @@ export default class ProjectConfig {
    * Prunes a package definition for Salesforce CLI compatibility
    */
   private pruneForSalesforce(pkg: PackageDefinition, isOrgDependent: boolean = false): PackageDefinition {
+    // Strip SFPM-specific properties before parsing against the standard Salesforce schema,
+    // which does not recognize custom fields like packageOptions or type.
+    const {packageOptions: _, type: _type, ...sfPkg} = pkg as any;
     const standardPkgSchema = ProjectJsonSchema.shape.packageDirectories.element;
-    const cleanPkg = standardPkgSchema.parse(pkg) as any;
+    const cleanPkg = standardPkgSchema.parse(sfPkg) as any;
 
     if (isOrgDependent && cleanPkg.dependencies) {
       delete cleanPkg.dependencies;

@@ -7,13 +7,19 @@ vi.mock('fs-extra', () => {
         pathExists: vi.fn(),
         copy: vi.fn(),
         ensureDir: vi.fn(),
-        writeJSON: vi.fn(),
+        writeJson: vi.fn(),
     };
     return {
         ...mockFs,
         default: mockFs
     };
 });
+
+vi.mock('@salesforce/source-deploy-retrieve', () => ({
+    ComponentSet: {
+        fromSource: vi.fn().mockResolvedValue({ size: 0 }),
+    },
+}));
 
 import fs from 'fs-extra';
 import { ProjectJsonAssemblyStep } from '../../../../src/package/assemblers/steps/project-json-assembly-step.js';
@@ -46,18 +52,18 @@ describe('ProjectJsonAssemblyStep', () => {
         };
     });
 
-    it('should inject version number and use absolute path for unpackagedMetadata', async () => {
+    it('should inject version number and use relative path for unpackagedMetadata', async () => {
         (fs.pathExists as any).mockImplementation((p: string) => {
             if (p === path.join('/staging', 'unpackagedMetadata')) return Promise.resolve(true);
             return Promise.resolve(false);
         });
-        (fs.writeJSON as any).mockResolvedValue(undefined);
+        (fs.writeJson as any).mockResolvedValue(undefined);
         (fs.ensureDir as any).mockResolvedValue(undefined);
         (fs.copy as any).mockResolvedValue(undefined);
 
         await step.execute(options, output);
 
-        expect(fs.writeJSON).toHaveBeenCalledWith(
+        expect(fs.writeJson).toHaveBeenCalledWith(
             path.join('/staging', 'sfdx-project.json'),
             expect.objectContaining({
                 packageDirectories: [
@@ -65,7 +71,7 @@ describe('ProjectJsonAssemblyStep', () => {
                         package: 'core',
                         versionNumber: '1.2.3.4',
                         unpackagedMetadata: {
-                            path: path.join('/staging', 'unpackagedMetadata')
+                            path: 'unpackagedMetadata'
                         }
                     })
                 ]
@@ -74,19 +80,19 @@ describe('ProjectJsonAssemblyStep', () => {
         );
 
         // Verify it didn't push extra package directories
-        const writtenManifest = (fs.writeJSON as any).mock.calls[0][1];
+        const writtenManifest = (fs.writeJson as any).mock.calls[0][1];
         expect(writtenManifest.packageDirectories).toHaveLength(1);
     });
 
     it('should not add unpackagedMetadata if directory does not exist', async () => {
         (fs.pathExists as any).mockResolvedValue(false);
-        (fs.writeJSON as any).mockResolvedValue(undefined);
+        (fs.writeJson as any).mockResolvedValue(undefined);
         (fs.ensureDir as any).mockResolvedValue(undefined);
         (fs.copy as any).mockResolvedValue(undefined);
 
         await step.execute(options, output);
 
-        const writtenManifest = (fs.writeJSON as any).mock.calls[0][1];
+        const writtenManifest = (fs.writeJson as any).mock.calls[0][1];
         expect(writtenManifest.packageDirectories[0].unpackagedMetadata).toBeUndefined();
     });
 
@@ -95,13 +101,13 @@ describe('ProjectJsonAssemblyStep', () => {
             if (p === path.join('/staging', 'scripts', 'pre', 'setup.sh')) return Promise.resolve(true);
             return Promise.resolve(false);
         });
-        (fs.writeJSON as any).mockResolvedValue(undefined);
+        (fs.writeJson as any).mockResolvedValue(undefined);
         (fs.ensureDir as any).mockResolvedValue(undefined);
         (fs.copy as any).mockResolvedValue(undefined);
 
         await step.execute(options, output);
 
-        const writtenManifest = (fs.writeJSON as any).mock.calls[0][1];
+        const writtenManifest = (fs.writeJson as any).mock.calls[0][1];
         const pkg = writtenManifest.packageDirectories[0];
         expect(pkg.packageOptions?.deploy?.pre?.script).toBeUndefined();
         expect(pkg.packageOptions?.deploy?.post?.script).toBeUndefined();

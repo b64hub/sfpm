@@ -5,9 +5,9 @@ import {EventEmitter} from 'node:events';
 import path from 'node:path';
 
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
-import {toVersionFormat} from '../utils/version-utils.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
+import {toVersionFormat} from '../utils/version-utils.js';
 import {ArtifactRepository} from './artifact-repository.js';
 import {toNpmPackageJson} from './npm-package-adapter.js';
 
@@ -94,7 +94,7 @@ export default class ArtifactAssembler extends EventEmitter {
   }
 
   /**
-   * @description Orchestrates the artifact assembly process using npm pack.
+   * @description Orchestrates the artifact assembly process.
    * @returns {Promise<string>} The path to the generated artifact.tgz.
    */
   public async assemble(): Promise<string> {
@@ -105,26 +105,28 @@ export default class ArtifactAssembler extends EventEmitter {
       // 1. Calculate sourceHash from current package state
       const currentSourceHash = await this.calculateSourceHash();
 
-      // 2. Prepare staging directory with source files
-      const stagingDir = await this.prepareStagingDirectory();
+      // 2. Prepare staging: rename the staging directory to `package/` inside
+      //    a workspace directory so the tarball entries get the npm-standard
+      //    `package/` prefix without any path substitution flags.
+      const {packageDir, workspaceDir} = await this.prepareStagingDirectory();
 
       // 3. Generate package.json with sfpm metadata
-      await this.generatePackageJson(stagingDir);
+      await this.generatePackageJson(packageDir);
 
       // 4. Generate changelog
-      await this.generateChangelog(stagingDir);
+      await this.generateChangelog(packageDir);
 
-      // 5. Run npm pack in staging directory
-      const tarballName = await this.runNpmPack(stagingDir);
+      // 5. Create tarball from the workspace directory
+      const tarballName = await this.createTarball(workspaceDir);
 
       // 6. Move tarball to version directory
-      const artifactPath = await this.moveTarball(stagingDir, tarballName);
+      const artifactPath = await this.moveTarball(workspaceDir, tarballName);
 
       // 7. Calculate artifact hash and finalize
       const artifactHash = await this.finalizeArtifact(artifactPath, currentSourceHash);
 
-      // 8. Cleanup staging directory
-      await fs.remove(stagingDir);
+      // 8. Cleanup workspace directory (includes package/ and the tarball)
+      await fs.remove(workspaceDir);
 
       this.emitComplete(artifactPath, currentSourceHash, artifactHash, startTime);
       return artifactPath;
@@ -135,6 +137,16 @@ export default class ArtifactAssembler extends EventEmitter {
         version: this.packageVersionNumber,
       });
     }
+  }
+
+  /**
+   * Build a tarball filename matching npm convention: `<scope>-<name>-<version>.tgz`
+   * Scoped packages replace `@` and `/` with hyphens.
+   */
+  private buildTarballName(name: string, version: string): string {
+    // @myorg/my-package -> myorg-my-package
+    const normalized = name.replace(/^@/, '').replaceAll('/', '-');
+    return `${normalized}-${version}.tgz`;
   }
 
   /**
@@ -164,6 +176,50 @@ export default class ArtifactAssembler extends EventEmitter {
 
     this.logger?.debug(`Calculated source hash: ${hash}`);
     return hash;
+  }
+
+  /**
+   * Create an npm-compatible tarball from the workspace directory.
+   *
+   * Because the content lives under `workspace/package/`, the tar entries
+   * naturally get the `package/` prefix that npm expects — no path
+   * substitution flags required.
+   *
+   * @returns The name of the generated tarball file inside `workspaceDir`.
+   */
+  private async createTarball(workspaceDir: string): Promise<string> {
+    this.logger?.debug(`Creating tarball from ${workspaceDir}`);
+
+    try {
+      // Read the generated package.json to build the canonical tarball name
+      const packageJson = await fs.readJson(path.join(workspaceDir, 'package', 'package.json'));
+      const tarballName = this.buildTarballName(packageJson.name, packageJson.version);
+
+      execSync(
+        `tar -czf "${tarballName}" package`,
+        {
+          cwd: workspaceDir,
+          encoding: 'utf8',
+          timeout: 60_000,
+        },
+      );
+
+      this.logger?.debug(`Tarball created: ${tarballName}`);
+
+      this.emit('assembly:pack', {
+        packageName: this.sfpmPackage.packageName,
+        tarballName,
+        timestamp: new Date(),
+      });
+
+      return tarballName;
+    } catch (error) {
+      throw new ArtifactError(this.sfpmPackage.packageName, 'pack', 'Failed to create tarball', {
+        cause: error instanceof Error ? error : new Error(String(error)),
+        context: {workspaceDir},
+        version: this.packageVersionNumber,
+      });
+    }
   }
 
   private emitComplete(artifactPath: string, sourceHash: string, artifactHash: string, startTime: number): void {
@@ -216,6 +272,10 @@ export default class ArtifactAssembler extends EventEmitter {
     return artifactHash;
   }
 
+  // =========================================================================
+  // Event Emission Helpers
+  // =========================================================================
+
   /**
    * Generate changelog.json in the staging directory.
    */
@@ -228,28 +288,37 @@ export default class ArtifactAssembler extends EventEmitter {
   /**
    * Generate package.json in the staging directory.
    * Delegates to the npm-package-adapter for package.json construction.
+   *
+   * If a package.json already exists in the staging directory (e.g. copied
+   * from the source package during assembly), its fields are preserved and
+   * merged with the generated SFPM metadata.  Generated fields take
+   * precedence on conflict.
    */
   private async generatePackageJson(stagingDir: string): Promise<void> {
-    const packageJson = await toNpmPackageJson(
+    const packageJsonPath = path.join(stagingDir, 'package.json');
+
+    const generated = await toNpmPackageJson(
       this.sfpmPackage,
       this.packageVersionNumber,
       this.options,
     );
 
-    const packageJsonPath = path.join(stagingDir, 'package.json');
-    await fs.writeJson(packageJsonPath, packageJson, {spaces: 2});
+    let merged = generated;
+    if (await fs.pathExists(packageJsonPath)) {
+      const existing = await fs.readJson(packageJsonPath);
+      merged = {...existing, ...generated};
+      this.logger?.debug('Merged existing package.json with generated metadata');
+    }
+
+    await fs.writeJson(packageJsonPath, merged, {spaces: 2});
     this.logger?.debug(`Generated package.json at ${packageJsonPath}`);
   }
 
-  // =========================================================================
-  // Event Emission Helpers
-  // =========================================================================
-
   /**
-   * Move the tarball from staging to the version directory.
+   * Move the tarball from the workspace to the version directory.
    */
-  private async moveTarball(stagingDir: string, tarballName: string): Promise<string> {
-    const sourcePath = path.join(stagingDir, tarballName);
+  private async moveTarball(workspaceDir: string, tarballName: string): Promise<string> {
+    const sourcePath = path.join(workspaceDir, tarballName);
     const targetPath = this.repository.getArtifactPath(this.sfpmPackage.packageName, this.packageVersionNumber);
 
     // Ensure version directory exists
@@ -263,74 +332,40 @@ export default class ArtifactAssembler extends EventEmitter {
   }
 
   /**
-   * Prepare staging directory with source files.
-   * Uses the package's staging directory from PackageAssembler.
+   * Prepare the staging layout for tarball creation.
+   *
+   * The PackageAssembler stages content directly into `<buildName>/package/`,
+   * so the parent directory is already a ready-made workspace for
+   * `tar -czf … package`.
+   *
+   * @returns `workspaceDir` — the parent that contains `package/`
+   *          `packageDir`   — the `package/` directory with the actual content
    */
-  private async prepareStagingDirectory(): Promise<string> {
-    if (this.sfpmPackage.stagingDirectory) {
-      this.logger?.debug(`Using staging directory: ${this.sfpmPackage.stagingDirectory}`);
+  private async prepareStagingDirectory(): Promise<{packageDir: string; workspaceDir: string}> {
+    if (!this.sfpmPackage.stagingDirectory) {
+      throw new ArtifactError(
+        this.sfpmPackage.packageName,
+        'assembly',
+        'No staging directory available - package must be staged before assembly',
+        {version: this.packageVersionNumber},
+      );
+    }
 
-      // Cleanup noise from staging directory
-      const noise = ['.sfpm', '.sfdx', 'node_modules'];
-      for (const dir of noise) {
-        const noiseDir = path.join(this.sfpmPackage.stagingDirectory, dir);
+    const packageDir = this.sfpmPackage.stagingDirectory;
+    const workspaceDir = path.dirname(packageDir);
+    this.logger?.debug(`Using staging directory: ${packageDir}`);
+
+    // Cleanup noise from staging directory
+    const noise = ['.sfpm', '.sfdx', 'node_modules'];
+    for (const dir of noise) {
+      const noiseDir = path.join(packageDir, dir);
+      // eslint-disable-next-line no-await-in-loop
+      if (await fs.pathExists(noiseDir)) {
         // eslint-disable-next-line no-await-in-loop
-        if (await fs.pathExists(noiseDir)) {
-          // eslint-disable-next-line no-await-in-loop
-          await fs.remove(noiseDir);
-        }
+        await fs.remove(noiseDir);
       }
-
-      return this.sfpmPackage.stagingDirectory;
     }
 
-    throw new ArtifactError(
-      this.sfpmPackage.packageName,
-      'assembly',
-      'No staging directory available - package must be staged before assembly',
-      {version: this.packageVersionNumber},
-    );
-  }
-
-  /**
-   * Run npm pack in the staging directory.
-   * @returns The name of the generated tarball file.
-   */
-  private async runNpmPack(stagingDir: string): Promise<string> {
-    this.logger?.debug(`Running npm pack in ${stagingDir}`);
-
-    try {
-      // npm pack outputs the filename of the created tarball
-      // --quiet suppresses the "npm notice" lines (tarball contents, details)
-      const quiet = this.options.quietPack !== false;
-      const output = execSync(`npm pack${quiet ? ' --quiet' : ''}`, {
-        cwd: stagingDir,
-        encoding: 'utf8',
-        timeout: 60_000,
-      }).trim();
-
-      // The output is the tarball filename (e.g., "myorg-my-package-1.0.0-1.tgz")
-      const tarballName = output.split('\n').pop()?.trim();
-
-      if (!tarballName || !tarballName.endsWith('.tgz')) {
-        throw new Error(`Unexpected npm pack output: ${output}`);
-      }
-
-      this.logger?.debug(`npm pack created: ${tarballName}`);
-
-      this.emit('assembly:pack', {
-        packageName: this.sfpmPackage.packageName,
-        tarballName,
-        timestamp: new Date(),
-      });
-
-      return tarballName;
-    } catch (error) {
-      throw new ArtifactError(this.sfpmPackage.packageName, 'pack', 'npm pack failed', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-        context: {stagingDir},
-        version: this.packageVersionNumber,
-      });
-    }
+    return {packageDir, workspaceDir};
   }
 }

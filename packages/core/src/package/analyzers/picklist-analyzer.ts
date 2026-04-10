@@ -4,10 +4,12 @@ import type {SfpmMetadataPackage} from '../sfpm-package.js';
 
 import {Logger} from '../../types/logger.js';
 import {PackageType, SfpmPackageContent} from '../../types/package.js';
-import {PackageAnalyzer} from './analyzer-registry.js';
+import {PackageAnalyzer, RegisterAnalyzer} from './analyzer-registry.js';
 
 const PICKLIST_TYPES = new Set(['MultiselectPicklist', 'Picklist']);
 
+// eslint-disable-next-line new-cap
+@RegisterAnalyzer()
 export default class PicklistAnalyzer implements PackageAnalyzer {
   private logger?: Logger;
 
@@ -26,7 +28,6 @@ export default class PicklistAnalyzer implements PackageAnalyzer {
       for (const field of sfpmPackage.customFields) {
         // eslint-disable-next-line no-await-in-loop
         const customField = (await field.parseXml()).CustomField as any;
-
         if (customField && PICKLIST_TYPES.has(customField.type)) {
           picklists.push(field);
         }

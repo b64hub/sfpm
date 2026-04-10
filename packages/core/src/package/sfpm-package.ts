@@ -7,14 +7,26 @@ import path from 'node:path';
 
 import ProjectConfig from '../project/project-config.js';
 import {
-  MetadataFile, PackageType, SfpmDataPackageMetadata, SfpmPackageContent, SfpmPackageMetadata, SfpmPackageMetadataBase, SfpmPackageOrchestration, SfpmUnlockedPackageBuildOptions, SfpmUnlockedPackageMetadata, VersionFormat,
+  MetadataFile,
+  PackageType,
+  SfpmDataPackageMetadata,
+  SfpmPackageContent,
+  SfpmPackageMetadata,
+  SfpmPackageMetadataBase,
+  SfpmPackageOrchestration,
+  SfpmUnlockedPackageBuildOptions,
+  SfpmUnlockedPackageMetadata,
+  VersionFormat,
 } from '../types/package.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {
-  type DataDeployable, ManagedPackageRef, type SourceDeployable, VersionInstallable,
+  type DataDeployable,
+  ManagedPackageRef,
+  type SourceDeployable,
+  VersionInstallable,
 } from './installers/types.js';
 
 const TEST_COVERAGE_THRESHOLD = 75;
@@ -58,11 +70,9 @@ export default abstract class SfpmPackage {
   constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadataBase>) {
     this.projectDirectory = projectDirectory;
     this._metadata = {
-      identity: {
-        packageName,
-        packageType: '',
-        ...metadata?.identity,
-      },
+      packageName,
+      packageType: '',
+      ...metadata?.identity,
       orchestration: {...metadata?.orchestration},
       source: {...metadata?.source},
       ...omit(metadata, ['identity', 'source', 'orchestration']),
@@ -70,11 +80,16 @@ export default abstract class SfpmPackage {
   }
 
   get apiVersion(): string {
-    return this._metadata.identity.apiVersion || this.projectDefinition?.sourceApiVersion || process.env.SFPM_API_VERSION || DEFAULT_API_VERSION;
+    return (
+      this._metadata.apiVersion
+      || this.projectDefinition?.sourceApiVersion
+      || process.env.SFPM_API_VERSION
+      || DEFAULT_API_VERSION
+    );
   }
 
   set apiVersion(val: string) {
-    this._metadata.identity.apiVersion = val;
+    this._metadata.apiVersion = val;
   }
 
   get commitId(): string | undefined {
@@ -90,11 +105,11 @@ export default abstract class SfpmPackage {
   }
 
   get name(): string {
-    return this._metadata.identity.packageName;
+    return this._metadata.packageName;
   }
 
   set name(val: string) {
-    this._metadata.identity.packageName = val;
+    this._metadata.packageName = val;
   }
 
   get packageDefinition(): PackageDefinition | undefined {
@@ -122,11 +137,11 @@ export default abstract class SfpmPackage {
   }
 
   get packageName(): string {
-    return this._metadata.identity.packageName;
+    return this._metadata.packageName;
   }
 
   set packageName(val: string) {
-    this._metadata.identity.packageName = val;
+    this._metadata.packageName = val;
   }
 
   get sourceHash(): string | undefined {
@@ -142,19 +157,19 @@ export default abstract class SfpmPackage {
   }
 
   get type(): Omit<PackageType, 'managed'> {
-    return this._metadata.identity.packageType;
+    return this._metadata.packageType;
   }
 
   set type(val: Omit<PackageType, 'managed'>) {
-    this._metadata.identity.packageType = val;
+    this._metadata.packageType = val;
   }
 
   get version(): string | undefined {
-    return this._metadata.identity.versionNumber;
+    return this._metadata.versionNumber;
   }
 
   set version(val: string) {
-    this._metadata.identity.versionNumber = toVersionFormat(val, 'semver');
+    this._metadata.versionNumber = toVersionFormat(val, 'semver');
   }
 
   /** Returns the number of deployable components (metadata) or files (data) in the package. */
@@ -217,24 +232,25 @@ export default abstract class SfpmPackage {
    * @returns SFPM metadata object for package.json
    */
   public async toJson(): Promise<SfpmPackageMetadataBase> {
-    return this.metadata
+    return this.metadata;
   }
 }
 
 export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceDeployable {
   protected _componentSet?: ComponentSet;
-  protected declare _metadata: SfpmPackageMetadata;
+  declare protected _metadata: SfpmPackageMetadata;
+  private _customFields?: SourceComponent[];
 
   constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadata>) {
     super(packageName, projectDirectory, metadata);
-    // Ensure content and validation sections exist
+    // Ensure content section exists
     this._metadata.content = {...metadata?.content} as SfpmPackageContent;
-    this._metadata.validation = {...metadata?.validation};
   }
 
   get apexClasses(): SourceComponent[] {
     return this.getComponentSet()
-    .getSourceComponents().toArray()
+    .getSourceComponents()
+    .toArray()
     .filter(c => c.type.id === 'apexclass');
   }
 
@@ -247,12 +263,17 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 
   get customFields(): SourceComponent[] {
-    return this.getComponentSet().getSourceComponents().toArray()
-    .filter(c => c.type.id === 'customfield');
+    if (!this._customFields) {
+      this._customFields = this.resolveCustomFields();
+    }
+
+    return this._customFields;
   }
 
   get customObjects(): SourceComponent[] {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .filter(c => c.type.id === 'customobject');
   }
 
@@ -264,7 +285,9 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 
   get flows(): SourceComponent[] {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .filter(c => c.type.id === 'flow');
   }
 
@@ -278,7 +301,8 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   get hasApex(): boolean {
     const apexTypes = new Set(['apexclass', 'apextrigger']);
     return this.getComponentSet()
-    .getSourceComponents().toArray()
+    .getSourceComponents()
+    .toArray()
     .some(c => apexTypes.has(c.type.id));
   }
 
@@ -287,22 +311,28 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 
   get hasPermissionSetGroups(): boolean {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .some(c => c.type.id === 'permissionsetgroup');
   }
 
   get hasProfiles(): boolean {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .some(c => c.type.id === 'profile');
   }
 
   get includesProfileSupportedTypes(): boolean {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .some(c => PROFILE_SUPPORTED_METADATA_TYPES.has(c.type.id));
   }
 
   get isCoverageCheckPassed(): boolean {
-    return (this._metadata.validation?.testCoverage || 0) > TEST_COVERAGE_THRESHOLD;
+    return (this._metadata.content?.testCoverage || 0) > TEST_COVERAGE_THRESHOLD;
   }
 
   private get isOptimizedDeployment(): boolean {
@@ -310,20 +340,28 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 
   get isTriggerAllTests(): boolean {
-    return this._metadata.validation.isTriggerAllTests || (!this.isOptimizedDeployment || this.hasApex)
+    return this._metadata.orchestration?.install?.isTriggerAllTests || !this.isOptimizedDeployment || this.hasApex;
   }
 
   set isTriggerAllTests(val: boolean) {
-    this._metadata.validation.isTriggerAllTests = val;
+    if (!this._metadata.orchestration.install) {
+      this._metadata.orchestration.install = {};
+    }
+
+    this._metadata.orchestration.install.isTriggerAllTests = val;
   }
 
   get permissionSetGroups(): SourceComponent[] {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .filter(c => c.type.id === 'permissionsetgroup');
   }
 
   get permissionSets(): SourceComponent[] {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .filter(c => c.type.id === 'permissionset');
   }
 
@@ -332,12 +370,16 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 
   get profiles(): SourceComponent[] {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .filter(c => c.type.id === 'profile');
   }
 
   get standardValueSets(): SourceComponent[] {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .filter(c => c.type.id === 'standardvalueset');
   }
 
@@ -346,21 +388,25 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 
   get testCoverage(): number | undefined {
-    return this._metadata.validation?.testCoverage;
+    return this._metadata.content?.testCoverage;
   }
 
   set testCoverage(coverage: number) {
-    this._metadata.validation.testCoverage = coverage;
+    this._metadata.content.testCoverage = coverage;
   }
 
   get testSuites(): string[] {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .filter(c => c.type.id === 'testsuite')
     .map(c => c.fullName);
   }
 
   get triggers(): SourceComponent[] {
-    return this.getComponentSet().getSourceComponents().toArray()
+    return this.getComponentSet()
+    .getSourceComponents()
+    .toArray()
     .filter(c => c.type.id === 'apextrigger');
   }
 
@@ -453,19 +499,27 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     const content = await this.resolveContentMetadata();
     const orchestration = await this.resolveOrchestrationMetadata();
 
-    return merge({}, this._metadata, {
+    const metadata = merge({}, this._metadata, {
       content,
-      identity: {
-        packageName: this.name || content.payload?.Package?.fullName,
-        packageType: this.type || this.packageDefinition?.type,
-        versionNumber: this.version || this.packageDefinition?.versionNumber,
+      orchestration: {
+        ...orchestration,
+        // Persist only build properties that describe artifact state, not runtime parameters
+        build: {
+          ...(this._metadata.orchestration?.build?.isCoverageEnabled !== undefined && {
+            isCoverageEnabled: this._metadata.orchestration.build.isCoverageEnabled,
+          }),
+        },
+        install: {
+          ...orchestration.install,
+          isTriggerAllTests: this.isTriggerAllTests,
+        },
       },
-      orchestration,
-      validation: {
-        isCoverageCheckPassed: this.isCoverageCheckPassed,
-        isTriggerAllTests: this.isTriggerAllTests,
-      },
+      packageName: this.name || content.payload?.Package?.fullName,
+      packageType: this.type || this.packageDefinition?.type,
+      versionNumber: this.version || this.packageDefinition?.versionNumber,
     });
+
+    return metadata;
   }
 
   public updateContent(newContent: Partial<SfpmPackageContent>): void {
@@ -476,9 +530,33 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   /**
    * Ensures every name in our categorized metadata actually
    * exists as a physical component in the directory.
+   *
+   * Uses a pre-built lookup that includes child components (e.g. CustomField
+   * children of CustomObject) because ComponentSet.has() only resolves
+   * parent relationships when `type` is a MetadataType object, not a string.
    */
   private enforceIntegrity(): void {
-    const cs = this.getComponentSet(); //
+    const cs = this.getComponentSet();
+
+    // Build a lookup of all component fullNames by type ID, including children.
+    const knownComponents = new Map<string, Set<string>>();
+    for (const component of cs.getSourceComponents().toArray()) {
+      const typeId = component.type.id.toLowerCase();
+      if (!knownComponents.has(typeId)) {
+        knownComponents.set(typeId, new Set());
+      }
+
+      knownComponents.get(typeId)!.add(component.fullName);
+
+      for (const child of component.getChildren()) {
+        const childTypeId = child.type.id.toLowerCase();
+        if (!knownComponents.has(childTypeId)) {
+          knownComponents.set(childTypeId, new Set());
+        }
+
+        knownComponents.get(childTypeId)!.add(child.fullName);
+      }
+    }
 
     for (const [jsonPath, metadataType] of Object.entries(CONTENT_METADATA_TYPE)) {
       const currentList = get(this._metadata.content, jsonPath);
@@ -487,10 +565,11 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
         continue;
       }
 
+      const typeFullNames = knownComponents.get(metadataType.toLowerCase()) ?? new Set();
       const validated = currentList.filter(item => {
         // Support both string[] and MetadataFile[] ({ name, path })
         const name = typeof item === 'string' ? item : item.name;
-        return cs.has({fullName: name, type: metadataType});
+        return typeFullNames.has(name);
       });
 
       set(this._metadata.content, jsonPath, validated);
@@ -498,7 +577,8 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 
   /**
-   * @description Resolves the content of the package from the component set.
+   * @description Resolves the content of the package from the component set,
+   * preserving any field/apex metadata already set by analyzers.
    * @returns A promise that resolves to the content of the package.
    */
   private async resolveContentMetadata(): Promise<SfpmPackageContent> {
@@ -506,28 +586,47 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     const components = cs.getSourceComponents();
 
     return {
-      apex: {
-        all: this.apexClasses.map(f => f.fullName),
-      },
-      fields: {
-        all: this.customFields.map(f => f.fullName),
-      },
-      flows: this.flows.map(f => f.fullName),
+      ...this._metadata.content,
       metadataCount: components.toArray().length,
       payload: await cs.getObject(),
-      permissionSetGroups: this.permissionSetGroups.map(p => p.fullName),
-      permissionSets: this.permissionSets.map(p => p.fullName),
-      profiles: this.profiles.map(p => p.fullName),
-      standardValueSets: this.standardValueSets.map(s => s.fullName),
-      testSuites: this.testSuites,
-      triggers: this.triggers.map(t => t.fullName),
+      testCoverage: this.testCoverage,
     };
+  }
+
+  /**
+   * Resolves all CustomField components, including children of decomposed
+   * CustomObject components. Deduplicates by fullName.
+   */
+  private resolveCustomFields(): SourceComponent[] {
+    const sourceComponents: SourceComponent[] = this.getComponentSet().getSourceComponents().toArray();
+
+    // Deduplicate by fullName — a field may appear as both a top-level
+    // CustomField and as a child of a CustomObject in decomposed source.
+    const fieldMap = new Map<string, SourceComponent>();
+
+    for (const c of sourceComponents) {
+      if (c.type.id.toLowerCase() === 'customfield') {
+        fieldMap.set(c.fullName, c);
+      }
+    }
+
+    for (const component of sourceComponents) {
+      if (component.type.id.toLowerCase() === 'customobject') {
+        for (const child of component.getChildren()) {
+          if (child.type.id.toLowerCase() === 'customfield' && !fieldMap.has(child.fullName)) {
+            fieldMap.set(child.fullName, child);
+          }
+        }
+      }
+    }
+
+    return [...fieldMap.values()];
   }
 
   private async resolveOrchestrationMetadata(): Promise<Partial<SfpmPackageOrchestration>> {
     return {
-      buildOptions: this.packageDefinition?.packageOptions?.build as any,
-      deploymentOptions: this.packageDefinition?.packageOptions?.deploy,
+      build: this.packageDefinition?.packageOptions?.build as any,
+      install: this.packageDefinition?.packageOptions?.deploy,
     };
   }
 }
@@ -535,7 +634,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
 export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
   constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadataBase>) {
     super(packageName, projectDirectory, metadata);
-    this._metadata.identity.packageType = PackageType.Data;
+    this._metadata.packageType = PackageType.Data;
   }
 
   /**
@@ -595,16 +694,14 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
         dataDirectory: this.packageDefinition?.path || '',
         fileCount,
       },
-      identity: {
-        packageName: this.name,
-        packageType: PackageType.Data,
-        versionNumber: this.version,
-      },
       orchestration: {
-        buildOptions: this.packageDefinition?.packageOptions?.build as any,
-        deploymentOptions: this.packageDefinition?.packageOptions?.deploy,
+        build: this.packageDefinition?.packageOptions?.build as any,
+        install: this.packageDefinition?.packageOptions?.install as any,
       },
+      packageName: this.name,
+      packageType: PackageType.Data,
       source: this._metadata.source,
+      versionNumber: this.version,
     };
   }
 }
@@ -612,15 +709,15 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
 export class SfpmUnlockedPackage extends SfpmMetadataPackage {
   constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmUnlockedPackageMetadata>) {
     super(packageName, projectDirectory, metadata);
-    this._metadata.identity.packageType = PackageType.Unlocked;
+    this._metadata.packageType = PackageType.Unlocked;
   }
 
   get isOrgDependent(): boolean {
-    return this.metadata.identity.isOrgDependent;
+    return this.metadata.isOrgDependent;
   }
 
   set isOrgDependent(val: boolean) {
-    this.metadata.identity.isOrgDependent = val;
+    this.metadata.isOrgDependent = val;
   }
 
   override get metadata(): SfpmUnlockedPackageMetadata {
@@ -628,34 +725,36 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
   }
 
   get packageId(): string {
-    return this.metadata.identity.packageId || '';
+    return this.metadata.packageId || '';
   }
 
   set packageId(val: string) {
-    this.metadata.identity.packageId = val;
+    this.metadata.packageId = val;
   }
 
   get packageVersionId(): string | undefined {
-    return this.metadata.identity.packageVersionId;
+    return this.metadata.packageVersionId;
   }
 
   set packageVersionId(val: string | undefined) {
-    this.metadata.identity.packageVersionId = val;
+    this.metadata.packageVersionId = val;
   }
 
-  override setBuildNumber(buildNumber: string): void {
-
-  }
+  override setBuildNumber(buildNumber: string): void {}
 
   override setOrchestrationOptions(options: Partial<SfpmUnlockedPackageBuildOptions>): void {
     if (options.installationKey === undefined) {
-      set(this.metadata, 'orchestration.buildOptions.installationKeyBypass', true);
+      set(this.metadata, 'orchestration.build.installationKeyBypass', true);
     } else {
-      set(this.metadata, 'orchestration.buildOptions.installationKey', options.installationKey);
+      set(this.metadata, 'orchestration.build.installationKey', options.installationKey);
     }
 
     if (options.isSkipValidation !== undefined) {
-      set(this.metadata, 'orchestration.buildOptions.isSkipValidation', options.isSkipValidation);
+      set(this.metadata, 'orchestration.build.isSkipValidation', options.isSkipValidation);
+    }
+
+    if (options.isAsyncValidation !== undefined) {
+      set(this.metadata, 'orchestration.build.isAsyncValidation', options.isAsyncValidation);
     }
   }
 
@@ -669,9 +768,7 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
   }
 }
 
-export class SfpmSourcePackage extends SfpmMetadataPackage {
-
-}
+export class SfpmSourcePackage extends SfpmMetadataPackage {}
 
 /**
  * Factory for creating fully-configured SfpmPackage instances from ProjectConfig.
@@ -708,8 +805,7 @@ export class PackageFactory {
       // Check if it's a managed dependency — if so, guide the caller
       const managedRef = this.createManagedRef(packageName);
       if (managedRef) {
-        throw new Error(`Package "${packageName}" is a managed dependency, not a local package. `
-          + 'Use createManagedRef() instead.');
+        throw new Error(`Package "${packageName}" is a managed dependency, not a local package. Use createManagedRef() instead.`);
       }
 
       throw new Error(`Package ${packageName} not found in project definition`);
@@ -784,11 +880,7 @@ export class PackageFactory {
   /**
    * Low-level factory method to create the appropriate SfpmPackage instance based on package type
    */
-  private createPackageInstance(
-    packageType: PackageType,
-    packageName: string,
-    projectDirectory: string,
-  ): SfpmPackage {
+  private createPackageInstance(packageType: PackageType, packageName: string, projectDirectory: string): SfpmPackage {
     switch (packageType) {
     case PackageType.Data: {
       return new SfpmDataPackage(packageName, projectDirectory);

@@ -5,18 +5,16 @@ import { ArtifactRepository } from '../../src/artifacts/artifact-repository.js';
 import { ArtifactManifest } from '../../src/types/artifact.js';
 import { PackageType } from '../../src/types/package.js';
 
-// Mock package.json content for tgz extraction (nested sfpm structure)
+// Mock package.json content for tgz extraction (flat sfpm metadata structure)
 const mockPackageJson = {
     name: '@testorg/test-package',
     version: '1.0.0-1',
     sfpm: {
-        identity: {
-            packageName: 'test-package',
-            packageType: PackageType.Unlocked,
-            versionNumber: '1.0.0-1',
-            packageId: '0Ho1234567890',
-            packageVersionId: '04t1234567890',
-        },
+        packageName: 'test-package',
+        packageType: PackageType.Unlocked,
+        versionNumber: '1.0.0-1',
+        packageId: '0Ho1234567890',
+        packageVersionId: '04t1234567890',
         orchestration: {},
         source: {
             sourceHash: 'abc123',
@@ -197,8 +195,7 @@ describe('ArtifactRepository', () => {
 
             const metadata = repository.getMetadata('test-package');
             expect(metadata).toBeDefined();
-            expect(metadata?.identity).toBeDefined();
-            expect(metadata?.identity?.packageVersionId).toBe('04t1234567890');
+            expect(metadata?.packageVersionId).toBe('04t1234567890');
         });
 
         it('should extract packageVersionId', () => {

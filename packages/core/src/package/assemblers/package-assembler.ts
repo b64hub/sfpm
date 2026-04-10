@@ -10,6 +10,7 @@ import {ForceIgnoreStep} from './steps/force-ignore-step.js';
 import {OrgDefinitionStep} from './steps/org-definition-step.js';
 import {ProjectJsonAssemblyStep} from './steps/project-json-assembly-step.js';
 import {ScriptAssemblyStep} from './steps/script-assembly-step.js';
+import {SeedMetadataStep} from './steps/seed-metadata-step.js';
 import {SourceCopyStep} from './steps/source-copy-step.js';
 import {UnpackagedMetadataStep} from './steps/unpackaged-metadata-step.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from './types.js';
@@ -190,6 +191,7 @@ export default class PackageAssembler {
       new OrgDefinitionStep(this.packageName, this.projectConfig, this.logger),
       new ScriptAssemblyStep(this.packageName, this.projectConfig, this.logger),
       new UnpackagedMetadataStep(this.packageName, this.projectConfig, this.logger),
+      new SeedMetadataStep(this.packageName, this.projectConfig, this.logger),
       new ForceIgnoreStep(this.packageName, this.projectConfig, this.logger),
     ];
 
@@ -240,6 +242,6 @@ export default class PackageAssembler {
    */
   private initializeStagingArea(): string {
     const buildName = this.createBuildName();
-    return path.join(process.cwd(), DOT_FOLDER, 'tmp', 'builds', buildName);
+    return path.join(process.cwd(), DOT_FOLDER, 'tmp', 'builds', buildName, 'package');
   }
 }

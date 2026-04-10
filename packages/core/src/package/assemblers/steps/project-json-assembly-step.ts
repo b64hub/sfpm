@@ -32,14 +32,16 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
       }
 
       const pkg = prunedManifest.packageDirectories[0] as PackageDefinition;
-      if (!pkg.packageOptions) {
-        pkg.packageOptions = {};
-      }
 
-      // use absolute path for unpackaged metadata
+      // Rewrite supplemental metadata paths relative to sfdx-project.json (staging root)
       const unpackagedMetadataDir = path.join(output.stagingDirectory, 'unpackagedMetadata');
       if (await fs.pathExists(unpackagedMetadataDir)) {
-        pkg.unpackagedMetadata = {path: unpackagedMetadataDir};
+        pkg.unpackagedMetadata = {path: 'unpackagedMetadata'};
+      }
+
+      const seedMetadataDir = path.join(output.stagingDirectory, 'seedMetadata');
+      if (await fs.pathExists(seedMetadataDir)) {
+        pkg.seedMetadata = {path: 'seedMetadata'};
       }
 
       const projectJsonPath = path.join(output.stagingDirectory, 'sfdx-project.json');

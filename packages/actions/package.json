@@ -22,7 +22,8 @@
     "@actions/github": "^6.0.0",
     "@b64/sfpm-core": "workspace:^0.1.0",
     "@b64/sfpm-orgs": "workspace:^0.1.0",
-    "@salesforce/core": "^8.24.2"
+    "@salesforce/core": "^8.24.2",
+    "@salesforce/packaging": "^4.3.0"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

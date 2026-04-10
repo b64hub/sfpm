@@ -7,7 +7,7 @@ vi.mock('fs-extra', () => {
         copy: vi.fn(),
         ensureDir: vi.fn(),
         emptyDir: vi.fn(),
-        writeJSON: vi.fn(),
+        writeJson: vi.fn(),
         appendFile: vi.fn(),
         remove: vi.fn().mockResolvedValue(undefined),
         pathExistsSync: vi.fn(),
@@ -17,6 +17,12 @@ vi.mock('fs-extra', () => {
         default: mockFs
     };
 });
+
+vi.mock('@salesforce/source-deploy-retrieve', () => ({
+    ComponentSet: {
+        fromSource: vi.fn().mockResolvedValue({ size: 0 }),
+    },
+}));
 
 vi.mock('../../../src/package/assemblers/steps/mdapi-conversion-step.js', () => {
     return {
@@ -82,7 +88,7 @@ describe('PackageAssembler', () => {
         mockedFs.copy.mockResolvedValue(undefined);
         mockedFs.ensureDir.mockResolvedValue(undefined);
         mockedFs.emptyDir.mockResolvedValue(undefined);
-        mockedFs.writeJSON.mockResolvedValue(undefined);
+        mockedFs.writeJson.mockResolvedValue(undefined);
         mockedFs.appendFile.mockResolvedValue(undefined);
 
         const result = await assembler.assemble();
@@ -99,7 +105,7 @@ describe('PackageAssembler', () => {
             expect.objectContaining({ filter: expect.any(Function) })
         );
         // Write manifest
-        expect(mockedFs.writeJSON).toHaveBeenCalledWith(
+        expect(mockedFs.writeJson).toHaveBeenCalledWith(
             path.join(stagingPath, 'sfdx-project.json'),
             expect.any(Object),
             { spaces: 4 }

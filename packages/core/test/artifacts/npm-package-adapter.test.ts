@@ -28,27 +28,23 @@ function createUnlockedPackageJson(overrides?: Partial<NpmPackageJson>): NpmPack
       content: {
         metadataCount: 2,
         payload: {Package: {types: [], version: '65.0'}},
-        permissionSets: ['Manage_Artifacts'],
+        testCoverage: 50,
       },
-      identity: {
-        packageId: '0HoJz00000001SLKAY',
-        packageName: 'sfpm-artifact',
-        packageType: PackageType.Unlocked,
-        packageVersionId: '04tJz000000lZn7IAE',
-        versionNumber: '0.1.0-2',
-      },
+      isOrgDependent: false,
       orchestration: {
-        buildOptions: {installationKeyBypass: true},
+        build: {installationKeyBypass: true},
+        install: {isTriggerAllTests: true},
       },
+      packageId: '0HoJz00000001SLKAY',
+      packageName: 'sfpm-artifact',
+      packageType: PackageType.Unlocked,
+      packageVersionId: '04tJz000000lZn7IAE',
       source: {
         branch: 'feat-orgs',
         commitSHA: 'f1dc9cd8e9521b01b07e021171dd7c0b18291682',
         sourceHash: '8dbb986ebe459f428313e9a07d7e1842361589acf2460aafb9bd38f58a99c960',
       },
-      validation: {
-        isCoverageCheckPassed: false,
-        isTriggerAllTests: true,
-      },
+      versionNumber: '0.1.0-2',
     } as any,
     version: '0.1.0-2',
     ...overrides,
@@ -59,17 +55,15 @@ function createSourcePackageJson(): NpmPackageJson {
   return {
     name: '@myorg/my-source-pkg',
     sfpm: {
-      identity: {
-        packageName: 'my-source-pkg',
-        packageType: PackageType.Source,
-        versionNumber: '1.0.0-1',
-      },
       orchestration: {},
+      packageName: 'my-source-pkg',
+      packageType: PackageType.Source,
       source: {
         branch: 'main',
         commitSHA: 'abc123',
         sourceHash: 'def456',
       },
+      versionNumber: '1.0.0-1',
     } as any,
     version: '1.0.0-1',
   };
@@ -81,18 +75,17 @@ describe('npm-package-adapter', () => {
       const packageJson = createUnlockedPackageJson();
       const metadata = fromNpmPackageJson(packageJson);
 
-      expect(metadata.identity.packageName).toBe('sfpm-artifact');
-      expect(metadata.identity.packageType).toBe(PackageType.Unlocked);
-      expect(metadata.identity.versionNumber).toBe('0.1.0-2');
+      expect(metadata.packageName).toBe('sfpm-artifact');
+      expect(metadata.packageType).toBe(PackageType.Unlocked);
+      expect(metadata.versionNumber).toBe('0.1.0-2');
     });
 
     it('should preserve unlocked package identity fields', () => {
       const packageJson = createUnlockedPackageJson();
       const metadata = fromNpmPackageJson(packageJson);
 
-      const identity = metadata.identity as any;
-      expect(identity.packageId).toBe('0HoJz00000001SLKAY');
-      expect(identity.packageVersionId).toBe('04tJz000000lZn7IAE');
+      expect((metadata as any).packageId).toBe('0HoJz00000001SLKAY');
+      expect((metadata as any).packageVersionId).toBe('04tJz000000lZn7IAE');
     });
 
     it('should reconstruct repositoryUrl from top-level repository field', () => {
@@ -125,25 +118,26 @@ describe('npm-package-adapter', () => {
       const metadata = fromNpmPackageJson(packageJson);
 
       expect(metadata.orchestration).toEqual({
-        buildOptions: {installationKeyBypass: true},
+        build: {installationKeyBypass: true},
+        install: {isTriggerAllTests: true},
       });
     });
 
-    it('should use top-level npm version when sfpm.identity.versionNumber is missing', () => {
+    it('should use top-level npm version when sfpm versionNumber is missing', () => {
       const packageJson = createSourcePackageJson();
-      delete (packageJson.sfpm as any).identity.versionNumber;
+      delete (packageJson.sfpm as any).versionNumber;
 
       const metadata = fromNpmPackageJson(packageJson);
-      expect(metadata.identity.versionNumber).toBe('1.0.0-1');
+      expect(metadata.versionNumber).toBe('1.0.0-1');
     });
 
     it('should handle source packages without packageVersionId', () => {
       const packageJson = createSourcePackageJson();
       const metadata = fromNpmPackageJson(packageJson);
 
-      expect(metadata.identity.packageName).toBe('my-source-pkg');
-      expect(metadata.identity.packageType).toBe(PackageType.Source);
-      expect((metadata.identity as any).packageVersionId).toBeUndefined();
+      expect(metadata.packageName).toBe('my-source-pkg');
+      expect(metadata.packageType).toBe(PackageType.Source);
+      expect((metadata as any).packageVersionId).toBeUndefined();
     });
 
     it('should handle missing repository field gracefully', () => {
@@ -198,7 +192,9 @@ describe('npm-package-adapter', () => {
     function createMockPackage(overrides?: Record<string, any>) {
       return {
         metadata: {
-          identity: {packageName: 'my-pkg', packageType: PackageType.Unlocked, versionNumber: '1.0.0-1'},
+          packageName: 'my-pkg',
+          packageType: PackageType.Unlocked,
+          versionNumber: '1.0.0-1',
           source: {branch: 'main', repositoryUrl: 'https://github.com/test/repo.git'},
           orchestration: {},
         },
@@ -206,7 +202,9 @@ describe('npm-package-adapter', () => {
         packageDefinition: {path: 'force-app', versionDescription: 'My package'},
         packageName: 'my-pkg',
         toJson: async () => ({
-          identity: {packageName: 'my-pkg', packageType: PackageType.Unlocked, versionNumber: '1.0.0-1'},
+          packageName: 'my-pkg',
+          packageType: PackageType.Unlocked,
+          versionNumber: '1.0.0-1',
           orchestration: {},
           source: {branch: 'main', repositoryUrl: 'https://github.com/test/repo.git'},
         }),
@@ -222,7 +220,7 @@ describe('npm-package-adapter', () => {
       expect(result.name).toBe('@myorg/my-pkg');
       expect(result.version).toBe('1.0.0-1');
       expect(result.sfpm).toBeDefined();
-      expect(result.sfpm.identity.packageName).toBe('my-pkg');
+      expect(result.sfpm.packageName).toBe('my-pkg');
     });
 
     it('should not include a main field', async () => {
@@ -305,11 +303,11 @@ describe('npm-package-adapter', () => {
     it('should strip empty values from sfpm metadata', async () => {
       const pkg = createMockPackage({
         toJson: async () => ({
-          content: {fields: {all: []}, flows: [], profiles: [], triggers: []},
-          identity: {packageName: 'my-pkg', packageType: PackageType.Unlocked},
+          content: {fields: {all: []}},
+          packageName: 'my-pkg',
+          packageType: PackageType.Unlocked,
           orchestration: {},
           source: {},
-          validation: {},
         }),
       });
 
@@ -317,10 +315,7 @@ describe('npm-package-adapter', () => {
       const sfpm = result.sfpm;
 
       expect(sfpm.source).toBeUndefined();
-      expect(sfpm.validation).toBeUndefined();
       expect(sfpm.orchestration).toBeUndefined();
-      expect((sfpm as any).content?.triggers).toBeUndefined();
-      expect((sfpm as any).content?.flows).toBeUndefined();
     });
   });
 });

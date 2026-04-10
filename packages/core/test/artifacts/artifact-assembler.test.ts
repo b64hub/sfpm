@@ -29,6 +29,8 @@ vi.mock('fs-extra', () => {
         writeJSON: vi.fn(),
         writeJson: vi.fn(),
         readJSON: vi.fn(),
+        readJson: vi.fn(),
+        rename: vi.fn(),
         symlink: vi.fn(),
         writeFile: vi.fn(),
         createWriteStream: vi.fn(),
@@ -91,7 +93,7 @@ describe('ArtifactAssembler', () => {
             packageName,
             version,
             type: PackageType.Unlocked,
-            stagingDirectory: '/tmp/staging',
+            stagingDirectory: '/tmp/builds/test-build/package',
             packageDirectory: '/project/force-app',
             dependencies: [],
             metadata: {
@@ -131,8 +133,17 @@ describe('ArtifactAssembler', () => {
 
         vi.mocked(toVersionFormat).mockReturnValue(version);
 
-        // Mock execSync to return tarball filename from npm pack
-        vi.mocked(childProcess.execSync).mockReturnValue(`testorg-${packageName}-${version}.tgz\n`);
+        // Mock execSync for tar command
+        vi.mocked(childProcess.execSync).mockReturnValue('');
+
+        // Default: no existing package.json in staging directory
+        vi.mocked(fs.pathExists as any).mockResolvedValue(false);
+
+        // Mock fs.readJson to return package.json for tarball name generation
+        vi.mocked(fs.readJson as any).mockResolvedValue({
+            name: `@testorg/${packageName}`,
+            version,
+        });
 
         assembler = new ArtifactAssembler(
             mockSfpmPackage,
@@ -149,7 +160,7 @@ describe('ArtifactAssembler', () => {
     });
 
     describe('assemble', () => {
-        it('should orchestrate the npm pack assembly process successfully', async () => {
+        it('should orchestrate the assembly process successfully', async () => {
             // Mock fs operations
             vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
             vi.mocked(fs.pathExists).mockResolvedValue(true);
@@ -162,9 +173,9 @@ describe('ArtifactAssembler', () => {
             // Should return path to tgz file
             expect(result).toBe(`/project/artifacts/${packageName}/${version}/artifact.tgz`);
             
-            // Should generate package.json
+            // Should generate package.json in the package directory
             expect(fs.writeJson).toHaveBeenCalledWith(
-                path.join('/tmp/staging', 'package.json'),
+                path.join('/tmp/builds/test-build/package', 'package.json'),
                 expect.objectContaining({
                     name: `@testorg/${packageName}`,
                     version,
@@ -173,10 +184,10 @@ describe('ArtifactAssembler', () => {
                 { spaces: 2 }
             );
             
-            // Should run npm pack
+            // Should create tarball with tar from workspace dir
             expect(childProcess.execSync).toHaveBeenCalledWith(
-                'npm pack --quiet',
-                expect.objectContaining({ cwd: '/tmp/staging' })
+                expect.stringContaining('tar -czf'),
+                expect.objectContaining({ cwd: '/tmp/builds/test-build' })
             );
             
             // Should finalize artifact (update manifest and symlink)
@@ -190,8 +201,8 @@ describe('ArtifactAssembler', () => {
                 })
             );
             
-            // Should cleanup staging
-            expect(fs.remove).toHaveBeenCalledWith('/tmp/staging');
+            // Should cleanup workspace directory
+            expect(fs.remove).toHaveBeenCalledWith('/tmp/builds/test-build');
         });
 
         it('should throw ArtifactError if no staging directory is available', async () => {
@@ -321,28 +332,36 @@ describe('ArtifactAssembler', () => {
         });
     });
 
-    describe('runNpmPack', () => {
-        it('should execute npm pack and return tarball filename', async () => {
-            vi.mocked(childProcess.execSync).mockReturnValue(`testorg-${packageName}-${version}.tgz\n`);
+    describe('createTarball', () => {
+        it('should create tarball and return filename', async () => {
+            vi.mocked(childProcess.execSync).mockReturnValue('');
+            vi.mocked(fs.readJson as any).mockResolvedValue({
+                name: `@testorg/${packageName}`,
+                version,
+            });
 
-            const result = await (assembler as any).runNpmPack('/tmp/staging');
+            const result = await (assembler as any).createTarball('/tmp/workspace');
 
             expect(result).toBe(`testorg-${packageName}-${version}.tgz`);
             expect(childProcess.execSync).toHaveBeenCalledWith(
-                'npm pack --quiet',
+                expect.stringContaining('tar -czf'),
                 expect.objectContaining({
-                    cwd: '/tmp/staging',
+                    cwd: '/tmp/workspace',
                     encoding: 'utf8'
                 })
             );
         });
 
-        it('should throw ArtifactError if npm pack fails', async () => {
+        it('should throw ArtifactError if tar fails', async () => {
+            vi.mocked(fs.readJson as any).mockResolvedValue({
+                name: `@testorg/${packageName}`,
+                version,
+            });
             vi.mocked(childProcess.execSync).mockImplementation(() => {
-                throw new Error('npm pack failed');
+                throw new Error('tar failed');
             });
 
-            await expect((assembler as any).runNpmPack('/tmp/staging')).rejects.toThrow('npm pack failed');
+            await expect((assembler as any).createTarball('/tmp/workspace')).rejects.toThrow('Failed to create tarball');
         });
     });
 
@@ -351,11 +370,11 @@ describe('ArtifactAssembler', () => {
             vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
             vi.mocked(fs.move).mockResolvedValue(undefined as any);
 
-            const result = await (assembler as any).moveTarball('/tmp/staging', 'test-1.0.0-1.tgz');
+            const result = await (assembler as any).moveTarball('/tmp/workspace', 'test-1.0.0-1.tgz');
 
             expect(fs.ensureDir).toHaveBeenCalledWith(`/project/artifacts/${packageName}/${version}`);
             expect(fs.move).toHaveBeenCalledWith(
-                '/tmp/staging/test-1.0.0-1.tgz',
+                '/tmp/workspace/test-1.0.0-1.tgz',
                 `/project/artifacts/${packageName}/${version}/artifact.tgz`,
                 { overwrite: true }
             );

@@ -159,8 +159,10 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
           // Check if potentialParent depends on updatedPkg (it should, based on graph)
           const dependencyRef = potentialParent.getDependency(updatedPkg.packageName);
           if (dependencyRef) {
-            // Update the dependency version in the parent
-            const newDepVersion = updatedPkg.cleanedVersion(updatedPkg.newVersion ?? undefined);
+            // Update the dependency version in the parent.
+            // Use the bumped version with a .LATEST suffix so dependents
+            // resolve to the latest build of the new version.
+            const newDepVersion = updatedPkg.cleanedVersion(updatedPkg.newVersion ?? undefined) + LATEST_SUFFIX;
             potentialParent.updateDependencyVersion(updatedPkg.packageName, newDepVersion);
             affectedParentPackages.add(potentialParent);
           }

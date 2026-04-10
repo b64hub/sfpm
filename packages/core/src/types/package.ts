@@ -1,7 +1,7 @@
 import {PackageManifestObject} from '@salesforce/source-deploy-retrieve';
 
 import {ApexClasses, ApexSortedByType} from './apex.js';
-import {DeploymentOptions} from './project.js';
+import {InstallOptions} from './project.js';
 
 export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked'}
 
@@ -45,6 +45,7 @@ export interface SfpmPackageIdentity {
   versionNumber?: string;
 }
 
+/** @deprecated Use top-level fields on SfpmUnlockedPackageMetadata instead */
 export interface SfpmUnlockedPackageIdentity extends SfpmPackageIdentity {
   isOrgDependent: boolean;
   packageId?: string;
@@ -69,11 +70,19 @@ export interface CategorizedMetadata {
   all: string[]; // The physical truth from ComponentSet
 }
 
+/**
+ * Package content metadata written to the artifact.
+ *
+ * Most component-level detail (flows, profiles, permission sets, etc.) is
+ * already captured by the MDAPI manifest `payload`. This interface holds
+ * only the **additive analysis** that the payload does not provide:
+ *   - Apex class/test classification
+ *   - Field-level categorisation (FHT, FT, picklists)
+ */
 export interface SfpmPackageContent {
   [key: string]: any;
   apex?: {
     [category: string]: MetadataFile[] | string[] | undefined;
-    all: string[];
     classes?: MetadataFile[];
     tests?: MetadataFile[];
   };
@@ -82,28 +91,16 @@ export interface SfpmPackageContent {
     ft?: string[];
     picklists?: string[];
   };
-  flows?: string[];
   metadataCount: number;
   payload?: PackageManifestObject;
-  permissionSetGroups?: string[];
-  permissionSets?: string[];
-  profiles?: string[];
-  standardValueSets?: string[];
-  testSuites?: string[];
-  triggers?: MetadataFile[];
-}
-
-export interface SfpmPackageValidation {
-  isCoverageCheckPassed?: boolean;
-  isTriggerAllTests?: boolean;
   testCoverage?: number;
 }
 
 export interface SfpmPackageOrchestration {
-  buildOptions?: SfpmPackageBuildOptions;
+  build?: SfpmPackageBuildOptions;
   creationDetails?: {duration?: number; timestamp?: number};
-  deploymentOptions?: DeploymentOptions;
-  deployments?: {
+  install?: InstallOptions;
+  installation?: {
     installationTime?: number;
     subDirectory?: string;
     targetOrg: string;
@@ -113,7 +110,6 @@ export interface SfpmPackageOrchestration {
 
 export interface SfpmPackageBuildOptions {
   isCoverageEnabled?: boolean;
-  waitTime?: number;
 }
 
 export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions {
@@ -122,6 +118,8 @@ export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions
   isAsyncValidation?: boolean;
   isSkipValidation?: boolean;
   postInstallScript?: string;
+  /** Runtime-only: timeout in minutes for package version creation. Not persisted to artifacts. */
+  waitTime?: number;
 }
 
 /**
@@ -139,35 +137,39 @@ export interface SfpmDataPackageContent {
 // ---------------------------------------------------------------------------
 // Package Metadata Hierarchy
 //
-//   SfpmPackageMetadataBase         (universal: identity, orchestration, source)
-//     ├── SfpmPackageMetadata       (source/unlocked: + content + validation)
-//     │     └── SfpmUnlockedPackageMetadata (+ unlocked identity)
+//   SfpmPackageMetadataBase         (universal: identity fields, orchestration, source)
+//     ├── SfpmPackageMetadata       (source/unlocked: + content)
+//     │     └── SfpmUnlockedPackageMetadata (+ packageId, packageVersionId, isOrgDependent)
 //     └── SfpmDataPackageMetadata   (data: + data-specific content)
 // ---------------------------------------------------------------------------
 
 /**
  * Base metadata shared by **all** package types (source, unlocked, data, …).
- * Contains only universally applicable sections.
+ * Identity fields (packageName, packageType, etc.) live at the top level.
  */
 export interface SfpmPackageMetadataBase {
   [key: string]: any;
-  identity: SfpmPackageIdentity;
+  apiVersion?: string;
   orchestration: SfpmPackageOrchestration;
+  packageName: string;
+  packageType: Omit<PackageType, 'managed'>;
   source: SfpmPackageSource;
+  versionNumber?: string;
 }
 
 /**
  * Metadata for source and unlocked packages.
- * Adds Salesforce-specific content (component manifest, apex, metadata counts)
- * and validation (code-coverage, test results).
+ * Adds Salesforce-specific content (apex analysis, field categorisation, manifest).
  */
 export interface SfpmPackageMetadata extends SfpmPackageMetadataBase {
   content: SfpmPackageContent;
-  validation: SfpmPackageValidation;
 }
 
 export interface SfpmUnlockedPackageMetadata extends SfpmPackageMetadata {
-  identity: SfpmUnlockedPackageIdentity;
+  isOrgDependent: boolean;
+  packageId?: string;
+  packageType: PackageType.Unlocked;
+  packageVersionId?: string;
 }
 
 /**

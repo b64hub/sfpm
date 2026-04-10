@@ -37,7 +37,7 @@ describe('VersionManager', () => {
         expect(pkgB).toBeDefined();
 
         const depOnA = pkgB?.dependencies?.find(d => d.name === 'pkg-a');
-        expect(depOnA?.newVersion).toBe('1.1.0');
+        expect(depOnA?.newVersion).toBe('1.1.0.LATEST');
     });
 
     test('should update all packages (patch bump)', async () => {
@@ -99,7 +99,7 @@ describe('VersionManager', () => {
         expect(pkgB).toBeDefined();
         const depOnA = pkgB.dependencies?.find((d: any) => d.package === 'pkg-a');
         expect(depOnA).toBeDefined();
-        expect(depOnA.versionNumber).toBe('1.1.0');
+        expect(depOnA.versionNumber).toBe('1.1.0.LATEST');
     });
 
     describe('GitDiffStrategy', () => {

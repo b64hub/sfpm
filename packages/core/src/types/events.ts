@@ -136,6 +136,8 @@ export interface CreateCompleteEvent extends BaseEvent {
   hasMetadataRemoved?: boolean;
   hasPassedCodeCoverageCheck?: boolean;
   packageId?: string;
+  /** The Package2VersionCreateRequest ID — used to poll async validation status */
+  packageVersionCreateRequestId?: string;
   packageVersionId: string;
   status?: string;
   subscriberPackageVersionId?: string;

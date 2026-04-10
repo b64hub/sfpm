@@ -24,7 +24,7 @@ export default class FHTAnalyzer implements PackageAnalyzer {
       for (const customField of sfpmPackage.customFields) {
         // eslint-disable-next-line no-await-in-loop
         const customFieldXml = (await customField.parseXml() as any).CustomField;
-        if (customFieldXml?.trackHistory) {
+        if (customFieldXml?.trackHistory && customFieldXml.trackHistory === 'true') {
           fhtFieldNames.push(customField.fullName);
         }
       }

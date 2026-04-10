@@ -84,7 +84,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     const sfProject = await SfProject.resolve(this.workingDirectory);
 
     // Get build options from package metadata
-    const buildOptions = this.sfpmPackage.metadata.orchestration.buildOptions as SfpmUnlockedPackageBuildOptions;
+    const buildOptions = this.sfpmPackage.metadata.orchestration.build as SfpmUnlockedPackageBuildOptions;
     const waitTime = Duration.minutes(buildOptions?.waitTime || 120);
     const pollingFrequency = Duration.seconds(30);
 
@@ -98,7 +98,13 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
 
     // Setup lifecycle listener for progress logging
     const lifecycle = Lifecycle.getInstance();
+    let lastRequestId: string | undefined;
+    let lastStatus: string | undefined;
     const progressListener = async (data: PackageVersionCreateRequestResult) => {
+      // Track the request ID so we can include it in timeout errors
+      if (data.Id) lastRequestId = data.Id;
+      lastStatus = data.Status;
+
       // Emit progress event
       this.emit('unlocked:create:progress', {
         message: data.Status,
@@ -166,6 +172,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
           hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
           packageId: result.Package2Id,
           packageName: this.sfpmPackage.packageName,
+          packageVersionCreateRequestId: result.Id,
           packageVersionId: result.SubscriberPackageVersionId,
           status: result.Status,
           subscriberPackageVersionId: result.SubscriberPackageVersionId,
@@ -187,6 +194,28 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
         throw new Error('This package has not meet the minimum coverage requirement of 75%');
       }
     } catch (error: any) {
+      // Detect timeout — the @salesforce/packaging library throws when the
+      // polling timeout is exceeded. The error message typically contains
+      // "timed out" or the last status is still "InProgress" / "Queued".
+      const isTimeout = /timed?\s*out/i.test(error.message)
+        || (lastStatus && !['Error', 'Success'].includes(lastStatus));
+
+      if (isTimeout && lastRequestId) {
+        const timeoutMsg = [
+          `Package version creation for ${this.sfpmPackage.packageName} timed out after ${waitTime.minutes} minutes.`,
+          'The request is still in progress on the server.',
+          '',
+          `  Request ID: ${lastRequestId}`,
+          `  Last Status: ${lastStatus ?? 'Unknown'}`,
+          '',
+          'Check status with:',
+          `  sf package version create report -i ${lastRequestId} -v ${this.devhubOrg!.getUsername()}`,
+        ].join('\n');
+
+        this.logger?.error(timeoutMsg);
+        throw new Error(timeoutMsg, {cause: error});
+      }
+
       const details = [
         error.message,
         error.data ? `Data: ${JSON.stringify(error.data)}` : '',

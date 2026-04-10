@@ -68,13 +68,11 @@ export class ArtifactRepository {
    */
   public extractPackageVersionId(packageName: string, version?: string): string | undefined {
     const metadata = this.getMetadata(packageName, version);
-    if (!metadata?.identity) {
+    if (!metadata) {
       return undefined;
     }
 
-    // Check for unlocked package identity with versionId
-    const identity = metadata.identity as any;
-    return identity.packageVersionId;
+    return (metadata as any).packageVersionId;
   }
 
   /**

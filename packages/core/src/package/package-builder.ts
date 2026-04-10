@@ -1,5 +1,7 @@
+import fs from 'fs-extra';
 import {merge} from 'lodash-es';
 import EventEmitter from 'node:events';
+import path from 'node:path';
 
 import {GitService} from '../git/git-service.js';
 import ProjectConfig from '../project/project-config.js';
@@ -25,10 +27,14 @@ export interface BuildOptions {
   ignoreFilesConfig?: IgnoreFilesConfig;
   installationKey?: string;
   installationKeyBypass?: boolean;
+  /** Use async validation for unlocked packages — returns immediately with a creation request ID */
+  isAsyncValidation?: boolean;
   isSkipValidation?: boolean;
   /** npm scope for package publishing (e.g., "@myorg") */
   npmScope?: string;
   orgDefinitionPath?: string;
+  /** Timeout in minutes for package version creation (default: 120) */
+  waitTime?: number;
 }
 
 /**
@@ -78,7 +84,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     // Merge build options from package definition
     if (sfpmPackage.packageDefinition?.packageOptions?.build) {
       merge(sfpmPackage.metadata.orchestration, {
-        buildOptions: sfpmPackage.packageDefinition.packageOptions.build,
+        build: sfpmPackage.packageDefinition.packageOptions.build,
       });
     }
 
@@ -101,83 +107,89 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     sfpmPackage.setOrchestrationOptions({
       installationkey: this.options.installationKey,
       installationkeybypass: this.options.installationKeyBypass,
+      isAsyncValidation: this.options.isAsyncValidation,
       isSkipValidation: this.options.isSkipValidation,
+      waitTime: this.options.waitTime,
     });
 
     await this.stagePackage(sfpmPackage);
 
-    // Skip empty packages before running analyzers or builder
-    if (await this.isPackageEmpty(sfpmPackage)) {
-      this.emit('build:skipped', {
+    try {
+      // Skip empty packages before running analyzers or builder
+      if (await this.isPackageEmpty(sfpmPackage)) {
+        this.emit('build:skipped', {
+          packageName: sfpmPackage.packageName,
+          packageType: sfpmPackage.type as PackageType,
+          reason: 'empty-package',
+          timestamp: new Date(),
+          version: sfpmPackage.version,
+        });
+        return;
+      }
+
+      await this.runAnalyzers(sfpmPackage);
+
+      if (!sfpmPackage.stagingDirectory) {
+        const error = new Error('Package must be staged for build');
+        this.emit('build:error', {
+          error,
+          packageName: sfpmPackage.packageName,
+          phase: 'staging',
+          timestamp: new Date(),
+        });
+        throw error;
+      }
+
+      const BuilderClass = BuilderRegistry.getBuilder(sfpmPackage.type);
+
+      if (!BuilderClass) {
+        const error = new Error(`No builder registered for package type: ${sfpmPackage.type}`);
+        this.emit('build:error', {
+          error,
+          packageName: sfpmPackage.packageName,
+          phase: 'build',
+          timestamp: new Date(),
+        });
+        throw error;
+      }
+
+      // Build options for the builder from sfpm.config.ts
+      const builderOptions: BuilderOptions = {
+        ignoreFilesConfig: this.options.ignoreFilesConfig,
+        npmScope: this.options.npmScope,
+      };
+
+      const builderInstance: Builder = new BuilderClass(
+        sfpmPackage.stagingDirectory,
+        sfpmPackage,
+        builderOptions,
+        this.logger,
+      );
+
+      // Skip source hash check when force is enabled
+      if (this.options.force && builderInstance.preBuildTasks) {
+        builderInstance.preBuildTasks = builderInstance.preBuildTasks.filter(task => task.constructor.name !== 'SourceHashTask');
+        this.logger?.info('Force build enabled - skipping source change detection');
+      }
+
+      // Connect to dev hub if needed
+      if (this.options.devhubUsername) {
+        await this.connectToDevHub(sfpmPackage, builderInstance, this.options.devhubUsername);
+      }
+
+      // Execute the builder
+      await this.executeBuilder(sfpmPackage, builderInstance, BuilderClass.name);
+
+      // Emit build complete
+      this.emit('build:complete', {
         packageName: sfpmPackage.packageName,
-        packageType: sfpmPackage.type as PackageType,
-        reason: 'empty-package',
-        timestamp: new Date(),
-        version: sfpmPackage.version,
-      });
-      return;
-    }
-
-    await this.runAnalyzers(sfpmPackage);
-
-    if (!sfpmPackage.stagingDirectory) {
-      const error = new Error('Package must be staged for build');
-      this.emit('build:error', {
-        error,
-        packageName: sfpmPackage.packageName,
-        phase: 'staging',
+        packageVersionId: 'packageVersionId' in sfpmPackage ? (sfpmPackage.packageVersionId as string) : undefined,
+        success: true,
         timestamp: new Date(),
       });
-      throw error;
+    } finally {
+      await this.cleanupStagingDirectory(sfpmPackage);
     }
-
-    const BuilderClass = BuilderRegistry.getBuilder(sfpmPackage.type);
-
-    if (!BuilderClass) {
-      const error = new Error(`No builder registered for package type: ${sfpmPackage.type}`);
-      this.emit('build:error', {
-        error,
-        packageName: sfpmPackage.packageName,
-        phase: 'build',
-        timestamp: new Date(),
-      });
-      throw error;
-    }
-
-    // Build options for the builder from sfpm.config.ts
-    const builderOptions: BuilderOptions = {
-      ignoreFilesConfig: this.options.ignoreFilesConfig,
-      npmScope: this.options.npmScope,
-    };
-
-    const builderInstance: Builder = new BuilderClass(
-      sfpmPackage.stagingDirectory,
-      sfpmPackage,
-      builderOptions,
-      this.logger,
-    );
-
-    // Skip source hash check when force is enabled
-    if (this.options.force && builderInstance.preBuildTasks) {
-      builderInstance.preBuildTasks = builderInstance.preBuildTasks.filter(task => task.constructor.name !== 'SourceHashTask');
-      this.logger?.info('Force build enabled - skipping source change detection');
-    }
-
-    // Connect to dev hub if needed
-    if (this.options.devhubUsername) {
-      await this.connectToDevHub(sfpmPackage, builderInstance, this.options.devhubUsername);
-    }
-
-    // Execute the builder
-    await this.executeBuilder(sfpmPackage, builderInstance, BuilderClass.name);
-
-    // Emit build complete
-    this.emit('build:complete', {
-      packageName: sfpmPackage.packageName,
-      packageVersionId: 'packageVersionId' in sfpmPackage ? (sfpmPackage.packageVersionId as string) : undefined,
-      success: true,
-      timestamp: new Date(),
-    });
   }
 
   public async runAnalyzers(sfpmPackage: SfpmPackage): Promise<void> {
@@ -315,6 +327,22 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         this.emit(eventName as any, ...args);
       });
     }
+  }
+
+  /**
+   * Remove the build directory that contains the staging area.
+   *
+   * The staging directory is `.sfpm/tmp/builds/<buildName>/package/`; the
+   * parent (`<buildName>/`) is the workspace directory that must be cleaned.
+   * If ArtifactAssembler already removed it on a successful build this is a
+   * safe no-op.  Cleanup is skipped when `DEBUG=true` to allow inspection.
+   */
+  private async cleanupStagingDirectory(sfpmPackage: SfpmPackage): Promise<void> {
+    if (process.env.DEBUG === 'true') return;
+    if (!sfpmPackage.stagingDirectory) return;
+
+    const buildDir = path.dirname(sfpmPackage.stagingDirectory);
+    await fs.remove(buildDir).catch(() => {/* already removed or inaccessible */});
   }
 
   private async connectToDevHub(
