@@ -1,10 +1,11 @@
 import {
-  BuildOrchestrator, LifecycleEngine, Logger, ProjectService,
+  BuildOrchestrationTask, BuildOrchestrator, LifecycleEngine, Logger, ProjectService,
 } from '@b64/sfpm-core'
 import {
   Args, Flags,
 } from '@oclif/core'
 import {ConfigAggregator} from '@salesforce/core'
+import EventEmitter from 'node:events'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
 import '@b64/sfpm-sfdmu'
 
@@ -28,14 +29,15 @@ export default class Build extends SfpmCommand {
   ]
   static override flags = {
     'build-number': Flags.string({char: 'b', description: 'build number'}),
-    force: Flags.boolean({char: 'f', description: 'build even if no source changes detected'}),
+    force: Flags.boolean({char: 'f', description: 'build even if no source changes detected', env: 'SFPM_FORCE_BUILD'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     'no-dependencies': Flags.boolean({default: false, description: 'build the specified packages without their transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
+    single: Flags.boolean({description: 'build a single package without orchestration (for use with external orchestrators like Turbo)'}),
     'skip-validation': Flags.boolean({description: 'skip validation'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
-    'target-dev-hub': Flags.string({char: 'v', description: 'target dev hub username'}),
+    'target-dev-hub': Flags.string({char: 'v', description: 'target dev hub username', env: 'SF_DEV_HUB'}),
     wait: Flags.integer({
       char: 'w', default: 120, description: 'timeout in minutes for package version creation', min: 1,
     }),
@@ -110,6 +112,48 @@ export default class Build extends SfpmCommand {
       },
       mode,
     });
+
+    // --single mode: build exactly one package without orchestration.
+    // Designed for external orchestrators (Turbo, CI matrix) that handle
+    // dependency ordering and parallelism themselves.
+    if (flags.single) {
+      if (packages.length !== 1) {
+        this.error('--single mode requires exactly one package name', {exit: 1})
+      }
+
+      const task = new BuildOrchestrationTask(
+        projectConfig,
+        buildOptions,
+        logger,
+        projectDir,
+        lifecycle,
+      )
+
+      const emitter = new EventEmitter()
+      renderer.attachTo(emitter as any)
+
+      try {
+        const context = await task.setup()
+        const result = await task.processSinglePackage(packages[0], 0, context, emitter)
+
+        if (flags.json) {
+          this.logJson(result)
+        }
+
+        if (!result.success) {
+          this.error(`Build failed for: ${packages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 1})
+        }
+      } catch (error) {
+        renderer.handleError(error as Error)
+        if (flags.json) {
+          this.logJson({error: (error as Error).message, success: false})
+        }
+
+        throw error
+      }
+
+      return
+    }
 
     const orchestrator = new BuildOrchestrator(
       projectConfig,

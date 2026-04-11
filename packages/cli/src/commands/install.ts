@@ -1,7 +1,8 @@
 import {
-  InstallationMode, InstallationSource, InstallOrchestrator, LifecycleEngine, Logger, PackageInstaller, ProjectService,
+  InstallationMode, InstallationSource, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger, PackageInstaller, ProjectService,
 } from '@b64/sfpm-core'
 import {Args, Flags} from '@oclif/core'
+import EventEmitter from 'node:events'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64/sfpm-sfdmu'
 
@@ -33,12 +34,15 @@ export default class Install extends SfpmCommand {
     }),
     'no-dependencies': Flags.boolean({description: 'only install the specified packages, skip transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
+    single: Flags.boolean({description: 'install a single package without orchestration (for use with external orchestrators like Turbo)'}),
     source: Flags.string({
       char: 's',
       description: 'installation source: local (project source) or artifact',
       options: ['local', 'artifact'],
     }),
-    'target-org': Flags.string({char: 'o', description: 'target org username', required: true}),
+    'target-org': Flags.string({
+      char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
+    }),
   }
   static override strict = false
 
@@ -94,6 +98,51 @@ export default class Install extends SfpmCommand {
       mode,
       targetOrg: flags['target-org'],
     });
+
+    // --single mode: install exactly one package without orchestration.
+    // Designed for external orchestrators (Turbo, CI matrix) that handle
+    // dependency ordering themselves.
+    if (flags.single) {
+      if (packages.length !== 1) {
+        this.error('--single mode requires exactly one package name', {exit: 1})
+      }
+
+      const task = new InstallOrchestrationTask(
+        projectConfig,
+        installOptions,
+        logger,
+        lifecycle,
+      )
+
+      const emitter = new EventEmitter()
+      renderer.attachTo(emitter as any)
+
+      try {
+        const context = await task.setup()
+        const result = await task.processSinglePackage(packages[0], 0, context, emitter)
+
+        if (flags.json) {
+          this.logJson(result)
+        }
+
+        if (!result.success) {
+          this.error(`Install failed for: ${packages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 2})
+        }
+      } catch (error) {
+        renderer.handleError(error as Error)
+        if (flags.json) {
+          this.logJson({error: (error as Error).message, success: false})
+        }
+
+        if (error instanceof Error) {
+          this.error(error.message, {exit: 2})
+        }
+
+        throw error
+      }
+
+      return
+    }
 
     const orchestrator = new InstallOrchestrator(
       projectConfig,

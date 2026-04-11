@@ -1,6 +1,6 @@
 import semver from 'semver';
 
-import type {VersionFormat} from '../types/package.js';
+import type {PackageType, VersionFormat} from '../types/package.js';
 
 /**
  * Pure version formatting and conversion utilities.
@@ -10,8 +10,8 @@ import type {VersionFormat} from '../types/package.js';
  * Salesforce's 4-part format (`major.minor.patch.build`) and npm/semver
  * format (`major.minor.patch-build`).
  *
- * Legacy per-direction helpers (`normalizeVersion`, `toSalesforceVersion`,
- * `cleanVersion`) are retained as thin deprecated wrappers.
+ * Additional helpers handle build-token extraction and Salesforce-specific
+ * version conventions (`.NEXT` for unlocked, `.0` for source/data).
  */
 
 // ---------------------------------------------------------------------------
@@ -92,10 +92,8 @@ export function toVersionFormat(
     normalized = parseToSemver(version, resolveTokens);
   } catch {
     if (!strict) return version;
-    throw new Error(
-      `Invalid version format: "${version}". ` +
-      'Expected major.minor.patch.build or valid semver.',
-    );
+    throw new Error(`Invalid version format: "${version}". `
+      + 'Expected major.minor.patch.build or valid semver.');
   }
 
   // Step 2: Strip build segment if requested
@@ -137,6 +135,110 @@ export function formatVersion(
     : `${major}.${minor}.${patch}.${build}`;
 }
 
+// ---------------------------------------------------------------------------
+// Build token / suffix utilities
+// ---------------------------------------------------------------------------
+
+/** Known Salesforce build tokens used as version suffixes. */
+const KNOWN_TOKENS = ['NEXT', 'LATEST'] as const;
+type BuildToken = typeof KNOWN_TOKENS[number];
+
+/**
+ * Extract the build-segment suffix from a version string.
+ *
+ * Returns the suffix including its separator (`.NEXT`, `-7`, `.0`), or an
+ * empty string when the version has no build segment.
+ *
+ * @example
+ * getVersionSuffix('1.0.0.NEXT')   // '.NEXT'
+ * getVersionSuffix('1.0.0-7')      // '-7'
+ * getVersionSuffix('1.0.0-NEXT')   // '-NEXT'
+ * getVersionSuffix('1.0.0.0')      // '.0'
+ * getVersionSuffix('1.0.0')        // ''
+ */
+export function getVersionSuffix(version: string): string {
+  if (!version) return '';
+
+  // Check for dot-separated 4-part (Salesforce format): 1.0.0.NEXT, 1.0.0.0
+  const sfMatch = version.match(/^(\d+\.\d+\.\d+)(\.\w+)$/);
+  if (sfMatch) return sfMatch[2];
+
+  // Check for semver prerelease: 1.0.0-NEXT, 1.0.0-7
+  const semverMatch = version.match(/^(\d+\.\d+\.\d+)(-\w+)$/);
+  if (semverMatch) return semverMatch[2];
+
+  return '';
+}
+
+/**
+ * Strip the build segment from a version string, returning only `major.minor.patch`.
+ *
+ * Handles both Salesforce (`.`) and semver (`-`) separators, and recognises
+ * token suffixes like `.NEXT` and `.LATEST`.
+ *
+ * @example
+ * stripBuildSegment('1.0.0.NEXT')   // '1.0.0'
+ * stripBuildSegment('1.0.0-7')      // '1.0.0'
+ * stripBuildSegment('1.0.0')        // '1.0.0'
+ */
+export function stripBuildSegment(version: string): string {
+  if (!version) return '0.0.0';
+
+  // Remove known token suffixes (both . and - separators)
+  for (const token of KNOWN_TOKENS) {
+    const dotSuffix = `.${token}`;
+    const dashSuffix = `-${token}`;
+    if (version.endsWith(dotSuffix)) return version.slice(0, -dotSuffix.length);
+    if (version.endsWith(dashSuffix)) return version.slice(0, -dashSuffix.length);
+  }
+
+  // Salesforce 4-part: 1.0.0.7 → 1.0.0
+  const parts = version.split('.');
+  if (parts.length === 4) return parts.slice(0, 3).join('.');
+
+  // Semver prerelease: 1.0.0-7 → 1.0.0
+  const dashIdx = version.lastIndexOf('-');
+  if (dashIdx > 0) return version.slice(0, dashIdx);
+
+  return version;
+}
+
+/**
+ * Convert a semver version to Salesforce format, appending the appropriate
+ * build token based on package type.
+ *
+ * - **Unlocked** packages use `.NEXT` as a placeholder for the Salesforce-assigned build number.
+ * - **Source/Data/Diff** packages use `.0` since they don't go through Salesforce packaging.
+ * - Versions that already have a build segment (e.g., `1.0.0-5`) are converted directly.
+ *
+ * @example
+ * toSalesforceVersionWithToken('1.0.0', 'unlocked')  // '1.0.0.NEXT'
+ * toSalesforceVersionWithToken('1.0.0', 'source')     // '1.0.0.0'
+ * toSalesforceVersionWithToken('1.0.0-5', 'unlocked') // '1.0.0.5'
+ */
+export function toSalesforceVersionWithToken(
+  version: string,
+  packageType: Exclude<PackageType, 'managed'>,
+): string {
+  // If version already has a prerelease/build segment, convert directly
+  if (version.includes('-')) {
+    return toVersionFormat(version, 'salesforce');
+  }
+
+  // Salesforce 4-part already — return as-is
+  if (/^\d+\.\d+\.\d+\.\w+$/.test(version)) {
+    return version;
+  }
+
+  // Plain semver (no build) — append the appropriate build token
+  const token = packageType === 'unlocked' ? 'NEXT' : '0';
+  return `${version}.${token}`;
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
 /**
  * Parse any supported version format into canonical semver.
  *
@@ -147,7 +249,7 @@ export function formatVersion(
  */
 function parseToSemver(version: string, resolveTokens: boolean): string {
   const input = resolveTokens
-    ? version.replace(/\b(NEXT|LATEST)\b/gi, '0')
+    ? version.replaceAll(/\b(NEXT|LATEST)\b/gi, '0')
     : version;
 
   // 1. Already valid semver?
@@ -192,8 +294,6 @@ function semverToSalesforce(version: string): string {
     return `${version}.NEXT`;
   }
 
-  throw new Error(
-    `Cannot convert "${version}" to Salesforce format. ` +
-    'Expected major.minor.patch-build or major.minor.patch.build.',
-  );
+  throw new Error(`Cannot convert "${version}" to Salesforce format. `
+    + 'Expected major.minor.patch-build or major.minor.patch.build.');
 }

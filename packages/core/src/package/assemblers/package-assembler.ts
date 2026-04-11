@@ -2,6 +2,8 @@ import * as fs from 'fs-extra';
 import crypto from 'node:crypto';
 import path from 'node:path';
 
+import type {WorkspacePackageJson} from '../../types/workspace.js';
+
 import ProjectConfig from '../../project/project-config.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
@@ -77,6 +79,11 @@ export default class PackageAssembler {
         projectDefinitionPath: path.join(this.stagingDirectory, 'sfdx-project.json'),
         stagingDirectory: this.stagingDirectory,
       };
+
+      // Auto-detect workspace package.json if not explicitly provided
+      if (!this.options.workspacePackageJson) {
+        this.options.workspacePackageJson = this.detectWorkspacePackageJson();
+      }
 
       const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
       const packageType = packageDefinition.type?.toLowerCase();
@@ -224,6 +231,35 @@ export default class PackageAssembler {
   }
 
   /**
+   * Detect a workspace package.json (with sfpm config) for this package.
+   * Walks up from the SF source path to find a package.json with an sfpm field.
+   */
+  private detectWorkspacePackageJson(): undefined | WorkspacePackageJson {
+    const projectDir = this.projectConfig.projectDirectory;
+    try {
+      const pkgDef = this.projectConfig.getPackageDefinition(this.packageName);
+      const sourcePath = pkgDef.path; // e.g., "src/core/my-pkg/force-app" or "src/core/my-pkg"
+
+      // Check the source path itself and its parents up to project root
+      const parts = sourcePath.split('/');
+      for (let i = parts.length; i > 0; i--) {
+        const candidate = path.join(projectDir, ...parts.slice(0, i), 'package.json');
+        if (fs.existsSync(candidate)) {
+          const pkgJson = fs.readJsonSync(candidate);
+          if (pkgJson.sfpm && typeof pkgJson.sfpm === 'object' && pkgJson.sfpm.packageType) {
+            this.logger?.debug(`Detected workspace package.json at ${candidate}`);
+            return pkgJson as WorkspacePackageJson;
+          }
+        }
+      }
+    } catch {
+      // Detection failed — fall back to legacy path
+    }
+
+    return undefined;
+  }
+
+  /**
    * @description Ensures the parent directories for the staging area exist and that the
    * specific staging folder is completely empty and ready for a fresh build.
    *
@@ -237,11 +273,14 @@ export default class PackageAssembler {
   /**
    * @description Resolves the path for the temporary assembly area.
    * The path is constructed as: `.sfpm/tmp/builds/[timestamp]-[packageName]-[hash]`
+   * Uses the project root (where sfdx-project.json lives) rather than cwd so that
+   * the staging area is never created inside a package's own source directory
+   * (which would cause SourceCopyStep to fail with a self-referencing copy).
    *
    * @returns {string} The absolute path to the staging directory.
    */
   private initializeStagingArea(): string {
     const buildName = this.createBuildName();
-    return path.join(process.cwd(), DOT_FOLDER, 'tmp', 'builds', buildName, 'package');
+    return path.join(this.projectConfig.projectDirectory, DOT_FOLDER, 'tmp', 'builds', buildName, 'package');
   }
 }

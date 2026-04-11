@@ -121,12 +121,38 @@ export interface SfpmConfig {
   ignoreFiles?: IgnoreFilesConfig;
 
   /**
+   * Salesforce namespace prefix for the project.
+   * Written to sfdx-project.json during sync.
+   * Use empty string for no namespace.
+   *
+   * @example 'myns'
+   */
+  namespace?: string;
+
+  /**
    * npm scope for publishing packages (e.g., '@myorg').
    * Required for npm registry integration and artifact publishing.
    *
    * @example '@myorg'
    */
   npmScope?: string;
+
+  /**
+   * Salesforce login URL for the project.
+   * Written to sfdx-project.json during sync.
+   *
+   * @default 'https://login.salesforce.com'
+   * @example 'https://test.salesforce.com'
+   */
+  sfdcLoginUrl?: string;
+
+  /**
+   * Source API version for the project (e.g., '63.0').
+   * Written to sfdx-project.json during sync.
+   *
+   * @example '63.0'
+   */
+  sourceApiVersion?: string;
 }
 
 // ============================================================================

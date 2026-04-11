@@ -9,12 +9,19 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 /**
  * Copies the primary package directory to the staging area.
  *
+ * Always excludes `node_modules` and `.sfpm` from the copy — these are never
+ * part of a Salesforce package and may contain broken symlinks (e.g. pnpm
+ * workspace links) that would cause downstream tools to fail.
+ *
  * When a build-stage ignore file is configured (via `ignoreFilesConfig.build`),
- * its patterns are applied as a filter during the copy so that excluded
- * metadata never reaches the staged artifact.  The ignore file uses the
- * same `.gitignore`-style syntax that `.forceignore` supports.
+ * its patterns are applied as an additional filter during the copy so that
+ * excluded metadata never reaches the staged artifact.  The ignore file uses
+ * the same `.gitignore`-style syntax that `.forceignore` supports.
  */
 export class SourceCopyStep implements AssemblyStep {
+  /** Directories that are never part of a Salesforce package */
+  private static readonly ALWAYS_EXCLUDED = new Set(['.sfpm', 'node_modules']);
+
   constructor(
     private packageName: string,
     private projectConfig: ProjectConfig,
@@ -41,6 +48,12 @@ export class SourceCopyStep implements AssemblyStep {
           const relativePath = path.relative(sourceDir, src);
           if (!relativePath) {
             return true;
+          }
+
+          // Exclude directories that are never part of a Salesforce package
+          const topSegment = relativePath.split(path.sep)[0];
+          if (SourceCopyStep.ALWAYS_EXCLUDED.has(topSegment)) {
+            return false;
           }
 
           if (!ig) {

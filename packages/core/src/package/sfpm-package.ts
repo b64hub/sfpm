@@ -3,7 +3,10 @@ import fg from 'fast-glob';
 import {
   get, merge, omit, set,
 } from 'lodash-es';
+import fs from 'node:fs';
 import path from 'node:path';
+
+import type {WorkspacePackageJson} from '../types/workspace.js';
 
 import ProjectConfig from '../project/project-config.js';
 import {
@@ -821,6 +824,10 @@ export class PackageFactory {
     sfpmPackage.packageDefinition = packageDefinition;
     sfpmPackage.version = packageDefinition.versionNumber;
 
+    // In workspace mode, read packageOptions directly from the workspace package.json
+    // rather than from sfdx-project.json (which no longer carries them)
+    this.overlayWorkspacePackageOptions(packageDefinition, sfpmPackage);
+
     // Resolve package ID from aliases for unlocked packages
     if (packageType === PackageType.Unlocked && sfpmPackage instanceof SfpmUnlockedPackage) {
       const projectDef = this.projectConfig.getProjectDefinition();
@@ -897,6 +904,36 @@ export class PackageFactory {
     default: {
       throw new Error(`Unsupported package type: ${packageType}`);
     }
+    }
+  }
+
+  /**
+   * Detect workspace package.json and overlay packageOptions onto the PackageDefinition.
+   *
+   * In workspace mode, packageOptions lives in the package-scoped package.json
+   * (not in sfdx-project.json). This method finds the workspace package.json
+   * by walking up from the SF source path and merges packageOptions onto the
+   * existing PackageDefinition so all downstream consumers work unchanged.
+   */
+  private overlayWorkspacePackageOptions(packageDefinition: PackageDefinition, sfpmPackage: SfpmPackage): void {
+    const projectDir = this.projectConfig.projectDirectory;
+    const sourcePath = packageDefinition.path;
+    const parts = sourcePath.split('/');
+
+    // Walk up from the source path to find a package.json with sfpm config
+    for (let i = parts.length; i > 0; i--) {
+      const candidatePath = path.join(projectDir, ...parts.slice(0, i), 'package.json');
+      try {
+        if (fs.existsSync(candidatePath)) {
+          const pkgJson: WorkspacePackageJson = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
+          if (pkgJson.sfpm?.packageType && pkgJson.sfpm.packageOptions) {
+            packageDefinition.packageOptions = pkgJson.sfpm.packageOptions;
+            return;
+          }
+        }
+      } catch {
+        // Detection failed — continue to next candidate
+      }
     }
   }
 }

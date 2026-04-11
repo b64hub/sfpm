@@ -5,7 +5,7 @@ import fs from 'fs-extra'
 import path from 'node:path'
 import ora from 'ora'
 
-import SfpmCommand from '../sfpm-command.js'
+import SfpmCommand from '../../sfpm-command.js'
 
 interface ConfigCheck {
   fix?: string

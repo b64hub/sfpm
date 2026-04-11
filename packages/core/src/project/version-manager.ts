@@ -6,6 +6,8 @@ import {OrgPackageVersionFetcher} from '../types/org.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {
   formatVersion as formatVersionUtil,
+  getVersionSuffix,
+  stripBuildSegment,
   toVersionFormat,
 } from '../utils/version-utils.js';
 import {PackageNode, ProjectGraph} from './project-graph.js';
@@ -309,19 +311,7 @@ export class VersionTracker {
   }
 
   cleanedVersion(version?: string): string {
-    let v = version || this.currentVersion;
-    if (!v) return '0.0.0';
-
-    // Check for suffixes with both . and -
-    const suffixes = [NEXT_SUFFIX, LATEST_SUFFIX, '-NEXT', '-LATEST'];
-    for (const suffix of suffixes) {
-      if (v.endsWith(suffix)) {
-        v = v.slice(0, Math.max(0, v.length - suffix.length));
-        break;
-      }
-    }
-
-    return v;
+    return stripBuildSegment(version || this.currentVersion || '');
   }
 
   getDependency(pkgName: string): string | undefined {
@@ -395,17 +385,16 @@ export class VersionTracker {
     return copy;
   }
 
-  // For internal structure matching original cleaner
   private cleanVersion(version: string): string {
-    const parts = version.split(/[.-]/);
-    // Take first 3 parts
-    return parts.slice(0, 3).join('.');
+    return stripBuildSegment(version);
   }
 
   private getSuffix(version: string): string {
-    if (version.includes(NEXT_SUFFIX) || version.includes('-NEXT')) return NEXT_SUFFIX;
-    if (version.includes(LATEST_SUFFIX) || version.includes('-LATEST')) return LATEST_SUFFIX;
-    return '.0';
+    const suffix = getVersionSuffix(version);
+    // Normalise to Salesforce dot-separator for consistency with sfdx-project.json
+    if (suffix === '-NEXT') return NEXT_SUFFIX;
+    if (suffix === '-LATEST') return LATEST_SUFFIX;
+    return suffix || '.0';
   }
 
   private setNewVersion(version: string) {
