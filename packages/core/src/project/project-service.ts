@@ -1,12 +1,16 @@
 import {SfProject} from '@salesforce/core';
 
+import type {ProjectDefinitionProvider} from './project-definition-provider.js';
+
 import {SfpmConfig} from '../types/config.js';
 import {PackageType} from '../types/package.js';
 import {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {loadSfpmConfig} from './config-loader.js';
 import ProjectConfig from './project-config.js';
 import {ProjectGraph} from './project-graph.js';
+import {SfdxProjectDefinitionProvider} from './sfdx-project-provider.js';
 import {VersionManager} from './version-manager.js';
+import {WorkspaceDefinitionProvider} from './workspace-resolver.js';
 
 export default class ProjectService {
   private static instance: ProjectService | undefined;
@@ -36,15 +40,34 @@ export default class ProjectService {
    * Creates and initializes a new ProjectService instance from a directory path.
    * This is the recommended way to create a ProjectService.
    *
+   * Auto-detects the project mode:
+   * - **Workspace mode** (pnpm-workspace.yaml or package.json workspaces): builds the
+   *   project graph from workspace package.json files via WorkspaceDefinitionProvider.
+   * - **Legacy mode**: builds the graph from sfdx-project.json via SfdxProjectDefinitionProvider.
+   *
+   * You can also pass a custom ProjectDefinitionProvider to override auto-detection.
+   *
    * @param projectPath - Path to project directory (defaults to current working directory)
+   * @param provider - Optional custom provider (overrides auto-detection)
    * @returns Fully initialized ProjectService instance
    */
-  public static async create(projectPath?: string): Promise<ProjectService> {
-    const sfProject = await SfProject.resolve(projectPath);
-    const projectConfig = new ProjectConfig(sfProject);
-    const definition = projectConfig.getProjectDefinition();
+  public static async create(projectPath?: string, provider?: ProjectDefinitionProvider): Promise<ProjectService> {
+    const resolvedPath = projectPath ?? process.cwd();
+    const sfpmConfig = await loadSfpmConfig(resolvedPath);
+
+    // Use provided provider, auto-detect workspace, or fall back to legacy
+    const definitionProvider = provider ?? await ProjectService.detectProvider(resolvedPath, sfpmConfig);
+    const {definition} = definitionProvider.resolve();
     const graph = new ProjectGraph(definition);
-    const sfpmConfig = await loadSfpmConfig(sfProject.getPath());
+
+    // ProjectConfig still wraps SfProject for consumers that need package definitions.
+    // In workspace mode, write sfdx-project.json so @salesforce/core can load it.
+    if (definitionProvider instanceof WorkspaceDefinitionProvider) {
+      WorkspaceDefinitionProvider.ensureSfdxProject(resolvedPath, definition);
+    }
+
+    const sfProject = await SfProject.resolve(resolvedPath);
+    const projectConfig = new ProjectConfig(sfProject);
 
     return new ProjectService(projectConfig, graph, sfpmConfig);
   }
@@ -123,6 +146,23 @@ export default class ProjectService {
    */
   public static resetInstance(): void {
     ProjectService.instance = undefined;
+  }
+
+  /**
+   * Auto-detect the appropriate ProjectDefinitionProvider for the given project.
+   */
+  private static async detectProvider(projectDir: string, sfpmConfig: SfpmConfig): Promise<ProjectDefinitionProvider> {
+    if (WorkspaceDefinitionProvider.hasWorkspace(projectDir)) {
+      return new WorkspaceDefinitionProvider({
+        namespace: sfpmConfig.namespace,
+        projectDir,
+        sfdcLoginUrl: sfpmConfig.sfdcLoginUrl,
+        sourceApiVersion: sfpmConfig.sourceApiVersion,
+      });
+    }
+
+    const sfProject = await SfProject.resolve(projectDir);
+    return new SfdxProjectDefinitionProvider(sfProject);
   }
 
   /**

@@ -20,6 +20,7 @@ export default [
       '@typescript-eslint/no-unused-vars': ['warn', {argsIgnorePattern: '^_'}],
       '@stylistic/indent': 'warn',
       '@stylistic/indent-binary-ops': ['error', 2],
+      'n/no-unsupported-features/node-builtins': ['error', {version: '>=18.0.0'}],
       'unicorn/filename-case': [
         'error',
         {

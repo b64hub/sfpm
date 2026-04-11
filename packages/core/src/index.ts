@@ -81,10 +81,20 @@ export {type InstallOptions, type InstallResult, default as PackageInstaller} fr
 export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
 export {PackageFactory, SfpmDataPackage, default as SfpmPackage} from './package/sfpm-package.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
+export {
+  collectPackageAliases, stripScope, toManagedPackageDefinitions, toPackageDefinition,
+} from './project/package-json-adapter.js';
 export {default as ProjectConfig} from './project/project-config.js';
+export {type ProjectDefinitionProvider, type ProjectDefinitionResult} from './project/project-definition-provider.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
+export {SfdxProjectDefinitionProvider} from './project/sfdx-project-provider.js';
 export * from './project/version-manager.js';
+export {
+  type MigrateOptions, WorkspaceInitializer, type WorkspaceInitOptions, type WorkspaceInitResult,
+} from './project/workspace-init.js';
+export {WorkspaceDefinitionProvider, type WorkspaceDefinitionProviderOptions} from './project/workspace-resolver.js';
+export {WorkspaceSync, type WorkspaceSyncOptions} from './project/workspace-sync.js';
 export * from './types/artifact.js';
 export * from './types/bootstrap.js';
 export * from './types/config.js';
@@ -96,8 +106,11 @@ export * from './types/npm.js';
 export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
+export * from './types/workspace.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
 export {getPipelineRunId} from './utils/pipeline.js';
 export {escapeSOQL, soql} from './utils/soql.js';
-export {formatVersion, toVersionFormat} from './utils/version-utils.js';
+export {
+  formatVersion, getVersionSuffix, stripBuildSegment, toSalesforceVersionWithToken, toVersionFormat,
+} from './utils/version-utils.js';
 export type {VersionFormatOptions} from './utils/version-utils.js';

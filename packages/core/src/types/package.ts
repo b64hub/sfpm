@@ -1,7 +1,7 @@
 import {PackageManifestObject} from '@salesforce/source-deploy-retrieve';
 
 import {ApexClasses, ApexSortedByType} from './apex.js';
-import {InstallOptions} from './project.js';
+import {DeployOptions} from './project.js';
 
 export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked'}
 
@@ -99,7 +99,7 @@ export interface SfpmPackageContent {
 export interface SfpmPackageOrchestration {
   build?: SfpmPackageBuildOptions;
   creationDetails?: {duration?: number; timestamp?: number};
-  install?: InstallOptions;
+  install?: DeployOptions;
   installation?: {
     installationTime?: number;
     subDirectory?: string;
