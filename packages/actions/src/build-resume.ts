@@ -2,10 +2,10 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import {
   isStructuredLogger,
-  type Logger,
+  type PackageValidationResult,
+  ValidationPoller,
 } from '@b64/sfpm-core';
-import {type Connection, Org} from '@salesforce/core';
-import {PackageVersion} from '@salesforce/packaging';
+import {Org} from '@salesforce/core';
 
 import {BuildCacheService, type PackageBuildState} from './build-cache.js';
 import {createGitHubActionsLogger} from './logger.js';
@@ -36,20 +36,7 @@ export interface BuildResumeResult {
   success: boolean;
 }
 
-export interface PackageValidationResult {
-  /** Code coverage percentage (if available) */
-  codeCoverage?: number;
-  /** Error message if validation failed */
-  error?: string;
-  /** Whether code coverage check passed */
-  hasPassedCodeCoverageCheck?: boolean;
-  /** Package name */
-  packageName: string;
-  /** Subscriber package version ID (04t...) */
-  packageVersionId?: string;
-  /** Final validation status */
-  status: 'Error' | 'Skipped' | 'Success' | 'TimedOut';
-}
+export type {PackageValidationResult} from '@b64/sfpm-core';
 
 // ============================================================================
 // Build Resume Pipeline
@@ -125,12 +112,17 @@ export async function buildResume(options: BuildResumeOptions): Promise<BuildRes
   const maxWaitMs = (options.maxWaitMinutes ?? 120) * 60 * 1000;
   const pollingIntervalMs = (options.pollingIntervalSeconds ?? 30) * 1000;
 
-  const validationResults: PackageValidationResult[] = await pollAllPackages(
-    pendingPackages,
+  const poller = new ValidationPoller(
     connection,
     {maxWaitMs, pollingIntervalMs},
     logger,
   );
+
+  const validationResults: PackageValidationResult[] = await poller.pollAll(pendingPackages.map(pkg => ({
+    packageName: pkg.packageName,
+    packageVersionCreateRequestId: pkg.packageVersionCreateRequestId!,
+    packageVersionId: pkg.packageVersionId,
+  })));
 
   // Include non-validation packages as skipped
   for (const pkg of state.packages.filter(p => !p.needsValidation)) {
@@ -167,130 +159,6 @@ export async function buildResume(options: BuildResumeOptions): Promise<BuildRes
   }
 
   return result;
-}
-
-// ============================================================================
-// Validation Polling
-// ============================================================================
-
-interface PollingOptions {
-  maxWaitMs: number;
-  pollingIntervalMs: number;
-}
-
-/**
- * Poll a single unlocked package's creation request for validation completion.
- *
- * Uses `PackageVersion.getCreateStatus()` to query the
- * Package2VersionCreateRequest by its ID. This returns the current
- * status of the async validation (Queued, InProgress, Success, Error).
- *
- * Returns once validation completes, errors, or times out.
- */
-/**
- * Poll all pending packages sequentially.
- *
- * Intentionally sequential — each package's validation is independent but
- * we poll one at a time to avoid flooding the DevHub with concurrent queries.
- */
-async function pollAllPackages(
-  packages: PackageBuildState[],
-  connection: Connection,
-  pollingOptions: PollingOptions,
-  logger: Logger,
-): Promise<PackageValidationResult[]> {
-  const results: PackageValidationResult[] = [];
-
-  for (const pkg of packages) {
-    // eslint-disable-next-line no-await-in-loop -- sequential polling is intentional
-    const result = await pollPackageValidation(pkg, connection, pollingOptions, logger);
-    results.push(result);
-  }
-
-  return results;
-}
-
-async function pollPackageValidation(
-  pkg: PackageBuildState,
-  connection: Connection,
-  pollingOptions: PollingOptions,
-  logger: Logger,
-): Promise<PackageValidationResult> {
-  const {packageName, packageVersionCreateRequestId} = pkg;
-
-  if (!packageVersionCreateRequestId) {
-    logger.warn(`${packageName}: No creation request ID — skipping validation poll`);
-    return {error: 'No package version creation request ID', packageName, status: 'Error'};
-  }
-
-  logger.info(`${packageName}: Polling creation request ${packageVersionCreateRequestId}`);
-
-  const deadline = Date.now() + pollingOptions.maxWaitMs;
-
-  /* eslint-disable no-await-in-loop -- polling loop is inherently sequential */
-  while (Date.now() < deadline) {
-    try {
-      const result = await PackageVersion.getCreateStatus(packageVersionCreateRequestId, connection);
-
-      if (!result) {
-        logger.warn(`${packageName}: Creation request ${packageVersionCreateRequestId} not found`);
-        return {
-          error: 'Creation request not found', packageName, packageVersionId: pkg.packageVersionId, status: 'Error',
-        };
-      }
-
-      logger.debug(`${packageName}: Status = ${result.Status}`);
-
-      if (result.Status === 'Success') {
-        const coverage = result.CodeCoverage ?? undefined;
-        logger.info(`${packageName}: Validation passed (coverage: ${coverage ?? 'N/A'}%)`);
-        return {
-          codeCoverage: typeof coverage === 'number' ? coverage : undefined,
-          hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
-          packageName,
-          packageVersionId: result.SubscriberPackageVersionId ?? pkg.packageVersionId,
-          status: 'Success',
-        };
-      }
-
-      if (result.Status === 'Error') {
-        const errors = result.Error?.length
-          // Error is typed as any[] by @salesforce/packaging
-          ? result.Error.map((e: unknown) => (typeof e === 'string' ? e : (e as {Message?: string}).Message ?? JSON.stringify(e))).join('; ')
-          : 'Unknown error';
-        logger.error(`${packageName}: Validation failed — ${errors}`);
-        return {
-          error: errors,
-          packageName,
-          packageVersionId: result.SubscriberPackageVersionId ?? pkg.packageVersionId,
-          status: 'Error',
-        };
-      }
-
-      // Status is Queued, InProgress, or Verifying — keep polling
-      const remaining = Math.round((deadline - Date.now()) / 1000 / 60);
-      logger.debug(`${packageName}: ${result.Status}, ${remaining}m remaining`);
-    } catch (error) {
-      logger.warn(`${packageName}: Error polling status — ${error instanceof Error ? error.message : String(error)}`);
-    }
-
-    await sleep(pollingOptions.pollingIntervalMs);
-  }
-  /* eslint-enable no-await-in-loop */
-
-  logger.error(`${packageName}: Validation timed out after ${pollingOptions.maxWaitMs / 1000 / 60}m`);
-  return {
-    error: `Validation timed out after ${pollingOptions.maxWaitMs / 1000 / 60} minutes`,
-    packageName,
-    packageVersionId: pkg.packageVersionId,
-    status: 'TimedOut',
-  };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    setTimeout(resolve, ms);
-  });
 }
 
 // ============================================================================

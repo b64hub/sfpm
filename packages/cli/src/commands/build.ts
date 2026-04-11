@@ -1,11 +1,16 @@
 import {
-  BuildOrchestrationTask, BuildOrchestrator, LifecycleEngine, Logger, ProjectService,
+  BuildOrchestrationTask, BuildOrchestrator, BuildStateStore,
+  type CreateCompleteEvent, LifecycleEngine, type LocalBuildState,
+  type LocalPackageBuildState, Logger, ProjectService,
 } from '@b64/sfpm-core'
 import {
   Args, Flags,
 } from '@oclif/core'
 import {ConfigAggregator} from '@salesforce/core'
+import {fork} from 'node:child_process'
 import EventEmitter from 'node:events'
+import path from 'node:path'
+import {fileURLToPath} from 'node:url'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
 import '@b64/sfpm-sfdmu'
 
@@ -114,6 +119,20 @@ export default class Build extends SfpmCommand {
       mode,
     });
 
+    // Track unlocked package creation results for async validation watcher
+    const asyncPackages: LocalPackageBuildState[] = [];
+    const captureCreateComplete = (event: CreateCompleteEvent) => {
+      if (event.packageVersionCreateRequestId) {
+        asyncPackages.push({
+          packageName: event.packageName,
+          packageType: 'Unlocked',
+          packageVersionCreateRequestId: event.packageVersionCreateRequestId,
+          packageVersionId: event.packageVersionId,
+          version: event.versionNumber,
+        });
+      }
+    };
+
     // --single mode: build exactly one package without orchestration.
     // Designed for external orchestrators (Turbo, CI matrix) that handle
     // dependency ordering and parallelism themselves.
@@ -132,6 +151,9 @@ export default class Build extends SfpmCommand {
 
       const emitter = new EventEmitter()
       renderer.attachTo(emitter as any)
+      if (flags['async-validation']) {
+        emitter.on('unlocked:create:complete', captureCreateComplete)
+      }
 
       try {
         const context = await task.setup()
@@ -143,6 +165,11 @@ export default class Build extends SfpmCommand {
 
         if (!result.success) {
           this.error(`Build failed for: ${packages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 1})
+        }
+
+        // Start async validation watcher if applicable
+        if (flags['async-validation'] && asyncPackages.length > 0) {
+          await this.startValidationWatcher(asyncPackages, devhubUsername, projectDir, flags.wait, mode)
         }
       } catch (error) {
         renderer.handleError(error as Error)
@@ -167,6 +194,9 @@ export default class Build extends SfpmCommand {
 
     // Attach renderer to orchestrator — it forwards all builder events
     renderer.attachTo(orchestrator as any)
+    if (flags['async-validation']) {
+      orchestrator.on('unlocked:create:complete', captureCreateComplete)
+    }
 
     try {
       const result = await orchestrator.buildAll(packages)
@@ -179,6 +209,11 @@ export default class Build extends SfpmCommand {
         const failedNames = result.failedPackages.join(', ')
         this.error(`Build failed for: ${failedNames}`, {exit: 1})
       }
+
+      // Start async validation watcher if applicable
+      if (flags['async-validation'] && asyncPackages.length > 0) {
+        await this.startValidationWatcher(asyncPackages, devhubUsername, projectDir, flags.wait, mode)
+      }
     } catch (error) {
       renderer.handleError(error as Error)
       if (flags.json) {
@@ -186,6 +221,64 @@ export default class Build extends SfpmCommand {
       }
 
       throw error
+    }
+  }
+
+  /**
+   * Save async build state and fork a background watcher process
+   * that polls Salesforce for validation results.
+   */
+  private async startValidationWatcher(
+    packages: LocalPackageBuildState[],
+    devhubUsername: string,
+    projectDir: string,
+    waitMinutes: number,
+    mode: OutputMode,
+  ): Promise<void> {
+    const store = new BuildStateStore(projectDir);
+
+    const state: LocalBuildState = {
+      createdAt: Date.now(),
+      devhubUsername,
+      packages,
+      projectDir,
+      updatedAt: Date.now(),
+      waitTimeMs: waitMinutes * 60 * 1000,
+      watcherStatus: 'starting',
+    };
+
+    const id = await store.save(state);
+    const stateFilePath = store.getFilePath(id);
+
+    // Resolve the watcher script path relative to this file
+    const thisDir = path.dirname(fileURLToPath(import.meta.url));
+    const watcherScript = path.resolve(thisDir, '..', 'utils', 'validation-watcher.js');
+
+    // Fork the watcher as a detached, unref'd child process so this process can exit
+    const child = fork(watcherScript, [stateFilePath, id], {
+      detached: true,
+      stdio: 'ignore',
+    });
+
+    child.unref();
+
+    // Update state with the watcher PID
+    state.watcherPid = child.pid;
+    state.watcherStatus = 'polling';
+    await store.update(id, state);
+
+    const pkgNames = packages.map(p => p.packageName).join(', ');
+
+    if (mode === 'json') {
+      this.logJson({
+        packages: pkgNames,
+        stateFile: stateFilePath,
+        stateId: id,
+        watcherPid: child.pid,
+      });
+    } else if (mode !== 'quiet') {
+      this.log(`\nValidation watcher started (PID ${child.pid}) for: ${pkgNames}`);
+      this.log('Run \'sfpm build status\' to check progress.');
     }
   }
 }
