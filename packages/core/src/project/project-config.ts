@@ -239,7 +239,7 @@ export default class ProjectConfig {
   // eslint-disable-next-line unicorn/no-object-as-default-parameter -- we want to allow callers to omit pruneOptions and get default pruning behavior
   public getPrunedDefinition(packageName: string, pruneOptions: {isOrgDependent: boolean; removeCustomProperties: boolean,} = {isOrgDependent: false, removeCustomProperties: true}): ProjectDefinition {
     const definition = this.getProjectDefinition();
-    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- structuredClone is available in Node 17+ and provides a convenient way to deep copy the project definition without mutating the original
+
     const pruned = structuredClone(definition) as ProjectDefinition;
 
     const filteredPackages = pruned.packageDirectories.filter((pkg): pkg is PackageDefinition => 'package' in pkg && pkg.package === packageName);
@@ -248,7 +248,12 @@ export default class ProjectConfig {
       throw new Error(`Package ${packageName} not found in project definition`);
     }
 
-    pruned.packageDirectories = pruneOptions.removeCustomProperties ? [this.pruneForSalesforce(filteredPackages[0], pruneOptions.isOrgDependent)] : filteredPackages;
+    const prunedPkg = pruneOptions.removeCustomProperties ? this.pruneForSalesforce(filteredPackages[0], pruneOptions.isOrgDependent) : filteredPackages[0];
+
+    // Ensure the sole remaining package is marked as the default — Salesforce CLI
+    // requires exactly one default directory when only one entry exists.
+    prunedPkg.default = true;
+    pruned.packageDirectories = [prunedPkg];
 
     return pruned;
   }

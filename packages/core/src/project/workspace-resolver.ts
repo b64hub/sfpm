@@ -13,9 +13,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type {Logger} from '../types/logger.js';
-import type {ProjectDefinition} from '../types/project.js';
+import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import type {WorkspacePackageJson} from '../types/workspace.js';
-import type {ProjectDefinitionProvider, ProjectDefinitionResult} from './project-definition-provider.js';
+import type {ProjectDefinitionProvider, ProjectDefinitionResult, ResolveForPackageOptions} from './project-definition-provider.js';
 
 import {
   collectPackageAliases,
@@ -45,6 +45,7 @@ export interface WorkspaceDefinitionProviderOptions {
 
 export class WorkspaceDefinitionProvider implements ProjectDefinitionProvider {
   public readonly projectDir: string;
+  private cachedResult?: ProjectDefinitionResult;
   private readonly logger: Logger | undefined;
   private readonly options: WorkspaceDefinitionProviderOptions;
 
@@ -106,6 +107,8 @@ export class WorkspaceDefinitionProvider implements ProjectDefinitionProvider {
    * Resolve the workspace: discover packages, build a ProjectDefinition.
    */
   resolve(): ProjectDefinitionResult {
+    if (this.cachedResult) return this.cachedResult;
+
     const warnings: string[] = [];
 
     // 1. Discover workspace member directories
@@ -154,7 +157,79 @@ export class WorkspaceDefinitionProvider implements ProjectDefinitionProvider {
       ...(this.options.sourceApiVersion ? {sourceApiVersion: this.options.sourceApiVersion} : {}),
     } as ProjectDefinition;
 
-    return {definition: projectDefinition, packages: sfpmPackages, warnings};
+    this.cachedResult = {definition: projectDefinition, packages: sfpmPackages, warnings};
+    return this.cachedResult;
+  }
+
+  /**
+   * Resolve a single-package ProjectDefinition from the workspace package.json.
+   *
+   * Builds the definition from the target package's own package.json, including
+   * project-level settings (namespace, sourceApiVersion, sfdcLoginUrl) and relevant
+   * packageAliases (own 0Ho ID, managed deps, dependency 0Ho IDs).
+   */
+  resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
+    const result = this.resolve();
+    const {packages} = result;
+
+    if (!packages) {
+      throw new Error('No workspace packages available');
+    }
+
+    // Find the target package by SF name (scope-stripped)
+    const entry = packages.find(({pkgJson}) => stripScope(pkgJson.name) === packageName);
+    if (!entry) {
+      throw new Error(`Package "${packageName}" not found in workspace.`);
+    }
+
+    const {packageDir, pkgJson} = entry;
+
+    // Build workspace version map for dependency version resolution
+    const workspaceVersions = new Map<string, string>();
+    for (const {pkgJson: p} of packages) {
+      workspaceVersions.set(p.name, p.version);
+    }
+
+    const definition = toPackageDefinition(pkgJson, packageDir, workspaceVersions) as PackageDefinition;
+    definition.default = true;
+
+    if (options?.isOrgDependent && definition.dependencies) {
+      delete (definition as any).dependencies;
+    }
+
+    // Build packageAliases relevant to this package
+    const aliases: Record<string, string> = {};
+
+    // Own 0Ho ID
+    if (pkgJson.sfpm.packageId) {
+      aliases[packageName] = pkgJson.sfpm.packageId;
+    }
+
+    // Managed dependency aliases
+    if (pkgJson.sfpm.managedDependencies) {
+      for (const [alias, versionId] of Object.entries(pkgJson.sfpm.managedDependencies)) {
+        aliases[alias] = versionId;
+      }
+    }
+
+    // Dependency 0Ho IDs from other workspace packages
+    if (definition.dependencies) {
+      const fullAliases = result.definition.packageAliases ?? {};
+      for (const dep of definition.dependencies as Array<{package: string}>) {
+        const alias = fullAliases[dep.package];
+        if (alias && !aliases[dep.package]) {
+          aliases[dep.package] = alias as string;
+        }
+      }
+    }
+
+    return {
+      namespace: this.options.namespace ?? '',
+      packageAliases: Object.keys(aliases).length > 0 ? aliases : undefined,
+      packageDirectories: [definition],
+      sfdcLoginUrl: this.options.sfdcLoginUrl ?? 'https://login.salesforce.com',
+      ...(this.options.sourceApiVersion ? {sourceApiVersion: this.options.sourceApiVersion} : {}),
+    } as ProjectDefinition;
   }
 
   // =========================================================================

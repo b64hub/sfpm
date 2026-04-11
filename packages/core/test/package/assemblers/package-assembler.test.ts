@@ -32,6 +32,16 @@ vi.mock('../../../src/package/assemblers/steps/mdapi-conversion-step.js', () => 
     };
 });
 
+vi.mock('../../../src/project/project-service.js', () => ({
+    default: {
+        getInstance: vi.fn().mockResolvedValue({
+            resolveForPackage: vi.fn().mockReturnValue({
+                packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
+            }),
+        }),
+    },
+}));
+
 import fs from 'fs-extra';
 import PackageAssembler from '../../../src/package/assemblers/package-assembler.js';
 import ProjectConfig from '../../../src/project/project-config.js';
@@ -55,9 +65,6 @@ describe('PackageAssembler', () => {
             getProjectDefinition: vi.fn().mockReturnValue({
                 packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
             }),
-            getPrunedDefinition: vi.fn().mockReturnValue({
-                packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
-            })
         };
 
         assembler = new PackageAssembler('core', mockProjectConfig as any);

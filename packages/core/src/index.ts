@@ -85,7 +85,7 @@ export {
   collectPackageAliases, stripScope, toManagedPackageDefinitions, toPackageDefinition,
 } from './project/package-json-adapter.js';
 export {default as ProjectConfig} from './project/project-config.js';
-export {type ProjectDefinitionProvider, type ProjectDefinitionResult} from './project/project-definition-provider.js';
+export {type ProjectDefinitionProvider, type ProjectDefinitionResult, type ResolveForPackageOptions} from './project/project-definition-provider.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
 export {SfdxProjectDefinitionProvider} from './project/sfdx-project-provider.js';

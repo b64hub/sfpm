@@ -1,6 +1,6 @@
 import {SfProject} from '@salesforce/core';
 
-import type {ProjectDefinitionProvider} from './project-definition-provider.js';
+import type {ProjectDefinitionProvider, ResolveForPackageOptions} from './project-definition-provider.js';
 
 import {SfpmConfig} from '../types/config.js';
 import {PackageType} from '../types/package.js';
@@ -14,6 +14,7 @@ import {WorkspaceDefinitionProvider} from './workspace-resolver.js';
 
 export default class ProjectService {
   private static instance: ProjectService | undefined;
+  private readonly definitionProvider: ProjectDefinitionProvider;
   private readonly graph: ProjectGraph;
   private readonly projectConfig: ProjectConfig;
   private readonly sfpmConfig: SfpmConfig;
@@ -22,10 +23,12 @@ export default class ProjectService {
     projectConfig: ProjectConfig,
     graph: ProjectGraph,
     sfpmConfig: SfpmConfig,
+    definitionProvider: ProjectDefinitionProvider,
   ) {
     this.projectConfig = projectConfig;
     this.graph = graph;
     this.sfpmConfig = sfpmConfig;
+    this.definitionProvider = definitionProvider;
   }
 
   /**
@@ -73,7 +76,7 @@ export default class ProjectService {
     const sfProject = await SfProject.resolve(resolvedPath);
     const projectConfig = new ProjectConfig(sfProject);
 
-    return new ProjectService(projectConfig, graph, sfpmConfig);
+    return new ProjectService(projectConfig, graph, sfpmConfig, definitionProvider);
   }
 
   /**
@@ -94,8 +97,9 @@ export default class ProjectService {
     const projectConfig = new ProjectConfig(project);
     const definition = projectConfig.getProjectDefinition();
     const graph = new ProjectGraph(definition);
+    const provider = new SfdxProjectDefinitionProvider(project);
 
-    return new ProjectService(projectConfig, graph, sfpmConfig);
+    return new ProjectService(projectConfig, graph, sfpmConfig, provider);
   }
 
   /**
@@ -196,6 +200,20 @@ export default class ProjectService {
    */
   public getSfpmConfig(): SfpmConfig {
     return this.sfpmConfig;
+  }
+
+  /**
+   * Resolve a single-package ProjectDefinition for staging and building.
+   *
+   * Delegates to the underlying ProjectDefinitionProvider:
+   * - Workspace mode: builds from the package's own package.json
+   * - Legacy mode: prunes the full sfdx-project.json
+   *
+   * @param packageName - The SF package name (bare, without npm scope)
+   * @param options - Optional flags (e.g., strip dependencies for org-dependent packages)
+   */
+  public resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
+    return this.definitionProvider.resolveForPackage(packageName, options);
   }
 
   /**

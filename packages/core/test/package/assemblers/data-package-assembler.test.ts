@@ -31,6 +31,16 @@ vi.mock('../../../../src/package/assemblers/steps/mdapi-conversion-step.js', () 
   };
 });
 
+vi.mock('../../../src/project/project-service.js', () => ({
+  default: {
+    getInstance: vi.fn().mockResolvedValue({
+      resolveForPackage: vi.fn().mockReturnValue({
+        packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
+      }),
+    }),
+  },
+}));
+
 import fs from 'fs-extra';
 import path from 'path';
 import PackageAssembler from '../../../../src/package/assemblers/package-assembler.js';
@@ -53,9 +63,6 @@ describe('PackageAssembler — Data packages', () => {
         versionNumber: '1.0.0.0',
       }),
       getProjectDefinition: vi.fn().mockReturnValue({
-        packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
-      }),
-      getPrunedDefinition: vi.fn().mockReturnValue({
         packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
       }),
     };

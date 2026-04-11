@@ -241,10 +241,9 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       timestamp: new Date(),
     });
 
-    const projectConfig = (await ProjectService.getInstance(this.workingDirectory)).getProjectConfig();
-    const prunedDefinition = projectConfig.getPrunedDefinition(this.sfpmPackage.packageName, {
-      isOrgDependent: this.sfpmPackage.isOrgDependent,
-      removeCustomProperties: true,
+    const projectService = await ProjectService.getInstance(this.workingDirectory);
+    const prunedDefinition = projectService.resolveForPackage(this.sfpmPackage.packageName, {
+      isOrgDependent: true,
     });
 
     await fs.writeJson(path.join(this.workingDirectory, 'sfdx-project.json'), prunedDefinition, {spaces: 4});

@@ -1,7 +1,5 @@
 import {ConvertResult} from '@salesforce/source-deploy-retrieve';
 
-import type {WorkspacePackageJson} from '../../types/workspace.js';
-
 import {IgnoreFilesConfig} from '../../types/config.js';
 
 export interface AssemblyOptions {
@@ -11,8 +9,6 @@ export interface AssemblyOptions {
   orgDefinitionPath?: string;
   replacementForceignorePath?: string;
   versionNumber?: string;
-  /** Workspace package.json for package.json-first assembly (turbo mode) */
-  workspacePackageJson?: WorkspacePackageJson;
 }
 
 export interface AssemblyOutput {
