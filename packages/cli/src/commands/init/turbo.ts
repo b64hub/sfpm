@@ -82,7 +82,7 @@ export default class InitTurbo extends SfpmCommand {
     }
 
     if (!npmScope) {
-      this.error('npm scope is required. Use --npm-scope or configure npmScope in sfpm.config.ts', {exit: 1})
+      this.error('npm scope is required. Use --npm-scope to specify the scope for package names (e.g., --npm-scope @myorg)', {exit: 1})
     }
 
     // Ensure scope starts with @

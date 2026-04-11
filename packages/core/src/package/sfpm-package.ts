@@ -115,6 +115,11 @@ export default abstract class SfpmPackage {
     this._metadata.packageName = val;
   }
 
+  /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package"). Undefined in legacy mode. */
+  get npmName(): string | undefined {
+    return this._packageDefinition?.npmName;
+  }
+
   get packageDefinition(): PackageDefinition | undefined {
     return this._packageDefinition;
   }

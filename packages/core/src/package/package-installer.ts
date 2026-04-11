@@ -26,8 +26,6 @@ export interface InstallOptions {
    * Set specific installation mode (mainly for unlocked packages, overrides auto-detection).
    */
   mode?: InstallationMode;
-  /** npm scope for resolving packages from npm registry (e.g., "@myorg") */
-  npmScope?: string;
   /**
    * Where to install from: 'local' (project source) or 'artifact'.
    */
@@ -320,9 +318,11 @@ export default class PackageInstaller extends EventEmitter {
       this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
     }
 
-    const {npmScope} = this.options;
-    if (!npmScope) {
-      throw new Error('npm scope not configured. Add npmScope to sfpm.config.ts');
+    const {npmName} = sfpmPackage;
+    if (!npmName) {
+      throw new Error(`Package "${packageName}" has no npm name. `
+        + 'In workspace mode, this is set from the package.json "name" field. '
+        + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
     }
 
     // Use singleton artifact service
@@ -336,7 +336,7 @@ export default class PackageInstaller extends EventEmitter {
       {
         forceRefresh: this.options.forceRefresh,
         localOnly: this.options.localOnly,
-        npmScope,
+        npmName,
       },
     );
 

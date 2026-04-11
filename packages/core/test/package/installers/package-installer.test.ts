@@ -56,6 +56,7 @@ describe('PackageInstaller', () => {
 
         mockPackage = {
             name: 'test-package',
+            npmName: '@test/test-package',
             packageName: 'test-package',
             type: PackageType.Unlocked,
             projectDirectory: '/test/project',
@@ -93,7 +94,7 @@ describe('PackageInstaller', () => {
 
         installer = new PackageInstaller(
             mockProjectConfig,
-            { targetOrg: 'testOrg', installationKey: 'test-key', npmScope: '@test' },
+            { targetOrg: 'testOrg', installationKey: 'test-key' },
             mockLogger
         );
 

@@ -91,6 +91,7 @@ describe('ArtifactAssembler', () => {
 
         mockSfpmPackage = {
             packageName,
+            npmName: `@testorg/${packageName}`,
             version,
             type: PackageType.Unlocked,
             stagingDirectory: '/tmp/builds/test-build/package',
@@ -122,7 +123,6 @@ describe('ArtifactAssembler', () => {
         };
 
         mockOptions = {
-            npmScope: '@testorg',
             changelogProvider: {
                 generateChangelog: vi.fn().mockResolvedValue({ commits: [] })
             },
@@ -156,7 +156,7 @@ describe('ArtifactAssembler', () => {
     it('should initialize with correct paths', () => {
         expect((assembler as any).versionDirectory).toBe(`/project/artifacts/${packageName}/${version}`);
         expect((assembler as any).repository).toBeDefined();
-        expect((assembler as any).options.npmScope).toBe('@testorg');
+        expect((assembler as any).options).toBeDefined();
     });
 
     describe('assemble', () => {

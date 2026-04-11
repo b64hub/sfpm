@@ -30,8 +30,6 @@ export interface BuildOptions {
   /** Use async validation for unlocked packages — returns immediately with a creation request ID */
   isAsyncValidation?: boolean;
   isSkipValidation?: boolean;
-  /** npm scope for package publishing (e.g., "@myorg") */
-  npmScope?: string;
   orgDefinitionPath?: string;
   /** Timeout in minutes for package version creation (default: 120) */
   waitTime?: number;
@@ -156,7 +154,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       // Build options for the builder from sfpm.config.ts
       const builderOptions: BuilderOptions = {
         ignoreFilesConfig: this.options.ignoreFilesConfig,
-        npmScope: this.options.npmScope,
       };
 
       const builderInstance: Builder = new BuilderClass(

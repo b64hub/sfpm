@@ -42,9 +42,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     // Use project directory for artifacts, not the staging directory
     const projectDir = this.sfpmPackage.projectDirectory;
 
-    // Get npm scope from options - throw if not configured
-    const npmScope = this.getNpmScope();
-    const assembleOptions: AssembleArtifactTaskOptions = {npmScope};
+    const assembleOptions: AssembleArtifactTaskOptions = {};
 
     this.preBuildTasks = [
       new SourceHashTask(this.sfpmPackage, projectDir, this.logger),
@@ -227,19 +225,6 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     } finally {
       lifecycle.removeAllListeners('packageVersionCreate:progress');
     }
-  }
-
-  /**
-   * Get npm scope from builder options.
-   *
-   * @throws Error if npm scope is not configured
-   */
-  private getNpmScope(): string {
-    if (!this.options.npmScope) {
-      throw new Error('npm scope not configured. Add npmScope to sfpm.config.ts (e.g., npmScope: "@myorg")');
-    }
-
-    return this.options.npmScope;
   }
 
   /**

@@ -18,7 +18,11 @@ export default class ProjectService {
   private readonly projectConfig: ProjectConfig;
   private readonly sfpmConfig: SfpmConfig;
 
-  private constructor(projectConfig: ProjectConfig, graph: ProjectGraph, sfpmConfig: SfpmConfig) {
+  private constructor(
+    projectConfig: ProjectConfig,
+    graph: ProjectGraph,
+    sfpmConfig: SfpmConfig,
+  ) {
     this.projectConfig = projectConfig;
     this.graph = graph;
     this.sfpmConfig = sfpmConfig;
@@ -171,26 +175,6 @@ export default class ProjectService {
   public createVersionManager(): VersionManager {
     const definition = this.projectConfig.getProjectDefinition();
     return VersionManager.create(this.graph, definition);
-  }
-
-  /**
-   * Returns the npm scope for publishing packages from sfpm.config.ts.
-   *
-   * @throws Error if npm scope is not configured
-   */
-  public getNpmScope(): string {
-    if (!this.sfpmConfig.npmScope) {
-      throw new Error('npm scope not configured. Add npmScope to sfpm.config.ts (e.g., npmScope: "@myorg")');
-    }
-
-    return this.sfpmConfig.npmScope;
-  }
-
-  /**
-   * Returns the npm scope if configured, undefined otherwise.
-   */
-  public getNpmScopeOrUndefined(): string | undefined {
-    return this.sfpmConfig.npmScope;
   }
 
   /**

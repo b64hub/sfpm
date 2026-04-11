@@ -50,6 +50,7 @@ export function toPackageDefinition(
   const sourcePath = path.posix.join(packageDir, sfpm.path ?? '.');
 
   const definition: PackageDefinition = {
+    npmName: pkgJson.name,
     package: packageName,
     path: sourcePath,
     versionNumber: sfVersion,
@@ -212,4 +213,14 @@ export function toManagedPackageDefinitions(aliases: Record<string, string>): Ma
 export function stripScope(name: string): string {
   const match = name.match(/^@[^/]+\/(.+)$/);
   return match ? match[1] : name;
+}
+
+/**
+ * Extract the npm scope from a scoped package name.
+ * "@myorg/core-package" → "@myorg"
+ * "core-package" → undefined
+ */
+export function extractScope(name: string): string | undefined {
+  const match = name.match(/^(@[^/]+)\//);
+  return match ? match[1] : undefined;
 }

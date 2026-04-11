@@ -39,8 +39,6 @@ export interface ToNpmPackageJsonOptions {
   license?: string;
   /** Pre-classified managed dependencies (alias → packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
-  /** npm scope for the package (e.g., "@myorg") — required */
-  npmScope: string;
   /** Pre-classified versioned dependencies (scoped npm name → semver range) */
   versionedDependencies?: Record<string, string>;
 }
@@ -58,7 +56,16 @@ export async function toNpmPackageJson(
   version: string,
   options: ToNpmPackageJsonOptions,
 ): Promise<NpmPackageJson> {
-  const {additionalKeywords, author, homepage, license, npmScope} = options;
+  const {additionalKeywords, author, homepage, license} = options;
+
+  // Resolve the npm package name — workspace mode provides it from package.json,
+  // legacy mode would need migration via `sfpm init turbo`.
+  const {npmName} = pkg;
+  if (!npmName) {
+    throw new Error(`Package "${pkg.packageName}" has no npm name. `
+      + 'In workspace mode, this is set from the package.json "name" field. '
+      + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
+  }
 
   // Get sfpm metadata from the package and strip empty properties
   const sfpmMeta = removeEmptyValues(await pkg.toJson());
@@ -88,7 +95,7 @@ export async function toNpmPackageJson(
     ],
     keywords,
     license: license || 'UNLICENSED',
-    name: `${npmScope}/${pkg.packageName}`,
+    name: npmName,
     sfpm: sfpmMeta,
     version,
   };

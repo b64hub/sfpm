@@ -47,8 +47,6 @@ export interface ArtifactAssemblerOptions {
   license?: string;
   /** Pre-classified managed dependencies (alias -> packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
-  /** npm scope for the package (e.g., "@myorg") - required */
-  npmScope: string;
   /** Suppress npm pack notice output (default: true) */
   quietPack?: boolean;
   /** Pre-classified versioned dependencies (scoped npm name -> semver range) */

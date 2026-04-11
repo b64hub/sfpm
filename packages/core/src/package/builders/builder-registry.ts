@@ -30,8 +30,6 @@ export interface Builder {
 export interface BuilderOptions {
   /** Ignore files configuration for assembly */
   ignoreFilesConfig?: IgnoreFilesConfig;
-  /** npm scope for package publishing (e.g., "@myorg") */
-  npmScope?: string;
 }
 
 /**

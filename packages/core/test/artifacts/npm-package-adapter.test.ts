@@ -199,6 +199,7 @@ describe('npm-package-adapter', () => {
           orchestration: {},
         },
         name: 'my-pkg',
+        npmName: '@myorg/my-pkg',
         packageDefinition: {path: 'force-app', versionDescription: 'My package'},
         packageName: 'my-pkg',
         toJson: async () => ({
@@ -215,7 +216,7 @@ describe('npm-package-adapter', () => {
 
     it('should generate a valid NpmPackageJson with scoped name', async () => {
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(pkg, '1.0.0-1', {npmScope: '@myorg'});
+      const result = await toNpmPackageJson(pkg, '1.0.0-1', {});
 
       expect(result.name).toBe('@myorg/my-pkg');
       expect(result.version).toBe('1.0.0-1');
@@ -225,14 +226,14 @@ describe('npm-package-adapter', () => {
 
     it('should not include a main field', async () => {
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(pkg, '1.0.0-1', {npmScope: '@myorg'});
+      const result = await toNpmPackageJson(pkg, '1.0.0-1', {});
 
       expect(result).not.toHaveProperty('main');
     });
 
     it('should put repository at top level and remove from sfpm.source', async () => {
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(pkg, '1.0.0-1', {npmScope: '@myorg'});
+      const result = await toNpmPackageJson(pkg, '1.0.0-1', {});
 
       expect(result.repository).toEqual({type: 'git', url: 'https://github.com/test/repo.git'});
       expect(result.sfpm.source?.repositoryUrl).toBeUndefined();
@@ -244,7 +245,6 @@ describe('npm-package-adapter', () => {
         author: 'Test Author',
         homepage: 'https://example.com',
         license: 'MIT',
-        npmScope: '@myorg',
       });
 
       expect(result.author).toBe('Test Author');
@@ -254,7 +254,7 @@ describe('npm-package-adapter', () => {
 
     it('should default license to UNLICENSED', async () => {
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(pkg, '1.0.0-1', {npmScope: '@myorg'});
+      const result = await toNpmPackageJson(pkg, '1.0.0-1', {});
 
       expect(result.license).toBe('UNLICENSED');
     });
@@ -263,7 +263,6 @@ describe('npm-package-adapter', () => {
       const pkg = createMockPackage();
       const result = await toNpmPackageJson(pkg, '1.0.0-1', {
         additionalKeywords: ['custom'],
-        npmScope: '@myorg',
       });
 
       expect(result.keywords).toContain('sfpm');
@@ -274,7 +273,7 @@ describe('npm-package-adapter', () => {
 
     it('should include files with package source path', async () => {
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(pkg, '1.0.0-1', {npmScope: '@myorg'});
+      const result = await toNpmPackageJson(pkg, '1.0.0-1', {});
 
       expect(result.files).toContain('force-app/**');
       expect(result.files).toContain('sfdx-project.json');
@@ -284,7 +283,6 @@ describe('npm-package-adapter', () => {
       const pkg = createMockPackage();
       const result = await toNpmPackageJson(pkg, '1.0.0-1', {
         managedDependencies: {'Nebula Logger@4.16.0': '04taA000005CtsHQAS'},
-        npmScope: '@myorg',
         versionedDependencies: {'@myorg/dep': '^1.0.0'},
       });
 
@@ -294,7 +292,7 @@ describe('npm-package-adapter', () => {
 
     it('should omit optional/managed deps when empty', async () => {
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(pkg, '1.0.0-1', {npmScope: '@myorg'});
+      const result = await toNpmPackageJson(pkg, '1.0.0-1', {});
 
       expect(result.optionalDependencies).toBeUndefined();
       expect(result.managedDependencies).toBeUndefined();
@@ -311,7 +309,7 @@ describe('npm-package-adapter', () => {
         }),
       });
 
-      const result = await toNpmPackageJson(pkg, '1.0.0-1', {npmScope: '@myorg'});
+      const result = await toNpmPackageJson(pkg, '1.0.0-1', {});
       const sfpm = result.sfpm;
 
       expect(sfpm.source).toBeUndefined();

@@ -100,10 +100,8 @@ describe('UnlockedPackageBuilder', () => {
         // Set required staging directory for build
         mockSfpmPackage.stagingDirectory = '/tmp/project';
 
-        // Builder options with npm scope for artifact assembly
-        builderOptions = {
-            npmScope: '@testorg'
-        };
+        // Builder options for assembly
+        builderOptions = {};
 
         // Setup Org Mock
         mockConnection = { getApiVersion: () => '50.0' };

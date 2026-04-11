@@ -101,8 +101,6 @@ export interface PackageJsonGeneratorOptions {
   author?: string;
   /** License identifier */
   license?: string;
-  /** npm scope (e.g., "@myorg") - required */
-  npmScope: string;
   /** Source hash to include in metadata */
   sourceHash?: string;
 }

@@ -84,7 +84,6 @@ export default class Install extends SfpmCommand {
       force: flags.force,
       installationKey: flags['installation-key'],
       mode: flags.mode as InstallationMode | undefined,
-      npmScope: sfpmConfig.npmScope,
       source: flags.source as InstallationSource | undefined,
       targetOrg: flags['target-org'],
       trackHistory: sfpmConfig.artifacts?.trackHistory,

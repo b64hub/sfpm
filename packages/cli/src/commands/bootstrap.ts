@@ -142,7 +142,6 @@ export default class Bootstrap extends SfpmCommand {
         devhubUsername: flags['target-org'],
         force: true,
         includeDependencies: true,
-        npmScope: sfpmConfig.npmScope,
       }
 
       const buildOrchestrator = new BuildOrchestrator(
@@ -190,7 +189,6 @@ export default class Bootstrap extends SfpmCommand {
       const installOptions = {
         force: flags.force,
         includeDependencies: true,
-        npmScope: sfpmConfig.npmScope,
         targetOrg: flags['target-org'],
         trackHistory: sfpmConfig.artifacts?.trackHistory,
       }

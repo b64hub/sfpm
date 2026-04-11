@@ -68,7 +68,6 @@ export interface IgnoreFilesConfig {
  * import { profileHooks } from '@b64/sfpm-hooks';
  *
  * export default defineConfig({
- *   npmScope: '@myorg',
  *   hooks: [
  *     profileHooks({ scope: 'source' }),
  *   ],
@@ -128,14 +127,6 @@ export interface SfpmConfig {
    * @example 'myns'
    */
   namespace?: string;
-
-  /**
-   * npm scope for publishing packages (e.g., '@myorg').
-   * Required for npm registry integration and artifact publishing.
-   *
-   * @example '@myorg'
-   */
-  npmScope?: string;
 
   /**
    * Salesforce login URL for the project.

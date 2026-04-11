@@ -95,6 +95,8 @@ export interface DeployOptions {
  * Extracts the named+versioned variant of PackageDir to avoid union distribution issues.
  */
 export interface PackageDefinition extends Extract<PackageDir, {package: string, path: string; versionNumber: string,}> {
+  /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package"). Undefined in legacy mode. */
+  npmName?: string;
   packageOptions?: PackageOptions;
   type?: PackageType;
 }

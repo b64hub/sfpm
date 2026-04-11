@@ -100,7 +100,6 @@ export default class Build extends SfpmCommand {
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       installationKey: flags['installation-key'],
       isSkipValidation: flags['skip-validation'],
-      npmScope: sfpmConfig.npmScope,
       waitTime: flags.wait,
     }
 

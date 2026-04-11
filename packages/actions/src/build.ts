@@ -125,7 +125,6 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
       includeDependencies: options.includeDependencies,
       installationKey: options.installationKey,
       isAsyncValidation: true,
-      npmScope: sfpmConfig.npmScope,
     },
     logger,
     projectDir,
