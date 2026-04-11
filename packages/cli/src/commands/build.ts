@@ -28,6 +28,7 @@ export default class Build extends SfpmCommand {
     '<%= config.bin %> <%= command.id %> package-a package-b -v my-devhub',
   ]
   static override flags = {
+    'async-validation': Flags.boolean({description: 'return immediately after creating unlocked package versions without waiting for validation to complete'}),
     'build-number': Flags.string({char: 'b', description: 'build number'}),
     force: Flags.boolean({char: 'f', description: 'build even if no source changes detected', env: 'SFPM_FORCE_BUILD'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key'}),
@@ -99,6 +100,7 @@ export default class Build extends SfpmCommand {
       force: flags.force,
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       installationKey: flags['installation-key'],
+      isAsyncValidation: flags['async-validation'],
       isSkipValidation: flags['skip-validation'],
       waitTime: flags.wait,
     }
