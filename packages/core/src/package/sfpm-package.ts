@@ -596,7 +596,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     return {
       ...this._metadata.content,
       metadataCount: components.toArray().length,
-      payload: await cs.getObject(),
       testCoverage: this.testCoverage,
     };
   }

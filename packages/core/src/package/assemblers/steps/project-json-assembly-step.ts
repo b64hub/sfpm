@@ -7,6 +7,7 @@ import type {ProjectDefinitionProvider} from '../../../project/providers/project
 import ProjectService from '../../../project/project-service.js';
 import {Logger} from '../../../types/logger.js';
 import {PackageDefinition} from '../../../types/project.js';
+import {toVersionFormat} from '../../../utils/version-utils.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 
 /**
@@ -36,7 +37,7 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
       const packageDefinition = projectService.resolveForPackage(this.packageName);
 
       if (options.versionNumber) {
-        (packageDefinition.packageDirectories[0] as PackageDefinition).versionNumber = options.versionNumber;
+        (packageDefinition.packageDirectories[0] as PackageDefinition).versionNumber = toVersionFormat(options.versionNumber, 'salesforce');
       }
 
       const pkg = packageDefinition.packageDirectories[0] as PackageDefinition;

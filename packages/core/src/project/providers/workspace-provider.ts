@@ -81,7 +81,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
 
     if (Array.isArray(cleaned.packageDirectories)) {
       cleaned.packageDirectories = cleaned.packageDirectories.map((pkgDir: any) => {
-        const {packageOptions: _, type: _type, ...rest} = pkgDir;
+        const {npmName: _npm, packageOptions: _, type: _type, ...rest} = pkgDir;
         return rest;
       });
     }
@@ -254,6 +254,10 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
 
     const definition = toPackageDefinition(pkgJson, packageDir, workspaceVersions) as PackageDefinition;
     definition.default = true;
+
+    // Strip SFPM-specific fields that Salesforce CLI doesn't understand
+    delete (definition as any).npmName;
+    delete (definition as any).type;
 
     if (options?.isOrgDependent && definition.dependencies) {
       delete (definition as any).dependencies;
