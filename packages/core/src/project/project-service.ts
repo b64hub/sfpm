@@ -12,9 +12,9 @@ import {PackageType} from '../types/package.js';
 import {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {loadSfpmConfig} from './config-loader.js';
 import {ProjectGraph} from './project-graph.js';
-import {SfdxProjectProvider} from './sfdx-project-provider.js';
+import {SfdxProjectProvider} from './providers/sfdx-project-provider.js';
+import {WorkspaceProvider} from './providers/workspace-provider.js';
 import {VersionManager} from './version-manager.js';
-import {WorkspaceProvider} from './workspace-provider.js';
 
 export default class ProjectService {
   private static instance: ProjectService | undefined;

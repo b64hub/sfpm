@@ -8,17 +8,17 @@
 
 import {ProjectJsonSchema, SfProject} from '@salesforce/core';
 
-import type {PackageType} from '../types/package.js';
-import type {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import type {PackageType} from '../../types/package.js';
+import type {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../../types/project.js';
 import type {
   ClassifiedDependencies,
   PackageDependency,
   ProjectDefinitionProvider,
   ProjectDefinitionResult,
   ResolveForPackageOptions,
-} from './project-definition-provider.js';
+} from '../project-definition-provider.js';
 
-import * as Q from './definition-queries.js';
+import * as Q from '../definition-queries.js';
 
 export class SfdxProjectProvider implements ProjectDefinitionProvider {
   public readonly projectDir: string;

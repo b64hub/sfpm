@@ -12,24 +12,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type {Logger} from '../types/logger.js';
-import type {PackageType} from '../types/package.js';
-import type {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
-import type {WorkspacePackageJson} from '../types/workspace.js';
+import type {Logger} from '../../types/logger.js';
+import type {PackageType} from '../../types/package.js';
+import type {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../../types/project.js';
+import type {WorkspacePackageJson} from '../../types/workspace.js';
 import type {
   ClassifiedDependencies,
   PackageDependency,
   ProjectDefinitionProvider,
   ProjectDefinitionResult,
   ResolveForPackageOptions,
-} from './project-definition-provider.js';
+} from '../project-definition-provider.js';
 
-import * as Q from './definition-queries.js';
+import * as Q from '../definition-queries.js';
 import {
   collectPackageAliases,
   stripScope,
   toPackageDefinition,
-} from './package-json-adapter.js';
+} from '../package-json-adapter.js';
 
 // ---------------------------------------------------------------------------
 // Options

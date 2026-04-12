@@ -22,7 +22,7 @@ import type {
 } from '../types/workspace.js';
 
 import {stripScope} from './package-json-adapter.js';
-import {WorkspaceProvider} from './workspace-provider.js';
+import {WorkspaceProvider} from './providers/workspace-provider.js';
 
 // ---------------------------------------------------------------------------
 // Options

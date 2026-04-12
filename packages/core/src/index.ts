@@ -96,12 +96,12 @@ export {
 } from './project/project-definition-provider.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
-export {SfdxProjectProvider} from './project/sfdx-project-provider.js';
+export {SfdxProjectProvider} from './project/providers/sfdx-project-provider.js';
+export {type WorkspaceProviderOptions as WorkspaceDefinitionProviderOptions, WorkspaceProvider} from './project/providers/workspace-provider.js';
 export * from './project/version-manager.js';
 export {
   type MigrateOptions, WorkspaceInitializer, type WorkspaceInitOptions, type WorkspaceInitResult,
 } from './project/workspace-init.js';
-export {type WorkspaceProviderOptions as WorkspaceDefinitionProviderOptions, WorkspaceProvider} from './project/workspace-provider.js';
 export {WorkspaceSync, type WorkspaceSyncOptions} from './project/workspace-sync.js';
 export * from './types/artifact.js';
 export * from './types/bootstrap.js';
