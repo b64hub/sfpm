@@ -1,6 +1,6 @@
 import EventEmitter from 'node:events';
 
-import type {ProjectDefinitionProvider} from '../project/project-definition-provider.js';
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {GitService} from '../git/git-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';

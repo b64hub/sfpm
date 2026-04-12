@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { VersionManager, SinglePackageStrategy, AllPackagesStrategy, OrgDiffStrategy, GitDiffStrategy } from '../../src/project/version-manager.js';
 import { GitService } from '../../src/git/git-service.js';
-import type { ProjectDefinitionProvider } from '../../src/project/project-definition-provider.js';
+import type { ProjectDefinitionProvider } from '../../src/project/providers/project-definition-provider.js';
 import { ProjectDefinition } from '../../src/types/project.js';
 import { OrgPackageVersionFetcher } from '../../src/types/org.js';
 import { ProjectGraph } from '../../src/project/project-graph.js';

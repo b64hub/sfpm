@@ -2,7 +2,7 @@ import {
   ProjectJsonSchema, SfProject,
 } from '@salesforce/core';
 
-import type {ClassifiedDependencies, PackageDependency} from './project-definition-provider.js';
+import type {ClassifiedDependencies, PackageDependency} from './providers/project-definition-provider.js';
 
 import {
   Logger,
@@ -11,17 +11,26 @@ import {PackageType} from '../types/package.js';
 import {
   ManagedPackageDefinition, PackageDefinition, ProjectDefinition, ProjectDefinitionSchema,
 } from '../types/project.js';
-import * as Q from './definition-queries.js';
+import {
+  classifyDependencies,
+  getAllPackageDefinitions,
+  getAllPackageNames,
+  getDependencies,
+  getManagedPackages,
+  getPackageDefinition,
+  getPackageId,
+  getPackageType,
+} from './providers/project-definition-provider.js';
 
 /**
  * @deprecated Import `ClassifiedDependencies` from `project-definition-provider.js` instead.
  */
-export type {ClassifiedDependencies} from './project-definition-provider.js';
+export type {ClassifiedDependencies} from './providers/project-definition-provider.js';
 
 /**
  * Configuration manager for sfdx-project.json.
  *
- * Query methods now delegate to shared utility functions in `definition-queries.ts`
+ * Query methods now delegate to shared utility functions in `project-definition-provider.ts`
  * which are the same functions used by both providers. For new code, prefer
  * accessing queries via `ProjectService` (which delegates to the provider).
  *
@@ -54,36 +63,36 @@ export default class ProjectConfig {
   }
 
   public classifyDependencies(packageName: string): ClassifiedDependencies {
-    return Q.classifyDependencies(this.getProjectDefinition(), packageName);
+    return classifyDependencies(this.getProjectDefinition(), packageName);
   }
 
   /**
    * Returns all package directories from the project.
    */
   public getAllPackageDirectories(): PackageDefinition[] {
-    return Q.getAllPackageDefinitions(this.getProjectDefinition());
+    return getAllPackageDefinitions(this.getProjectDefinition());
   }
 
   /**
    * Returns all unique package names from the 'package' field.
    */
   public getAllPackageNames(): string[] {
-    return Q.getAllPackageNames(this.getProjectDefinition());
+    return getAllPackageNames(this.getProjectDefinition());
   }
 
   /**
    * Returns the raw dependencies for a package.
    */
   public getDependencies(packageName: string): PackageDependency[] {
-    return Q.getDependencies(this.getProjectDefinition(), packageName);
+    return getDependencies(this.getProjectDefinition(), packageName);
   }
 
   public getManagedPackages(): ManagedPackageDefinition[] {
-    return Q.getManagedPackages(this.getProjectDefinition());
+    return getManagedPackages(this.getProjectDefinition());
   }
 
   public getPackageDefinition(packageName: string): PackageDefinition {
-    return Q.getPackageDefinition(this.getProjectDefinition(), packageName);
+    return getPackageDefinition(this.getProjectDefinition(), packageName);
   }
 
   /**
@@ -101,11 +110,11 @@ export default class ProjectConfig {
   }
 
   public getPackageId(packageAlias: string): string | undefined {
-    return Q.getPackageId(this.getProjectDefinition(), packageAlias);
+    return getPackageId(this.getProjectDefinition(), packageAlias);
   }
 
   public getPackageType(packageName: string): PackageType {
-    return Q.getPackageType(this.getProjectDefinition(), packageName);
+    return getPackageType(this.getProjectDefinition(), packageName);
   }
 
   // =========================================================================

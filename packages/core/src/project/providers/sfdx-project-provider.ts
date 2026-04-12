@@ -16,9 +16,19 @@ import type {
   ProjectDefinitionProvider,
   ProjectDefinitionResult,
   ResolveForPackageOptions,
-} from '../project-definition-provider.js';
+} from './project-definition-provider.js';
 
-import * as Q from '../definition-queries.js';
+import {
+  classifyDependencies,
+  getAllPackageDefinitions,
+  getAllPackageNames,
+  getDependencies,
+  getManagedPackages,
+  getPackageDefinition,
+  getPackageDefinitionByPath,
+  getPackageId,
+  getPackageType,
+} from './project-definition-provider.js';
 
 export class SfdxProjectProvider implements ProjectDefinitionProvider {
   public readonly projectDir: string;
@@ -30,41 +40,41 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
   // -- Resolution -----------------------------------------------------------
 
   classifyDependencies(packageName: string): ClassifiedDependencies {
-    return Q.classifyDependencies(this.resolve().definition, packageName);
+    return classifyDependencies(this.resolve().definition, packageName);
   }
 
   getAllPackageDefinitions(): PackageDefinition[] {
-    return Q.getAllPackageDefinitions(this.resolve().definition);
+    return getAllPackageDefinitions(this.resolve().definition);
   }
 
   // -- Package queries ------------------------------------------------------
 
   getAllPackageNames(): string[] {
-    return Q.getAllPackageNames(this.resolve().definition);
+    return getAllPackageNames(this.resolve().definition);
   }
 
   getDependencies(packageName: string): PackageDependency[] {
-    return Q.getDependencies(this.resolve().definition, packageName);
+    return getDependencies(this.resolve().definition, packageName);
   }
 
   getManagedPackages(): ManagedPackageDefinition[] {
-    return Q.getManagedPackages(this.resolve().definition);
+    return getManagedPackages(this.resolve().definition);
   }
 
   getPackageDefinition(packageName: string): PackageDefinition {
-    return Q.getPackageDefinition(this.resolve().definition, packageName);
+    return getPackageDefinition(this.resolve().definition, packageName);
   }
 
   getPackageDefinitionByPath(packagePath: string): PackageDefinition {
-    return Q.getPackageDefinitionByPath(this.resolve().definition, packagePath);
+    return getPackageDefinitionByPath(this.resolve().definition, packagePath);
   }
 
   getPackageId(packageAlias: string): string | undefined {
-    return Q.getPackageId(this.resolve().definition, packageAlias);
+    return getPackageId(this.resolve().definition, packageAlias);
   }
 
   getPackageType(packageName: string): PackageType {
-    return Q.getPackageType(this.resolve().definition, packageName);
+    return getPackageType(this.resolve().definition, packageName);
   }
 
   // -- Dependency queries ---------------------------------------------------

@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import type {ProjectDefinitionProvider} from '../../../project/project-definition-provider.js';
+import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
 import {IgnoreFilesConfig} from '../../../types/config.js';
 import {Logger} from '../../../types/logger.js';

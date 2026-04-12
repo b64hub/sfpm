@@ -1,7 +1,7 @@
 import {Org} from '@salesforce/core';
 import EventEmitter from 'node:events';
 
-import type {ProjectDefinitionProvider} from '../project/project-definition-provider.js';
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {ArtifactService, InstallTarget} from '../artifacts/artifact-service.js';
 import {Logger} from '../types/logger.js';

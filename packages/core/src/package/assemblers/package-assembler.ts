@@ -2,7 +2,7 @@ import * as fs from 'fs-extra';
 import crypto from 'node:crypto';
 import path from 'node:path';
 
-import type {ProjectDefinitionProvider} from '../../project/project-definition-provider.js';
+import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';

@@ -1,4 +1,4 @@
-import type {ProjectDefinitionProvider} from './project-definition-provider.js';
+import type {ProjectDefinitionProvider} from './providers/project-definition-provider.js';
 
 import {
   ManagedPackageDefinition,

@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { ProjectGraph } from '../../src/project/project-graph.js';
-import type { ProjectDefinitionProvider } from '../../src/project/project-definition-provider.js';
+import type { ProjectDefinitionProvider } from '../../src/project/providers/project-definition-provider.js';
 import { ProjectDefinition } from '../../src/types/project.js';
 
 /** Wraps a ProjectDefinition in a minimal ProjectDefinitionProvider for testing. */

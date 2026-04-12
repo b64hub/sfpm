@@ -6,29 +6,29 @@
  * alternative to reading sfdx-project.json.
  *
  * Implements the ProjectDefinitionProvider interface so it can be plugged
- * into ProjectService alongside the legacy SfdxProjectProvider.
+ * into ProjectService alongside the legacy SfdxProjectDefinitionProvider.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type {Logger} from '../../types/logger.js';
-import type {PackageType} from '../../types/package.js';
-import type {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../../types/project.js';
-import type {WorkspacePackageJson} from '../../types/workspace.js';
+import type {Logger} from '../types/logger.js';
+import type {PackageType} from '../types/package.js';
+import type {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import type {WorkspacePackageJson} from '../types/workspace.js';
 import type {
   ClassifiedDependencies,
   PackageDependency,
   ProjectDefinitionProvider,
   ProjectDefinitionResult,
   ResolveForPackageOptions,
-} from './project-definition-provider.js';
+} from './providers/project-definition-provider.js';
 
 import {
   collectPackageAliases,
   stripScope,
   toPackageDefinition,
-} from '../package-json-adapter.js';
+} from './package-json-adapter.js';
 import {
   classifyDependencies,
   getAllPackageDefinitions,
@@ -39,13 +39,13 @@ import {
   getPackageDefinitionByPath,
   getPackageId,
   getPackageType,
-} from './project-definition-provider.js';
+} from './providers/project-definition-provider.js';
 
 // ---------------------------------------------------------------------------
 // Options
 // ---------------------------------------------------------------------------
 
-export interface WorkspaceProviderOptions {
+export interface WorkspaceDefinitionProviderOptions {
   logger?: Logger;
   /** Salesforce namespace (empty string for no namespace) */
   namespace?: string;
@@ -61,13 +61,13 @@ export interface WorkspaceProviderOptions {
 // Provider
 // ---------------------------------------------------------------------------
 
-export class WorkspaceProvider implements ProjectDefinitionProvider {
+export class WorkspaceDefinitionProvider implements ProjectDefinitionProvider {
   public readonly projectDir: string;
   private cachedResult?: ProjectDefinitionResult;
   private readonly logger: Logger | undefined;
-  private readonly options: WorkspaceProviderOptions;
+  private readonly options: WorkspaceDefinitionProviderOptions;
 
-  constructor(options: WorkspaceProviderOptions) {
+  constructor(options: WorkspaceDefinitionProviderOptions) {
     this.options = options;
     this.projectDir = options.projectDir;
     this.logger = options.logger;
@@ -95,7 +95,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
    */
   static ensureSfdxProject(projectDir: string, definition: ProjectDefinition): void {
     const sfdxPath = path.join(projectDir, 'sfdx-project.json');
-    const cleaned = WorkspaceProvider.cleanForSalesforce(definition);
+    const cleaned = WorkspaceDefinitionProvider.cleanForSalesforce(definition);
     fs.writeFileSync(sfdxPath, JSON.stringify(cleaned, null, 2) + '\n', 'utf8');
   }
 

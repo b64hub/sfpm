@@ -6,7 +6,7 @@ import {
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type {ProjectDefinitionProvider} from '../project/project-definition-provider.js';
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {WorkspacePackageJson} from '../types/workspace.js';
 
 import {

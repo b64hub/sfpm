@@ -87,15 +87,15 @@ export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export {
   collectPackageAliases, stripScope, toManagedPackageDefinitions, toPackageDefinition,
 } from './project/package-json-adapter.js';
+export * from './project/project-graph.js';
+export {default as ProjectService} from './project/project-service.js';
 export {
   type ClassifiedDependencies,
   type PackageDependency,
   type ProjectDefinitionProvider,
   type ProjectDefinitionResult,
   type ResolveForPackageOptions,
-} from './project/project-definition-provider.js';
-export * from './project/project-graph.js';
-export {default as ProjectService} from './project/project-service.js';
+} from './project/providers/project-definition-provider.js';
 export {SfdxProjectProvider} from './project/providers/sfdx-project-provider.js';
 export {type WorkspaceProviderOptions as WorkspaceDefinitionProviderOptions, WorkspaceProvider} from './project/providers/workspace-provider.js';
 export * from './project/version-manager.js';

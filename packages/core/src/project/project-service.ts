@@ -5,7 +5,7 @@ import type {
   PackageDependency,
   ProjectDefinitionProvider,
   ResolveForPackageOptions,
-} from './project-definition-provider.js';
+} from './providers/project-definition-provider.js';
 
 import {SfpmConfig} from '../types/config.js';
 import {PackageType} from '../types/package.js';

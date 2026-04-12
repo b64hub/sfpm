@@ -3,7 +3,7 @@ import {merge} from 'lodash-es';
 import EventEmitter from 'node:events';
 import path from 'node:path';
 
-import type {ProjectDefinitionProvider} from '../project/project-definition-provider.js';
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {GitService} from '../git/git-service.js';
 import {IgnoreFilesConfig} from '../types/config.js';
