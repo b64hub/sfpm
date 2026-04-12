@@ -106,7 +106,7 @@ describe('ProjectService', () => {
             const service = await ProjectService.create('/mock/path');
 
             expect(SfProject.resolve).toHaveBeenCalledWith('/mock/path');
-            expect(service.getProjectConfig()).toBeDefined();
+            expect(service.getDefinitionProvider()).toBeDefined();
             expect(service.getProjectGraph()).toBeDefined();
         });
     });

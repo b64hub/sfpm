@@ -10,7 +10,7 @@ describe('SourceCopyStep', () => {
   let tmpDir: string;
   let sourceDir: string;
   let stagingDir: string;
-  let mockProjectConfig: any;
+  let mockProvider: any;
   let mockLogger: any;
 
   beforeEach(async () => {
@@ -21,8 +21,8 @@ describe('SourceCopyStep', () => {
     await fs.ensureDir(sourceDir);
     await fs.ensureDir(stagingDir);
 
-    mockProjectConfig = {
-      projectDirectory: path.join(tmpDir, 'project'),
+    mockProvider = {
+      projectDir: path.join(tmpDir, 'project'),
       getPackageDefinition: vi.fn().mockReturnValue({
         package: 'core',
         path: 'force-app',
@@ -51,7 +51,7 @@ describe('SourceCopyStep', () => {
     await fs.writeFile(path.join(sourceDir, 'MyClass.cls'), 'public class MyClass {}');
     await fs.writeFile(path.join(sourceDir, 'MyClass.cls-meta.xml'), '<ApexClass/>');
 
-    const step = new SourceCopyStep('core', mockProjectConfig, mockLogger);
+    const step = new SourceCopyStep('core', mockProvider, mockLogger);
     await step.execute({}, makeOutput());
 
     expect(await fs.pathExists(path.join(stagingDir, 'force-app', 'MyClass.cls'))).toBe(true);
@@ -74,7 +74,7 @@ describe('SourceCopyStep', () => {
       ignoreFilesConfig: {build: '.forceignore.build'},
     };
 
-    const step = new SourceCopyStep('core', mockProjectConfig, mockLogger);
+    const step = new SourceCopyStep('core', mockProvider, mockLogger);
     await step.execute(options, makeOutput());
 
     // Kept
@@ -96,7 +96,7 @@ describe('SourceCopyStep', () => {
       ignoreFilesConfig: {build: '.forceignore.build'},
     };
 
-    const step = new SourceCopyStep('core', mockProjectConfig, mockLogger);
+    const step = new SourceCopyStep('core', mockProvider, mockLogger);
     await step.execute(options, makeOutput());
 
     expect(await fs.pathExists(path.join(stagingDir, 'force-app', 'lwc', 'component.js'))).toBe(true);
@@ -111,7 +111,7 @@ describe('SourceCopyStep', () => {
       ignoreFilesConfig: {build: '.forceignore.build'},
     };
 
-    const step = new SourceCopyStep('core', mockProjectConfig, mockLogger);
+    const step = new SourceCopyStep('core', mockProvider, mockLogger);
     await step.execute(options, makeOutput());
 
     // File should still be copied (graceful fallback)
@@ -130,7 +130,7 @@ describe('SourceCopyStep', () => {
       ignoreFilesConfig: {build: '.forceignore.build'},
     };
 
-    const step = new SourceCopyStep('core', mockProjectConfig, mockLogger);
+    const step = new SourceCopyStep('core', mockProvider, mockLogger);
     await step.execute(options, makeOutput());
 
     expect(await fs.pathExists(path.join(stagingDir, 'force-app', 'MyClass.cls'))).toBe(true);
@@ -154,7 +154,7 @@ describe('SourceCopyStep', () => {
       ignoreFilesConfig: {build: '.forceignore.build'},
     };
 
-    const step = new SourceCopyStep('core', mockProjectConfig, mockLogger);
+    const step = new SourceCopyStep('core', mockProvider, mockLogger);
     await step.execute(options, makeOutput());
 
     expect(await fs.pathExists(path.join(stagingDir, 'force-app', 'classes', 'Keep.cls'))).toBe(true);
@@ -176,7 +176,7 @@ describe('SourceCopyStep', () => {
       ignoreFilesConfig: {build: '.forceignore.build'},
     };
 
-    const step = new SourceCopyStep('core', mockProjectConfig, mockLogger);
+    const step = new SourceCopyStep('core', mockProvider, mockLogger);
     await step.execute(options, makeOutput());
 
     // b.report is un-ignored by the negation rule
@@ -197,7 +197,7 @@ describe('SourceCopyStep', () => {
       ignoreFilesConfig: {build: '.forceignore.build'},
     };
 
-    const step = new SourceCopyStep('core', mockProjectConfig, mockLogger);
+    const step = new SourceCopyStep('core', mockProvider, mockLogger);
     await step.execute(options, makeOutput());
 
     expect(mockLogger.debug).toHaveBeenCalledWith(

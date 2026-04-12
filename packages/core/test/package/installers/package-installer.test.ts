@@ -5,7 +5,6 @@ import { PackageFactory } from '../../../src/package/sfpm-package.js';
 import { PackageType } from '../../../src/types/package.js';
 
 // Mocks
-vi.mock('../../../src/project/project-config.js');
 vi.mock('../../../src/package/sfpm-package.js');
 vi.mock('@salesforce/core', () => ({
     Org: {
@@ -36,7 +35,7 @@ vi.mock('../../../src/artifacts/artifact-service.js', () => ({
 
 describe('PackageInstaller', () => {
     let installer: PackageInstaller;
-    let mockProjectConfig: any;
+    let mockProvider: any;
     let mockLogger: any;
     let mockPackageFactory: any;
     let mockPackageFactoryInstance: any;
@@ -50,7 +49,7 @@ describe('PackageInstaller', () => {
             error: vi.fn(),
         };
 
-        mockProjectConfig = {
+        mockProvider = {
             projectPath: '/test/project',
         };
 
@@ -59,7 +58,7 @@ describe('PackageInstaller', () => {
             npmName: '@test/test-package',
             packageName: 'test-package',
             type: PackageType.Unlocked,
-            projectDirectory: '/test/project',
+            projectDir: '/test/project',
             version: '1.0.0',
             sourceHash: 'abc123',
         };
@@ -82,7 +81,7 @@ describe('PackageInstaller', () => {
         };
 
         // Create a proper constructor mock
-        mockPackageFactory = vi.fn(function(this: any, projectConfig: any) {
+        mockPackageFactory = vi.fn(function(this: any, provider: any) {
             return mockPackageFactoryInstance;
         }) as any;
 
@@ -93,7 +92,7 @@ describe('PackageInstaller', () => {
         vi.spyOn(InstallerRegistry, 'getInstaller').mockReturnValue(mockInstallerConstructor);
 
         installer = new PackageInstaller(
-            mockProjectConfig,
+            mockProvider,
             { targetOrg: 'testOrg', installationKey: 'test-key' },
             mockLogger
         );
@@ -105,7 +104,7 @@ describe('PackageInstaller', () => {
         it('should successfully install a package', async () => {
             await installer.installPackage('test-package');
 
-            expect(PackageFactory).toHaveBeenCalledWith(mockProjectConfig);
+            expect(PackageFactory).toHaveBeenCalledWith(mockProvider);
             expect(mockPackageFactoryInstance.createFromName).toHaveBeenCalledWith('test-package');
             expect(InstallerRegistry.getInstaller).toHaveBeenCalledWith(PackageType.Unlocked);
             expect(mockInstallerInstance.connect).toHaveBeenCalledWith('testOrg');

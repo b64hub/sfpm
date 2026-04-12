@@ -6,9 +6,9 @@ import {
 import fs from 'node:fs';
 import path from 'node:path';
 
+import type {ProjectDefinitionProvider} from '../project/project-definition-provider.js';
 import type {WorkspacePackageJson} from '../types/workspace.js';
 
-import ProjectConfig from '../project/project-config.js';
 import {
   MetadataFile,
   PackageType,
@@ -779,21 +779,21 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
 export class SfpmSourcePackage extends SfpmMetadataPackage {}
 
 /**
- * Factory for creating fully-configured SfpmPackage instances from ProjectConfig.
- * Bridges ProjectConfig (sfdx-project.json abstraction) with package construction.
+ * Factory for creating fully-configured SfpmPackage instances from a ProjectDefinitionProvider.
+ * Bridges the provider interface with package construction.
  */
 export class PackageFactory {
-  private projectConfig: ProjectConfig;
+  private provider: ProjectDefinitionProvider;
 
-  constructor(projectConfig: ProjectConfig) {
-    this.projectConfig = projectConfig;
+  constructor(provider: ProjectDefinitionProvider) {
+    this.provider = provider;
   }
 
   /**
    * Create packages for all package directories in the project
    */
   createAll(): SfpmPackage[] {
-    const packageNames = this.projectConfig.getAllPackageNames();
+    const packageNames = this.provider.getAllPackageNames();
     return packageNames.map(name => this.createFromName(name));
   }
 
@@ -806,7 +806,7 @@ export class PackageFactory {
    */
   createFromName(packageName: string): SfpmPackage {
     // First, try to find in packageDirectories (local packages)
-    const allPackages = this.projectConfig.getAllPackageDirectories();
+    const allPackages = this.provider.getAllPackageDefinitions();
     const packageDefinition = allPackages.find(p => p.package === packageName);
 
     if (!packageDefinition) {
@@ -820,12 +820,12 @@ export class PackageFactory {
     }
 
     const packageType = (packageDefinition.type?.toLowerCase() || 'unlocked') as PackageType;
-    const {projectDirectory} = this.projectConfig;
+    const projectDirectory = this.provider.projectDir;
 
     const sfpmPackage = this.createPackageInstance(packageType, packageName, projectDirectory);
 
     // Populate from project config
-    sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();
+    sfpmPackage.projectDefinition = this.provider.getProjectDefinition();
     sfpmPackage.packageDefinition = packageDefinition;
     sfpmPackage.version = packageDefinition.versionNumber;
 
@@ -835,7 +835,7 @@ export class PackageFactory {
 
     // Resolve package ID from aliases for unlocked packages
     if (packageType === PackageType.Unlocked && sfpmPackage instanceof SfpmUnlockedPackage) {
-      const projectDef = this.projectConfig.getProjectDefinition();
+      const projectDef = this.provider.getProjectDefinition();
       const packageId = projectDef.packageAliases?.[packageName];
       if (packageId) {
         sfpmPackage.packageId = packageId;
@@ -849,7 +849,7 @@ export class PackageFactory {
    * Create a package by path, resolving which package it belongs to
    */
   createFromPath(packagePath: string): SfpmPackage {
-    const packageDefinition = this.projectConfig.getPackageDefinitionByPath(packagePath);
+    const packageDefinition = this.provider.getPackageDefinitionByPath(packagePath);
     return this.createFromName(packageDefinition.package);
   }
 
@@ -858,7 +858,7 @@ export class PackageFactory {
    * Returns undefined if the package is not found as a managed dependency.
    */
   createManagedRef(packageName: string): ManagedPackageRef | undefined {
-    const managedPackages = this.projectConfig.getManagedPackages();
+    const managedPackages = this.provider.getManagedPackages();
     const managedDef = managedPackages.find(m => m.package === packageName);
 
     if (!managedDef) {
@@ -869,10 +869,10 @@ export class PackageFactory {
   }
 
   /**
-   * Get the underlying ProjectConfig
+   * Get the underlying ProjectDefinitionProvider
    */
-  getProjectConfig(): ProjectConfig {
-    return this.projectConfig;
+  getProvider(): ProjectDefinitionProvider {
+    return this.provider;
   }
 
   /**
@@ -880,12 +880,12 @@ export class PackageFactory {
    * rather than a local package directory.
    */
   isManagedPackage(packageName: string): boolean {
-    const allPackages = this.projectConfig.getAllPackageDirectories();
+    const allPackages = this.provider.getAllPackageDefinitions();
     if (allPackages.some(p => p.package === packageName)) {
       return false;
     }
 
-    const managedPackages = this.projectConfig.getManagedPackages();
+    const managedPackages = this.provider.getManagedPackages();
     return managedPackages.some(m => m.package === packageName);
   }
 
@@ -921,7 +921,7 @@ export class PackageFactory {
    * existing PackageDefinition so all downstream consumers work unchanged.
    */
   private overlayWorkspacePackageOptions(packageDefinition: PackageDefinition, sfpmPackage: SfpmPackage): void {
-    const projectDir = this.projectConfig.projectDirectory;
+    const {projectDir} = this.provider;
     const sourcePath = packageDefinition.path;
     const parts = sourcePath.split('/');
 

@@ -79,24 +79,33 @@ export {PackageBuilder} from './package/package-builder.js'; // Avoid export * d
 export {PackageCreator} from './package/package-creator.js';
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
+export {
+  type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
+} from './package/services/validation-poller.js';
 export {PackageFactory, SfpmDataPackage, default as SfpmPackage} from './package/sfpm-package.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export {
   collectPackageAliases, stripScope, toManagedPackageDefinitions, toPackageDefinition,
 } from './project/package-json-adapter.js';
-export {default as ProjectConfig} from './project/project-config.js';
-export {type ProjectDefinitionProvider, type ProjectDefinitionResult, type ResolveForPackageOptions} from './project/project-definition-provider.js';
+export {
+  type ClassifiedDependencies,
+  type PackageDependency,
+  type ProjectDefinitionProvider,
+  type ProjectDefinitionResult,
+  type ResolveForPackageOptions,
+} from './project/project-definition-provider.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
-export {SfdxProjectDefinitionProvider} from './project/sfdx-project-provider.js';
+export {SfdxProjectProvider} from './project/sfdx-project-provider.js';
 export * from './project/version-manager.js';
 export {
   type MigrateOptions, WorkspaceInitializer, type WorkspaceInitOptions, type WorkspaceInitResult,
 } from './project/workspace-init.js';
-export {WorkspaceDefinitionProvider, type WorkspaceDefinitionProviderOptions} from './project/workspace-resolver.js';
+export {type WorkspaceProviderOptions as WorkspaceDefinitionProviderOptions, WorkspaceProvider} from './project/workspace-provider.js';
 export {WorkspaceSync, type WorkspaceSyncOptions} from './project/workspace-sync.js';
 export * from './types/artifact.js';
 export * from './types/bootstrap.js';
+export * from './types/build-state.js';
 export * from './types/config.js';
 export * from './types/errors.js';
 export * from './types/events.js';
@@ -107,6 +116,7 @@ export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
 export * from './types/workspace.js';
+export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
 export {getPipelineRunId} from './utils/pipeline.js';
 export {escapeSOQL, soql} from './utils/soql.js';

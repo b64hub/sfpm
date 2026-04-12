@@ -48,14 +48,14 @@ import PackageAssembler from '../../../../src/package/assemblers/package-assembl
 const mockedFs = fs as any;
 
 describe('PackageAssembler — Data packages', () => {
-  let mockProjectConfig: any;
+  let mockProvider: any;
   let assembler: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockProjectConfig = {
-      projectDirectory: '/root',
+    mockProvider = {
+      projectDir: '/root',
       getPackageDefinition: vi.fn().mockReturnValue({
         package: 'my-data',
         path: 'data',
@@ -67,7 +67,7 @@ describe('PackageAssembler — Data packages', () => {
       }),
     };
 
-    assembler = new PackageAssembler('my-data', mockProjectConfig as any);
+    assembler = new PackageAssembler('my-data', mockProvider as any);
   });
 
   it('should use reduced assembly pipeline for data packages', async () => {

@@ -91,7 +91,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   // 1. Initialise project
   // ------------------------------------------------------------------
   const projectService = await ProjectService.getInstance(projectDir);
-  const projectConfig = projectService.getProjectConfig();
+  const projectConfig = projectService.getDefinitionProvider();
   const projectGraph = projectService.getProjectGraph();
   const sfpmConfig = projectService.getSfpmConfig();
 

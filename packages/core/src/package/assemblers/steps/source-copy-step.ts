@@ -2,7 +2,8 @@ import fs from 'fs-extra';
 import ignore from 'ignore';
 import path from 'node:path';
 
-import ProjectConfig from '../../../project/project-config.js';
+import type {ProjectDefinitionProvider} from '../../../project/project-definition-provider.js';
+
 import {Logger} from '../../../types/logger.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 
@@ -24,13 +25,13 @@ export class SourceCopyStep implements AssemblyStep {
 
   constructor(
     private packageName: string,
-    private projectConfig: ProjectConfig,
+    private provider: ProjectDefinitionProvider,
     private logger?: Logger,
   ) {}
 
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
-    const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
-    const sourceDir = path.join(this.projectConfig.projectDirectory, packageDefinition.path);
+    const packageDefinition = this.provider.getPackageDefinition(this.packageName);
+    const sourceDir = path.join(this.provider.projectDir, packageDefinition.path);
     const destinationDir = path.join(output.stagingDirectory, packageDefinition.path);
 
     const ig = await this.loadBuildIgnore(options);
@@ -90,7 +91,7 @@ export class SourceCopyStep implements AssemblyStep {
       return null;
     }
 
-    const resolvedPath = path.resolve(this.projectConfig.projectDirectory, buildIgnorePath);
+    const resolvedPath = path.resolve(this.provider.projectDir, buildIgnorePath);
 
     if (!await fs.pathExists(resolvedPath)) {
       this.logger?.warn(`[SourceCopyStep] Build ignore file not found: ${resolvedPath}`);

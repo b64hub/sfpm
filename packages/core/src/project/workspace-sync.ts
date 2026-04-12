@@ -22,7 +22,7 @@ import type {
 } from '../types/workspace.js';
 
 import {stripScope} from './package-json-adapter.js';
-import {WorkspaceDefinitionProvider} from './workspace-resolver.js';
+import {WorkspaceProvider} from './workspace-provider.js';
 
 // ---------------------------------------------------------------------------
 // Options
@@ -58,8 +58,8 @@ export class WorkspaceSync {
    * Run the sync: discover workspace packages, generate sfdx-project.json.
    */
   async run(): Promise<WorkspaceSyncResult> {
-    // Delegate discovery and definition building to WorkspaceDefinitionProvider
-    const provider = new WorkspaceDefinitionProvider({
+    // Delegate discovery and definition building to WorkspaceProvider
+    const provider = new WorkspaceProvider({
       logger: this.logger,
       namespace: this.options.namespace,
       projectDir: this.options.projectDir,
@@ -73,7 +73,7 @@ export class WorkspaceSync {
 
     // Write sfdx-project.json
     const sfdxProjectPath = path.join(this.options.projectDir, 'sfdx-project.json');
-    WorkspaceDefinitionProvider.ensureSfdxProject(this.options.projectDir, projectDefinition);
+    WorkspaceProvider.ensureSfdxProject(this.options.projectDir, projectDefinition);
     this.logger?.info(`Generated ${sfdxProjectPath}`);
 
     // Build result

@@ -1,8 +1,9 @@
 import {Org} from '@salesforce/core';
 import EventEmitter from 'node:events';
 
+import type {ProjectDefinitionProvider} from '../project/project-definition-provider.js';
+
 import {ArtifactService, InstallTarget} from '../artifacts/artifact-service.js';
-import ProjectConfig from '../project/project-config.js';
 import {Logger} from '../types/logger.js';
 import {InstallationMode, InstallationSource, PackageType} from '../types/package.js';
 import {Installer, InstallerRegistry} from './installers/installer-registry.js';
@@ -59,10 +60,10 @@ export default class PackageInstaller extends EventEmitter {
   private logger: Logger | undefined;
   private options: InstallOptions;
   private org?: Org;
-  private projectConfig: ProjectConfig;
+  private provider: ProjectDefinitionProvider;
 
   constructor(
-    projectConfig: ProjectConfig,
+    provider: ProjectDefinitionProvider,
     options: InstallOptions,
     logger?: Logger,
     org?: Org,
@@ -70,7 +71,7 @@ export default class PackageInstaller extends EventEmitter {
     super();
     this.options = options;
     this.logger = logger;
-    this.projectConfig = projectConfig;
+    this.provider = provider;
     this.org = org;
   }
 
@@ -86,7 +87,7 @@ export default class PackageInstaller extends EventEmitter {
    * @returns InstallResult with details of what happened
    */
   public async installPackage(packageName: string): Promise<InstallResult> {
-    const factory = new PackageFactory(this.projectConfig);
+    const factory = new PackageFactory(this.provider);
 
     // Managed packages: skip artifact resolution, go straight to version install
     if (factory.isManagedPackage(packageName)) {

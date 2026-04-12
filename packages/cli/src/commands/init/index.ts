@@ -136,8 +136,7 @@ export default class Init extends SfpmCommand {
   private async checkPackageDirectories(): Promise<ConfigCheck> {
     try {
       const projectService = await ProjectService.getInstance(process.cwd())
-      const config = projectService.getProjectConfig()
-      const packages = config.getAllPackageNames()
+      const packages = projectService.getAllPackageNames()
 
       return {
         fix: packages.length > 0

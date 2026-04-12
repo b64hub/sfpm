@@ -8,14 +8,69 @@
 
 import {ProjectJsonSchema, SfProject} from '@salesforce/core';
 
-import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
-import type {ProjectDefinitionProvider, ProjectDefinitionResult, ResolveForPackageOptions} from './project-definition-provider.js';
+import type {PackageType} from '../types/package.js';
+import type {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import type {
+  ClassifiedDependencies,
+  PackageDependency,
+  ProjectDefinitionProvider,
+  ProjectDefinitionResult,
+  ResolveForPackageOptions,
+} from './project-definition-provider.js';
 
-export class SfdxProjectDefinitionProvider implements ProjectDefinitionProvider {
+import * as Q from './definition-queries.js';
+
+export class SfdxProjectProvider implements ProjectDefinitionProvider {
   public readonly projectDir: string;
 
   constructor(private readonly sfProject: SfProject) {
     this.projectDir = sfProject.getPath();
+  }
+
+  // -- Resolution -----------------------------------------------------------
+
+  classifyDependencies(packageName: string): ClassifiedDependencies {
+    return Q.classifyDependencies(this.resolve().definition, packageName);
+  }
+
+  getAllPackageDefinitions(): PackageDefinition[] {
+    return Q.getAllPackageDefinitions(this.resolve().definition);
+  }
+
+  // -- Package queries ------------------------------------------------------
+
+  getAllPackageNames(): string[] {
+    return Q.getAllPackageNames(this.resolve().definition);
+  }
+
+  getDependencies(packageName: string): PackageDependency[] {
+    return Q.getDependencies(this.resolve().definition, packageName);
+  }
+
+  getManagedPackages(): ManagedPackageDefinition[] {
+    return Q.getManagedPackages(this.resolve().definition);
+  }
+
+  getPackageDefinition(packageName: string): PackageDefinition {
+    return Q.getPackageDefinition(this.resolve().definition, packageName);
+  }
+
+  getPackageDefinitionByPath(packagePath: string): PackageDefinition {
+    return Q.getPackageDefinitionByPath(this.resolve().definition, packagePath);
+  }
+
+  getPackageId(packageAlias: string): string | undefined {
+    return Q.getPackageId(this.resolve().definition, packageAlias);
+  }
+
+  getPackageType(packageName: string): PackageType {
+    return Q.getPackageType(this.resolve().definition, packageName);
+  }
+
+  // -- Dependency queries ---------------------------------------------------
+
+  getProjectDefinition(): ProjectDefinition {
+    return this.resolve().definition;
   }
 
   resolve(): ProjectDefinitionResult {
@@ -23,10 +78,6 @@ export class SfdxProjectDefinitionProvider implements ProjectDefinitionProvider 
     return {definition};
   }
 
-  /**
-   * Prune the full sfdx-project.json to a single-package definition.
-   * Strips SFPM-specific properties and ensures the package is marked as default.
-   */
   resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
     const {definition} = this.resolve();
     const pruned = structuredClone(definition) as ProjectDefinition;

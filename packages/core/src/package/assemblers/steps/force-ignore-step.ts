@@ -1,7 +1,8 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import ProjectConfig from '../../../project/project-config.js';
+import type {ProjectDefinitionProvider} from '../../../project/project-definition-provider.js';
+
 import {IgnoreFilesConfig} from '../../../types/config.js';
 import {Logger} from '../../../types/logger.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
@@ -13,7 +14,7 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 export class ForceIgnoreStep implements AssemblyStep {
   constructor(
     private readonly packageName: string,
-    private readonly projectConfig: ProjectConfig,
+    private readonly provider: ProjectDefinitionProvider,
     private readonly logger?: Logger,
   ) { }
 
@@ -21,7 +22,7 @@ export class ForceIgnoreStep implements AssemblyStep {
     const forceIgnoresDir = path.join(output.stagingDirectory, 'forceignores');
     await fs.ensureDir(forceIgnoresDir);
 
-    const rootForceIgnore = path.join(this.projectConfig.projectDirectory, '.forceignore');
+    const rootForceIgnore = path.join(this.provider.projectDir, '.forceignore');
     const {ignoreFilesConfig} = options;
 
     try {
@@ -78,13 +79,13 @@ export class ForceIgnoreStep implements AssemblyStep {
     const destIgnorePath = path.join(forceIgnoresDir, `.forceignore.${stage}`);
 
     if (stageSpecificIgnorePath) {
-      const resolvedStageIgnorePath = path.join(this.projectConfig.projectDirectory, stageSpecificIgnorePath);
+      const resolvedStageIgnorePath = path.join(this.provider.projectDir, stageSpecificIgnorePath);
 
       if (await fs.pathExists(resolvedStageIgnorePath)) {
         await fs.copy(resolvedStageIgnorePath, destIgnorePath);
-      } else if (await fs.pathExists(path.join(this.projectConfig.projectDirectory, 'forceignores', `.forceignore.${stage}`))) {
+      } else if (await fs.pathExists(path.join(this.provider.projectDir, 'forceignores', `.forceignore.${stage}`))) {
         // Fallback: check forceignores/ directory for convention-based file
-        await fs.copy(path.join(this.projectConfig.projectDirectory, 'forceignores', `.forceignore.${stage}`), destIgnorePath);
+        await fs.copy(path.join(this.provider.projectDir, 'forceignores', `.forceignore.${stage}`), destIgnorePath);
       } else {
         throw new Error(`${resolvedStageIgnorePath} does not exist`);
       }

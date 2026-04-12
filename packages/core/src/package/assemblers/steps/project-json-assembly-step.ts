@@ -2,7 +2,8 @@ import {ComponentSet} from '@salesforce/source-deploy-retrieve';
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import ProjectConfig from '../../../project/project-config.js';
+import type {ProjectDefinitionProvider} from '../../../project/project-definition-provider.js';
+
 import ProjectService from '../../../project/project-service.js';
 import {Logger} from '../../../types/logger.js';
 import {PackageDefinition} from '../../../types/project.js';
@@ -25,13 +26,13 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 export class ProjectJsonAssemblyStep implements AssemblyStep {
   constructor(
     private packageName: string,
-    private projectConfig: ProjectConfig,
+    private provider: ProjectDefinitionProvider,
     private logger?: Logger,
   ) { }
 
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     try {
-      const projectService = await ProjectService.getInstance(this.projectConfig.projectDirectory);
+      const projectService = await ProjectService.getInstance(this.provider.projectDir);
       const packageDefinition = projectService.resolveForPackage(this.packageName);
 
       if (options.versionNumber) {
@@ -62,7 +63,7 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
       const manifestsDir = path.join(output.stagingDirectory, 'manifests');
       await fs.ensureDir(manifestsDir);
       await fs.copy(
-        path.join(this.projectConfig.projectDirectory, 'sfdx-project.json'),
+        path.join(this.provider.projectDir, 'sfdx-project.json'),
         path.join(manifestsDir, 'sfdx-project.json.original'),
       );
     } catch (error) {

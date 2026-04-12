@@ -6,17 +6,25 @@
  * alternative to reading sfdx-project.json.
  *
  * Implements the ProjectDefinitionProvider interface so it can be plugged
- * into ProjectService alongside the legacy SfdxProjectDefinitionProvider.
+ * into ProjectService alongside the legacy SfdxProjectProvider.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 import type {Logger} from '../types/logger.js';
-import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
+import type {PackageType} from '../types/package.js';
+import type {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import type {WorkspacePackageJson} from '../types/workspace.js';
-import type {ProjectDefinitionProvider, ProjectDefinitionResult, ResolveForPackageOptions} from './project-definition-provider.js';
+import type {
+  ClassifiedDependencies,
+  PackageDependency,
+  ProjectDefinitionProvider,
+  ProjectDefinitionResult,
+  ResolveForPackageOptions,
+} from './project-definition-provider.js';
 
+import * as Q from './definition-queries.js';
 import {
   collectPackageAliases,
   stripScope,
@@ -27,7 +35,7 @@ import {
 // Options
 // ---------------------------------------------------------------------------
 
-export interface WorkspaceDefinitionProviderOptions {
+export interface WorkspaceProviderOptions {
   logger?: Logger;
   /** Salesforce namespace (empty string for no namespace) */
   namespace?: string;
@@ -43,13 +51,13 @@ export interface WorkspaceDefinitionProviderOptions {
 // Provider
 // ---------------------------------------------------------------------------
 
-export class WorkspaceDefinitionProvider implements ProjectDefinitionProvider {
+export class WorkspaceProvider implements ProjectDefinitionProvider {
   public readonly projectDir: string;
   private cachedResult?: ProjectDefinitionResult;
   private readonly logger: Logger | undefined;
-  private readonly options: WorkspaceDefinitionProviderOptions;
+  private readonly options: WorkspaceProviderOptions;
 
-  constructor(options: WorkspaceDefinitionProviderOptions) {
+  constructor(options: WorkspaceProviderOptions) {
     this.options = options;
     this.projectDir = options.projectDir;
     this.logger = options.logger;
@@ -77,7 +85,7 @@ export class WorkspaceDefinitionProvider implements ProjectDefinitionProvider {
    */
   static ensureSfdxProject(projectDir: string, definition: ProjectDefinition): void {
     const sfdxPath = path.join(projectDir, 'sfdx-project.json');
-    const cleaned = WorkspaceDefinitionProvider.cleanForSalesforce(definition);
+    const cleaned = WorkspaceProvider.cleanForSalesforce(definition);
     fs.writeFileSync(sfdxPath, JSON.stringify(cleaned, null, 2) + '\n', 'utf8');
   }
 
@@ -101,6 +109,50 @@ export class WorkspaceDefinitionProvider implements ProjectDefinitionProvider {
     }
 
     return false;
+  }
+
+  classifyDependencies(packageName: string): ClassifiedDependencies {
+    return Q.classifyDependencies(this.resolve().definition, packageName);
+  }
+
+  getAllPackageDefinitions(): PackageDefinition[] {
+    return Q.getAllPackageDefinitions(this.resolve().definition);
+  }
+
+  // -- Package queries ------------------------------------------------------
+
+  getAllPackageNames(): string[] {
+    return Q.getAllPackageNames(this.resolve().definition);
+  }
+
+  getDependencies(packageName: string): PackageDependency[] {
+    return Q.getDependencies(this.resolve().definition, packageName);
+  }
+
+  getManagedPackages(): ManagedPackageDefinition[] {
+    return Q.getManagedPackages(this.resolve().definition);
+  }
+
+  getPackageDefinition(packageName: string): PackageDefinition {
+    return Q.getPackageDefinition(this.resolve().definition, packageName);
+  }
+
+  getPackageDefinitionByPath(packagePath: string): PackageDefinition {
+    return Q.getPackageDefinitionByPath(this.resolve().definition, packagePath);
+  }
+
+  getPackageId(packageAlias: string): string | undefined {
+    return Q.getPackageId(this.resolve().definition, packageAlias);
+  }
+
+  getPackageType(packageName: string): PackageType {
+    return Q.getPackageType(this.resolve().definition, packageName);
+  }
+
+  // -- Dependency queries ---------------------------------------------------
+
+  getProjectDefinition(): ProjectDefinition {
+    return this.resolve().definition;
   }
 
   /**

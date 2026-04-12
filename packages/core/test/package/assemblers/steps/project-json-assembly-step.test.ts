@@ -36,7 +36,7 @@ import fs from 'fs-extra';
 import { ProjectJsonAssemblyStep } from '../../../../src/package/assemblers/steps/project-json-assembly-step.js';
 
 describe('ProjectJsonAssemblyStep', () => {
-    let mockProjectConfig: any;
+    let mockProvider: any;
     let step: ProjectJsonAssemblyStep;
     let options: any;
     let output: any;
@@ -44,8 +44,8 @@ describe('ProjectJsonAssemblyStep', () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        mockProjectConfig = {
-            projectDirectory: '/root',
+        mockProvider = {
+            projectDir: '/root',
         };
 
         mockResolveForPackage.mockReturnValue({
@@ -56,7 +56,7 @@ describe('ProjectJsonAssemblyStep', () => {
             }]
         });
 
-        step = new ProjectJsonAssemblyStep('core', mockProjectConfig as any);
+        step = new ProjectJsonAssemblyStep('core', mockProvider as any);
         options = { versionNumber: '1.2.3.4' };
         output = {
             stagingDirectory: '/staging',

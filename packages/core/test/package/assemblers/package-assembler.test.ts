@@ -44,19 +44,18 @@ vi.mock('../../../src/project/project-service.js', () => ({
 
 import fs from 'fs-extra';
 import PackageAssembler from '../../../src/package/assemblers/package-assembler.js';
-import ProjectConfig from '../../../src/project/project-config.js';
 
 const mockedFs = fs as any;
 
 describe('PackageAssembler', () => {
-    let mockProjectConfig: any;
+    let mockProvider: any;
     let assembler: any;
 
     beforeEach(() => {
         vi.clearAllMocks();
 
-        mockProjectConfig = {
-            projectDirectory: '/root',
+        mockProvider = {
+            projectDir: '/root',
             getPackageDefinition: vi.fn().mockReturnValue({
                 path: 'force-app',
                 package: 'core',
@@ -67,7 +66,7 @@ describe('PackageAssembler', () => {
             }),
         };
 
-        assembler = new PackageAssembler('core', mockProjectConfig as any);
+        assembler = new PackageAssembler('core', mockProvider as any);
     });
 
     it('should initialize staging directory in constructor', () => {
@@ -139,7 +138,7 @@ describe('PackageAssembler', () => {
     });
 
     it('should create unique build names', () => {
-        const assembler2 = new PackageAssembler('core', mockProjectConfig as any);
+        const assembler2 = new PackageAssembler('core', mockProvider as any);
         expect((assembler as any).stagingDirectory).not.toBe((assembler2 as any).stagingDirectory);
     });
 });

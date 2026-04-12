@@ -129,7 +129,7 @@ export default class Bootstrap extends SfpmCommand {
 
       // ── Step 6: Load project from cloned repo ─────────────────────
       const projectService = await ProjectService.create(tmpDir)
-      const projectConfig = projectService.getProjectConfig()
+      const projectConfig = projectService.getDefinitionProvider()
       const projectGraph = projectService.getProjectGraph()
       const sfpmConfig = projectService.getSfpmConfig()
 

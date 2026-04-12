@@ -1,10 +1,11 @@
 import {Org} from '@salesforce/core';
 import EventEmitter from 'node:events';
 
+import type {ProjectDefinitionProvider} from '../project/project-definition-provider.js';
+
 import {ArtifactService} from '../artifacts/artifact-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import PackageInstaller, {InstallOptions} from '../package/package-installer.js';
-import ProjectConfig from '../project/project-config.js';
 import {ProjectGraph} from '../project/project-graph.js';
 import {
   InstallEvents,
@@ -47,15 +48,15 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
   private readonly lifecycle: LifecycleEngine | undefined;
   private readonly logger: Logger | undefined;
   private readonly options: InstallOptions;
-  private readonly projectConfig: ProjectConfig;
+  private readonly provider: ProjectDefinitionProvider;
 
   constructor(
-    projectConfig: ProjectConfig,
+    provider: ProjectDefinitionProvider,
     options: InstallOptions,
     logger?: Logger,
     lifecycle?: LifecycleEngine,
   ) {
-    this.projectConfig = projectConfig;
+    this.provider = provider;
     this.options = options;
     this.logger = logger;
     this.lifecycle = lifecycle;
@@ -71,7 +72,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
 
     // Check if this package should be skipped for the current lifecycle stage
     if (this.lifecycle) {
-      const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+      const packageDefinition = this.provider.getPackageDefinition(packageName);
       const skipStages = packageDefinition.packageOptions?.skip ?? [];
       if (skipStages.includes(this.lifecycle.stage)) {
         this.logger?.info(`Skipping '${packageName}' — stage '${this.lifecycle.stage}' is in skip list`);
@@ -82,7 +83,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     }
 
     const installer = new PackageInstaller(
-      this.projectConfig,
+      this.provider,
       this.options,
       this.logger,
       context.org,
@@ -140,7 +141,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
    * Provides the package definition, org, logger, and project directory.
    */
   private buildHookContext(packageName: string, context: InstallContext): HookContext {
-    const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+    const packageDefinition = this.provider.getPackageDefinition(packageName);
 
     return {
       logger: this.logger,
@@ -195,14 +196,14 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
   private readonly orchestrator: Orchestrator<InstallContext>;
 
   constructor(
-    projectConfig: ProjectConfig,
+    provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
     options: InstallOrchestratorOptions,
     logger?: Logger,
     lifecycle?: LifecycleEngine,
   ) {
     super();
-    const task = new InstallOrchestrationTask(projectConfig, options, logger, lifecycle);
+    const task = new InstallOrchestrationTask(provider, options, logger, lifecycle);
     this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: true}, task, logger, this);
   }
 
@@ -215,14 +216,14 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
    * Uses artifact resolution (local or npm) to find the best version.
    */
   static forArtifact(
-    projectConfig: ProjectConfig,
+    provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
     options: Omit<InstallOrchestratorOptions, 'source'> & {source?: never},
     logger?: Logger,
     lifecycle?: LifecycleEngine,
   ): InstallOrchestrator {
     return new InstallOrchestrator(
-      projectConfig,
+      provider,
       graph,
       {...options, source: InstallationSource.Artifact},
       logger,
@@ -235,14 +236,14 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
    * Deploys source metadata via the metadata API without artifact resolution.
    */
   static forSource(
-    projectConfig: ProjectConfig,
+    provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
     options: Omit<InstallOrchestratorOptions, 'mode' | 'source'> & {mode?: never; source?: never},
     logger?: Logger,
     lifecycle?: LifecycleEngine,
   ): InstallOrchestrator {
     return new InstallOrchestrator(
-      projectConfig,
+      provider,
       graph,
       {...options, source: InstallationSource.Local},
       logger,

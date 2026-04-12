@@ -37,10 +37,9 @@ export default class AssembleArtifactTask implements BuildTask {
 
     // Resolve scoped npm names for versioned dependencies by looking up each dep's PackageDefinition
     const projectService = await ProjectService.getInstance(this.projectDirectory);
-    const projectConfig = projectService.getProjectConfig();
     const scopedDependencies: Record<string, string> = {};
     for (const [name, range] of Object.entries(versioned)) {
-      const depDefinition = projectConfig.getPackageDefinition(name);
+      const depDefinition = projectService.getPackageDefinition(name);
       const npmName = depDefinition.npmName ?? name;
       scopedDependencies[npmName] = range;
     }

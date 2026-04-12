@@ -1,5 +1,5 @@
 import {
-  PackageDefinition, PackageNode, PackageType, ProjectGraph, ProjectService,
+  PackageDefinition, PackageNode, PackageType, ProjectService,
 } from '@b64/sfpm-core'
 import {Flags} from '@oclif/core'
 import boxen from 'boxen'
@@ -24,8 +24,9 @@ export default class Project extends SfpmCommand {
   public async execute(): Promise<void> {
     const {flags} = await this.parse(Project);
 
-    const config = await ProjectService.getProjectDefinition();
-    const graph = new ProjectGraph(config);
+    const projectService = await ProjectService.getInstance();
+    const config = projectService.getProjectDefinition();
+    const graph = projectService.getProjectGraph();
 
     const treeData: Record<string, any> = {};
 

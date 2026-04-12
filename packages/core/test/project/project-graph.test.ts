@@ -1,6 +1,12 @@
 import { describe, test, expect } from 'vitest';
 import { ProjectGraph } from '../../src/project/project-graph.js';
+import type { ProjectDefinitionProvider } from '../../src/project/project-definition-provider.js';
 import { ProjectDefinition } from '../../src/types/project.js';
+
+/** Wraps a ProjectDefinition in a minimal ProjectDefinitionProvider for testing. */
+function asProvider(definition: ProjectDefinition): ProjectDefinitionProvider {
+    return { getProjectDefinition: () => definition } as unknown as ProjectDefinitionProvider;
+}
 
 describe('ProjectGraph', () => {
     test('should build graph nodes correctly', () => {
@@ -11,7 +17,7 @@ describe('ProjectGraph', () => {
             ]
         };
 
-        const graph = new ProjectGraph(mockProject);
+        const graph = new ProjectGraph(asProvider(mockProject));
         expect(graph.getAllNodes().length).toBe(2);
         expect(graph.getNode('pkg-a')).toBeDefined();
         expect(graph.getNode('pkg-b')).toBeDefined();
@@ -30,7 +36,7 @@ describe('ProjectGraph', () => {
             ]
         };
 
-        const graph = new ProjectGraph(mockProject);
+        const graph = new ProjectGraph(asProvider(mockProject));
         const nodeA = graph.getNode('pkg-a');
         const nodeB = graph.getNode('pkg-b');
 
@@ -62,7 +68,7 @@ describe('ProjectGraph', () => {
             ]
         };
 
-        const graph = new ProjectGraph(mockProject);
+        const graph = new ProjectGraph(asProvider(mockProject));
         const nodeA = graph.getNode('pkg-a');
         const nodeB = graph.getNode('pkg-b');
 
@@ -91,7 +97,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const resolution = graph.resolveDependencies(['pkg-c']);
 
             expect(resolution.allPackages.length).toBe(3);
@@ -120,7 +126,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const resolution = graph.resolveDependencies(['pkg-c']);
 
             expect(resolution.allPackages.length).toBe(3);
@@ -165,7 +171,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const resolution = graph.resolveDependencies(['pkg-c', 'pkg-d']);
 
             expect(resolution.allPackages.length).toBe(5);
@@ -207,7 +213,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const resolution = graph.resolveDependencies(['pkg-a']);
 
             expect(resolution.circularDependencies).not.toBeNull();
@@ -225,7 +231,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const resolution = graph.resolveDependencies(['pkg-a']);
 
             expect(resolution.allPackages.length).toBe(1);
@@ -243,7 +249,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const resolution = graph.resolveDependencies(['pkg-a', 'pkg-b', 'pkg-c']);
 
             expect(resolution.allPackages.length).toBe(3);
@@ -260,7 +266,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
 
             expect(() => graph.resolveDependencies(['pkg-nonexistent']))
                 .toThrow(/Package pkg-nonexistent not found/);
@@ -298,7 +304,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const resolution = graph.resolveDependencies(['pkg-e']);
 
             expect(resolution.allPackages.length).toBe(5);
@@ -344,7 +350,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const resolution = graph.resolveDependencies(['pkg-d']);
 
             expect(resolution.allPackages.length).toBe(4);
@@ -378,7 +384,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const cycles = graph.detectCircularDependencies(['pkg-a', 'pkg-b']);
 
             expect(cycles).toBeNull();
@@ -402,7 +408,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const cycles = graph.detectCircularDependencies(['pkg-a', 'pkg-b']);
 
             expect(cycles).not.toBeNull();
@@ -421,7 +427,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const cycles = graph.detectCircularDependencies(['pkg-a']);
 
             expect(cycles).not.toBeNull();
@@ -450,7 +456,7 @@ describe('ProjectGraph', () => {
                 }
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             expect(graph.getAllNodes().length).toBe(2);
 
             const managedNode = graph.getNode('Nebula Logger@4.16.0');
@@ -480,7 +486,7 @@ describe('ProjectGraph', () => {
                 }
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             expect(graph.getAllNodes().length).toBe(1);
             expect(graph.getNode('unknown-dep')).toBeUndefined();
         });
@@ -504,7 +510,7 @@ describe('ProjectGraph', () => {
                 }
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const apexUtils = graph.getNode('apex-utils');
             const nebulaLogger = graph.getNode('Nebula Logger@4.16.0');
 
@@ -526,7 +532,7 @@ describe('ProjectGraph', () => {
                 ]
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             expect(graph.getNode('pkg-a')!.isManaged).toBe(false);
             expect(graph.getNode('pkg-b')!.isManaged).toBe(false);
             expect(graph.getNode('pkg-a')!.path).toBe('packages/pkg-a');
@@ -551,7 +557,7 @@ describe('ProjectGraph', () => {
                 }
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const resolution = graph.resolveDependencies(['apex-utils']);
 
             expect(resolution.allPackages.length).toBe(2);
@@ -586,7 +592,7 @@ describe('ProjectGraph', () => {
                 }
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             const deps = graph.getTransitiveDependencies('pkg-b');
 
             expect(deps.length).toBe(2);
@@ -617,7 +623,7 @@ describe('ProjectGraph', () => {
                 }
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             expect(graph.getAllNodes().length).toBe(3);
 
             const resolution = graph.resolveDependencies(['my-app']);
@@ -650,7 +656,7 @@ describe('ProjectGraph', () => {
                 }
             };
 
-            const graph = new ProjectGraph(mockProject);
+            const graph = new ProjectGraph(asProvider(mockProject));
             expect(graph.getAllNodes().length).toBe(3);
 
             const resolution = graph.resolveDependencies(['my-app']);

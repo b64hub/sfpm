@@ -95,7 +95,7 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   // 1. Initialize project
   // ------------------------------------------------------------------
   const projectService = await ProjectService.getInstance(projectDir);
-  const projectConfig = projectService.getProjectConfig();
+  const projectConfig = projectService.getDefinitionProvider();
   const projectGraph = projectService.getProjectGraph();
 
   const packageNames = options.packages?.length

@@ -3,8 +3,9 @@ import {merge} from 'lodash-es';
 import EventEmitter from 'node:events';
 import path from 'node:path';
 
+import type {ProjectDefinitionProvider} from '../project/project-definition-provider.js';
+
 import {GitService} from '../git/git-service.js';
-import ProjectConfig from '../project/project-config.js';
 import {IgnoreFilesConfig} from '../types/config.js';
 import {NoSourceChangesError} from '../types/errors.js';
 import {AllBuildEvents} from '../types/events.js';
@@ -42,13 +43,13 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   private gitService?: GitService;
   private logger: Logger | undefined;
   private options: BuildOptions;
-  private projectConfig: ProjectConfig;
+  private provider: ProjectDefinitionProvider;
 
-  constructor(projectConfig: ProjectConfig, options?: BuildOptions, logger?: Logger, gitService?: GitService) {
+  constructor(provider: ProjectDefinitionProvider, options?: BuildOptions, logger?: Logger, gitService?: GitService) {
     super();
     this.options = options || {};
     this.logger = logger;
-    this.projectConfig = projectConfig;
+    this.provider = provider;
     this.gitService = gitService;
   }
 
@@ -67,7 +68,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    */
   public async buildPackage(packageName: string, projectDirectory: string) {
     // Use PackageFactory to create a fully-configured package
-    const packageFactory = new PackageFactory(this.projectConfig);
+    const packageFactory = new PackageFactory(this.provider);
     const sfpmPackage = packageFactory.createFromName(packageName);
 
     // Emit build start event
@@ -269,7 +270,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     try {
       const assemblyOutput = await new PackageAssembler(
         sfpmPackage.packageName,
-        this.projectConfig,
+        this.provider,
         {
           destructiveManifestPath: this.options.destructiveManifestPath,
           ignoreFilesConfig: this.options.ignoreFilesConfig,
