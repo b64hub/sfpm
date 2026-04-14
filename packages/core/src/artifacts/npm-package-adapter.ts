@@ -18,6 +18,7 @@ import {
   SfpmPackageMetadataBase,
   SfpmUnlockedPackageMetadata,
 } from '../types/package.js';
+import {toVersionFormat} from '../utils/version-utils.js';
 
 // ---------------------------------------------------------------------------
 // Write path: SfpmPackage → NpmPackageJson
@@ -67,6 +68,10 @@ export async function toNpmPackageJson(
       + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
   }
 
+  // Top-level version is base semver (no build suffix).
+  // The full version with build number lives in sfpm.versionNumber.
+  const baseVersion = toVersionFormat(version, 'semver', {includeBuildNumber: false});
+
   // Get sfpm metadata from the package and strip empty properties
   const sfpmMeta = removeEmptyValues(await pkg.toJson());
 
@@ -76,12 +81,14 @@ export async function toNpmPackageJson(
     sfpmMeta.source = rest;
   }
 
-  const optionalDependencies = options.versionedDependencies ?? {};
+  // Managed dependencies live at the top level (consistent with workspace package.json)
   const managedDependencies = options.managedDependencies ?? {};
+
+  const optionalDependencies = options.versionedDependencies ?? {};
 
   const keywords = ['sfpm', 'salesforce', String(pkg.type), ...(additionalKeywords || [])];
   const packageSourcePath = pkg.packageDefinition?.path || 'force-app';
-
+  
   const packageJson: NpmPackageJson = {
     description: pkg.packageDefinition?.versionDescription || `SFPM ${pkg.type} package: ${pkg.packageName}`,
     files: [
@@ -97,7 +104,7 @@ export async function toNpmPackageJson(
     license: license || 'UNLICENSED',
     name: npmName,
     sfpm: sfpmMeta,
-    version,
+    version: baseVersion,
   };
 
   if (author) {
@@ -148,13 +155,18 @@ export function fromNpmPackageJson(packageJson: NpmPackageJson): SfpmPackageMeta
     source: {
       ...sfpm.source,
     },
-    // Ensure version is always present (top-level npm version is authoritative)
+    // sfpm.versionNumber contains the full version with build suffix
     versionNumber: sfpm.versionNumber || packageJson.version,
   };
 
   // Reconstruct repositoryUrl from npm top-level field if not already set
   if (!metadata.source.repositoryUrl && packageJson.repository?.url) {
     metadata.source.repositoryUrl = packageJson.repository.url;
+  }
+
+  // Backward compat: older artifacts may have managedDependencies under sfpm
+  if (!metadata.managedDependencies && (packageJson as any).managedDependencies) {
+    metadata.managedDependencies = (packageJson as any).managedDependencies;
   }
 
   return metadata;
