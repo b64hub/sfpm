@@ -240,17 +240,15 @@ describe('npm-package-adapter', () => {
       expect(result.sfpm.source?.repositoryUrl).toBeUndefined();
     });
 
-    it('should include author, license, and homepage when provided', async () => {
+    it('should include author and license when provided', async () => {
       const pkg = createMockPackage();
       const result = await toNpmPackageJson(pkg, '1.0.0-1', {
         author: 'Test Author',
-        homepage: 'https://example.com',
         license: 'MIT',
       });
 
       expect(result.author).toBe('Test Author');
       expect(result.license).toBe('MIT');
-      expect(result.homepage).toBe('https://example.com');
     });
 
     it('should default license to UNLICENSED', async () => {
@@ -280,22 +278,19 @@ describe('npm-package-adapter', () => {
       expect(result.files).toContain('sfdx-project.json');
     });
 
-    it('should include optional and managed dependencies when provided', async () => {
+    it('should include managed dependencies when provided', async () => {
       const pkg = createMockPackage();
       const result = await toNpmPackageJson(pkg, '1.0.0-1', {
         managedDependencies: {'Nebula Logger@4.16.0': '04taA000005CtsHQAS'},
-        versionedDependencies: {'@myorg/dep': '^1.0.0'},
       });
 
-      expect(result.optionalDependencies).toEqual({'@myorg/dep': '^1.0.0'});
       expect(result.managedDependencies).toEqual({'Nebula Logger@4.16.0': '04taA000005CtsHQAS'});
     });
 
-    it('should omit optional/managed deps when empty', async () => {
+    it('should omit managed deps when empty', async () => {
       const pkg = createMockPackage();
       const result = await toNpmPackageJson(pkg, '1.0.0-1', {});
 
-      expect(result.optionalDependencies).toBeUndefined();
       expect(result.managedDependencies).toBeUndefined();
     });
 

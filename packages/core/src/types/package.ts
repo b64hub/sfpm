@@ -1,6 +1,5 @@
 import {PackageManifestObject} from '@salesforce/source-deploy-retrieve';
 
-import {ApexClasses, ApexSortedByType} from './apex.js';
 import {DeployOptions} from './project.js';
 
 export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked'}
@@ -55,7 +54,7 @@ export interface SfpmUnlockedPackageIdentity extends SfpmPackageIdentity {
 
 export interface SfpmPackageSource {
   branch?: string;
-  commitSHA?: string;
+  commit?: string;
   repositoryUrl?: string;
   sourceHash?: string;
   tag?: string;
@@ -66,8 +65,7 @@ export interface SfpmPackageSource {
  * and optional specialized categorizations found by analyzers.
  */
 export interface CategorizedMetadata {
-  [category: string]: string[] | undefined;
-  all: string[]; // The physical truth from ComponentSet
+  [category: string]: MetadataFile[] | string[] | undefined;
 }
 
 /**
@@ -81,8 +79,7 @@ export interface CategorizedMetadata {
  */
 export interface SfpmPackageContent {
   [key: string]: any;
-  apex?: {
-    [category: string]: MetadataFile[] | string[] | undefined;
+  apex?: CategorizedMetadata & {
     classes?: MetadataFile[];
     tests?: MetadataFile[];
   };
@@ -92,7 +89,6 @@ export interface SfpmPackageContent {
     picklists?: string[];
   };
   metadataCount: number;
-  payload?: PackageManifestObject;
   testCoverage?: number;
 }
 
@@ -194,56 +190,5 @@ export interface InstalledArtifact {
   tag?: string;
   type?: PackageType
   version: string;
-}
-
-/**
- * @deprecated
- */
-export interface PackageInfo {
-  apexClassesSortedByTypes?: ApexSortedByType;
-  apexClassWithOutTestClasses?: ApexClasses;
-  apexTestClassses?: string[];
-  apextestsuite?: string;
-  apiVersion?: string;
-  assignPermSetsPostDeployment?: string[];
-  assignPermSetsPreDeployment?: string[];
-  branch?: string;
-  changelogFilePath?: string;
-  commitSHAFrom?: string;
-  commitSHATo?: string;
-  configFilePath?: string;
-  creation_details?: {creation_time?: number; timestamp?: number};
-  dependencies?: any;
-  deployments?: {installation_time?: number; sub_directory?: string; target_org: string; timestamp?: number}[];
-  destructiveChanges?: any;
-  destructiveChangesPath?: string;
-  has_passed_coverage_check?: boolean;
-  id?: string;
-  isApexFound?: boolean;
-  isDependencyValidated?: boolean;
-  isPayLoadContainTypesSupportedByProfiles?: boolean;
-  isPermissionSetGroupFound?: boolean;
-  isPickListsFound?: boolean;
-  isProfilesFound?: boolean;
-  isPromoted?: boolean;
-  isTriggerAllTests?: boolean;
-  metadataCount?: number;
-  package_name: string;
-  package_type?: string;
-  package_version_id?: string;
-  package_version_number?: string;
-  packageDescriptor?: any;
-  packageDirectory?: string;
-  payload?: any;
-  postDeploymentScript?: string;
-  preDeploymentScript?: string;
-  projectConfig?: any;
-  reconcileProfiles?: boolean;
-  repository_url?: string;
-  sourceDir?: string;
-  sourceVersion?: string;
-  tag?: string;
-  test_coverage?: number;
-  triggers?: ApexClasses;
 }
 

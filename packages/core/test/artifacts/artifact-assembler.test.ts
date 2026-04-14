@@ -250,32 +250,6 @@ describe('ArtifactAssembler', () => {
             expect(mockSfpmPackage.toJson).toHaveBeenCalled();
         });
 
-        it('should include optionalDependencies for versioned dependencies', async () => {
-            // Recreate assembler with versioned dependencies in options
-            assembler = new ArtifactAssembler(
-                mockSfpmPackage,
-                projectDirectory,
-                {
-                    ...mockOptions,
-                    versionedDependencies: { '@testorg/dep-package': '^1.0.0' },
-                },
-                mockLogger,
-            );
-            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
-
-            await (assembler as any).generatePackageJson('/tmp/staging');
-
-            expect(fs.writeJson).toHaveBeenCalledWith(
-                '/tmp/staging/package.json',
-                expect.objectContaining({
-                    optionalDependencies: {
-                        '@testorg/dep-package': '^1.0.0'
-                    }
-                }),
-                { spaces: 2 }
-            );
-        });
-
         it('should include managedDependencies for pinned dependencies', async () => {
             // Recreate assembler with managed dependencies in options
             assembler = new ArtifactAssembler(
@@ -300,10 +274,6 @@ describe('ArtifactAssembler', () => {
                 }),
                 { spaces: 2 }
             );
-
-            // Should NOT include managed deps in optionalDependencies
-            const writtenJson = vi.mocked(fs.writeJson).mock.calls[0][1] as any;
-            expect(writtenJson.optionalDependencies).toBeUndefined();
         });
 
         it('should filter empty values from sfpm metadata', async () => {

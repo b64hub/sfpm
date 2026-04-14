@@ -45,10 +45,7 @@ export {
 } from './artifacts/npm-package-adapter.js';
 export {
   type DownloadResult,
-  type NpmConfigResult,
-  NpmRegistryClient,
-  readNpmConfig,
-  readNpmConfigSync,
+  PnpmRegistryClient,
   RegistryClient,
   type RegistryClientConfig,
   type RegistryPackageInfo,

@@ -13,7 +13,7 @@
 
 import type {PackageType} from './package.js';
 import type {
-  BuildOptions, DeployOptions, PackageHookConfig, PackageOptions,
+  BuildOptions, DeployOptions, PackageDir, PackageHookConfig, PackageOptions,
 } from './project.js';
 
 // ---------------------------------------------------------------------------
@@ -40,23 +40,8 @@ import type {
  * }
  * ```
  */
-export interface SfpmPackageConfig {
-  /** Ancestor package version ID for unlocked package upgrades */
-  ancestorId?: string;
-  /** Ancestor version number for unlocked package upgrades */
-  ancestorVersion?: string;
-  /** Path to org definition file for scratch org shape */
-  definitionFile?: string;
-  /** Whether this unlocked package is org-dependent */
+export interface SfpmPackageConfig extends Omit<PackageDir, 'package' | 'path' | 'versionNumber'> {
   isOrgDependent?: boolean;
-  /**
-   * Managed package dependencies — packages from AppExchange or other publishers.
-   * Maps alias (e.g., "Nebula Logger@4.16.0") to subscriber package version ID (04t...).
-   * These are NOT workspace dependencies — they are installed directly via the Tooling API.
-   */
-  managedDependencies?: Record<string, string>;
-  /** Salesforce Package2 ID (0Ho...) for unlocked packages */
-  packageId?: string;
   /** Per-package build, deploy, and hook configuration */
   packageOptions?: PackageOptions;
   /** Package type: unlocked, source, or data */
@@ -67,48 +52,71 @@ export interface SfpmPackageConfig {
    * like `"force-app"` or `"main/default"`.
    */
   path?: string;
-  /**
-   * Path to seed metadata directory, resolved relative to the package directory.
-   * During sync, converted to a project-relative path for sfdx-project.json.
-   */
-  seedMetadata?: string;
-  /**
-   * Path to unpackaged metadata directory, resolved relative to the package directory.
-   * During sync, converted to a project-relative path for sfdx-project.json.
-   */
-  unpackagedMetadata?: string;
-  /** Human-readable version description */
-  versionDescription?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Workspace package.json structure
+// Package.json hierarchy
+//
+// SfpmPackageJson<TSfpm>          Generic base for all SFPM package.json variants
+//   ├── WorkspacePackageJson      Committed to repo — sfpm contains static config only
+//   └── NpmPackageJson            Generated during build — sfpm adds build metadata
+//                                 (defined in npm.ts)
 // ---------------------------------------------------------------------------
 
 /**
- * A workspace member's package.json with SFPM extensions.
+ * Base package.json structure shared between workspace (repo) and artifact (npm).
  *
- * This extends a minimal set of standard npm package.json fields with
- * the `sfpm` property for Salesforce-specific configuration.
+ * Generic over the `sfpm` property type so the same standard npm fields are
+ * defined once. The workspace variant carries only static configuration;
+ * the artifact variant adds build-time metadata via intersection.
+ *
+ * @typeParam TSfpm - Shape of the `sfpm` property. Defaults to `SfpmPackageConfig`
+ *   (static configuration only, as stored in the repo).
  */
-export interface WorkspacePackageJson {
+export interface SfpmPackageJson<TSfpm extends SfpmPackageConfig = SfpmPackageConfig> {
   /** Any other fields the user has in their package.json */
   [key: string]: unknown;
+  author?: string;
+  bugs?: {
+    url: string;
+  };
+
   /** Workspace dependencies — `workspace:^x.y.z` or `workspace:*` refs to other SF packages */
   dependencies?: Record<string, string>;
+  description?: string;
   /** User-managed dev dependencies (LWC Jest, ESLint, etc.) — never touched by SFPM */
   devDependencies?: Record<string, string>;
+  /** Package keywords for discovery */
+  keywords?: string[];
+  /** License identifier */
+  license?: string;
+  /**
+   * Managed package dependencies — packages from AppExchange or other publishers.
+   * Maps alias (e.g., "Nebula Logger@4.16.0") to subscriber package version ID (04t...).
+   * These are NOT workspace dependencies — they are installed directly via the Tooling API.
+   */
+  managedDependencies?: Record<string, string>;
   /** Scoped package name (e.g., "@myorg/core-package") */
   name: string;
   /** Always true for SF packages — these are not published directly to npm */
   private?: boolean;
   /** Scripts including sfpm:build, sfpm:install — user scripts preserved */
   scripts?: Record<string, string>;
-  /** SFPM static configuration */
-  sfpm: SfpmPackageConfig;
+  /** SFPM-specific metadata — static config in the workspace, enriched with build metadata in artifacts */
+  sfpm: TSfpm;
   /** Package version in semver format (e.g., "1.0.0") */
   version: string;
 }
+
+/**
+ * A workspace member's package.json (committed to the repo).
+ *
+ * The `sfpm` property contains only static configuration (`SfpmPackageConfig`).
+ * Build-time metadata is added later by the artifact assembly pipeline and
+ * stored in the artifact's `NpmPackageJson`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface WorkspacePackageJson extends SfpmPackageJson<SfpmPackageConfig> {}
 
 // ---------------------------------------------------------------------------
 // Turbo configuration types

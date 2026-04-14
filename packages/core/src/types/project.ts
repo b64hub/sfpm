@@ -41,6 +41,7 @@ export interface PackageOptions {
 }
 
 export interface BuildOptions {
+  asyncValidation?: boolean;
   skipValidation?: boolean;
 }
 
@@ -78,7 +79,6 @@ export interface PackageHookConfig {
  * script assembly, optimized deployment, etc.
  */
 export interface DeployOptions {
-  isTriggerAllTests?: boolean;
   optimize?: boolean;
   post?: {
     destructiveChanges?: string;
@@ -88,6 +88,7 @@ export interface DeployOptions {
     destructiveChanges?: string;
     unpackagedMetadata?: {path: string};
   },
+  testLevel?: string;
 }
 
 /**

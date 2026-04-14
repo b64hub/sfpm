@@ -41,16 +41,12 @@ export interface ArtifactAssemblerOptions {
   author?: string;
   /** Changelog provider for generating changelog.json */
   changelogProvider?: ChangelogProvider;
-  /** Homepage URL (e.g., AppExchange listing, project docs) */
-  homepage?: string;
   /** License identifier for package.json */
   license?: string;
   /** Pre-classified managed dependencies (alias -> packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
   /** Suppress npm pack notice output (default: true) */
   quietPack?: boolean;
-  /** Pre-classified versioned dependencies (scoped npm name -> semver range) */
-  versionedDependencies?: Record<string, string>;
 }
 
 /**

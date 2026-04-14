@@ -13,7 +13,7 @@ import SfpmPackage from '../package/sfpm-package.js';
  * - No duplication: `repository.url` at top level, `source.repositoryUrl` excluded from sfpm
  * - `source.commit` (renamed from `commitSHA` internally) in sfpm for brevity
  */
-import {NpmPackageJson} from '../types/npm.js';
+import {NpmPackageJson, SfpmArtifactMetadata} from '../types/npm.js';
 import {
   SfpmPackageMetadataBase,
   SfpmUnlockedPackageMetadata,
@@ -34,14 +34,10 @@ export interface ToNpmPackageJsonOptions {
   additionalKeywords?: string[];
   /** Author string for package.json */
   author?: string;
-  /** Homepage URL (e.g., AppExchange listing, project docs) */
-  homepage?: string;
   /** License identifier for package.json */
   license?: string;
   /** Pre-classified managed dependencies (alias → packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
-  /** Pre-classified versioned dependencies (scoped npm name → semver range) */
-  versionedDependencies?: Record<string, string>;
 }
 
 /**
@@ -57,7 +53,7 @@ export async function toNpmPackageJson(
   version: string,
   options: ToNpmPackageJsonOptions,
 ): Promise<NpmPackageJson> {
-  const {additionalKeywords, author, homepage, license} = options;
+  const {additionalKeywords, author, license} = options;
 
   // Resolve the npm package name — workspace mode provides it from package.json,
   // legacy mode would need migration via `sfpm init turbo`.
@@ -72,8 +68,12 @@ export async function toNpmPackageJson(
   // The full version with build number lives in sfpm.versionNumber.
   const baseVersion = toVersionFormat(version, 'semver', {includeBuildNumber: false});
 
-  // Get sfpm metadata from the package and strip empty properties
-  const sfpmMeta = removeEmptyValues(await pkg.toJson());
+  // Get sfpm metadata from the package and strip empty properties.
+  // Cast to SfpmArtifactMetadata — at this boundary we trust the metadata
+  // produced by toJson() to be the canonical artifact representation.
+  // Config-only fields (packageOptions, hooks, etc.) will be added as the
+  // adapter evolves to merge workspace config into the artifact.
+  const sfpmMeta = removeEmptyValues(await pkg.toJson()) as SfpmArtifactMetadata;
 
   // Remove repositoryUrl from sfpm.source — it lives at the npm top-level `repository`
   if (sfpmMeta?.source?.repositoryUrl) {
@@ -84,11 +84,9 @@ export async function toNpmPackageJson(
   // Managed dependencies live at the top level (consistent with workspace package.json)
   const managedDependencies = options.managedDependencies ?? {};
 
-  const optionalDependencies = options.versionedDependencies ?? {};
-
   const keywords = ['sfpm', 'salesforce', String(pkg.type), ...(additionalKeywords || [])];
   const packageSourcePath = pkg.packageDefinition?.path || 'force-app';
-  
+
   const packageJson: NpmPackageJson = {
     description: pkg.packageDefinition?.versionDescription || `SFPM ${pkg.type} package: ${pkg.packageName}`,
     files: [
@@ -109,14 +107,6 @@ export async function toNpmPackageJson(
 
   if (author) {
     packageJson.author = author;
-  }
-
-  if (homepage) {
-    packageJson.homepage = homepage;
-  }
-
-  if (Object.keys(optionalDependencies).length > 0) {
-    packageJson.optionalDependencies = optionalDependencies;
   }
 
   if (Object.keys(managedDependencies).length > 0) {
