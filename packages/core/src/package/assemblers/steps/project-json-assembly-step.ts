@@ -33,8 +33,7 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
 
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     try {
-      const projectService = await ProjectService.getInstance(this.provider.projectDir);
-      const packageDefinition = projectService.resolveForPackage(this.packageName);
+      const packageDefinition = this.provider.resolveForPackage(this.packageName);
 
       if (options.versionNumber) {
         (packageDefinition.packageDirectories[0] as PackageDefinition).versionNumber = toVersionFormat(options.versionNumber, 'salesforce');

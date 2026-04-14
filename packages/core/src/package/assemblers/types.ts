@@ -1,10 +1,7 @@
-import {ConvertResult} from '@salesforce/source-deploy-retrieve';
-
 import {IgnoreFilesConfig} from '../../types/config.js';
 
 export interface AssemblyOptions {
   destructiveManifestPath?: string;
-  /** Stage-specific ignore files from sfpm.config.ts */
   ignoreFilesConfig?: IgnoreFilesConfig;
   orgDefinitionPath?: string;
   replacementForceignorePath?: string;
@@ -14,10 +11,6 @@ export interface AssemblyOptions {
 export interface AssemblyOutput {
   componentCount?: number;
   projectDefinitionPath?: string;
-  // mdapiConversion?: {
-  //     payload: SfpmPackageManifest;
-  //     result: ConvertResult;
-  // }; // Populated by the MDAPI Conversion Step
   scripts?: {
     post?: string[];
     pre?: string[];

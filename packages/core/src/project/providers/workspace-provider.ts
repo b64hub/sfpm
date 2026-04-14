@@ -272,8 +272,8 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     }
 
     // Managed dependency aliases
-    if (pkgJson.sfpm.managedDependencies) {
-      for (const [alias, versionId] of Object.entries(pkgJson.sfpm.managedDependencies)) {
+    if (pkgJson.managedDependencies) {
+      for (const [alias, versionId] of Object.entries(pkgJson.managedDependencies)) {
         aliases[alias] = versionId;
       }
     }

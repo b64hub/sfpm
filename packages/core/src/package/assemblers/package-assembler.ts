@@ -15,7 +15,6 @@ import {SeedMetadataStep} from './steps/seed-metadata-step.js';
 import {SourceCopyStep} from './steps/source-copy-step.js';
 import {UnpackagedMetadataStep} from './steps/unpackaged-metadata-step.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from './types.js';
-// import { MDAPIConversionStep } from './steps/mdapi-conversion-step.js';
 
 const DOT_FOLDER = '.sfpm';
 /**

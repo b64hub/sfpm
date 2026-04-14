@@ -406,7 +406,6 @@ export class WorkspaceInitializer {
     if ((pkgDef as any).ancestorVersion) sfpm.ancestorVersion = (pkgDef as any).ancestorVersion;
     if ((pkgDef as any).definitionFile) sfpm.definitionFile = (pkgDef as any).definitionFile;
     if ((pkgDef as any).orgDependent) sfpm.isOrgDependent = (pkgDef as any).orgDependent;
-    if (pkgDef.versionDescription) sfpm.versionDescription = pkgDef.versionDescription;
     if (pkgDef.packageOptions) sfpm.packageOptions = pkgDef.packageOptions;
 
     // Resolve seedMetadata/unpackagedMetadata paths relative to package dir
@@ -438,11 +437,9 @@ export class WorkspaceInitializer {
       }
     }
 
-    if (Object.keys(managedDeps).length > 0) {
-      sfpm.managedDependencies = managedDeps;
-    }
-
     const pkgJson: WorkspacePackageJson = {
+      ...(pkgDef.versionDescription ? {description: pkgDef.versionDescription} : {}),
+      ...(Object.keys(managedDeps).length > 0 ? {managedDependencies: managedDeps} : {}),
       name: `${options.npmScope}/${packageName}`,
       private: true,
       scripts: {

@@ -62,8 +62,10 @@ export function toPackageDefinition(
   }
 
   // Copy optional SF-specific fields
-  if (sfpm.versionDescription) {
-    definition.versionDescription = sfpm.versionDescription;
+  // versionDescription: prefer sfpm.versionDescription, fall back to top-level description
+  const versionDescription = sfpm.versionDescription ?? (pkgJson.description as string | undefined);
+  if (versionDescription) {
+    definition.versionDescription = versionDescription;
   }
 
   // Unlocked package fields
@@ -119,7 +121,7 @@ export function toPackageDefinition(
  *
  * Workspace deps (workspace:^x.y.z) become versioned SF dependencies using
  * the depended-on package's actual version from the workspace.
- * Managed deps (from sfpm.managedDependencies) become unversioned references
+ * Managed deps (from managedDependencies) become unversioned references
  * resolved via packageAliases.
  */
 function buildDependenciesArray(
@@ -150,8 +152,8 @@ function buildDependenciesArray(
   }
 
   // Managed dependencies → SF unversioned references (resolved via packageAliases)
-  if (sfpm.managedDependencies) {
-    for (const alias of Object.keys(sfpm.managedDependencies)) {
+  if (pkgJson.managedDependencies) {
+    for (const alias of Object.keys(pkgJson.managedDependencies)) {
       deps.push({package: alias});
     }
   }
@@ -174,7 +176,7 @@ export function collectPackageAliases(packages: WorkspacePackageJson[]): Record<
   const aliases: Record<string, string> = {};
 
   for (const pkgJson of packages) {
-    const managed = pkgJson.sfpm?.managedDependencies;
+    const managed = pkgJson.managedDependencies;
     if (!managed) continue;
 
     for (const [alias, versionId] of Object.entries(managed)) {
