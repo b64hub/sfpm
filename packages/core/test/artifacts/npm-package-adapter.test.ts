@@ -46,7 +46,7 @@ function createUnlockedPackageJson(overrides?: Partial<NpmPackageJson>): NpmPack
       },
       versionNumber: '0.1.0-2',
     } as any,
-    version: '0.1.0-2',
+    version: '0.1.0',
     ...overrides,
   };
 }
@@ -65,7 +65,7 @@ function createSourcePackageJson(): NpmPackageJson {
       },
       versionNumber: '1.0.0-1',
     } as any,
-    version: '1.0.0-1',
+    version: '1.0.0',
   };
 }
 
@@ -128,7 +128,7 @@ describe('npm-package-adapter', () => {
       delete (packageJson.sfpm as any).versionNumber;
 
       const metadata = fromNpmPackageJson(packageJson);
-      expect(metadata.versionNumber).toBe('1.0.0-1');
+      expect(metadata.versionNumber).toBe('1.0.0');
     });
 
     it('should handle source packages without packageVersionId', () => {
@@ -219,9 +219,10 @@ describe('npm-package-adapter', () => {
       const result = await toNpmPackageJson(pkg, '1.0.0-1', {});
 
       expect(result.name).toBe('@myorg/my-pkg');
-      expect(result.version).toBe('1.0.0-1');
+      expect(result.version).toBe('1.0.0');
       expect(result.sfpm).toBeDefined();
       expect(result.sfpm.packageName).toBe('my-pkg');
+      expect(result.sfpm.versionNumber).toBe('1.0.0-1');
     });
 
     it('should not include a main field', async () => {

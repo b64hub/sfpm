@@ -64,6 +64,9 @@ describe('PackageAssembler', () => {
             getProjectDefinition: vi.fn().mockReturnValue({
                 packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
             }),
+            resolveForPackage: vi.fn().mockReturnValue({
+                packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
+            }),
         };
 
         assembler = new PackageAssembler('core', mockProvider as any);

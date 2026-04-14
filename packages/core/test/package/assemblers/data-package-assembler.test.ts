@@ -65,6 +65,9 @@ describe('PackageAssembler — Data packages', () => {
       getProjectDefinition: vi.fn().mockReturnValue({
         packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
       }),
+      resolveForPackage: vi.fn().mockReturnValue({
+        packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
+      }),
     };
 
     assembler = new PackageAssembler('my-data', mockProvider as any);
