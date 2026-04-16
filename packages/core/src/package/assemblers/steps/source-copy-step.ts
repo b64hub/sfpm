@@ -22,7 +22,15 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 export class SourceCopyStep implements AssemblyStep {
   /** Directories that are never part of a Salesforce package */
   private static readonly ALWAYS_EXCLUDED = new Set(['.sfpm', 'node_modules']);
-  private static readonly IGNORE_FILES = new Set(['*/package.json']);
+  /**
+   * Files excluded from the source copy.
+   *
+   * `package.json` is excluded because it lives at the package root (one level
+   * above the SF source path in workspace mode). The artifact's package.json
+   * is generated separately by `ArtifactAssembler.generatePackageJson`, which
+   * reads the workspace package.json and overlays build-time metadata.
+   */
+  private static readonly IGNORED_FILES = new Set(['package.json']);
 
   constructor(
     private packageName: string,
@@ -55,6 +63,13 @@ export class SourceCopyStep implements AssemblyStep {
           // Exclude directories that are never part of a Salesforce package
           const topSegment = relativePath.split(path.sep)[0];
           if (SourceCopyStep.ALWAYS_EXCLUDED.has(topSegment)) {
+            return false;
+          }
+
+          // Exclude specific files handled by other assembly steps
+          const fileName = path.basename(relativePath);
+          if (SourceCopyStep.IGNORED_FILES.has(fileName)) {
+            this.logger?.debug(`[SourceCopyStep] Excluded by ignored files: ${relativePath}`);
             return false;
           }
 

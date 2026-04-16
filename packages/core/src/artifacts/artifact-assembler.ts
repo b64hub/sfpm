@@ -4,6 +4,8 @@ import crypto from 'node:crypto';
 import {EventEmitter} from 'node:events';
 import path from 'node:path';
 
+import type {WorkspacePackageJson} from '../types/workspace.js';
+
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
@@ -35,18 +37,12 @@ class StubChangelogProvider implements ChangelogProvider {
  * Options for artifact assembly
  */
 export interface ArtifactAssemblerOptions {
-  /** Additional keywords for package.json */
+  /** Additional keywords to append at build time */
   additionalKeywords?: string[];
-  /** Author string for package.json */
-  author?: string;
   /** Changelog provider for generating changelog.json */
   changelogProvider?: ChangelogProvider;
-  /** License identifier for package.json */
-  license?: string;
   /** Pre-classified managed dependencies (alias -> packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
-  /** Suppress npm pack notice output (default: true) */
-  quietPack?: boolean;
 }
 
 /**
@@ -281,30 +277,25 @@ export default class ArtifactAssembler extends EventEmitter {
 
   /**
    * Generate package.json in the staging directory.
-   * Delegates to the npm-package-adapter for package.json construction.
    *
-   * If a package.json already exists in the staging directory (e.g. copied
-   * from the source package during assembly), its fields are preserved and
-   * merged with the generated SFPM metadata.  Generated fields take
-   * precedence on conflict.
+   * Reads the workspace package.json (static config: name, version, author,
+   * license, dependencies, etc.) and overlays build-time properties via the
+   * npm-package-adapter (sfpm metadata, files list, repository, resolved version).
    */
   private async generatePackageJson(stagingDir: string): Promise<void> {
     const packageJsonPath = path.join(stagingDir, 'package.json');
 
+    // Read the workspace package.json as the base for the artifact
+    const workspacePkgJson = await this.readWorkspacePackageJson();
+
     const generated = await toNpmPackageJson(
+      workspacePkgJson,
       this.sfpmPackage,
       this.packageVersionNumber,
       this.options,
     );
 
-    let merged = generated;
-    if (await fs.pathExists(packageJsonPath)) {
-      const existing = await fs.readJson(packageJsonPath);
-      merged = {...existing, ...generated};
-      this.logger?.debug('Merged existing package.json with generated metadata');
-    }
-
-    await fs.writeJson(packageJsonPath, merged, {spaces: 2});
+    await fs.writeJson(packageJsonPath, generated, {spaces: 2});
     this.logger?.debug(`Generated package.json at ${packageJsonPath}`);
   }
 
@@ -361,5 +352,50 @@ export default class ArtifactAssembler extends EventEmitter {
     }
 
     return {packageDir, workspaceDir};
+  }
+
+  /**
+   * Locate and read the workspace package.json for this package.
+   *
+   * Walks up from the SF source path (packageDefinition.path) to find the
+   * nearest package.json with an `sfpm` property. This handles both cases:
+   * - sfpm.path is set (e.g., "force-app") → package.json is one+ levels up
+   * - sfpm.path is "." or unset → package.json is at the source path root
+   */
+  private async readWorkspacePackageJson(): Promise<WorkspacePackageJson> {
+    const sourcePath = this.sfpmPackage.packageDefinition?.path;
+    if (!sourcePath) {
+      throw new ArtifactError(
+        this.sfpmPackage.packageName,
+        'assembly',
+        'Package definition path is not set — cannot locate workspace package.json',
+        {version: this.packageVersionNumber},
+      );
+    }
+
+    const parts = sourcePath.split('/');
+    for (let i = parts.length; i > 0; i--) {
+      const candidatePath = path.join(this.projectDirectory, ...parts.slice(0, i), 'package.json');
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        if (await fs.pathExists(candidatePath)) {
+          // eslint-disable-next-line no-await-in-loop
+          const pkgJson = await fs.readJson(candidatePath);
+          if (pkgJson.sfpm?.packageType) {
+            this.logger?.debug(`Using workspace package.json from ${candidatePath}`);
+            return pkgJson as WorkspacePackageJson;
+          }
+        }
+      } catch {
+        // Continue searching
+      }
+    }
+
+    throw new ArtifactError(
+      this.sfpmPackage.packageName,
+      'assembly',
+      `No workspace package.json found for source path "${sourcePath}"`,
+      {version: this.packageVersionNumber},
+    );
   }
 }

@@ -105,7 +105,7 @@ describe('ArtifactAssembler', () => {
                 orchestration: {},
             },
             projectDefinition: { packageAliases: {} },
-            packageDefinition: { versionDescription: 'Test package' },
+            packageDefinition: { path: 'packages/my-package/force-app', versionDescription: 'Test package' },
             toJson: vi.fn().mockResolvedValue({
                 identity: { packageName, packageType: PackageType.Unlocked, versionNumber: version },
                 source: { branch: 'main' },
@@ -127,8 +127,6 @@ describe('ArtifactAssembler', () => {
                 generateChangelog: vi.fn().mockResolvedValue({ commits: [] })
             },
             additionalKeywords: ['test'],
-            author: 'Test Author',
-            license: 'MIT'
         };
 
         vi.mocked(toVersionFormat).mockReturnValue(version);
@@ -163,7 +161,24 @@ describe('ArtifactAssembler', () => {
         it('should orchestrate the assembly process successfully', async () => {
             // Mock fs operations
             vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-            vi.mocked(fs.pathExists).mockResolvedValue(true);
+            vi.mocked(fs.pathExists as any).mockImplementation(async (p: string) => {
+                // Workspace package.json discovery + general staging checks
+                if (p === '/project/packages/my-package/package.json') return true;
+                return true;
+            });
+            vi.mocked(fs.readJson as any).mockImplementation(async (p: string) => {
+                if (p === '/project/packages/my-package/package.json') {
+                    return {
+                        name: `@testorg/${packageName}`,
+                        version: '1.0.0',
+                        license: 'MIT',
+                        sfpm: { packageType: 'unlocked', path: 'force-app' },
+                    };
+                }
+
+                // Default: tarball name generation reads package.json
+                return { name: `@testorg/${packageName}`, version };
+            });
             vi.mocked(fs.remove).mockResolvedValue(undefined as any);
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
             vi.mocked(fs.move).mockResolvedValue(undefined as any);
@@ -227,8 +242,26 @@ describe('ArtifactAssembler', () => {
     });
 
     describe('generatePackageJson', () => {
-        it('should generate package.json with sfpm metadata', async () => {
+        const workspacePkgJson = {
+            name: `@testorg/${packageName}`,
+            version: '1.0.0',
+            author: 'Test Author',
+            license: 'MIT',
+            description: 'Test package',
+            sfpm: {
+                packageType: 'unlocked',
+                path: 'force-app',
+            },
+        };
+
+        it('should generate package.json with workspace base and sfpm metadata', async () => {
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
+            vi.mocked(fs.pathExists as any).mockImplementation(async (p: string) =>
+                p === '/project/packages/my-package/package.json');
+            vi.mocked(fs.readJson as any).mockImplementation(async (p: string) => {
+                if (p === '/project/packages/my-package/package.json') return workspacePkgJson;
+                return { name: `@testorg/${packageName}`, version };
+            });
 
             await (assembler as any).generatePackageJson('/tmp/staging');
 
@@ -236,11 +269,8 @@ describe('ArtifactAssembler', () => {
                 '/tmp/staging/package.json',
                 expect.objectContaining({
                     name: `@testorg/${packageName}`,
-                    version,
-                    description: 'Test package',
-                    keywords: expect.arrayContaining(['sfpm', 'salesforce', 'test']),
-                    license: 'MIT',
                     author: 'Test Author',
+                    license: 'MIT',
                     sfpm: expect.any(Object)
                 }),
                 { spaces: 2 }
@@ -262,6 +292,12 @@ describe('ArtifactAssembler', () => {
                 mockLogger,
             );
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
+            vi.mocked(fs.pathExists as any).mockImplementation(async (p: string) =>
+                p === '/project/packages/my-package/package.json');
+            vi.mocked(fs.readJson as any).mockImplementation(async (p: string) => {
+                if (p === '/project/packages/my-package/package.json') return workspacePkgJson;
+                return { name: `@testorg/${packageName}`, version };
+            });
 
             await (assembler as any).generatePackageJson('/tmp/staging');
 
@@ -285,6 +321,12 @@ describe('ArtifactAssembler', () => {
                 orchestration: {},
             });
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
+            vi.mocked(fs.pathExists as any).mockImplementation(async (p: string) =>
+                p === '/project/packages/my-package/package.json');
+            vi.mocked(fs.readJson as any).mockImplementation(async (p: string) => {
+                if (p === '/project/packages/my-package/package.json') return workspacePkgJson;
+                return { name: `@testorg/${packageName}`, version };
+            });
 
             await (assembler as any).generatePackageJson('/tmp/staging');
 

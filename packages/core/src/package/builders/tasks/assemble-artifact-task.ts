@@ -4,14 +4,8 @@ import SfpmPackage from '../../sfpm-package.js';
 import {BuildTask} from '../builder-registry.js';
 
 export interface AssembleArtifactTaskOptions {
-  /** Additional keywords for package.json */
+  /** Additional keywords to append at build time */
   additionalKeywords?: string[];
-  /** Author string for package.json */
-  author?: string;
-  /** License identifier for package.json */
-  license?: string;
-  /** Suppress npm pack notice output (default: true) */
-  quietPack?: boolean;
 }
 
 export default class AssembleArtifactTask implements BuildTask {
@@ -35,10 +29,7 @@ export default class AssembleArtifactTask implements BuildTask {
 
     const assemblerOptions: ArtifactAssemblerOptions = {
       additionalKeywords: this.options.additionalKeywords,
-      author: this.options.author,
-      license: this.options.license,
       managedDependencies: Object.keys(managed).length > 0 ? managed : undefined,
-      quietPack: this.options.quietPack,
     };
 
     await new ArtifactAssembler(
