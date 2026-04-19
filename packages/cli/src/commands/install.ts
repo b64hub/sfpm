@@ -1,5 +1,5 @@
 import {
-  InstallationMode, InstallationSource, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger, PackageInstaller, ProjectService,
+  InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger, PackageInstaller, ProjectService,
 } from '@b64/sfpm-core'
 import {Args, Flags} from '@oclif/core'
 import EventEmitter from 'node:events'
@@ -27,19 +27,9 @@ export default class Install extends SfpmCommand {
     force: Flags.boolean({char: 'f', description: 'force reinstall even if already installed'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key for unlocked packages'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
-    mode: Flags.string({
-      char: 'm',
-      description: 'installation mode for unlocked packages (source-deploy or version-install)',
-      options: ['source-deploy', 'version-install'],
-    }),
     'no-dependencies': Flags.boolean({description: 'only install the specified packages, skip transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     single: Flags.boolean({description: 'install a single package without orchestration (for use with external orchestrators like Turbo)'}),
-    source: Flags.string({
-      char: 's',
-      description: 'installation source: local (project source) or artifact',
-      options: ['local', 'artifact'],
-    }),
     'target-org': Flags.string({
       char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
     }),
@@ -83,8 +73,6 @@ export default class Install extends SfpmCommand {
     const installOptions = {
       force: flags.force,
       installationKey: flags['installation-key'],
-      mode: flags.mode as InstallationMode | undefined,
-      source: flags.source as InstallationSource | undefined,
       targetOrg: flags['target-org'],
       trackHistory: sfpmConfig.artifacts?.trackHistory,
     }
@@ -143,7 +131,7 @@ export default class Install extends SfpmCommand {
       return
     }
 
-    const orchestrator = new InstallOrchestrator(
+    const orchestrator = InstallOrchestrator.forArtifact(
       projectConfig,
       projectGraph,
       {...installOptions, includeDependencies: !flags['no-dependencies']},
