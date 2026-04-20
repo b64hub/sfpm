@@ -136,7 +136,7 @@ export default class Build extends SfpmCommand {
     // --single mode: build exactly one package without orchestration.
     // Designed for external orchestrators (Turbo, CI matrix) that handle
     // dependency ordering and parallelism themselves.
-    if (flags.single) {
+    if (flags.single || (packages.length === 1 && flags['no-dependencies'])) {
       if (packages.length !== 1) {
         this.error('--single mode requires exactly one package name', {exit: 1})
       }

@@ -1,4 +1,5 @@
 import {
+  AssembleArtifactTask,
   type Builder,
   type BuilderOptions,
   type BuildTask,
@@ -48,6 +49,10 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
     this.workingDirectory = workingDirectory;
     this.sfpmPackage = sfpmPackage;
     this.logger = logger;
+
+    this.postBuildTasks = [
+      new AssembleArtifactTask(this.sfpmPackage, this.sfpmPackage.projectDirectory, {}),
+    ];
   }
 
   /**

@@ -48,6 +48,10 @@ vi.mock('@b64/sfpm-core', () => {
         if (opts?.cause) this.cause = opts.cause;
       }
     },
+    AssembleArtifactTask: class {
+      constructor() {}
+      async exec() {}
+    },
     Logger: undefined,
   };
 });

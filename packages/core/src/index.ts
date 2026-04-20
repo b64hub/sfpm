@@ -63,6 +63,7 @@ export {
   type OrchestrationTask, Orchestrator, type OrchestratorEmitter, type OrchestratorOptions,
 } from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
+export {default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
 export {
   type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry, type BuildTask, RegisterBuilder,
 } from './package/builders/builder-registry.js';

@@ -106,7 +106,8 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
    * (pnpm-workspace.yaml or package.json workspaces field).
    */
   static hasWorkspace(projectDir: string): boolean {
-    if (fs.existsSync(path.join(projectDir, 'pnpm-workspace.yaml'))) {
+    if (fs.existsSync(path.join(projectDir, 'pnpm-workspace.yaml'))
+      || fs.existsSync(path.join(projectDir, 'pnpm-workspace.yml'))) {
       return true;
     }
 
@@ -340,8 +341,13 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     const {projectDir} = this.options;
 
     const pnpmWorkspacePath = path.join(projectDir, 'pnpm-workspace.yaml');
+    const pnpmWorkspacePathAlt = path.join(projectDir, 'pnpm-workspace.yml');
     if (fs.existsSync(pnpmWorkspacePath)) {
       return this.parsePnpmWorkspace(pnpmWorkspacePath);
+    }
+
+    if (fs.existsSync(pnpmWorkspacePathAlt)) {
+      return this.parsePnpmWorkspace(pnpmWorkspacePathAlt);
     }
 
     const rootPkgPath = path.join(projectDir, 'package.json');
