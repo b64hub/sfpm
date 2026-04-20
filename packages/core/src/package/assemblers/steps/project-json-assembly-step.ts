@@ -1,4 +1,5 @@
 import {ComponentSet} from '@salesforce/source-deploy-retrieve';
+import fg from 'fast-glob';
 import fs from 'fs-extra';
 import path from 'node:path';
 
@@ -6,6 +7,7 @@ import type {ProjectDefinitionProvider} from '../../../project/providers/project
 
 import ProjectService from '../../../project/project-service.js';
 import {Logger} from '../../../types/logger.js';
+import {PackageType} from '../../../types/package.js';
 import {PackageDefinition} from '../../../types/project.js';
 import {toVersionFormat} from '../../../utils/version-utils.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
@@ -56,9 +58,19 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
       await fs.writeJson(projectJsonPath, packageDefinition, {spaces: 4});
       output.projectDefinitionPath = projectJsonPath;
 
-      // Count components now that the full staging directory structure is complete
-      const componentSet = await ComponentSet.fromSource(output.stagingDirectory);
-      output.componentCount = componentSet.size;
+      // Count components now that the full staging directory structure is complete.
+      // Data packages contain data files (CSV, JSON) rather than Salesforce metadata,
+      // so ComponentSet would report 0. Count actual files instead.
+      const packageType = this.provider.getPackageDefinition(this.packageName).type?.toLowerCase();
+      if (packageType === PackageType.Data) {
+        const files = await fg(['**/*'], {
+          cwd: output.stagingDirectory, dot: false, ignore: ['sfdx-project.json', 'manifests/**'], onlyFiles: true,
+        });
+        output.componentCount = files.length;
+      } else {
+        const componentSet = await ComponentSet.fromSource(output.stagingDirectory);
+        output.componentCount = componentSet.size;
+      }
 
       const manifestsDir = path.join(output.stagingDirectory, 'manifests');
       await fs.ensureDir(manifestsDir);

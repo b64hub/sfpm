@@ -68,7 +68,7 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
   }
 
   private async findCsvFiles(): Promise<string[]> {
-    const files = await fs.readdir(this.workingDirectory);
+    const files = await fs.readdir(this.sfpmPackage.dataDirectory);
     return files.filter(f => f.toLowerCase().endsWith('.csv'));
   }
 
@@ -86,7 +86,7 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
       timestamp: new Date(),
     });
 
-    const exportJsonPath = path.join(this.workingDirectory, 'export.json');
+    const exportJsonPath = path.join(this.sfpmPackage.dataDirectory, 'export.json');
 
     // Validate export.json exists
 

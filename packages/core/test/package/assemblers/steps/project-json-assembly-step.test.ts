@@ -46,6 +46,12 @@ describe('ProjectJsonAssemblyStep', () => {
 
         mockProvider = {
             projectDir: '/root',
+            getPackageDefinition: vi.fn().mockReturnValue({
+                package: 'core',
+                path: 'force-app',
+                type: 'unlocked',
+                versionNumber: '1.0.0.NEXT',
+            }),
             resolveForPackage: vi.fn().mockReturnValue({
                 packageDirectories: [{
                     path: 'force-app',
