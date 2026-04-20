@@ -79,6 +79,14 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
   }
 
   private async buildPackage(): Promise<void> {
+    // @salesforce/packaging resolves seedMetadata / unpackagedMetadata paths
+    // relative to process.cwd(), NOT the SfProject root. When building from a
+    // staging directory we must chdir so those relative paths resolve correctly.
+    const originalCwd = process.cwd();
+    if (this.workingDirectory !== originalCwd) {
+      process.chdir(this.workingDirectory);
+    }
+
     const sfProject = await SfProject.resolve(this.workingDirectory);
 
     // Get build options from package metadata
@@ -224,6 +232,9 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${details}`, {cause: error});
     } finally {
       lifecycle.removeAllListeners('packageVersionCreate:progress');
+      if (process.cwd() !== originalCwd) {
+        process.chdir(originalCwd);
+      }
     }
   }
 
