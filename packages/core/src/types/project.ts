@@ -79,6 +79,7 @@ export interface PackageHookConfig {
  * script assembly, optimized deployment, etc.
  */
 export interface DeployOptions {
+  isTriggerAllTests?: boolean;
   optimize?: boolean;
   post?: {
     destructiveChanges?: string;

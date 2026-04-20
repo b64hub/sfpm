@@ -135,7 +135,7 @@ export class GitService {
 
     return {
       branch,
-      commitSHA,
+      commit: commitSHA,
       repositoryUrl,
     };
   }

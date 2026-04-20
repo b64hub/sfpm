@@ -96,7 +96,7 @@ export default abstract class SfpmPackage {
   }
 
   get commitId(): string | undefined {
-    return this._metadata.source?.commitSHA;
+    return this._metadata.source?.commit;
   }
 
   get dependencies(): undefined | {package: string; versionNumber?: string}[] {

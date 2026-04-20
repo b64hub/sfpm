@@ -21,11 +21,24 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
+ * The named package variant of PackageDir (the one with `package` and `versionNumber`).
+ * PackageDir is a union of a simple `{path}` variant and a full package variant;
+ * Extract narrows to the variant that carries SF packaging fields like
+ * `ancestorId`, `definitionFile`, `seedMetadata`, etc.
+ */
+type NamedPackageDir = Extract<PackageDir, {package: string; versionNumber: string}>;
+
+/**
  * The `sfpm` property in a workspace member's package.json.
  *
  * Contains only **static configuration** that describes the SF package.
  * Build results (apex analysis, packageVersionId, coverage) are NOT stored here —
  * they are written to the artifact's package.json by the build pipeline.
+ *
+ * Extends the named PackageDir variant (which carries SF packaging fields like
+ * `ancestorId`, `definitionFile`, `seedMetadata`, `unpackagedMetadata`, etc.),
+ * omitting fields that are managed by the package.json itself (`package`,
+ * `versionNumber`) or overridden with SFPM semantics (`path`).
  *
  * @example
  * ```json
@@ -40,8 +53,10 @@ import type {
  * }
  * ```
  */
-export interface SfpmPackageConfig extends Omit<PackageDir, 'package' | 'path' | 'versionNumber'> {
+export interface SfpmPackageConfig extends Omit<NamedPackageDir, 'package' | 'path' | 'seedMetadata' | 'unpackagedMetadata' | 'versionNumber'> {
   isOrgDependent?: boolean;
+  /** Salesforce package ID (0Ho prefix) resolved from packageAliases */
+  packageId?: string;
   /** Per-package build, deploy, and hook configuration */
   packageOptions?: PackageOptions;
   /** Package type: unlocked, source, or data */
@@ -52,6 +67,10 @@ export interface SfpmPackageConfig extends Omit<PackageDir, 'package' | 'path' |
    * like `"force-app"` or `"main/default"`.
    */
   path?: string;
+  /** Relative path to the seed metadata directory (resolved to `{path}` object during sync) */
+  seedMetadata?: string;
+  /** Relative path to the unpackaged metadata directory (resolved to `{path}` object during sync) */
+  unpackagedMetadata?: string;
 }
 
 // ---------------------------------------------------------------------------
