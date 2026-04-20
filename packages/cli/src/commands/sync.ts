@@ -42,6 +42,7 @@ export default class Sync extends SfpmCommand {
         projectDir,
         sfdcLoginUrl: sfpmConfig.sfdcLoginUrl,
         sourceApiVersion: flags['api-version'] ?? sfpmConfig.sourceApiVersion,
+        sourceBehaviorOptions: sfpmConfig.sourceBehaviorOptions,
       })
 
       const result = await sync.run()

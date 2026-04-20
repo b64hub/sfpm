@@ -137,6 +137,7 @@ export default class ProjectService {
         projectDir,
         sfdcLoginUrl: sfpmConfig.sfdcLoginUrl,
         sourceApiVersion: sfpmConfig.sourceApiVersion,
+        sourceBehaviorOptions: sfpmConfig.sourceBehaviorOptions,
       });
     }
 

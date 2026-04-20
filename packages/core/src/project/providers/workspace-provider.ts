@@ -55,6 +55,8 @@ export interface WorkspaceProviderOptions {
   sfdcLoginUrl?: string;
   /** Source API version for sfdx-project.json (e.g., "63.0") */
   sourceApiVersion?: string;
+  /** Source behavior options written to sfdx-project.json */
+  sourceBehaviorOptions?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +219,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       packageDirectories: packageDefinitions,
       sfdcLoginUrl: this.options.sfdcLoginUrl ?? 'https://login.salesforce.com',
       ...(this.options.sourceApiVersion ? {sourceApiVersion: this.options.sourceApiVersion} : {}),
+      ...(this.options.sourceBehaviorOptions?.length ? {sourceBehaviorOptions: this.options.sourceBehaviorOptions} : {}),
     } as ProjectDefinition;
 
     this.cachedResult = {definition: projectDefinition, packages: sfpmPackages, warnings};
@@ -289,12 +292,18 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       }
     }
 
+    // Merge project-level and package-level sourceBehaviorOptions (deduplicated)
+    const projectOptions = this.options.sourceBehaviorOptions ?? [];
+    const packageOptions = pkgJson.sfpm.sourceBehaviorOptions ?? [];
+    const mergedSourceBehaviorOptions = [...new Set([...packageOptions, ...projectOptions])];
+
     return {
       namespace: this.options.namespace ?? '',
       packageAliases: Object.keys(aliases).length > 0 ? aliases : undefined,
       packageDirectories: [definition],
       sfdcLoginUrl: this.options.sfdcLoginUrl ?? 'https://login.salesforce.com',
       ...(this.options.sourceApiVersion ? {sourceApiVersion: this.options.sourceApiVersion} : {}),
+      ...(mergedSourceBehaviorOptions.length > 0 ? {sourceBehaviorOptions: mergedSourceBehaviorOptions} : {}),
     } as ProjectDefinition;
   }
 

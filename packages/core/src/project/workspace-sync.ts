@@ -39,6 +39,8 @@ export interface WorkspaceSyncOptions {
   sfdcLoginUrl?: string;
   /** Source API version for sfdx-project.json (e.g., "63.0") */
   sourceApiVersion?: string;
+  /** Source behavior options written to sfdx-project.json */
+  sourceBehaviorOptions?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +67,7 @@ export class WorkspaceSync {
       projectDir: this.options.projectDir,
       sfdcLoginUrl: this.options.sfdcLoginUrl,
       sourceApiVersion: this.options.sourceApiVersion,
+      sourceBehaviorOptions: this.options.sourceBehaviorOptions,
     });
 
     const {definition: projectDefinition, packages: sfpmPackages, warnings} = provider.resolve();

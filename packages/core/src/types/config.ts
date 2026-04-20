@@ -144,6 +144,16 @@ export interface SfpmConfig {
    * @example '63.0'
    */
   sourceApiVersion?: string;
+
+  /**
+   * Source behavior options for the project.
+   * Written to sfdx-project.json during sync.
+   * Controls source decomposition and other behavior presets.
+   *
+   * @see https://github.com/forcedotcom/source-deploy-retrieve/tree/main/src/registry/presets
+   * @example ['decomposeCustomLabelsBeta']
+   */
+  sourceBehaviorOptions?: string[];
 }
 
 // ============================================================================
