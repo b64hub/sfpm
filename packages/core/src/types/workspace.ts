@@ -13,7 +13,7 @@
 
 import type {PackageType} from './package.js';
 import type {
-  BuildOptions, DeployOptions, PackageDir, PackageHookConfig, PackageOptions,
+  PackageDir, PackageOptions,
 } from './project.js';
 
 // ---------------------------------------------------------------------------
