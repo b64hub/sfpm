@@ -87,6 +87,22 @@ export async function toNpmPackageJson(
     sfpmMeta.source = rest;
   }
 
+  // Rewrite staging-relative paths: the artifact already contains the copied
+  // directories so the paths should reference the local directory name, not the
+  // original workspace-relative path.
+  if (sfpmMeta.seedMetadata) {
+    sfpmMeta.seedMetadata = 'seedMetadata';
+  }
+
+  if (sfpmMeta.unpackagedMetadata) {
+    sfpmMeta.unpackagedMetadata = 'unpackagedMetadata';
+  }
+
+  // sourceBehaviorOptions is a project-level setting (from sfpm.config.ts),
+  // not a per-package concern. Strip it from the artifact if it leaked in
+  // from the workspace package.json.
+  delete (sfpmMeta as any).sourceBehaviorOptions;
+
   // Build keywords: workspace keywords + sfpm defaults + additional build-time keywords
   const baseKeywords = workspacePkgJson.keywords ?? [];
   const sfpmKeywords = ['sfpm', 'salesforce', String(pkg.type)];
