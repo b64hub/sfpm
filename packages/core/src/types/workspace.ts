@@ -69,14 +69,6 @@ export interface SfpmPackageConfig extends Omit<NamedPackageDir, 'package' | 'pa
   path?: string;
   /** Relative path to the seed metadata directory (resolved to `{path}` object during sync) */
   seedMetadata?: string;
-  /**
-   * Per-package source behavior options.
-   * Merged with project-level `sourceBehaviorOptions` from `sfpm.config.ts`.
-   *
-   * @see https://github.com/forcedotcom/source-deploy-retrieve/tree/main/src/registry/presets
-   * @example ["decomposeCustomLabelsBeta"]
-   */
-  sourceBehaviorOptions?: string[];
   /** Relative path to the unpackaged metadata directory (resolved to `{path}` object during sync) */
   unpackagedMetadata?: string;
 }
