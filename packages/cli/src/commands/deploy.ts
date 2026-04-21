@@ -30,6 +30,7 @@ export default class Deploy extends SfpmCommand {
     'target-org': Flags.string({
       char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
     }),
+    turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies --force)'}),
   }
   static override strict = false
 
@@ -40,6 +41,16 @@ export default class Deploy extends SfpmCommand {
 
     if (!packages || packages.length === 0) {
       this.error('At least one package name is required')
+    }
+
+    // --turbo: single-package mode for external orchestrators (Turbo, CI matrix)
+    if (flags.turbo) {
+      if (packages.length !== 1) {
+        this.error('--turbo requires exactly one package name', {exit: 1})
+      }
+
+      flags['no-dependencies'] = true
+      flags.force = true
     }
 
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();

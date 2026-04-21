@@ -40,10 +40,10 @@ export default class Build extends SfpmCommand {
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     'no-dependencies': Flags.boolean({default: false, description: 'build the specified packages without their transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
-    single: Flags.boolean({description: 'build a single package without orchestration (for use with external orchestrators like Turbo)'}),
     'skip-validation': Flags.boolean({description: 'skip validation'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
     'target-dev-hub': Flags.string({char: 'v', description: 'target dev hub username', env: 'SF_DEV_HUB'}),
+    turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies --force --skip-validation)'}),
     wait: Flags.integer({
       char: 'w', default: 120, description: 'timeout in minutes for package version creation', min: 1,
     }),
@@ -58,6 +58,17 @@ export default class Build extends SfpmCommand {
 
     if (!packages || packages.length === 0) {
       this.error('At least one package name is required')
+    }
+
+    // --turbo: single-package mode for external orchestrators (Turbo, CI matrix)
+    if (flags.turbo) {
+      if (packages.length !== 1) {
+        this.error('--turbo requires exactly one package name', {exit: 1})
+      }
+
+      flags['no-dependencies'] = true
+      flags.force = true
+      flags['skip-validation'] = true
     }
 
     // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
@@ -133,14 +144,11 @@ export default class Build extends SfpmCommand {
       }
     };
 
-    // --single mode: build exactly one package without orchestration.
+    // Single-package mode: build exactly one package without orchestration.
+    // Activates when a single package is specified with --no-dependencies.
     // Designed for external orchestrators (Turbo, CI matrix) that handle
     // dependency ordering and parallelism themselves.
-    if (flags.single || (packages.length === 1 && flags['no-dependencies'])) {
-      if (packages.length !== 1) {
-        this.error('--single mode requires exactly one package name', {exit: 1})
-      }
-
+    if (packages.length === 1 && flags['no-dependencies']) {
       const task = new BuildOrchestrationTask(
         projectConfig,
         buildOptions,

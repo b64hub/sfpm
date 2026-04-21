@@ -29,10 +29,10 @@ export default class Install extends SfpmCommand {
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     'no-dependencies': Flags.boolean({description: 'only install the specified packages, skip transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
-    single: Flags.boolean({description: 'install a single package without orchestration (for use with external orchestrators like Turbo)'}),
     'target-org': Flags.string({
       char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
     }),
+    turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies --force)'}),
   }
   static override strict = false
 
@@ -43,6 +43,16 @@ export default class Install extends SfpmCommand {
 
     if (!packages || packages.length === 0) {
       this.error('At least one package name is required')
+    }
+
+    // --turbo: single-package mode for external orchestrators (Turbo, CI matrix)
+    if (flags.turbo) {
+      if (packages.length !== 1) {
+        this.error('--turbo requires exactly one package name', {exit: 1})
+      }
+
+      flags['no-dependencies'] = true
+      flags.force = true
     }
 
     // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
@@ -86,14 +96,11 @@ export default class Install extends SfpmCommand {
       targetOrg: flags['target-org'],
     });
 
-    // --single mode: install exactly one package without orchestration.
+    // Single-package mode: install exactly one package without orchestration.
+    // Activates when a single package is specified with --no-dependencies.
     // Designed for external orchestrators (Turbo, CI matrix) that handle
     // dependency ordering themselves.
-    if (flags.single) {
-      if (packages.length !== 1) {
-        this.error('--single mode requires exactly one package name', {exit: 1})
-      }
-
+    if (packages.length === 1 && flags['no-dependencies']) {
       const task = new InstallOrchestrationTask(
         projectConfig,
         installOptions,
