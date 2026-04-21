@@ -33,6 +33,11 @@ export interface InstallOptions {
   source?: InstallationSource;
   targetOrg: string;
   /**
+   * Salesforce test level for source deployments.
+   * Valid values: NoTestRun, RunSpecifiedTests, RunLocalTests, RunAllTestsInOrg
+   */
+  testLevel?: string;
+  /**
    * When true, creates an `Sfpm_Artifact_History__c` record after each artifact upsert.
    * Read from `sfpmConfig.artifacts?.trackHistory` and passed through by the CLI/Actions layer.
    */
@@ -238,6 +243,74 @@ export default class PackageInstaller extends EventEmitter {
   }
 
   /**
+   * Install directly from project source without artifact resolution.
+   * Used for `sfpm deploy` where the source is the local project directory.
+   */
+  private async installFromSource(sfpmPackage: SfpmPackage): Promise<InstallResult> {
+    const packageName = sfpmPackage.name;
+
+    if (!this.org) {
+      this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
+    }
+
+    // For source deploys, the package directory is the project itself — not a staging area.
+    // Set workingDirectory so getComponentSet() can resolve the metadata path.
+    if (!sfpmPackage.workingDirectory) {
+      sfpmPackage.workingDirectory = sfpmPackage.projectDirectory;
+    }
+
+    this.logger?.info(`Deploying ${packageName} from local source`);
+    this.emit('install:start', {
+      installReason: 'source deploy',
+      packageName: sfpmPackage.packageName,
+      packageType: sfpmPackage.type as PackageType,
+      source: InstallationSource.Local,
+      targetOrg: this.options.targetOrg,
+      timestamp: new Date(),
+      versionNumber: sfpmPackage.version,
+    });
+
+    try {
+      const InstallerConstructor = InstallerRegistry.getInstaller(sfpmPackage.type as any);
+      if (!InstallerConstructor) {
+        throw new Error(`No installer registered for package type: ${sfpmPackage.type}`);
+      }
+
+      const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
+        source: InstallationSource.Local,
+        testLevel: this.options.testLevel,
+      });
+      this.forwardInstallerEvents(installer, packageName);
+
+      await installer.connect(this.options.targetOrg);
+      const execResult = await installer.exec();
+
+      this.emit('install:complete', {
+        packageName: sfpmPackage.packageName,
+        packageType: sfpmPackage.type as PackageType,
+        source: InstallationSource.Local,
+        success: true,
+        targetOrg: this.options.targetOrg,
+        timestamp: new Date(),
+        versionNumber: sfpmPackage.version,
+      });
+      this.logger?.info(`Successfully deployed ${packageName}`);
+
+      return {
+        deployId: execResult.deployId,
+        installed: true,
+        packageName,
+        skipped: false,
+        version: sfpmPackage.version ?? 'local',
+      };
+    } catch (error) {
+      this.emitError(sfpmPackage, error as Error);
+      this.logger?.error(`Failed to deploy ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+
+  /**
    * Fast path for managed packages — no artifact resolution needed.
    * Uses the packageVersionId already known from packageAliases.
    * Checks if the version is already installed before attempting installation.
@@ -313,6 +386,11 @@ export default class PackageInstaller extends EventEmitter {
    * @returns installResult
    */
   private async installSfpmPackage(sfpmPackage: SfpmPackage): Promise<InstallResult> {
+    // Source-local deploy: skip artifact resolution entirely — deploy from project source
+    if (this.options.source === InstallationSource.Local) {
+      return this.installFromSource(sfpmPackage);
+    }
+
     const packageName = sfpmPackage.name;
 
     if (!this.org) {
@@ -367,7 +445,10 @@ export default class PackageInstaller extends EventEmitter {
         throw new Error(`No installer registered for package type: ${sfpmPackage.type}`);
       }
 
-      const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger);
+      const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
+        source: this.options.source,
+        testLevel: this.options.testLevel,
+      });
 
       // Forward sub-events (connection:*, deployment:*, version-install:*) from the
       // concrete installer through this PackageInstaller so they reach the renderer.

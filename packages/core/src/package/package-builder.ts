@@ -128,7 +128,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       await this.runAnalyzers(sfpmPackage);
 
-      if (!sfpmPackage.stagingDirectory) {
+      if (!sfpmPackage.workingDirectory) {
         const error = new Error('Package must be staged for build');
         this.emit('build:error', {
           error,
@@ -158,7 +158,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       };
 
       const builderInstance: Builder = new BuilderClass(
-        sfpmPackage.stagingDirectory,
+        sfpmPackage.workingDirectory,
         sfpmPackage,
         builderOptions,
         this.logger,
@@ -263,7 +263,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   public async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
     this.emit('stage:start', {
       packageName: sfpmPackage.packageName,
-      stagingDirectory: sfpmPackage.stagingDirectory,
+      stagingDirectory: sfpmPackage.workingDirectory,
       timestamp: new Date(),
     });
 
@@ -280,7 +280,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         this.logger,
       ).assemble();
 
-      sfpmPackage.stagingDirectory = assemblyOutput.stagingDirectory;
+      sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
 
       this.emit('stage:complete', {
         componentCount: assemblyOutput.componentCount || 0,
@@ -337,9 +337,9 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    */
   private async cleanupStagingDirectory(sfpmPackage: SfpmPackage): Promise<void> {
     if (process.env.DEBUG === 'true') return;
-    if (!sfpmPackage.stagingDirectory) return;
+    if (!sfpmPackage.workingDirectory) return;
 
-    const buildDir = path.dirname(sfpmPackage.stagingDirectory);
+    const buildDir = path.dirname(sfpmPackage.workingDirectory);
     await fs.remove(buildDir).catch(() => {/* already removed or inaccessible */});
   }
 

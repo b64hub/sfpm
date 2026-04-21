@@ -70,8 +70,8 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     }
 
     // Update working directory to staging if available
-    if (this.sfpmPackage.stagingDirectory) {
-      this.workingDirectory = this.sfpmPackage.stagingDirectory;
+    if (this.sfpmPackage.workingDirectory) {
+      this.workingDirectory = this.sfpmPackage.workingDirectory;
     }
 
     await this.pruneOrgDependentPackage();

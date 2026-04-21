@@ -32,6 +32,9 @@ export default class Install extends SfpmCommand {
     'target-org': Flags.string({
       char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
     }),
+    'test-level': Flags.string({
+      char: 'l', description: 'deployment test level (for source deployments)', options: ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'],
+    }),
     turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies --force)'}),
   }
   static override strict = false
@@ -84,6 +87,7 @@ export default class Install extends SfpmCommand {
       force: flags.force,
       installationKey: flags['installation-key'],
       targetOrg: flags['target-org'],
+      testLevel: flags['test-level'],
       trackHistory: sfpmConfig.artifacts?.trackHistory,
     }
 

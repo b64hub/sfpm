@@ -12,6 +12,8 @@ import SourceDeployer from './strategies/source-deployer.js';
 export interface SourcePackageInstallerOptions {
   /** Where the code comes from: 'local' (project source) or 'artifact' */
   source?: InstallationSource;
+  /** Salesforce test level for the deployment */
+  testLevel?: string;
 }
 
 export interface InstallTask {
@@ -35,6 +37,7 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
   private readonly source: InstallationSource;
   private readonly sourceDeployer: SourceDeployer;
   private readonly targetOrg: string;
+  private readonly testLevel?: string;
 
   constructor(targetOrg: string, sfpmPackage: SfpmSourcePackage, logger?: Logger, options?: SourcePackageInstallerOptions) {
     super();
@@ -54,6 +57,7 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
 
     // Determine source
     this.source = this.determineSource(options);
+    this.testLevel = options?.testLevel;
   }
 
   public async connect(username: string): Promise<void> {
@@ -105,7 +109,7 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
   private async installPackage(): Promise<InstallerExecResult> {
     this.logger?.info('Using installation mode: source-deploy');
     // SfpmSourcePackage implements SourceDeployable via SfpmMetadataPackage
-    return this.sourceDeployer.install(this.sfpmPackage, this.targetOrg);
+    return this.sourceDeployer.install(this.sfpmPackage, this.targetOrg, {testLevel: this.testLevel});
   }
 
   private async runPostInstallTasks(): Promise<void> {

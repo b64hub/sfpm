@@ -327,7 +327,7 @@ export default class ArtifactAssembler extends EventEmitter {
    *          `packageDir`   — the `package/` directory with the actual content
    */
   private async prepareStagingDirectory(): Promise<{packageDir: string; workspaceDir: string}> {
-    if (!this.sfpmPackage.stagingDirectory) {
+    if (!this.sfpmPackage.workingDirectory) {
       throw new ArtifactError(
         this.sfpmPackage.packageName,
         'assembly',
@@ -336,7 +336,7 @@ export default class ArtifactAssembler extends EventEmitter {
       );
     }
 
-    const packageDir = this.sfpmPackage.stagingDirectory;
+    const packageDir = this.sfpmPackage.workingDirectory;
     const workspaceDir = path.dirname(packageDir);
     this.logger?.debug(`Using staging directory: ${packageDir}`);
 

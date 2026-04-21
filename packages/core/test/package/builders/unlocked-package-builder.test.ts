@@ -98,7 +98,7 @@ describe('UnlockedPackageBuilder', () => {
         });
 
         // Set required staging directory for build
-        mockSfpmPackage.stagingDirectory = '/tmp/project';
+        mockSfpmPackage.workingDirectory = '/tmp/project';
 
         // Builder options for assembly
         builderOptions = {};
@@ -219,7 +219,7 @@ describe('UnlockedPackageBuilder', () => {
                 } as any
             }
         });
-        mockSfpmPackage.stagingDirectory = '/tmp/project';
+        mockSfpmPackage.workingDirectory = '/tmp/project';
         builder = new UnlockedPackageBuilder('/tmp/project', mockSfpmPackage, builderOptions, mockLogger);
 
         // Mock result

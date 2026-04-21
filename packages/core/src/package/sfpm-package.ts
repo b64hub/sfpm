@@ -68,7 +68,7 @@ export default abstract class SfpmPackage {
   public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
   public projectDefinition?: ProjectDefinition;
   public projectDirectory: string;
-  public stagingDirectory: string | undefined;
+  public workingDirectory: string | undefined;
 
   constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadataBase>) {
     this.projectDirectory = projectDirectory;
@@ -137,11 +137,11 @@ export default abstract class SfpmPackage {
   }
 
   get packageDirectory(): string | undefined {
-    if (!this.packageDefinition?.path || !this.stagingDirectory) {
+    if (!this.packageDefinition?.path || !this.workingDirectory) {
       return undefined;
     }
 
-    return path.join(this.stagingDirectory, this.packageDefinition?.path);
+    return path.join(this.workingDirectory, this.packageDefinition?.path);
   }
 
   get packageName(): string {
@@ -442,8 +442,8 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 
   public getComponentSet(): ComponentSet {
-    if (!this.packageDirectory || !this.stagingDirectory) {
-      throw new Error('Package must be staged for build and have a defined path');
+    if (!this.packageDirectory || !this.workingDirectory) {
+      throw new Error('Package must have a working directory and a defined path');
     }
 
     if (!this._componentSet) {
@@ -655,8 +655,8 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
       throw new Error('Data package must have a path defined in packageDefinition');
     }
 
-    if (this.stagingDirectory) {
-      return path.join(this.stagingDirectory, packagePath);
+    if (this.workingDirectory) {
+      return path.join(this.workingDirectory, packagePath);
     }
 
     return path.join(this.projectDirectory, packagePath);

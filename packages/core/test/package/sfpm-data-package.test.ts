@@ -39,7 +39,7 @@ describe('SfpmDataPackage', () => {
   });
 
   it('should resolve dataDirectory from staging when staged', () => {
-    dataPackage.stagingDirectory = '/staging/area';
+    dataPackage.workingDirectory = '/staging/area';
     expect(dataPackage.dataDirectory).toBe(path.join('/staging/area', 'data'));
   });
 

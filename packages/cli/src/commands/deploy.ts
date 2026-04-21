@@ -1,7 +1,8 @@
 import {
-  InstallOrchestrator, LifecycleEngine, Logger, ProjectService,
+  InstallationSource, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger, ProjectService,
 } from '@b64/sfpm-core'
 import {Args, Flags} from '@oclif/core'
+import EventEmitter from 'node:events'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64/sfpm-sfdmu'
 
@@ -29,6 +30,9 @@ export default class Deploy extends SfpmCommand {
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'target-org': Flags.string({
       char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
+    }),
+    'test-level': Flags.string({
+      char: 'l', description: 'deployment test level', options: ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'],
     }),
     turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies --force)'}),
   }
@@ -76,6 +80,13 @@ export default class Deploy extends SfpmCommand {
       lifecycle.use(hooks);
     }
 
+    const installOptions = {
+      force: flags.force,
+      source: InstallationSource.Local,
+      targetOrg: flags['target-org'],
+      testLevel: flags['test-level'],
+    }
+
     const renderer = new InstallProgressRenderer({
       logger: {
         error: (msgOrError: Error | string) => this.error(msgOrError),
@@ -85,6 +96,48 @@ export default class Deploy extends SfpmCommand {
       targetOrg: flags['target-org'],
     });
 
+    // Single-package mode: deploy exactly one package without orchestration.
+    // Activates when a single package is specified with --no-dependencies.
+    // Designed for external orchestrators (Turbo, CI matrix) that handle
+    // dependency ordering themselves.
+    if (packages.length === 1 && flags['no-dependencies']) {
+      const task = new InstallOrchestrationTask(
+        projectConfig,
+        installOptions,
+        logger,
+        lifecycle,
+      )
+
+      const emitter = new EventEmitter()
+      renderer.attachTo(emitter as any)
+
+      try {
+        const context = await task.setup()
+        const result = await task.processSinglePackage(packages[0], 0, context, emitter)
+
+        if (flags.json) {
+          this.logJson(result)
+        }
+
+        if (!result.success) {
+          this.error(`Deploy failed for: ${packages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 2})
+        }
+      } catch (error) {
+        renderer.handleError(error as Error)
+        if (flags.json) {
+          this.logJson({error: (error as Error).message, success: false})
+        }
+
+        if (error instanceof Error) {
+          this.error(error.message, {exit: 2})
+        }
+
+        throw error
+      }
+
+      return
+    }
+
     const orchestrator = InstallOrchestrator.forSource(
       projectConfig,
       projectGraph,
@@ -92,6 +145,7 @@ export default class Deploy extends SfpmCommand {
         force: flags.force,
         includeDependencies: !flags['no-dependencies'],
         targetOrg: flags['target-org'],
+        testLevel: flags['test-level'],
       },
       logger,
       lifecycle,

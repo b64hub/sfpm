@@ -94,7 +94,7 @@ describe('ArtifactAssembler', () => {
             npmName: `@testorg/${packageName}`,
             version,
             type: PackageType.Unlocked,
-            stagingDirectory: '/tmp/builds/test-build/package',
+            workingDirectory: '/tmp/builds/test-build/package',
             packageDirectory: '/project/force-app',
             dependencies: [],
             metadata: {
@@ -221,7 +221,7 @@ describe('ArtifactAssembler', () => {
         });
 
         it('should throw ArtifactError if no staging directory is available', async () => {
-            mockSfpmPackage.stagingDirectory = undefined;
+            mockSfpmPackage.workingDirectory = undefined;
             
             assembler = new ArtifactAssembler(
                 mockSfpmPackage,
