@@ -142,11 +142,13 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
    */
   private buildHookContext(packageName: string, context: InstallContext): HookContext {
     const packageDefinition = this.provider.getPackageDefinition(packageName);
+    const projectDefinition = this.provider.getProjectDefinition();
 
     return {
       logger: this.logger,
       operation: 'install',
       org: context.org,
+      packageAliases: projectDefinition.packageAliases ?? {},
       packageName,
       packageType: packageDefinition.type,
       sfpmPackage: {packageDefinition},

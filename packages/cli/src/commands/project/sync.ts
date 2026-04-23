@@ -3,7 +3,7 @@ import {Flags} from '@oclif/core'
 import chalk from 'chalk'
 import ora from 'ora'
 
-import SfpmCommand from '../sfpm-command.js'
+import SfpmCommand from '../../sfpm-command.js'
 
 export default class Sync extends SfpmCommand {
   static override description = 'Generate sfdx-project.json from workspace package.json files'

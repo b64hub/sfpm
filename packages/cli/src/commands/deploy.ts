@@ -75,7 +75,7 @@ export default class Deploy extends SfpmCommand {
 
     const sfpmConfig = projectService.getSfpmConfig();
 
-    const lifecycle = new LifecycleEngine({logger, stage: 'local'});
+    const lifecycle = new LifecycleEngine({logger, stage: 'deploy'});
     for (const hooks of sfpmConfig.hooks ?? []) {
       lifecycle.use(hooks);
     }

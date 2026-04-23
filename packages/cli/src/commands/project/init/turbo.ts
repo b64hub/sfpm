@@ -8,16 +8,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import ora from 'ora'
 
-import SfpmCommand from '../../sfpm-command.js'
+import SfpmCommand from '../../../sfpm-command.js'
 
 export default class InitTurbo extends SfpmCommand {
   static override description = 'Initialize a turbo-native workspace for SFPM packages'
   static override examples = [
-    '<%= config.bin %> init turbo',
-    '<%= config.bin %> init turbo --migrate',
-    '<%= config.bin %> init turbo --migrate --npm-scope @myorg',
-    '<%= config.bin %> init turbo --migrate --workspace-dir packages',
-    '<%= config.bin %> init turbo --json',
+    '<%= config.bin %> project init turbo',
+    '<%= config.bin %> project init turbo --migrate',
+    '<%= config.bin %> project init turbo --migrate --npm-scope @myorg',
+    '<%= config.bin %> project init turbo --migrate --workspace-dir packages',
+    '<%= config.bin %> project init turbo --json',
   ]
   static override flags = {
     json: Flags.boolean({description: 'output result as JSON'}),
