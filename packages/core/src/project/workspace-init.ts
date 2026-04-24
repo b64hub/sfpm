@@ -443,9 +443,9 @@ export class WorkspaceInitializer {
       name: `${options.npmScope}/${packageName}`,
       private: true,
       scripts: {
-        'sfpm:build': `sfpm build --single ${packageName} --skip-validation`,
-        'sfpm:deploy': `sfpm install --single ${packageName} --source local`,
-        'sfpm:install': `sfpm install --single ${packageName}`,
+        'sfpm:build': `sfpm build ${packageName} --turbo`,
+        'sfpm:deploy': `sfpm deploy ${packageName} --turbo`,
+        'sfpm:install': `sfpm install ${packageName} --turbo`,
       },
       sfpm,
       version,

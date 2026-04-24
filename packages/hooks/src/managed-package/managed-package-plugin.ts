@@ -1,7 +1,8 @@
 import type {
-  HookContext, type LifecycleHooks, Logger, ManagedPackageRef,
+  HookContext, LifecycleHooks, Logger,
 } from '@b64/sfpm-core';
 
+import {ManagedPackageRef} from '@b64/sfpm-core';
 import {Connection, Org} from '@salesforce/core';
 
 const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
