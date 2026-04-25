@@ -435,7 +435,13 @@ export class WorkspaceInitializer {
           const depVersion = this.toWorkspaceDependencyVersion(dep.versionNumber);
           dependencies[`${options.npmScope}/${dep.package}`] = depVersion;
         } else {
-          managedDeps[dep.package] = dep.package;
+          const versionId = projectDef.packageAliases?.[dep.package];
+          if (!versionId) {
+            this.logger?.warn(`Dependency "${dep.package}" of package "${packageName}" not found in packageAliases. Skipping.`);
+            continue;
+          }
+
+          managedDeps[dep.package] = versionId;
         }
       }
     }
