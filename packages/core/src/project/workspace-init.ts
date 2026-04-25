@@ -78,7 +78,7 @@ export class WorkspaceInitializer {
     }
 
     const projectDef: ProjectDefinition = JSON.parse(fs.readFileSync(sfdxPath, 'utf8'));
-    const packageDirs = projectDef.packageDirectories.filter((p): p is PackageDefinition => 'package' in p && 'versionNumber' in p);
+    const packageDirs = projectDef.packageDirectories.filter((p): p is PackageDefinition => 'package' in p && 'versionNumber' in p && typeof p.path === 'string');
 
     if (packageDirs.length === 0) {
       throw new Error('No package directories with package names found in sfdx-project.json.');
@@ -423,16 +423,19 @@ export class WorkspaceInitializer {
     const dependencies: Record<string, string> = {};
     const managedDeps: Record<string, string> = {};
 
+    // Collect project-internal package names so we can distinguish them from managed deps
+    const projectPackageNames = new Set(projectDef.packageDirectories
+    .filter((p): p is PackageDefinition => 'package' in p)
+    .map(p => p.package));
+
     if ((pkgDef as any).dependencies) {
       for (const dep of (pkgDef as any).dependencies as Array<{package: string; versionNumber?: string}>) {
-        // Check if this is a managed dependency (has 04t alias)
-        const alias = projectDef.packageAliases?.[dep.package];
-        if (alias && alias.startsWith('04t')) {
-          managedDeps[dep.package] = alias;
-        } else {
+        if (projectPackageNames.has(dep.package)) {
           // Internal workspace dependency — convert SF version to semver range
           const depVersion = this.toWorkspaceDependencyVersion(dep.versionNumber);
           dependencies[`${options.npmScope}/${dep.package}`] = depVersion;
+        } else {
+          managedDeps[dep.package] = dep.package;
         }
       }
     }
