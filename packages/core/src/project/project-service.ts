@@ -1,4 +1,5 @@
 import {SfProject} from '@salesforce/core';
+import path from 'node:path';
 
 import type {
   ClassifiedDependencies,
@@ -59,18 +60,23 @@ export default class ProjectService {
    */
   public static async create(projectPath?: string, provider?: ProjectDefinitionProvider): Promise<ProjectService> {
     const resolvedPath = projectPath ?? process.cwd();
-    const sfpmConfig = await loadSfpmConfig(resolvedPath);
 
-    const definitionProvider = provider ?? await ProjectService.detectProvider(resolvedPath, sfpmConfig);
+    // Resolve the workspace root first so that config loading and provider
+    // creation both use the correct directory. When Turborepo (or similar)
+    // runs from a package subdirectory, resolvedPath may not be the root.
+    const projectRoot = ProjectService.findWorkspaceRoot(resolvedPath) ?? resolvedPath;
+    const sfpmConfig = await loadSfpmConfig(projectRoot);
+
+    const definitionProvider = provider ?? await ProjectService.detectProvider(projectRoot, sfpmConfig);
     const {definition} = definitionProvider.resolve();
     const graph = new ProjectGraph(definitionProvider);
 
     // In workspace mode, write sfdx-project.json so @salesforce/core can load it.
     if (definitionProvider instanceof WorkspaceProvider) {
-      WorkspaceProvider.ensureSfdxProject(resolvedPath, definition);
+      WorkspaceProvider.ensureSfdxProject(projectRoot, definition);
     }
 
-    const sfProject = await SfProject.resolve(resolvedPath);
+    const sfProject = await SfProject.resolve(projectRoot);
 
     return new ProjectService(sfProject, graph, sfpmConfig, definitionProvider);
   }
@@ -143,6 +149,26 @@ export default class ProjectService {
 
     const sfProject = await SfProject.resolve(projectDir);
     return new SfdxProjectProvider(sfProject);
+  }
+
+  /**
+   * Walk up the directory tree from `startDir` to find the nearest workspace root
+   * (a directory containing pnpm-workspace.yaml or a package.json with "workspaces").
+   * Returns the workspace root path, or undefined if none is found.
+   */
+  private static findWorkspaceRoot(startDir: string): string | undefined {
+    let dir = path.resolve(startDir);
+    const {root} = path.parse(dir);
+
+    while (dir !== root) {
+      if (WorkspaceProvider.hasWorkspace(dir)) {
+        return dir;
+      }
+
+      dir = path.dirname(dir);
+    }
+
+    return undefined;
   }
 
   // =========================================================================

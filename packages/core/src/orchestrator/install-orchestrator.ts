@@ -13,7 +13,6 @@ import {
   OrchestrationResult,
   PackageResult,
 } from '../types/events.js';
-import {HookContext} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {InstallationSource} from '../types/package.js';
 import {
@@ -87,6 +86,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
       this.options,
       this.logger,
       context.org,
+      this.lifecycle,
     );
 
     this.forwardInstallerEvents(installer, emitter);
@@ -96,21 +96,9 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     let error: string | undefined;
 
     try {
-      // Run pre-install hooks
-      if (this.lifecycle) {
-        const hookContext = this.buildHookContext(packageName, context);
-        await this.lifecycle.run('install', 'pre', hookContext);
-      }
-
       const result = await installer.installPackage(packageName);
       if (result.skipped) {
         skipped = true;
-      }
-
-      // Run post-install hooks
-      if (this.lifecycle && !result.skipped) {
-        const hookContext = this.buildHookContext(packageName, context);
-        await this.lifecycle.run('install', 'post', hookContext);
       }
     } catch (error_) {
       success = false;
@@ -134,27 +122,6 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     .setLogger(this.logger);
 
     return {artifactService, org};
-  }
-
-  /**
-   * Build a {@link HookContext} for lifecycle hooks at the install operation.
-   * Provides the package definition, org, logger, and project directory.
-   */
-  private buildHookContext(packageName: string, context: InstallContext): HookContext {
-    const packageDefinition = this.provider.getPackageDefinition(packageName);
-    const projectDefinition = this.provider.getProjectDefinition();
-
-    return {
-      logger: this.logger,
-      operation: 'install',
-      org: context.org,
-      packageAliases: projectDefinition.packageAliases ?? {},
-      packageName,
-      packageType: packageDefinition.type,
-      sfpmPackage: {packageDefinition},
-      stage: this.lifecycle?.stage ?? 'local',
-      timing: '',
-    };
   }
 
   private forwardInstallerEvents(installer: PackageInstaller, emitter: OrchestratorEmitter): void {

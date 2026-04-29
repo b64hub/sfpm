@@ -82,8 +82,23 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     const cleaned = structuredClone(definition) as any;
 
     if (Array.isArray(cleaned.packageDirectories)) {
+      // Build set of unlocked package names — only these are real SF package
+      // dependencies. Source/data packages are SFPM-only constructs.
+      const unlockedPackages = new Set(cleaned.packageDirectories
+      .filter((pkg: any) => pkg.type === 'unlocked' || !pkg.type)
+      .map((pkg: any) => pkg.package));
+
       cleaned.packageDirectories = cleaned.packageDirectories.map((pkgDir: any) => {
         const {npmName: _npm, packageOptions: _, type: _type, ...rest} = pkgDir;
+
+        // Filter dependencies to only include unlocked packages and managed deps
+        if (Array.isArray(rest.dependencies)) {
+          rest.dependencies = rest.dependencies.filter((dep: any) => unlockedPackages.has(dep.package) || !dep.versionNumber);
+          if (rest.dependencies.length === 0) {
+            delete rest.dependencies;
+          }
+        }
+
         return rest;
       });
     }
@@ -265,6 +280,20 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
 
     if (options?.isOrgDependent && definition.dependencies) {
       delete (definition as any).dependencies;
+    }
+
+    // Filter dependencies to only include unlocked packages and managed deps.
+    // Source/data packages are SFPM-only constructs that Salesforce CLI doesn't understand.
+    if (definition.dependencies) {
+      const allDefs = result.definition.packageDirectories as PackageDefinition[];
+      const unlockedPackages = new Set(allDefs
+      .filter(pkg => pkg.type === 'unlocked' || !pkg.type)
+      .map(pkg => pkg.package));
+      definition.dependencies = (definition.dependencies as Array<{package: string; versionNumber?: string}>)
+      .filter(dep => unlockedPackages.has(dep.package) || !dep.versionNumber);
+      if ((definition.dependencies as any[]).length === 0) {
+        delete (definition as any).dependencies;
+      }
     }
 
     // Build packageAliases relevant to this package

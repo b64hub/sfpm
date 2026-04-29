@@ -7,6 +7,7 @@ import SfpmPackage, {SfpmSourcePackage} from '../sfpm-package.js';
 import {
   Builder, BuilderOptions, BuildTask, RegisterBuilder,
 } from './builder-registry.js';
+import AssembleArtifactTask from './tasks/assemble-artifact-task.js';
 import SourceHashTask from './tasks/source-hash-task.js';
 
 // eslint-disable-next-line new-cap
@@ -38,6 +39,9 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
     // Add source hash check to prevent redundant builds
     const projectDir = this.sfpmPackage.projectDirectory;
     this.preBuildTasks.push(new SourceHashTask(this.sfpmPackage, projectDir, this.logger));
+
+    // Assemble artifact after build so source packages are installable via artifact resolution
+    this.postBuildTasks.push(new AssembleArtifactTask(this.sfpmPackage, projectDir, {}));
   }
 
   public async connect(username: string): Promise<void> {}

@@ -822,6 +822,7 @@ export class PackageFactory {
     const projectDirectory = this.provider.projectDir;
 
     const sfpmPackage = this.createPackageInstance(packageType, packageName, projectDirectory);
+    sfpmPackage.type = packageType;
 
     // Populate from project config
     sfpmPackage.projectDefinition = this.provider.getProjectDefinition();

@@ -78,7 +78,7 @@ export default class Install extends SfpmCommand {
     const sfpmConfig = projectService.getSfpmConfig();
 
     // Create lifecycle engine and register hooks from config
-    const lifecycle = new LifecycleEngine({logger, stage: 'local'});
+    const lifecycle = new LifecycleEngine({logger, stage: 'install'});
     for (const hooks of sfpmConfig.hooks ?? []) {
       lifecycle.use(hooks);
     }
