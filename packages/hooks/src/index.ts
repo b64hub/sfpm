@@ -42,7 +42,7 @@ export type {PicklistFieldData, PicklistHooksOptions, PicklistValue} from './pic
 // ── Profiles ────────────────────────────────────────────────────────────────
 export {OrgMetadataResolver} from './profiles/org-metadata-resolver.js';
 
-export {collectPackageMetadata, findProfilesDirectory, ProfileCleaner} from './profiles/profile-cleaner.js';
+export {collectPackageComponents, findProfilesDirectory, ProfileCleaner} from './profiles/profile-cleaner.js';
 export {profileHooks} from './profiles/profile-plugin.js';
 
 export {
@@ -50,6 +50,7 @@ export {
 } from './profiles/profile-xml.js';
 export type {
   ApplicationVisibility,
+  ComponentMap,
   CustomMetadataTypeAccess,
   CustomSettingAccess,
   FlowAccess,

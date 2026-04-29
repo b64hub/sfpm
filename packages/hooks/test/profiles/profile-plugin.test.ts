@@ -4,7 +4,7 @@ import {mkdirSync, rmSync, writeFileSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 
-import {Connection} from '@salesforce/core';
+import {Connection, Org} from '@salesforce/core';
 import type {HookContext} from '@b64/sfpm-core';
 
 import {profileHooks} from '../../src/profiles/profile-plugin.js';
@@ -188,6 +188,11 @@ describe('profileHooks', () => {
         writable: true,
       });
 
+      // Mock Org instance wrapping the connection
+      const mockOrg = Object.create(Org.prototype) as Org;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+      (mockOrg as any).getConnection = vi.fn().mockReturnValue(mockConnection);
+
       const hooks = profileHooks({scope: 'org'});
       const handler = hooks.hooks[0].handler;
       const logger = createLogger();
@@ -195,7 +200,7 @@ describe('profileHooks', () => {
       await handler(createContext({
         logger,
         packagePath: testDir,
-        orgConnection: mockConnection,
+        org: mockOrg,
       }));
 
       const content = await readFile(join(profilesDir, 'Admin.profile-meta.xml'), 'utf-8');
@@ -214,7 +219,7 @@ describe('profileHooks', () => {
       );
     });
 
-    it('should accept pre-built orgResolver in context', async () => {
+    it('should accept pre-built org in context', async () => {
       const profilesDir = join(testDir, 'profiles');
       const classesDir = join(testDir, 'classes');
       mkdirSync(profilesDir, {recursive: true});
@@ -235,10 +240,20 @@ describe('profileHooks', () => {
     <custom>true</custom>
 </Profile>`);
 
-      // Pre-built resolver
-      const orgResolver = {
-        getOrgComponents: vi.fn().mockResolvedValue(new Set(['ResolverClass'])),
-      };
+      // Mock connection that returns ResolverClass for classAccesses
+      const mockConnection = Object.create(Connection.prototype) as Connection;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+      (mockConnection as any).query = vi.fn().mockResolvedValue({records: []});
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+      (mockConnection as any).describeGlobal = vi.fn().mockResolvedValue({sobjects: []});
+      Object.defineProperty(mockConnection, 'metadata', {
+        value: {list: vi.fn().mockResolvedValue([{fullName: 'ResolverClass'}])},
+        writable: true,
+      });
+
+      const mockOrg = Object.create(Org.prototype) as Org;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+      (mockOrg as any).getConnection = vi.fn().mockReturnValue(mockConnection);
 
       const hooks = profileHooks({scope: 'org'});
       const handler = hooks.hooks[0].handler;
@@ -247,14 +262,13 @@ describe('profileHooks', () => {
       await handler(createContext({
         logger,
         packagePath: testDir,
-        orgResolver,
+        org: mockOrg,
       }));
 
       const content = await readFile(join(profilesDir, 'Admin.profile-meta.xml'), 'utf-8');
       const profile = parseProfileXml(content);
 
       expect(profile.classAccesses).toHaveLength(2);
-      expect(orgResolver.getOrgComponents).toHaveBeenCalled();
     });
 
     it('should fall back to source-only when no org connection', async () => {

@@ -137,6 +137,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
       projectDir: this.projectDirectory,
       sfpmPackage: {packageDefinition},
       stage: this.lifecycle?.stage ?? 'local',
+      targetOrg: this.options.devhubUsername,
       timing: '',
     };
   }

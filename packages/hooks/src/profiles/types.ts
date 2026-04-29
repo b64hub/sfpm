@@ -276,3 +276,14 @@ export const PROFILE_SECTION_NAME_FIELD: Record<string, string> = {
   recordTypeVisibilities: 'recordType',
   tabVisibilities: 'tab',
 };
+
+/**
+ * Component names grouped by profile section.
+ *
+ * Both package source and org metadata use this structure, enabling
+ * symmetric merging and comparison during profile scoping.
+ *
+ * Keys are profile section names (e.g., `'classAccesses'`, `'objectPermissions'`).
+ * Values are sets of component API names (e.g., `'MyController'`, `'Account'`).
+ */
+export type ComponentMap = Map<string, Set<string>>;

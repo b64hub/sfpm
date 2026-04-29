@@ -40,6 +40,16 @@ export interface HookContext {
   projectDir?: string;
   /** The lifecycle stage that triggered this invocation (e.g., 'validate', 'deploy', 'install', 'build') */
   stage: string;
+  /**
+   * Org alias or username that hooks can use to connect to the relevant org.
+   *
+   * - **Install operations**: the target org receiving the deployment
+   * - **Build operations**: the default DevHub (if one was specified)
+   *
+   * Hooks that need a live connection can call `Org.create({ aliasOrUsername: targetOrg })`
+   * from `@salesforce/core` to obtain one.
+   */
+  targetOrg?: string;
   /** The timing within the operation (e.g., 'pre', 'post') */
   timing: string;
 }

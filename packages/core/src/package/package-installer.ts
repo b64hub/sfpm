@@ -156,6 +156,7 @@ export default class PackageInstaller extends EventEmitter {
       packageType,
       projectDir: this.provider.projectDir,
       stage: '',
+      targetOrg: this.options.targetOrg,
       timing: '',
     };
   }
