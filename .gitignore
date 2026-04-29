@@ -19,3 +19,5 @@ pnpm-lock.yaml
 .sfpm
 .sfdx
 .sf
+.agents
+skills-lock.json

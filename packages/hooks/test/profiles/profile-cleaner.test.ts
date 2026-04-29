@@ -338,21 +338,25 @@ describe('ProfileCleaner', () => {
       expect(profile.userPermissions).toBeUndefined();
     });
 
-    it('should keep field permissions when parent object is in metadata', async () => {
+    it('should require exact field match, not parent object', async () => {
       const cleaner = new ProfileCleaner({scope: 'source'});
       const profile: Profile = {
         custom: true,
         fieldPermissions: [
           {field: 'Account.Name', editable: false, readable: true},
+          {field: 'Account.Custom__c', editable: false, readable: true},
           {field: 'Contact.Email', editable: false, readable: true},
         ],
       };
 
-      // Only Account object is in metadata (not 'Account.Name' directly)
-      await cleaner.cleanProfile(profile, new Map([['objectPermissions', new Set(['Account'])]]));
+      // Only the explicit field is in metadata — parent object alone is not enough
+      await cleaner.cleanProfile(profile, new Map([
+        ['fieldPermissions', new Set(['Account.Custom__c'])],
+        ['objectPermissions', new Set(['Account'])],
+      ]));
 
       expect(profile.fieldPermissions).toHaveLength(1);
-      expect(profile.fieldPermissions![0].field).toBe('Account.Name');
+      expect(profile.fieldPermissions![0].field).toBe('Account.Custom__c');
     });
 
     it('should handle layoutAssignments with recordType check', async () => {
@@ -492,7 +496,7 @@ describe('ProfileCleaner', () => {
           ],
         };
 
-        // Source has Account object, org has Account.Name and Account.Industry
+        // Source has Account object only, org has the specific fields
         const sourceMetadata: ComponentMap = new Map([['objectPermissions', new Set(['Account'])]]);
         const orgComponents = createOrgComponents({
           fieldPermissions: ['Account.Name', 'Account.Industry'],
@@ -500,7 +504,7 @@ describe('ProfileCleaner', () => {
 
         await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
-        // All Account fields kept — Account.Name and Account.Industry via parent + org
+        // Account fields kept via exact match from org fieldPermissions
         expect(profile.fieldPermissions).toHaveLength(2);
         const fields = profile.fieldPermissions!.map((f) => f.field);
         expect(fields).toContain('Account.Name');

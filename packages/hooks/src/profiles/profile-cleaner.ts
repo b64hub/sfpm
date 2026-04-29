@@ -190,7 +190,7 @@ export class ProfileCleaner {
       if (!name) return true;
 
       if (section === 'fieldPermissions') {
-        return this.isFieldKnown(name, sectionComponents, knownComponents.get('objectPermissions'));
+        return this.isFieldKnown(name, sectionComponents);
       }
 
       if (section === 'layoutAssignments') {
@@ -208,14 +208,13 @@ export class ProfileCleaner {
   /**
    * Check whether a field permission's component is known.
    *
-   * A field is kept if the full qualified name (e.g. `Account.CustomField__c`)
-   * exists in the field set, OR the parent object (e.g. `Account`) exists in
-   * the object set.
+   * A field is kept only if the full qualified name (e.g. `Account.CustomField__c`)
+   * exists in the field set. We intentionally do NOT fall back to checking
+   * the parent object — a deleted field whose parent object still exists
+   * would cause deployment failures.
    */
-  private isFieldKnown(name: string, fieldComponents: Set<string>, objectComponents?: Set<string>): boolean {
-    if (fieldComponents.has(name)) return true;
-    const parent = name.split('.')[0];
-    return objectComponents?.has(parent) ?? false;
+  private isFieldKnown(name: string, fieldComponents: Set<string>): boolean {
+    return fieldComponents.has(name);
   }
 
   /**
