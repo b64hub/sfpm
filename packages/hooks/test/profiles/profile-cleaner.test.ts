@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 
 import {ProfileCleaner, findProfilesDirectory, collectPackageComponents} from '../../src/profiles/profile-cleaner.js';
 import {parseProfileXml} from '../../src/profiles/profile-xml.js';
-import type {ComponentMap, OrgMetadataProvider, Profile} from '../../src/profiles/types.js';
+import type {ComponentMap, Profile} from '../../src/profiles/types.js';
 
 // ============================================================================
 // Test Fixtures
@@ -423,14 +423,13 @@ describe('ProfileCleaner', () => {
     // Org-aware scoping
     // ========================================================================
 
-    describe('with OrgMetadataProvider', () => {
-      function createMockResolver(
+    describe('with org components', () => {
+      function createOrgComponents(
         orgData: Record<string, string[]>,
-      ): OrgMetadataProvider {
-        return {
-          getOrgComponents: async (section: string) =>
-            new Set(orgData[section] ?? []),
-        };
+      ): ComponentMap {
+        return new Map(
+          Object.entries(orgData).map(([section, names]) => [section, new Set(names)]),
+        );
       }
 
       it('should keep entries found in org but not in source', async () => {
@@ -445,11 +444,11 @@ describe('ProfileCleaner', () => {
 
         // Source only has MyController, org has OrgOnlyClass
         const sourceMetadata: ComponentMap = new Map([['classAccesses', new Set(['MyController'])]]);
-        const orgResolver = createMockResolver({
+        const orgComponents = createOrgComponents({
           classAccesses: ['OrgOnlyClass'],
         });
 
-        await cleaner.cleanProfile(profile, sourceMetadata, orgResolver);
+        await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
         expect(profile.classAccesses).toHaveLength(2);
         const names = profile.classAccesses!.map((c) => c.apexClass);
@@ -470,11 +469,11 @@ describe('ProfileCleaner', () => {
 
         // Only Account in source, but Contact is a standard object in the org
         const sourceMetadata: ComponentMap = new Map([['objectPermissions', new Set(['Account'])]]);
-        const orgResolver = createMockResolver({
+        const orgComponents = createOrgComponents({
           objectPermissions: ['Account', 'Contact', 'Lead', 'Opportunity'],
         });
 
-        await cleaner.cleanProfile(profile, sourceMetadata, orgResolver);
+        await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
         expect(profile.objectPermissions).toHaveLength(2);
         const objects = profile.objectPermissions!.map((o) => o.object);
@@ -495,11 +494,11 @@ describe('ProfileCleaner', () => {
 
         // Source has Account object, org has Account.Name and Account.Industry
         const sourceMetadata: ComponentMap = new Map([['objectPermissions', new Set(['Account'])]]);
-        const orgResolver = createMockResolver({
+        const orgComponents = createOrgComponents({
           fieldPermissions: ['Account.Name', 'Account.Industry'],
         });
 
-        await cleaner.cleanProfile(profile, sourceMetadata, orgResolver);
+        await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
         // All Account fields kept — Account.Name and Account.Industry via parent + org
         expect(profile.fieldPermissions).toHaveLength(2);
@@ -509,7 +508,7 @@ describe('ProfileCleaner', () => {
         expect(fields).not.toContain('Deleted__c.Field__c');
       });
 
-      it('should fall back to source-only when org resolver returns empty', async () => {
+      it('should fall back to source-only when org components are empty', async () => {
         const cleaner = new ProfileCleaner({scope: 'source'});
         const profile: Profile = {
           classAccesses: [
@@ -519,15 +518,15 @@ describe('ProfileCleaner', () => {
         };
 
         const sourceMetadata: ComponentMap = new Map([['classAccesses', new Set(['MyController'])]]);
-        const orgResolver = createMockResolver({}); // Empty org data
+        const orgComponents = createOrgComponents({}); // Empty org data
 
-        await cleaner.cleanProfile(profile, sourceMetadata, orgResolver);
+        await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
         expect(profile.classAccesses).toHaveLength(1);
         expect(profile.classAccesses![0].apexClass).toBe('MyController');
       });
 
-      it('should work with org resolver for layout recordType checks', async () => {
+      it('should work with org components for layout recordType checks', async () => {
         const cleaner = new ProfileCleaner({scope: 'source'});
         const profile: Profile = {
           layoutAssignments: [
@@ -540,18 +539,13 @@ describe('ProfileCleaner', () => {
         const sourceMetadata: ComponentMap = new Map([
           ['layoutAssignments', new Set(['Account-Account Layout'])],
         ]);
-        const orgResolver = createMockResolver({
+        const orgComponents = createOrgComponents({
           layoutAssignments: ['Contact-Contact Layout'],
           recordTypeVisibilities: ['Contact.Business'],
         });
 
-        await cleaner.cleanProfile(profile, sourceMetadata, orgResolver);
+        await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
-        // Both kept: Account layout from source, Contact layout from org
-        // Note: recordType 'Contact.Business' is checked against the same merged set
-        // for layoutAssignments — the org resolver for layoutAssignments only adds
-        // layout names, not record types. Record types need to be in the source or
-        // in the layoutAssignments org set.
         expect(profile.layoutAssignments).toHaveLength(2);
       });
     });

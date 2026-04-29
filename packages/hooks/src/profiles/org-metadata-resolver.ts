@@ -99,18 +99,19 @@ export class OrgMetadataResolver implements OrgMetadataProvider {
   // ==========================================================================
 
   /**
-   * Query field definitions via the Tooling API's FieldDefinition object.
-   * Returns qualified names in `Object.Field` format.
+   * Query custom field definitions via the Metadata API.
+   *
+   * Returns qualified names in `Object.Field` format. Standard fields
+   * are not returned — the profile cleaner's `isFieldKnown` check falls
+   * back to the parent object in `objectPermissions` for those.
+   *
+   * Previous implementation used a SOQL query on `FieldDefinition`, but
+   * that entity requires a filter on `EntityDefinitionId` or `DurableId`,
+   * making an unfiltered global query impossible.
    */
   private async queryFields(): Promise<Set<string>> {
-    interface FieldRecord {
-      EntityDefinition: {QualifiedApiName: string};
-      QualifiedApiName: string;
-    }
-
-    const result = await this.connection.query<FieldRecord>('SELECT QualifiedApiName, EntityDefinition.QualifiedApiName FROM FieldDefinition');
-
-    return new Set(result.records.map(r => `${r.EntityDefinition.QualifiedApiName}.${r.QualifiedApiName}`));
+    const result = await this.connection.metadata.list([{type: 'CustomField'}]);
+    return new Set(result.map(r => r.fullName));
   }
 
   /**

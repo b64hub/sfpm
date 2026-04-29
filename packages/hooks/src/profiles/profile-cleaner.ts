@@ -68,16 +68,18 @@ export class ProfileCleaner {
    *
    * @param profile - The profile to clean
    * @param packageComponents - Package components grouped by profile section
-   * @param orgResolver - Optional org metadata provider for org-aware scoping
+   * @param orgComponents - Pre-resolved org components grouped by profile section.
+   *   When provided, these are merged with package components before scoping.
+   *   Use {@link resolveOrgComponents} to pre-fetch from an {@link OrgMetadataProvider}.
    * @returns The cleaned profile (same reference, mutated)
    */
   async cleanProfile(
     profile: Profile,
     packageComponents?: ComponentMap,
-    orgResolver?: OrgMetadataProvider,
+    orgComponents?: ComponentMap,
   ): Promise<Profile> {
     if (this.options.scope !== 'none' && packageComponents && packageComponents.size > 0) {
-      await this.scopeSections(profile, packageComponents, orgResolver);
+      this.scopeSections(profile, packageComponents, orgComponents);
     }
 
     if (this.options.removeLoginHours) {
@@ -107,7 +109,7 @@ export class ProfileCleaner {
    *   components not in the matching section set are removed.
    * @param orgResolver - Optional org metadata provider. When provided (and
    *   `scope` is `'org'`), components found in the target org are also
-   *   preserved during scoping.
+   *   preserved during scoping. Queried once upfront and shared across all profiles.
    * @returns Array of file paths that were cleaned
    */
   async cleanProfiles(
@@ -129,11 +131,16 @@ export class ProfileCleaner {
 
     this.logger?.debug(`Found ${profileFiles.length} profile(s) to clean`);
 
+    // Resolve org components once upfront, shared across all profiles
+    const orgComponents = orgResolver
+      ? await this.resolveOrgComponents(orgResolver)
+      : undefined;
+
     const results = await Promise.all(profileFiles.map(async file => {
       const filePath = join(profilesDirectory, file);
       try {
         const profile = await readProfileXml(filePath);
-        const modified = await this.cleanProfile(profile, packageComponents, orgResolver);
+        const modified = await this.cleanProfile(profile, packageComponents, orgComponents);
         await writeProfileXml(filePath, modified);
         this.logger?.debug(`Cleaned profile: ${file}`);
         return filePath;
@@ -150,6 +157,21 @@ export class ProfileCleaner {
   // ==========================================================================
   // Scoping — remove entries referencing absent metadata
   // ==========================================================================
+
+  /**
+   * Resolve org components for all profile sections in parallel.
+   *
+   * Call once and pass the result to {@link cleanProfile} to avoid
+   * repeated org queries when cleaning multiple profiles.
+   */
+  async resolveOrgComponents(resolver: OrgMetadataProvider): Promise<ComponentMap> {
+    const sections = Object.keys(PROFILE_SECTION_NAME_FIELD);
+    const entries = await Promise.all(sections.map(async section => {
+      const components = await resolver.getOrgComponents(section);
+      return [section, components] as const;
+    }));
+    return new Map(entries);
+  }
 
   /**
    * Filter items in a single profile section, keeping only those whose
@@ -237,20 +259,6 @@ export class ProfileCleaner {
   }
 
   /**
-   * Pre-fetch org components for all sections in parallel.
-   */
-  private async prefetchOrgComponents(
-    resolver: OrgMetadataProvider,
-    sections: string[],
-  ): Promise<ComponentMap> {
-    const entries = await Promise.all(sections.map(async section => {
-      const components = await resolver.getOrgComponents(section);
-      return [section, components] as const;
-    }));
-    return new Map(entries);
-  }
-
-  /**
    * Remove user permissions that have `enabled: false`.
    *
    * Standard profiles cannot have their userPermissions edited, so all
@@ -276,24 +284,21 @@ export class ProfileCleaner {
    * For each profile section, filter out entries whose referenced component
    * name is not in the known component map for that section.
    *
-   * When an org resolver is provided, org components are merged with package
+   * When org components are provided, they are merged with package
    * components before filtering — preserving permissions for metadata that
    * is present in the org but not in the package source.
    */
-  private async scopeSections(
+  private scopeSections(
     profile: Profile,
     packageComponents: ComponentMap,
-    orgResolver?: OrgMetadataProvider,
-  ): Promise<void> {
+    orgComponents?: ComponentMap,
+  ): void {
     const sections = Object.entries(PROFILE_SECTION_NAME_FIELD);
 
-    // Pre-fetch all org components in parallel to avoid await-in-loop
-    const orgComponents = orgResolver
-      ? await this.prefetchOrgComponents(orgResolver, sections.map(([s]) => s))
-      : new Map<string, Set<string>>();
-
     // Merge package + org into a single map for uniform lookup
-    const knownComponents = this.mergeComponentMaps(packageComponents, orgComponents);
+    const knownComponents = orgComponents
+      ? this.mergeComponentMaps(packageComponents, orgComponents)
+      : packageComponents;
 
     for (const [section, nameField] of sections) {
       const items = profile[section as keyof Profile] as Array<Record<string, unknown>> | undefined;
