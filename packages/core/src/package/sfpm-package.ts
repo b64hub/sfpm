@@ -831,6 +831,7 @@ export class PackageFactory {
 
     // In workspace mode, read packageOptions directly from the workspace package.json
     // rather than from sfdx-project.json (which no longer carries them)
+    // TODO: Refactor to separate workspace vs legacy provider implementations so this special handling isn't needed
     this.overlayWorkspacePackageOptions(packageDefinition, sfpmPackage);
 
     // Resolve package ID from aliases for unlocked packages

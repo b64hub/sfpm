@@ -41,12 +41,8 @@ export function profileHooks(options?: ProfileHooksOptions): LifecycleHooks {
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, packageName, packagePath} = context;
           const cleaner = new ProfileCleaner(options, logger);
-
-          // Determine the package source path for profile discovery
-          const packagePath = (context.packagePath as string | undefined)
-            ?? (context.stagingDirectory as string | undefined);
 
           if (!packagePath) {
             logger?.debug(`Profiles: no package path available for '${packageName}', skipping`);

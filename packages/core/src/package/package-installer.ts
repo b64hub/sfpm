@@ -152,7 +152,7 @@ export default class PackageInstaller extends EventEmitter {
       org: this.org,
       packageAliases: projectDefinition.packageAliases ?? {},
       packageName,
-      ...(packagePath && {packagePath}),
+      packagePath,
       packageType,
       projectDir: this.provider.projectDir,
       stage: '',
@@ -544,22 +544,20 @@ export default class PackageInstaller extends EventEmitter {
   }
 
   /**
-   * Resolve the source directory for a package.
+   * Resolve the absolute path to a package's metadata directory.
    *
-   * Resolution hierarchy (first match wins):
-   * 1. `workingDirectory` — set when an artifact has been extracted (e.g. npm tarball)
-   * 2. Project-relative package path — from the provider's package definition
+   * Resolution hierarchy for the root:
+   * 1. `workingDirectory` — set when an artifact has been extracted to a temp dir
+   * 2. `projectDir` — the project root from the provider
    *
-   * Both cases ultimately point to the root that contains `sfdx-project.json`
-   * (or the equivalent workspace structure) so that downstream consumers
-   * (hooks, ComponentSet builders) can locate metadata files.
+   * The package definition's `path` (e.g. `src-access-management`) is always
+   * appended so the result points to the actual metadata directory, not just
+   * the project/artifact root.
    */
   private resolvePackageSourceDir(sfpmPackage: SfpmPackage): string {
-    if (sfpmPackage.workingDirectory) {
-      return sfpmPackage.workingDirectory;
-    }
-
-    return path.join(this.provider.projectDir, this.provider.getPackageDefinition(sfpmPackage.packageName).path);
+    const root = sfpmPackage.workingDirectory ?? this.provider.projectDir;
+    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.packageName);
+    return path.join(root, packageDefinition.path);
   }
 
   private async runHooks(timing: string, packageName: string, sfpmPackage?: SfpmPackage): Promise<void> {
