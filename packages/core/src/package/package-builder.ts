@@ -11,6 +11,7 @@ import {NoSourceChangesError} from '../types/errors.js';
 import {AllBuildEvents} from '../types/events.js';
 import {Logger} from '../types/logger.js';
 import {PackageType} from '../types/package.js';
+import {getPipelineRunId} from '../utils/pipeline.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
@@ -89,6 +90,13 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
     if (this.options.buildNumber) {
       sfpmPackage.setBuildNumber(this.options.buildNumber);
+    } else if (sfpmPackage.type !== PackageType.Unlocked) {
+      // Source and data packages don't get build numbers from Salesforce.
+      // Generate one from the CI pipeline run ID or a timestamp to ensure
+      // each build produces a unique, ever-increasing version.
+      const autoBuildNumber = getPipelineRunId() ?? String(Math.floor(Date.now() / 1000));
+      sfpmPackage.setBuildNumber(autoBuildNumber);
+      this.logger?.debug(`Auto-assigned build number ${autoBuildNumber} for ${sfpmPackage.packageName}`);
     }
 
     if (this.options.orgDefinitionPath) {
