@@ -79,6 +79,13 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
   }
 
   private async buildPackage(): Promise<void> {
+    // @salesforce/packaging resolves seedMetadata / unpackagedMetadata paths
+    // via path.join(process.cwd(), relativePath) (packageVersionCreate.js:752),
+    // but those paths are written relative to sfdx-project.json (the staging
+    // directory). Rewrite them to be CWD-relative so path.join normalises the
+    // ".." segments correctly — without needing process.chdir().
+    await this.rewriteMetadataPathsForCwd();
+
     const sfProject = await SfProject.resolve(this.workingDirectory);
 
     // Get build options from package metadata
@@ -253,5 +260,46 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       prunedFiles: 1,
       timestamp: new Date(),
     });
+  }
+
+  /**
+   * Rewrites seedMetadata / unpackagedMetadata paths in the staged
+   * sfdx-project.json so they resolve correctly from process.cwd().
+   *
+   * The assembly step writes these paths relative to the staging root
+   * (where sfdx-project.json lives) — the standard Salesforce convention.
+   * However, `@salesforce/packaging` resolves them via
+   * `path.join(process.cwd(), relativePath)` instead of relative to the
+   * project root. This method bridges that gap by converting the paths
+   * from staging-dir-relative to CWD-relative, so `path.join` normalises
+   * the ".." segments to the correct absolute path.
+   */
+  private async rewriteMetadataPathsForCwd(): Promise<void> {
+    const projectJsonPath = path.join(this.workingDirectory, 'sfdx-project.json');
+    if (!await fs.pathExists(projectJsonPath)) return;
+
+    const projectJson = await fs.readJson(projectJsonPath);
+    const pkg = projectJson.packageDirectories?.[0];
+    if (!pkg) return;
+
+    let modified = false;
+    const cwd = process.cwd();
+
+    if (pkg.seedMetadata?.path) {
+      const absolutePath = path.resolve(this.workingDirectory, pkg.seedMetadata.path);
+      pkg.seedMetadata.path = path.relative(cwd, absolutePath);
+      modified = true;
+    }
+
+    if (pkg.unpackagedMetadata?.path) {
+      const absolutePath = path.resolve(this.workingDirectory, pkg.unpackagedMetadata.path);
+      pkg.unpackagedMetadata.path = path.relative(cwd, absolutePath);
+      modified = true;
+    }
+
+    if (modified) {
+      await fs.writeJson(projectJsonPath, projectJson, {spaces: 4});
+      this.logger?.debug('Rewrote metadata paths in staged sfdx-project.json relative to CWD');
+    }
   }
 }

@@ -23,8 +23,8 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
  *
  * It also:
  * 1. Injects the provided version number.
- * 2. Rewrites supplemental metadata paths relative to `process.cwd()` so that
- *    `@salesforce/packaging` resolves them correctly without `process.chdir()`.
+ * 2. Rewrites supplemental metadata paths relative to the staging root
+ *    (i.e. relative to sfdx-project.json).
  * 3. Archives the original project manifest for reference.
  */
 export class ProjectJsonAssemblyStep implements AssemblyStep {
@@ -44,7 +44,7 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
 
       const pkg = packageDefinition.packageDirectories[0] as PackageDefinition;
 
-      output.projectDefinitionPath = await this.resolveSupplementalMetadata(pkg, output.stagingDirectory);
+      output.projectDefinitionPath = await this.writeProjectDefinition(packageDefinition, pkg, output.stagingDirectory);
       output.componentCount = await this.countComponents(pkg.type || PackageType.Managed, output.stagingDirectory);
 
       const manifestsDir = path.join(output.stagingDirectory, 'manifests');
@@ -62,8 +62,6 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
    * Count components now that the full staging directory structure is complete.
    * Data packages contain data files (CSV, JSON) rather than Salesforce metadata,
    * so ComponentSet would report 0. Count actual files instead.
-   *
-   * @param stagingDir
    */
   private async countComponents(packageType: PackageType, stagingDir: string): Promise<number> {
     if (packageType === PackageType.Data) {
@@ -78,30 +76,28 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
   }
 
   /**
-   * Rewrite supplemental metadata paths relative to process.cwd().
-   * @salesforce/packaging resolves these via path.join(process.cwd(), relativePath),
-   * so the paths must be relative from CWD — not from the staging directory.
-   * Using path.relative + path.join normalises the ".." segments correctly.
+   * Rewrite supplemental metadata paths relative to the staging root
+   * (where sfdx-project.json lives) and write the full project definition.
    *
-   * @param pkg package definition
-   * @param stagingDir staging directory
    * @returns path to the staged sfdx-project.json
    */
-  private async resolveSupplementalMetadata(pkg: PackageDefinition, stagingDir: string): Promise<string> {
-    const cwd = process.cwd();
-
+  private async writeProjectDefinition(
+    packageDefinition: ReturnType<ProjectDefinitionProvider['resolveForPackage']>,
+    pkg: PackageDefinition,
+    stagingDir: string,
+  ): Promise<string> {
     const unpackagedMetadataDir = path.join(stagingDir, 'unpackagedMetadata');
     if (await fs.pathExists(unpackagedMetadataDir)) {
-      pkg.unpackagedMetadata = {path: path.relative(cwd, unpackagedMetadataDir)};
+      pkg.unpackagedMetadata = {path: 'unpackagedMetadata'};
     }
 
     const seedMetadataDir = path.join(stagingDir, 'seedMetadata');
     if (await fs.pathExists(seedMetadataDir)) {
-      pkg.seedMetadata = {path: path.relative(cwd, seedMetadataDir)};
+      pkg.seedMetadata = {path: 'seedMetadata'};
     }
 
     const projectJsonPath = path.join(stagingDir, 'sfdx-project.json');
-    await fs.writeJson(projectJsonPath, pkg, {spaces: 4});
+    await fs.writeJson(projectJsonPath, packageDefinition, {spaces: 4});
 
     return projectJsonPath;
   }

@@ -6,6 +6,7 @@ import { PackageType } from '../../../src/types/package.js';
 import { Org, SfProject, Lifecycle } from '@salesforce/core';
 import { PackageVersion } from '@salesforce/packaging';
 import { Duration } from '@salesforce/kit';
+import fs from 'fs-extra';
 import path from 'path';
 
 // Mocks
@@ -34,6 +35,19 @@ vi.mock('@salesforce/packaging', async () => {
         PackageVersion: {
             create: vi.fn(),
         }
+    };
+});
+
+vi.mock('fs-extra', async () => {
+    const actual = await import('fs-extra');
+    return {
+        ...actual,
+        default: {
+            ...actual,
+            pathExists: vi.fn().mockResolvedValue(false),
+            readJson: vi.fn().mockResolvedValue({}),
+            writeJson: vi.fn().mockResolvedValue(undefined),
+        },
     };
 });
 
@@ -245,6 +259,46 @@ describe('UnlockedPackageBuilder', () => {
 
         // Should not throw
         await expect(builder.exec()).resolves.not.toThrow();
+    });
+
+    it('should rewrite staging-relative metadata paths to CWD-relative before build', async () => {
+        const stagingDir = '/tmp/staging/package';
+        const cwd = process.cwd();
+        mockSfpmPackage.workingDirectory = stagingDir;
+        builder = new UnlockedPackageBuilder(stagingDir, mockSfpmPackage, builderOptions, mockLogger);
+
+        const stagedProjectJson = {
+            packageDirectories: [{
+                package: 'test-package',
+                path: 'package',
+                default: true,
+                seedMetadata: { path: 'seedMetadata' },
+                unpackagedMetadata: { path: 'unpackagedMetadata' },
+            }],
+        };
+
+        (fs.pathExists as any).mockResolvedValue(true);
+        (fs.readJson as any).mockResolvedValue(stagedProjectJson);
+
+        (PackageVersion.create as any).mockResolvedValue({
+            Status: 'Success',
+            SubscriberPackageVersionId: '04t000000000000',
+        });
+
+        await builder.connect('test-user');
+        await builder.exec();
+
+        // Verify sfdx-project.json was rewritten with CWD-relative paths
+        expect(fs.writeJson).toHaveBeenCalledWith(
+            path.join(stagingDir, 'sfdx-project.json'),
+            expect.objectContaining({
+                packageDirectories: [expect.objectContaining({
+                    seedMetadata: { path: path.relative(cwd, path.resolve(stagingDir, 'seedMetadata')) },
+                    unpackagedMetadata: { path: path.relative(cwd, path.resolve(stagingDir, 'unpackagedMetadata')) },
+                })],
+            }),
+            { spaces: 4 },
+        );
     });
 
 });
