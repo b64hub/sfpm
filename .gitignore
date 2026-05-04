@@ -21,3 +21,6 @@ pnpm-lock.yaml
 .sf
 .agents
 skills-lock.json
+.hive
+hive.toml
+.graphify_python
