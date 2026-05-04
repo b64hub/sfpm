@@ -23,4 +23,5 @@ pnpm-lock.yaml
 skills-lock.json
 .hive
 hive.toml
-.graphify_python
+.graphify*
+**/graphify-out
