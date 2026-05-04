@@ -3,7 +3,7 @@
  *
  * - `Core`  — sfpm-artifact only (custom setting for artifact tracking)
  * - `Pool`  — Core + sfpm-orgs (scratch org & sandbox pooling, org-dependent)
- * - `Full`  — Pool + sfpm (artifact history object + UI components)
+ * - `Full`  — Pool + sfpm-ui (artifact history object + UI components)
  */
 export enum BootstrapTier {
   Core = 'core',
@@ -75,8 +75,8 @@ export const BOOTSTRAP_PACKAGES: BootstrapPackageConfig[] = [
     dependencies: ['sfpm-artifact'],
     description: 'Artifact history object & UI components',
     isOrgDependent: false,
-    name: 'sfpm',
-    path: 'sfpm',
+    name: 'sfpm-ui',
+    path: 'sfpm-ui',
   },
 ];
 
@@ -92,7 +92,7 @@ export function getPackagesForTier(tier: BootstrapTier): BootstrapPackageConfig[
   }
 
   case BootstrapTier.Pool: {
-    return BOOTSTRAP_PACKAGES.filter(p => p.name !== 'sfpm');
+    return BOOTSTRAP_PACKAGES.filter(p => p.name !== 'sfpm-ui');
   }
   }
 }
