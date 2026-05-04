@@ -44,39 +44,8 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
 
       const pkg = packageDefinition.packageDirectories[0] as PackageDefinition;
 
-      // Rewrite supplemental metadata paths relative to process.cwd().
-      // @salesforce/packaging resolves these via path.join(process.cwd(), relativePath),
-      // so the paths must be relative from CWD — not from the staging directory.
-      // Using path.relative + path.join normalises the ".." segments correctly.
-      const cwd = process.cwd();
-
-      const unpackagedMetadataDir = path.join(output.stagingDirectory, 'unpackagedMetadata');
-      if (await fs.pathExists(unpackagedMetadataDir)) {
-        pkg.unpackagedMetadata = {path: path.relative(cwd, unpackagedMetadataDir)};
-      }
-
-      const seedMetadataDir = path.join(output.stagingDirectory, 'seedMetadata');
-      if (await fs.pathExists(seedMetadataDir)) {
-        pkg.seedMetadata = {path: path.relative(cwd, seedMetadataDir)};
-      }
-
-      const projectJsonPath = path.join(output.stagingDirectory, 'sfdx-project.json');
-      await fs.writeJson(projectJsonPath, packageDefinition, {spaces: 4});
-      output.projectDefinitionPath = projectJsonPath;
-
-      // Count components now that the full staging directory structure is complete.
-      // Data packages contain data files (CSV, JSON) rather than Salesforce metadata,
-      // so ComponentSet would report 0. Count actual files instead.
-      const packageType = this.provider.getPackageDefinition(this.packageName).type?.toLowerCase();
-      if (packageType === PackageType.Data) {
-        const files = await fg(['**/*'], {
-          cwd: output.stagingDirectory, dot: false, ignore: ['sfdx-project.json', 'manifests/**'], onlyFiles: true,
-        });
-        output.componentCount = files.length;
-      } else {
-        const componentSet = await ComponentSet.fromSource(output.stagingDirectory);
-        output.componentCount = componentSet.size;
-      }
+      output.projectDefinitionPath = await this.resolveSupplementalMetadata(pkg, output.stagingDirectory);
+      output.componentCount = await this.countComponents(pkg.type || PackageType.Managed, output.stagingDirectory);
 
       const manifestsDir = path.join(output.stagingDirectory, 'manifests');
       await fs.ensureDir(manifestsDir);
@@ -87,5 +56,53 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
     } catch (error) {
       throw new Error(`[ProjectJsonAssemblyStep] ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Count components now that the full staging directory structure is complete.
+   * Data packages contain data files (CSV, JSON) rather than Salesforce metadata,
+   * so ComponentSet would report 0. Count actual files instead.
+   *
+   * @param stagingDir
+   */
+  private async countComponents(packageType: PackageType, stagingDir: string): Promise<number> {
+    if (packageType === PackageType.Data) {
+      const files = await fg(['**/*'], {
+        cwd: stagingDir, dot: false, ignore: ['sfdx-project.json', 'manifests/**'], onlyFiles: true,
+      });
+      return files.length;
+    }
+
+    const componentSet = await ComponentSet.fromSource(stagingDir);
+    return componentSet.size;
+  }
+
+  /**
+   * Rewrite supplemental metadata paths relative to process.cwd().
+   * @salesforce/packaging resolves these via path.join(process.cwd(), relativePath),
+   * so the paths must be relative from CWD — not from the staging directory.
+   * Using path.relative + path.join normalises the ".." segments correctly.
+   *
+   * @param pkg package definition
+   * @param stagingDir staging directory
+   * @returns path to the staged sfdx-project.json
+   */
+  private async resolveSupplementalMetadata(pkg: PackageDefinition, stagingDir: string): Promise<string> {
+    const cwd = process.cwd();
+
+    const unpackagedMetadataDir = path.join(stagingDir, 'unpackagedMetadata');
+    if (await fs.pathExists(unpackagedMetadataDir)) {
+      pkg.unpackagedMetadata = {path: path.relative(cwd, unpackagedMetadataDir)};
+    }
+
+    const seedMetadataDir = path.join(stagingDir, 'seedMetadata');
+    if (await fs.pathExists(seedMetadataDir)) {
+      pkg.seedMetadata = {path: path.relative(cwd, seedMetadataDir)};
+    }
+
+    const projectJsonPath = path.join(stagingDir, 'sfdx-project.json');
+    await fs.writeJson(projectJsonPath, pkg, {spaces: 4});
+
+    return projectJsonPath;
   }
 }
