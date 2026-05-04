@@ -11,11 +11,34 @@ export const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
  */
 export type PackageDir = ProjectJson['packageDirectories'][number];
 
+/**
+ * Merge mode for env-aliased packages.
+ * - `union`: env directory contents are merged on top of the default directory (env wins conflicts)
+ * - `disjoint`: only the env directory is used, default is ignored entirely
+ */
+export type EnvAliasMode = 'disjoint' | 'union';
+
+/**
+ * Configuration for environment-aliased packages.
+ * When a package is env-aliased, it contains subdirectories for each target environment
+ * plus a mandatory `default/` directory. At install/deploy time, the target org alias
+ * is matched against subdirectory names to select the correct metadata variant.
+ */
+export interface EnvAliasConfig {
+  /** Merge mode: 'union' overlays env on default, 'disjoint' uses env only. Default: 'union' */
+  mode?: EnvAliasMode;
+}
+
 export interface PackageOptions {
   [key: string]: any;
   build?: BuildOptions;
   deploy?: DeployOptions;
-  envAliased?: boolean;
+  /**
+   * Marks this package as environment-aliased.
+   * When `true`, uses default config (union mode).
+   * When an object, allows specifying the merge mode.
+   */
+  envAliased?: boolean | EnvAliasConfig;
   /**
    * Per-package hook configuration.
    *
@@ -149,7 +172,12 @@ export const PackageDefinitionSchema = z.intersection(
           unpackagedMetadata: z.object({path: z.string()}).optional(),
         }).optional(),
       }).optional(),
-      envAliased: z.string().optional(),
+      envAliased: z.union([
+        z.boolean(),
+        z.object({
+          mode: z.enum(['union', 'disjoint']).optional(),
+        }),
+      ]).optional(),
       hooks: z.record(
         z.string(),
         z.union([z.boolean(), z.record(z.string(), z.unknown())]),
