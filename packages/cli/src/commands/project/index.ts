@@ -6,7 +6,7 @@ import boxen from 'boxen'
 import chalk from 'chalk'
 import treeify from 'object-treeify'
 
-import SfpmCommand from '../sfpm-command.js'
+import SfpmCommand from '../../sfpm-command.js'
 
 export default class Project extends SfpmCommand {
   static override description = 'Overview of the project'

@@ -14,8 +14,8 @@ import {fileURLToPath} from 'node:url'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
-import SfpmCommand from '../sfpm-command.js'
-import {BuildProgressRenderer, OutputMode} from '../ui/build-progress-renderer.js'
+import SfpmCommand from '../../sfpm-command.js'
+import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
 
 export default class Build extends SfpmCommand {
   static override args = {

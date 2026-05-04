@@ -6,8 +6,8 @@ import EventEmitter from 'node:events'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
-import SfpmCommand from '../sfpm-command.js'
-import {InstallProgressRenderer, OutputMode} from '../ui/install-progress-renderer.js'
+import SfpmCommand from '../../sfpm-command.js'
+import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
 
 export default class Deploy extends SfpmCommand {
   static override args = {
