@@ -20,12 +20,6 @@ import SourceHashTask from './tasks/source-hash-task.js';
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Unlocked)
 export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEvents> implements Builder {
-  // Serialize buildPackage() calls across parallel builders because
-  // process.chdir() is a process-global mutation. Without this, two
-  // unlocked packages building at the same orchestration level will
-  // race on CWD, causing ENOENT when one builder's cleanup removes
-  // a staging directory that the other captured as originalCwd.
-  private static _chdirLock: Promise<void> = Promise.resolve();
   public postBuildTasks: BuildTask[] = [];
   public preBuildTasks: BuildTask[] = [];
   private devhubOrg?: Org;
@@ -85,28 +79,12 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
   }
 
   private async buildPackage(): Promise<void> {
-    // Acquire the static chdir lock so only one unlocked builder
-    // mutates process.cwd() at a time (see class-level comment).
-    let releaseLock!: () => void;
-    const previousLock = UnlockedPackageBuilder._chdirLock;
-    UnlockedPackageBuilder._chdirLock = new Promise(resolve => {
-      releaseLock = resolve;
-    });
-
-    await previousLock;
-
     // @salesforce/packaging resolves seedMetadata / unpackagedMetadata paths
-    // relative to process.cwd(), NOT the SfProject root. When building from a
-    // staging directory we must chdir so those relative paths resolve correctly.
-    const originalCwd = process.cwd();
-    try {
-      if (this.workingDirectory !== originalCwd) {
-        process.chdir(this.workingDirectory);
-      }
-    } catch (error) {
-      releaseLock();
-      throw error;
-    }
+    // via path.join(process.cwd(), relativePath). Instead of chdir'ing (which
+    // is a process-global mutation that breaks parallel builds), we rewrite
+    // those paths in the staged sfdx-project.json to be relative from the
+    // current CWD. path.join then normalises the ".." segments correctly.
+    await this.rewriteMetadataPathsForCwd();
 
     const sfProject = await SfProject.resolve(this.workingDirectory);
 
@@ -253,11 +231,6 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${details}`, {cause: error});
     } finally {
       lifecycle.removeAllListeners('packageVersionCreate:progress');
-      if (process.cwd() !== originalCwd) {
-        process.chdir(originalCwd);
-      }
-
-      releaseLock();
     }
   }
 
@@ -287,5 +260,44 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       prunedFiles: 1,
       timestamp: new Date(),
     });
+  }
+
+  /**
+   * Rewrites seedMetadata / unpackagedMetadata paths in the staged
+   * sfdx-project.json so they resolve correctly from process.cwd()
+   * without requiring a process.chdir() call.
+   *
+   * @salesforce/packaging uses `path.join(process.cwd(), relativePath)`
+   * to resolve these paths. By converting them from staging-dir-relative
+   * to CWD-relative, path.join normalises the ".." segments and arrives
+   * at the correct absolute path — regardless of what CWD is.
+   */
+  private async rewriteMetadataPathsForCwd(): Promise<void> {
+    const projectJsonPath = path.join(this.workingDirectory, 'sfdx-project.json');
+    if (!await fs.pathExists(projectJsonPath)) return;
+
+    const projectJson = await fs.readJson(projectJsonPath);
+    const pkg = projectJson.packageDirectories?.[0];
+    if (!pkg) return;
+
+    let modified = false;
+    const cwd = process.cwd();
+
+    if (pkg.seedMetadata?.path) {
+      const absolutePath = path.resolve(this.workingDirectory, pkg.seedMetadata.path);
+      pkg.seedMetadata.path = path.relative(cwd, absolutePath);
+      modified = true;
+    }
+
+    if (pkg.unpackagedMetadata?.path) {
+      const absolutePath = path.resolve(this.workingDirectory, pkg.unpackagedMetadata.path);
+      pkg.unpackagedMetadata.path = path.relative(cwd, absolutePath);
+      modified = true;
+    }
+
+    if (modified) {
+      await fs.writeJson(projectJsonPath, projectJson, {spaces: 4});
+      this.logger?.debug('Rewrote metadata paths in staged sfdx-project.json relative to CWD');
+    }
   }
 }

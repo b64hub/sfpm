@@ -6,6 +6,7 @@ import { PackageType } from '../../../src/types/package.js';
 import { Org, SfProject, Lifecycle } from '@salesforce/core';
 import { PackageVersion } from '@salesforce/packaging';
 import { Duration } from '@salesforce/kit';
+import fs from 'fs-extra';
 import path from 'path';
 
 // Mocks
@@ -34,6 +35,19 @@ vi.mock('@salesforce/packaging', async () => {
         PackageVersion: {
             create: vi.fn(),
         }
+    };
+});
+
+vi.mock('fs-extra', async () => {
+    const actual = await import('fs-extra');
+    return {
+        ...actual,
+        default: {
+            ...actual,
+            pathExists: vi.fn().mockResolvedValue(false),
+            readJson: vi.fn().mockResolvedValue({}),
+            writeJson: vi.fn().mockResolvedValue(undefined),
+        },
     };
 });
 
@@ -67,9 +81,6 @@ describe('UnlockedPackageBuilder', () => {
     let builderOptions: BuilderOptions;
 
     beforeEach(() => {
-        // Mock process.chdir since test staging dirs don't exist on disk
-        vi.spyOn(process, 'chdir').mockImplementation(() => {});
-
         // Setup Logger
         mockLogger = {
             info: vi.fn(),
@@ -146,8 +157,6 @@ describe('UnlockedPackageBuilder', () => {
 
     afterEach(() => {
         vi.clearAllMocks();
-        // Reset the static chdir lock to prevent test isolation issues
-        (UnlockedPackageBuilder as any)._chdirLock = Promise.resolve();
     });
 
     it('should build package successfully and update package version id', async () => {
@@ -250,6 +259,72 @@ describe('UnlockedPackageBuilder', () => {
 
         // Should not throw
         await expect(builder.exec()).resolves.not.toThrow();
+    });
+
+    it('should rewrite seedMetadata/unpackagedMetadata paths relative to CWD', async () => {
+        const stagingDir = '/tmp/staging/package';
+        const cwd = process.cwd();
+        mockSfpmPackage.workingDirectory = stagingDir;
+        builder = new UnlockedPackageBuilder(stagingDir, mockSfpmPackage, builderOptions, mockLogger);
+
+        const stagedProjectJson = {
+            packageDirectories: [{
+                package: 'test-package',
+                path: 'package',
+                seedMetadata: { path: 'seedMetadata' },
+                unpackagedMetadata: { path: 'unpackagedMetadata' },
+            }],
+        };
+
+        (fs.pathExists as any).mockResolvedValue(true);
+        (fs.readJson as any).mockResolvedValue(stagedProjectJson);
+
+        (PackageVersion.create as any).mockResolvedValue({
+            Status: 'Success',
+            SubscriberPackageVersionId: '04t000000000000',
+        });
+
+        await builder.connect('test-user');
+        await builder.exec();
+
+        // Verify sfdx-project.json was rewritten with CWD-relative paths
+        expect(fs.writeJson).toHaveBeenCalledWith(
+            path.join(stagingDir, 'sfdx-project.json'),
+            expect.objectContaining({
+                packageDirectories: [expect.objectContaining({
+                    seedMetadata: { path: path.relative(cwd, path.resolve(stagingDir, 'seedMetadata')) },
+                    unpackagedMetadata: { path: path.relative(cwd, path.resolve(stagingDir, 'unpackagedMetadata')) },
+                })],
+            }),
+            { spaces: 4 },
+        );
+    });
+
+    it('should not rewrite sfdx-project.json when no metadata paths exist', async () => {
+        const stagedProjectJson = {
+            packageDirectories: [{
+                package: 'test-package',
+                path: 'package',
+            }],
+        };
+
+        (fs.pathExists as any).mockResolvedValue(true);
+        (fs.readJson as any).mockResolvedValue(stagedProjectJson);
+
+        (PackageVersion.create as any).mockResolvedValue({
+            Status: 'Success',
+            SubscriberPackageVersionId: '04t000000000000',
+        });
+
+        await builder.connect('test-user');
+        await builder.exec();
+
+        // writeJson should NOT be called for path rewriting (no metadata paths)
+        const writeJsonCalls = (fs.writeJson as any).mock.calls;
+        const rewriteCalls = writeJsonCalls.filter((call: any[]) =>
+            call[0]?.includes('sfdx-project.json')
+        );
+        expect(rewriteCalls).toHaveLength(0);
     });
 
 });
