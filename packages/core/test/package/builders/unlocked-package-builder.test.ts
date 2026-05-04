@@ -67,6 +67,9 @@ describe('UnlockedPackageBuilder', () => {
     let builderOptions: BuilderOptions;
 
     beforeEach(() => {
+        // Mock process.chdir since test staging dirs don't exist on disk
+        vi.spyOn(process, 'chdir').mockImplementation(() => {});
+
         // Setup Logger
         mockLogger = {
             info: vi.fn(),
@@ -143,6 +146,8 @@ describe('UnlockedPackageBuilder', () => {
 
     afterEach(() => {
         vi.clearAllMocks();
+        // Reset the static chdir lock to prevent test isolation issues
+        (UnlockedPackageBuilder as any)._chdirLock = Promise.resolve();
     });
 
     it('should build package successfully and update package version id', async () => {

@@ -20,6 +20,12 @@ import SourceHashTask from './tasks/source-hash-task.js';
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Unlocked)
 export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEvents> implements Builder {
+  // Serialize buildPackage() calls across parallel builders because
+  // process.chdir() is a process-global mutation. Without this, two
+  // unlocked packages building at the same orchestration level will
+  // race on CWD, causing ENOENT when one builder's cleanup removes
+  // a staging directory that the other captured as originalCwd.
+  private static _chdirLock: Promise<void> = Promise.resolve();
   public postBuildTasks: BuildTask[] = [];
   public preBuildTasks: BuildTask[] = [];
   private devhubOrg?: Org;
@@ -79,12 +85,27 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
   }
 
   private async buildPackage(): Promise<void> {
+    // Acquire the static chdir lock so only one unlocked builder
+    // mutates process.cwd() at a time (see class-level comment).
+    let releaseLock!: () => void;
+    const previousLock = UnlockedPackageBuilder._chdirLock;
+    UnlockedPackageBuilder._chdirLock = new Promise(resolve => {
+      releaseLock = resolve;
+    });
+
+    await previousLock;
+
     // @salesforce/packaging resolves seedMetadata / unpackagedMetadata paths
     // relative to process.cwd(), NOT the SfProject root. When building from a
     // staging directory we must chdir so those relative paths resolve correctly.
     const originalCwd = process.cwd();
-    if (this.workingDirectory !== originalCwd) {
-      process.chdir(this.workingDirectory);
+    try {
+      if (this.workingDirectory !== originalCwd) {
+        process.chdir(this.workingDirectory);
+      }
+    } catch (error) {
+      releaseLock();
+      throw error;
     }
 
     const sfProject = await SfProject.resolve(this.workingDirectory);
@@ -235,6 +256,8 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       if (process.cwd() !== originalCwd) {
         process.chdir(originalCwd);
       }
+
+      releaseLock();
     }
   }
 
