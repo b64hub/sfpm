@@ -69,7 +69,7 @@ describe('ProjectJsonAssemblyStep', () => {
         };
     });
 
-    it('should inject version number and use relative path for unpackagedMetadata', async () => {
+    it('should inject version number and use CWD-relative path for unpackagedMetadata', async () => {
         (fs.pathExists as any).mockImplementation((p: string) => {
             if (p === path.join('/staging', 'unpackagedMetadata')) return Promise.resolve(true);
             return Promise.resolve(false);
@@ -80,6 +80,7 @@ describe('ProjectJsonAssemblyStep', () => {
 
         await step.execute(options, output);
 
+        const expectedRelPath = path.relative(process.cwd(), path.join('/staging', 'unpackagedMetadata'));
         expect(fs.writeJson).toHaveBeenCalledWith(
             path.join('/staging', 'sfdx-project.json'),
             expect.objectContaining({
@@ -88,7 +89,7 @@ describe('ProjectJsonAssemblyStep', () => {
                         package: 'core',
                         versionNumber: '1.2.3.4',
                         unpackagedMetadata: {
-                            path: 'unpackagedMetadata'
+                            path: expectedRelPath
                         }
                     })
                 ]

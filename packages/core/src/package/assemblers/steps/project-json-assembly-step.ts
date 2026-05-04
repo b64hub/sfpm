@@ -23,7 +23,8 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
  *
  * It also:
  * 1. Injects the provided version number.
- * 2. Rewrites supplemental metadata paths relative to the staging area.
+ * 2. Rewrites supplemental metadata paths relative to `process.cwd()` so that
+ *    `@salesforce/packaging` resolves them correctly without `process.chdir()`.
  * 3. Archives the original project manifest for reference.
  */
 export class ProjectJsonAssemblyStep implements AssemblyStep {
@@ -43,15 +44,20 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
 
       const pkg = packageDefinition.packageDirectories[0] as PackageDefinition;
 
-      // Rewrite supplemental metadata paths relative to sfdx-project.json (staging root)
+      // Rewrite supplemental metadata paths relative to process.cwd().
+      // @salesforce/packaging resolves these via path.join(process.cwd(), relativePath),
+      // so the paths must be relative from CWD — not from the staging directory.
+      // Using path.relative + path.join normalises the ".." segments correctly.
+      const cwd = process.cwd();
+
       const unpackagedMetadataDir = path.join(output.stagingDirectory, 'unpackagedMetadata');
       if (await fs.pathExists(unpackagedMetadataDir)) {
-        pkg.unpackagedMetadata = {path: 'unpackagedMetadata'};
+        pkg.unpackagedMetadata = {path: path.relative(cwd, unpackagedMetadataDir)};
       }
 
       const seedMetadataDir = path.join(output.stagingDirectory, 'seedMetadata');
       if (await fs.pathExists(seedMetadataDir)) {
-        pkg.seedMetadata = {path: 'seedMetadata'};
+        pkg.seedMetadata = {path: path.relative(cwd, seedMetadataDir)};
       }
 
       const projectJsonPath = path.join(output.stagingDirectory, 'sfdx-project.json');
