@@ -164,7 +164,7 @@ function buildPoolConfig(options: ProvisionPoolOptions, poolType: OrgTypes): Poo
   }
 
   return {
-    scratchOrg: {
+    scratch: {
       definitionFile: options.definitionFile,
       expiryDays: options.expiryDays,
     },

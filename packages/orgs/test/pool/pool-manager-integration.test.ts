@@ -36,10 +36,10 @@ function createMockProvider(): {[K in keyof OrgProvider]: ReturnType<typeof vi.f
 
 function createPoolConfig(overrides?: Partial<PoolConfig>): PoolConfig {
   return {
-    scratchOrg: {
+    scratch: {
       definitionFile: 'config/project-scratch-def.json',
       expiryDays: 7,
-      ...('scratchOrg' in (overrides ?? {}) ? (overrides as any).scratchOrg : {}),
+      ...('scratch' in (overrides ?? {}) ? (overrides as any).scratch : {}),
     },
     sizing: {
       batchSize: 2,

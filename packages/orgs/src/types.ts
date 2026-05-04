@@ -1,6 +1,6 @@
-import { SandboxDefaults } from "./org/sandbox/types.js";
-import { ScratchOrgDefaults } from "./org/scratch/types.js";
-import { PoolConfig } from "./pool/types.js";
+import {SandboxDefaults} from './org/sandbox/types.js';
+import {ScratchOrgDefaults} from './org/scratch/types.js';
+import {PoolConfig} from './pool/types.js';
 
 /**
  * Org-level configuration that plugs into `sfpm.config.ts`.
@@ -17,7 +17,7 @@ import { PoolConfig } from "./pool/types.js";
  * export default defineConfig({
  *   hooks: [],
  *   orgs: defineOrgConfig({
- *     scratchOrg: {
+ *     scratch: {
  *       definitionFile: 'config/project-scratch-def.json',
  *       expiryDays: 7,
  *     },
@@ -36,8 +36,8 @@ export interface OrgConfig {
   /** Pool configuration(s). A single pool or an array of named pools. */
   pool?: PoolConfig | PoolConfig[];
 
-  scratchOrg?: Partial<ScratchOrgDefaults>;
   sandbox?: Partial<SandboxDefaults>;
+  scratch?: Partial<ScratchOrgDefaults>;
 }
 
 /**
@@ -48,7 +48,7 @@ export interface OrgConfig {
  * import { defineOrgConfig } from '@b64hub/sfpm-orgs';
  *
  * const orgs = defineOrgConfig({
- *   scratchOrg: { definitionFile: 'config/project-scratch-def.json' },
+ *   scratch: { definitionFile: 'config/project-scratch-def.json' },
  *   pool: { tag: 'dev', sizing: { maxAllocation: 10 } },
  * });
  * ```

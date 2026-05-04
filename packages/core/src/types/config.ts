@@ -72,7 +72,7 @@ export interface IgnoreFilesConfig {
  *     profileHooks({ scope: 'source' }),
  *   ],
  *   orgs: defineOrgConfig({
- *     scratchOrg: { definitionFile: 'config/project-scratch-def.json' },
+ *     scratch: { definitionFile: 'config/project-scratch-def.json' },
  *   }),
  * });
  * ```

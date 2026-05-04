@@ -98,7 +98,7 @@ export interface PoolConfigBase {
  * const pool: ScratchOrgPoolConfig = {
  *   type: 'scratch',
  *   tag: 'dev-pool',
- *   scratchOrg: {
+ *   scratch: {
  *     definitionFile: 'config/project-scratch-def.json',
  *     expiryDays: 7,
  *   },
@@ -107,7 +107,7 @@ export interface PoolConfigBase {
  * ```
  */
 export interface ScratchOrgPoolConfig extends PoolConfigBase {
-  scratchOrg: ScratchOrgDefaults;
+  scratch: ScratchOrgDefaults;
   type: OrgTypes.Scratch;
 }
 

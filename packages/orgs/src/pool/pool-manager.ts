@@ -418,11 +418,11 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     return {
       alias,
-      definitionFile: config.scratchOrg.definitionFile,
-      expiryDays: config.scratchOrg.expiryDays,
-      noAncestors: config.scratchOrg.noAncestors,
-      retries: config.scratchOrg.maxRetries,
-      waitMinutes: config.scratchOrg.waitMinutes,
+      definitionFile: config.scratch.definitionFile,
+      expiryDays: config.scratch.expiryDays,
+      noAncestors: config.scratch.noAncestors,
+      retries: config.scratch.maxRetries,
+      waitMinutes: config.scratch.waitMinutes,
     };
   }
 
@@ -497,7 +497,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       const message = error instanceof Error ? error.message : String(error);
       const timedOut = message.includes('timed out');
       const waitMinutes = config.type === OrgTypes.Scratch
-        ? config.scratchOrg.waitMinutes
+        ? config.scratch.waitMinutes
         : config.sandbox.waitMinutes;
 
       this.emit('pool:org:failed', {

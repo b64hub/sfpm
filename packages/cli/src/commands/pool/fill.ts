@@ -120,7 +120,7 @@ export default class PoolFill extends SfpmCommand {
       };
     }
 
-    const scratchDefaults = orgConfig?.scratchOrg;
+    const scratchDefaults = orgConfig?.scratch;
     const definitionFile = (flags['definition-file'] as string | undefined) ?? scratchDefaults?.definitionFile;
 
     if (!definitionFile) {
@@ -128,7 +128,7 @@ export default class PoolFill extends SfpmCommand {
     }
 
     return {
-      scratchOrg: {
+      scratch: {
         definitionFile,
         expiryDays: (flags['expiry-days'] as number | undefined) ?? scratchDefaults?.expiryDays,
       },
