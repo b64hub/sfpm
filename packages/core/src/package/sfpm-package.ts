@@ -3,9 +3,12 @@ import fg from 'fast-glob';
 import {
   get, merge, omit, set,
 } from 'lodash-es';
+import fs from 'node:fs';
 import path from 'node:path';
 
-import ProjectConfig from '../project/project-config.js';
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+import type {WorkspacePackageJson} from '../types/workspace.js';
+
 import {
   MetadataFile,
   PackageType,
@@ -65,7 +68,7 @@ export default abstract class SfpmPackage {
   public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
   public projectDefinition?: ProjectDefinition;
   public projectDirectory: string;
-  public stagingDirectory: string | undefined;
+  public workingDirectory: string | undefined;
 
   constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadataBase>) {
     this.projectDirectory = projectDirectory;
@@ -93,7 +96,7 @@ export default abstract class SfpmPackage {
   }
 
   get commitId(): string | undefined {
-    return this._metadata.source?.commitSHA;
+    return this._metadata.source?.commit;
   }
 
   get dependencies(): undefined | {package: string; versionNumber?: string}[] {
@@ -110,6 +113,11 @@ export default abstract class SfpmPackage {
 
   set name(val: string) {
     this._metadata.packageName = val;
+  }
+
+  /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package"). Undefined in legacy mode. */
+  get npmName(): string | undefined {
+    return this._packageDefinition?.npmName;
   }
 
   get packageDefinition(): PackageDefinition | undefined {
@@ -129,11 +137,11 @@ export default abstract class SfpmPackage {
   }
 
   get packageDirectory(): string | undefined {
-    if (!this.packageDefinition?.path || !this.stagingDirectory) {
+    if (!this.packageDefinition?.path || !this.workingDirectory) {
       return undefined;
     }
 
-    return path.join(this.stagingDirectory, this.packageDefinition?.path);
+    return path.join(this.workingDirectory, this.packageDefinition?.path);
   }
 
   get packageName(): string {
@@ -434,8 +442,8 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 
   public getComponentSet(): ComponentSet {
-    if (!this.packageDirectory || !this.stagingDirectory) {
-      throw new Error('Package must be staged for build and have a defined path');
+    if (!this.packageDirectory || !this.workingDirectory) {
+      throw new Error('Package must have a working directory and a defined path');
     }
 
     if (!this._componentSet) {
@@ -588,7 +596,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     return {
       ...this._metadata.content,
       metadataCount: components.toArray().length,
-      payload: await cs.getObject(),
       testCoverage: this.testCoverage,
     };
   }
@@ -648,8 +655,8 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
       throw new Error('Data package must have a path defined in packageDefinition');
     }
 
-    if (this.stagingDirectory) {
-      return path.join(this.stagingDirectory, packagePath);
+    if (this.workingDirectory) {
+      return path.join(this.workingDirectory, packagePath);
     }
 
     return path.join(this.projectDirectory, packagePath);
@@ -771,21 +778,21 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
 export class SfpmSourcePackage extends SfpmMetadataPackage {}
 
 /**
- * Factory for creating fully-configured SfpmPackage instances from ProjectConfig.
- * Bridges ProjectConfig (sfdx-project.json abstraction) with package construction.
+ * Factory for creating fully-configured SfpmPackage instances from a ProjectDefinitionProvider.
+ * Bridges the provider interface with package construction.
  */
 export class PackageFactory {
-  private projectConfig: ProjectConfig;
+  private provider: ProjectDefinitionProvider;
 
-  constructor(projectConfig: ProjectConfig) {
-    this.projectConfig = projectConfig;
+  constructor(provider: ProjectDefinitionProvider) {
+    this.provider = provider;
   }
 
   /**
    * Create packages for all package directories in the project
    */
   createAll(): SfpmPackage[] {
-    const packageNames = this.projectConfig.getAllPackageNames();
+    const packageNames = this.provider.getAllPackageNames();
     return packageNames.map(name => this.createFromName(name));
   }
 
@@ -798,7 +805,7 @@ export class PackageFactory {
    */
   createFromName(packageName: string): SfpmPackage {
     // First, try to find in packageDirectories (local packages)
-    const allPackages = this.projectConfig.getAllPackageDirectories();
+    const allPackages = this.provider.getAllPackageDefinitions();
     const packageDefinition = allPackages.find(p => p.package === packageName);
 
     if (!packageDefinition) {
@@ -812,18 +819,24 @@ export class PackageFactory {
     }
 
     const packageType = (packageDefinition.type?.toLowerCase() || 'unlocked') as PackageType;
-    const {projectDirectory} = this.projectConfig;
+    const projectDirectory = this.provider.projectDir;
 
     const sfpmPackage = this.createPackageInstance(packageType, packageName, projectDirectory);
+    sfpmPackage.type = packageType;
 
     // Populate from project config
-    sfpmPackage.projectDefinition = this.projectConfig.getProjectDefinition();
+    sfpmPackage.projectDefinition = this.provider.getProjectDefinition();
     sfpmPackage.packageDefinition = packageDefinition;
     sfpmPackage.version = packageDefinition.versionNumber;
 
+    // In workspace mode, read packageOptions directly from the workspace package.json
+    // rather than from sfdx-project.json (which no longer carries them)
+    // TODO: Refactor to separate workspace vs legacy provider implementations so this special handling isn't needed
+    this.overlayWorkspacePackageOptions(packageDefinition, sfpmPackage);
+
     // Resolve package ID from aliases for unlocked packages
     if (packageType === PackageType.Unlocked && sfpmPackage instanceof SfpmUnlockedPackage) {
-      const projectDef = this.projectConfig.getProjectDefinition();
+      const projectDef = this.provider.getProjectDefinition();
       const packageId = projectDef.packageAliases?.[packageName];
       if (packageId) {
         sfpmPackage.packageId = packageId;
@@ -837,7 +850,7 @@ export class PackageFactory {
    * Create a package by path, resolving which package it belongs to
    */
   createFromPath(packagePath: string): SfpmPackage {
-    const packageDefinition = this.projectConfig.getPackageDefinitionByPath(packagePath);
+    const packageDefinition = this.provider.getPackageDefinitionByPath(packagePath);
     return this.createFromName(packageDefinition.package);
   }
 
@@ -846,7 +859,7 @@ export class PackageFactory {
    * Returns undefined if the package is not found as a managed dependency.
    */
   createManagedRef(packageName: string): ManagedPackageRef | undefined {
-    const managedPackages = this.projectConfig.getManagedPackages();
+    const managedPackages = this.provider.getManagedPackages();
     const managedDef = managedPackages.find(m => m.package === packageName);
 
     if (!managedDef) {
@@ -857,10 +870,10 @@ export class PackageFactory {
   }
 
   /**
-   * Get the underlying ProjectConfig
+   * Get the underlying ProjectDefinitionProvider
    */
-  getProjectConfig(): ProjectConfig {
-    return this.projectConfig;
+  getProvider(): ProjectDefinitionProvider {
+    return this.provider;
   }
 
   /**
@@ -868,12 +881,12 @@ export class PackageFactory {
    * rather than a local package directory.
    */
   isManagedPackage(packageName: string): boolean {
-    const allPackages = this.projectConfig.getAllPackageDirectories();
+    const allPackages = this.provider.getAllPackageDefinitions();
     if (allPackages.some(p => p.package === packageName)) {
       return false;
     }
 
-    const managedPackages = this.projectConfig.getManagedPackages();
+    const managedPackages = this.provider.getManagedPackages();
     return managedPackages.some(m => m.package === packageName);
   }
 
@@ -897,6 +910,36 @@ export class PackageFactory {
     default: {
       throw new Error(`Unsupported package type: ${packageType}`);
     }
+    }
+  }
+
+  /**
+   * Detect workspace package.json and overlay packageOptions onto the PackageDefinition.
+   *
+   * In workspace mode, packageOptions lives in the package-scoped package.json
+   * (not in sfdx-project.json). This method finds the workspace package.json
+   * by walking up from the SF source path and merges packageOptions onto the
+   * existing PackageDefinition so all downstream consumers work unchanged.
+   */
+  private overlayWorkspacePackageOptions(packageDefinition: PackageDefinition, sfpmPackage: SfpmPackage): void {
+    const {projectDir} = this.provider;
+    const sourcePath = packageDefinition.path;
+    const parts = sourcePath.split('/');
+
+    // Walk up from the source path to find a package.json with sfpm config
+    for (let i = parts.length; i > 0; i--) {
+      const candidatePath = path.join(projectDir, ...parts.slice(0, i), 'package.json');
+      try {
+        if (fs.existsSync(candidatePath)) {
+          const pkgJson: WorkspacePackageJson = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
+          if (pkgJson.sfpm?.packageType && pkgJson.sfpm.packageOptions) {
+            packageDefinition.packageOptions = pkgJson.sfpm.packageOptions;
+            return;
+          }
+        }
+      } catch {
+        // Detection failed — continue to next candidate
+      }
     }
   }
 }

@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs-extra';
 import { ArtifactResolver } from '../../src/artifacts/artifact-resolver.js';
 import { ArtifactRepository } from '../../src/artifacts/artifact-repository.js';
-import { NpmRegistryClient } from '../../src/artifacts/registry/index.js';
 import { ArtifactManifest } from '../../src/types/artifact.js';
 import { ArtifactError } from '../../src/types/errors.js';
 import { execSync } from 'child_process';
@@ -102,15 +101,11 @@ describe('ArtifactResolver', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        // Clear environment variable before each test
-        delete process.env.SFPM_NPM_REGISTRY;
         resolver = ArtifactResolver.create(projectDirectory, mockLogger);
     });
 
     afterEach(() => {
         vi.restoreAllMocks();
-        // Clean up environment variable
-        delete process.env.SFPM_NPM_REGISTRY;
     });
 
     describe('constructor and create()', () => {
@@ -118,63 +113,28 @@ describe('ArtifactResolver', () => {
             expect(resolver).toBeDefined();
         });
 
-        it('should use default registry URL', () => {
+        it('should default to pnpm registry (falls back to npmjs.org when pnpm CLI unavailable)', () => {
+            // child_process is mocked, so execSync returns undefined → PnpmRegistryClient
+            // catches the error and falls back to the default npm registry
             expect(resolver.getRegistryUrl()).toBe('https://registry.npmjs.org');
         });
 
-        it('should use custom registry from options', () => {
+        it('should accept an injected registry client via create()', () => {
+            const mockClient = createMockRegistryClient();
             const customResolver = ArtifactResolver.create(projectDirectory, mockLogger, {
-                registry: 'https://custom.registry.com/',
+                registryClient: mockClient,
             });
-            expect(customResolver.getRegistryUrl()).toBe('https://custom.registry.com');
-        });
-
-        it('should use registry from environment variable', () => {
-            process.env.SFPM_NPM_REGISTRY = 'https://env.registry.com';
-            const envResolver = ArtifactResolver.create(projectDirectory, mockLogger);
-            expect(envResolver.getRegistryUrl()).toBe('https://env.registry.com');
-        });
-
-        it('should prefer options over environment variable', () => {
-            process.env.SFPM_NPM_REGISTRY = 'https://env.registry.com';
-            const configResolver = ArtifactResolver.create(projectDirectory, mockLogger, {
-                registry: 'https://config.registry.com',
-            });
-            expect(configResolver.getRegistryUrl()).toBe('https://config.registry.com');
-        });
-
-        it.skip('should read registry from project .npmrc', () => {
-            // Note: This test is skipped because npm-config-reader uses @pnpm/npm-conf
-            // which has its own file reading logic that bypasses our fs mocks.
-            // The functionality is tested via integration tests.
-            vi.mocked(fs.existsSync).mockImplementation((p) => {
-                return p === path.join(projectDirectory, '.npmrc');
-            });
-            vi.mocked(fs.readFileSync).mockReturnValue('registry=https://npmrc.registry.com\n');
-            
-            const npmrcResolver = ArtifactResolver.create(projectDirectory, mockLogger);
-            expect(npmrcResolver.getRegistryUrl()).toBe('https://npmrc.registry.com');
-        });
-
-        it('should skip .npmrc when useNpmrc is false', () => {
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readFileSync).mockReturnValue('registry=https://npmrc.registry.com\n');
-            
-            const noNpmrcResolver = ArtifactResolver.create(projectDirectory, mockLogger, {
-                useNpmrc: false,
-            });
-            expect(noNpmrcResolver.getRegistryUrl()).toBe('https://registry.npmjs.org');
+            expect(customResolver.getRegistryUrl()).toBe('https://registry.npmjs.org');
+            expect(customResolver.hasRegistryClient()).toBe(true);
         });
 
         it('should allow direct constructor with injected dependencies', () => {
             const repository = new ArtifactRepository(projectDirectory, mockLogger);
-            const registryClient = new NpmRegistryClient({
-                registryUrl: 'https://injected.registry.com',
-                logger: mockLogger,
-            });
-            
-            const injectedResolver = new ArtifactResolver(repository, registryClient, mockLogger);
-            
+            const mockClient = createMockRegistryClient();
+            (mockClient.getRegistryUrl as ReturnType<typeof vi.fn>).mockReturnValue('https://injected.registry.com');
+
+            const injectedResolver = new ArtifactResolver(repository, mockClient, mockLogger);
+
             expect(injectedResolver.getRegistryUrl()).toBe('https://injected.registry.com');
             expect(injectedResolver.getRepository()).toBe(repository);
             expect(injectedResolver.hasRegistryClient()).toBe(true);
@@ -182,7 +142,7 @@ describe('ArtifactResolver', () => {
 
         it('should support local-only mode without registry client', () => {
             const localResolver = createLocalOnlyResolver();
-            
+
             expect(localResolver.getRegistryUrl()).toBeUndefined();
             expect(localResolver.hasRegistryClient()).toBe(false);
         });
@@ -191,7 +151,7 @@ describe('ArtifactResolver', () => {
             const localResolver = ArtifactResolver.create(projectDirectory, mockLogger, {
                 localOnly: true,
             });
-            
+
             expect(localResolver.getRegistryUrl()).toBeUndefined();
             expect(localResolver.hasRegistryClient()).toBe(false);
         });

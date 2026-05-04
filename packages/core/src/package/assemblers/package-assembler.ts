@@ -2,7 +2,8 @@ import * as fs from 'fs-extra';
 import crypto from 'node:crypto';
 import path from 'node:path';
 
-import ProjectConfig from '../../project/project-config.js';
+import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
+
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {DestructiveManifestStep} from './steps/destructive-manifest-step.js';
@@ -14,7 +15,6 @@ import {SeedMetadataStep} from './steps/seed-metadata-step.js';
 import {SourceCopyStep} from './steps/source-copy-step.js';
 import {UnpackagedMetadataStep} from './steps/unpackaged-metadata-step.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from './types.js';
-// import { MDAPIConversionStep } from './steps/mdapi-conversion-step.js';
 
 const DOT_FOLDER = '.sfpm';
 /**
@@ -48,7 +48,7 @@ export default class PackageAssembler {
 
   constructor(
     private packageName: string,
-    private projectConfig: ProjectConfig,
+    private provider: ProjectDefinitionProvider,
     private options: AssemblyOptions = {},
     private logger?: Logger,
   ) {
@@ -78,7 +78,7 @@ export default class PackageAssembler {
         stagingDirectory: this.stagingDirectory,
       };
 
-      const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
+      const packageDefinition = this.provider.getPackageDefinition(this.packageName);
       const packageType = packageDefinition.type?.toLowerCase();
 
       const steps = packageType === PackageType.Data
@@ -175,9 +175,9 @@ export default class PackageAssembler {
    */
   private buildDataAssemblySteps(): AssemblyStep[] {
     return [
-      new SourceCopyStep(this.packageName, this.projectConfig, this.logger),
-      new ScriptAssemblyStep(this.packageName, this.projectConfig, this.logger),
-      new ProjectJsonAssemblyStep(this.packageName, this.projectConfig, this.logger),
+      new SourceCopyStep(this.packageName, this.provider, this.logger),
+      new ScriptAssemblyStep(this.packageName, this.provider, this.logger),
+      new ProjectJsonAssemblyStep(this.packageName, this.provider, this.logger),
     ];
   }
 
@@ -187,20 +187,20 @@ export default class PackageAssembler {
    */
   private buildMetadataAssemblySteps(): AssemblyStep[] {
     const steps: AssemblyStep[] = [
-      new SourceCopyStep(this.packageName, this.projectConfig, this.logger),
-      new OrgDefinitionStep(this.packageName, this.projectConfig, this.logger),
-      new ScriptAssemblyStep(this.packageName, this.projectConfig, this.logger),
-      new UnpackagedMetadataStep(this.packageName, this.projectConfig, this.logger),
-      new SeedMetadataStep(this.packageName, this.projectConfig, this.logger),
-      new ForceIgnoreStep(this.packageName, this.projectConfig, this.logger),
+      new SourceCopyStep(this.packageName, this.provider, this.logger),
+      new OrgDefinitionStep(this.packageName, this.provider, this.logger),
+      new ScriptAssemblyStep(this.packageName, this.provider, this.logger),
+      new UnpackagedMetadataStep(this.packageName, this.provider, this.logger),
+      new SeedMetadataStep(this.packageName, this.provider, this.logger),
+      new ForceIgnoreStep(this.packageName, this.provider, this.logger),
     ];
 
     if (this.options.destructiveManifestPath) {
-      steps.push(new DestructiveManifestStep(this.packageName, this.projectConfig, this.logger));
+      steps.push(new DestructiveManifestStep(this.packageName, this.provider, this.logger));
     }
 
     // always final
-    steps.push(new ProjectJsonAssemblyStep(this.packageName, this.projectConfig, this.logger));
+    steps.push(new ProjectJsonAssemblyStep(this.packageName, this.provider, this.logger));
 
     return steps;
   }
@@ -237,11 +237,14 @@ export default class PackageAssembler {
   /**
    * @description Resolves the path for the temporary assembly area.
    * The path is constructed as: `.sfpm/tmp/builds/[timestamp]-[packageName]-[hash]`
+   * Uses the project root (where sfdx-project.json lives) rather than cwd so that
+   * the staging area is never created inside a package's own source directory
+   * (which would cause SourceCopyStep to fail with a self-referencing copy).
    *
    * @returns {string} The absolute path to the staging directory.
    */
   private initializeStagingArea(): string {
     const buildName = this.createBuildName();
-    return path.join(process.cwd(), DOT_FOLDER, 'tmp', 'builds', buildName, 'package');
+    return path.join(this.provider.projectDir, DOT_FOLDER, 'tmp', 'builds', buildName, 'package');
   }
 }

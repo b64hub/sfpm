@@ -1,34 +1,43 @@
 import {
-  ProjectJson, ProjectJsonSchema, SfProject, SfProjectJson,
+  ProjectJsonSchema, SfProject,
 } from '@salesforce/core';
+
+import type {ClassifiedDependencies, PackageDependency} from './providers/project-definition-provider.js';
 
 import {
   Logger,
 } from '../types/logger.js'
 import {PackageType} from '../types/package.js';
 import {
-  ManagedPackageDefinition, PackageDefinition, ProjectDefinition, ProjectDefinitionSchema, SUBSCRIBER_PKG_VERSION_ID_PREFIX,
+  ManagedPackageDefinition, PackageDefinition, ProjectDefinition, ProjectDefinitionSchema,
 } from '../types/project.js';
+import {
+  classifyDependencies,
+  getAllPackageDefinitions,
+  getAllPackageNames,
+  getDependencies,
+  getManagedPackages,
+  getPackageDefinition,
+  getPackageId,
+  getPackageType,
+} from './providers/project-definition-provider.js';
 
 /**
- * Dependency from sfdx-project.json packageDirectories[].dependencies
+ * @deprecated Import `ClassifiedDependencies` from `project-definition-provider.js` instead.
  */
-type PackageDependency = {package: string; versionNumber?: string};
+export type {ClassifiedDependencies} from './providers/project-definition-provider.js';
 
 /**
- * Classified dependencies for a package as declared in sfdx-project.json.
- * - `versioned`: internal SFPM packages → semver range derived from versionNumber
- * - `managed`: pinned managed packages → subscriber packageVersionId (04t...)
+ * Configuration manager for sfdx-project.json.
  *
- * Keys are raw sfdx-project.json package names (no npm scope).
- */
-export interface ClassifiedDependencies {
-  managed: Record<string, string>;
-  versioned: Record<string, string>;
-}
-
-/**
- * Configuration manager for sfdx-project.json
+ * Query methods now delegate to shared utility functions in `project-definition-provider.ts`
+ * which are the same functions used by both providers. For new code, prefer
+ * accessing queries via `ProjectService` (which delegates to the provider).
+ *
+ * Unique responsibilities that remain here:
+ * - `save()` — writes back to sfdx-project.json via `@salesforce/core`
+ * - `getPackageDefinitionByPath()` — uses `SfProject.getPackage()`
+ * - `getProjectDefinition()` — Zod validation on first access
  */
 export default class ProjectConfig {
   public logger?: Logger;
@@ -53,124 +62,37 @@ export default class ProjectConfig {
     return this.getProjectDefinition().sourceApiVersion;
   }
 
-  /**
-   * Classifies a package's dependencies into versioned (internal) and managed (pinned)
-   * using raw sfdx-project.json names — no npm scope transformation.
-   *
-   * Versioned dependencies have a `versionNumber` and are mapped to a semver range.
-   * Managed dependencies have no `versionNumber` — they reference aliases in
-   * `packageAliases` that resolve to a subscriber packageVersionId (04t...).
-   *
-   * @example
-   * ```typescript
-   * const deps = projectConfig.classifyDependencies('my-package');
-   * // deps.versioned  → { "core-lib": "^1.2.0" }
-   * // deps.managed    → { "Nebula Logger@4.16.0": "04taA000005CtsHQAS" }
-   * ```
-   */
   public classifyDependencies(packageName: string): ClassifiedDependencies {
-    const dependencies = this.getDependencies(packageName);
-    const aliases = this.getProjectDefinition().packageAliases ?? {};
-
-    const versioned: Record<string, string> = {};
-    const managed: Record<string, string> = {};
-
-    for (const dep of dependencies) {
-      if (dep.versionNumber) {
-        // Internal / versioned dependency → semver range from SF version number
-        const parts = dep.versionNumber.split('.');
-        const baseVersion = parts.length >= 3 ? parts.slice(0, 3).join('.') : dep.versionNumber;
-        versioned[dep.package] = `^${baseVersion}`;
-      } else {
-        // Managed / pinned dependency → alias resolved to 04t via packageAliases
-        const packageVersionId = aliases[dep.package];
-        if (packageVersionId) {
-          managed[dep.package] = packageVersionId;
-        }
-      }
-    }
-
-    return {managed, versioned};
+    return classifyDependencies(this.getProjectDefinition(), packageName);
   }
 
   /**
    * Returns all package directories from the project.
-   * Uses raw project JSON to include all fields including 'package'.
    */
   public getAllPackageDirectories(): PackageDefinition[] {
-    const projectDef = this.getProjectDefinition();
-    return projectDef.packageDirectories as PackageDefinition[];
+    return getAllPackageDefinitions(this.getProjectDefinition());
   }
 
   /**
    * Returns all unique package names from the 'package' field.
-   * Filters out entries without a package name.
    */
   public getAllPackageNames(): string[] {
-    const allDirs = this.getAllPackageDirectories();
-    return allDirs
-    .filter(dir => 'package' in dir && dir.package)
-    .map(dir => dir.package as string);
+    return getAllPackageNames(this.getProjectDefinition());
   }
 
   /**
-   * Returns the raw dependencies for a package from sfdx-project.json.
+   * Returns the raw dependencies for a package.
    */
   public getDependencies(packageName: string): PackageDependency[] {
-    return this.getPackageDefinition(packageName).dependencies ?? [];
+    return getDependencies(this.getProjectDefinition(), packageName);
   }
 
-  /**
-   * Returns all managed (external) package dependencies found across the project.
-   *
-   * A managed dependency is one that:
-   * - Appears in a package's `dependencies` array
-   * - Has NO entry in `packageDirectories` (no local source)
-   * - Resolves via `packageAliases` to a subscriber package version ID (04t prefix)
-   *
-   * @returns Array of ManagedPackageDefinition, deduplicated by package name
-   */
   public getManagedPackages(): ManagedPackageDefinition[] {
-    const projectDef = this.getProjectDefinition();
-    const packageAliases: Record<string, string> = (projectDef.packageAliases as Record<string, string>) ?? {};
-    const localPackageNames = new Set(this.getAllPackageNames());
-    const managed = new Map<string, ManagedPackageDefinition>();
-
-    for (const pkgDir of projectDef.packageDirectories) {
-      const pkg = pkgDir as PackageDefinition;
-      if (!pkg.dependencies) continue;
-
-      for (const dep of pkg.dependencies) {
-        if (localPackageNames.has(dep.package)) continue;
-        if (managed.has(dep.package)) continue;
-
-        const aliasValue = packageAliases[dep.package];
-        if (aliasValue?.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
-          managed.set(dep.package, {
-            package: dep.package,
-            packageVersionId: aliasValue,
-          });
-        }
-      }
-    }
-
-    return [...managed.values()];
+    return getManagedPackages(this.getProjectDefinition());
   }
 
-  /**
-   * Finds a package definition by name.
-   * Searches through packageDirectories for a matching 'package' field.
-   */
   public getPackageDefinition(packageName: string): PackageDefinition {
-    // Get all package directories and search for matching package name
-    const allPackages = this.getAllPackageDirectories();
-    const pkg = allPackages.find(p => p.package === packageName);
-
-    if (!pkg) {
-      throw new Error(`Package ${packageName} not found in project definition`);
-    }
-
-    return pkg;
+    return getPackageDefinition(this.getProjectDefinition(), packageName);
   }
 
   /**
@@ -188,24 +110,15 @@ export default class ProjectConfig {
   }
 
   public getPackageId(packageAlias: string): string | undefined {
-    const aliases = this.project.getSfProjectJson().getContents().packageAliases;
-    return aliases?.[packageAlias];
+    return getPackageId(this.getProjectDefinition(), packageAlias);
   }
 
-  /**
-   * Helper to get package type
-   */
   public getPackageType(packageName: string): PackageType {
-    const pkg = this.getPackageDefinition(packageName);
-    if (pkg.type) {
-      return pkg.type as PackageType;
-    }
-
-    return PackageType.Unlocked;
+    return getPackageType(this.getProjectDefinition(), packageName);
   }
 
   // =========================================================================
-  // Managed Packages
+  // Project definition
   // =========================================================================
 
   /**
@@ -218,28 +131,16 @@ export default class ProjectConfig {
   }
 
   // =========================================================================
-  // Dependency Resolution
+  // Deprecated
   // =========================================================================
 
   /**
-   * Returns a deep copy of the project definition, pruned to contain only the specified package
-   * directory. This is useful for creating artifact-specific manifests (sfdx-project.json)
-   * where only the metadata related to one package should be visible.
-   *
-   * @param packageName The name of the package to keep in the definition.
-   * @returns A new ProjectDefinition containing only the requested package.
-   * @throws Error if the package name is not found in the project.
-   *
-   * @example
-   * ```typescript
-   * const pruned = projectConfig.getPrunedDefinition('core-library');
-   * console.log(pruned.packageDirectories.length); // 1
-   * ```
+   * @deprecated Use `ProjectService.resolveForPackage()` instead.
    */
-  // eslint-disable-next-line unicorn/no-object-as-default-parameter -- we want to allow callers to omit pruneOptions and get default pruning behavior
+  // eslint-disable-next-line unicorn/no-object-as-default-parameter
   public getPrunedDefinition(packageName: string, pruneOptions: {isOrgDependent: boolean; removeCustomProperties: boolean,} = {isOrgDependent: false, removeCustomProperties: true}): ProjectDefinition {
     const definition = this.getProjectDefinition();
-    // eslint-disable-next-line n/no-unsupported-features/node-builtins -- structuredClone is available in Node 17+ and provides a convenient way to deep copy the project definition without mutating the original
+
     const pruned = structuredClone(definition) as ProjectDefinition;
 
     const filteredPackages = pruned.packageDirectories.filter((pkg): pkg is PackageDefinition => 'package' in pkg && pkg.package === packageName);
@@ -248,18 +149,20 @@ export default class ProjectConfig {
       throw new Error(`Package ${packageName} not found in project definition`);
     }
 
-    pruned.packageDirectories = pruneOptions.removeCustomProperties ? [this.pruneForSalesforce(filteredPackages[0], pruneOptions.isOrgDependent)] : filteredPackages;
+    const prunedPkg = pruneOptions.removeCustomProperties ? this.pruneForSalesforce(filteredPackages[0], pruneOptions.isOrgDependent) : filteredPackages[0];
+
+    // Ensure the sole remaining package is marked as the default — Salesforce CLI
+    // requires exactly one default directory when only one entry exists.
+    prunedPkg.default = true;
+    pruned.packageDirectories = [prunedPkg];
 
     return pruned;
   }
 
   // =========================================================================
-  // Project Definition Pruning
+  // Write operations (SfProject-specific)
   // =========================================================================
 
-  /**
-   * Saves the project definition back to the file
-   */
   /**
    * Saves the project definition back to the file.
    * Note: After saving, validation state is reset since the file has changed.
@@ -279,10 +182,12 @@ export default class ProjectConfig {
     }
 
     await projectJson.write();
-
-    // Reset validation flag since file has changed
     this.hasValidated = false;
   }
+
+  // =========================================================================
+  // Private
+  // =========================================================================
 
   /**
    * Prunes a package definition for Salesforce CLI compatibility
@@ -303,7 +208,6 @@ export default class ProjectConfig {
 
   /**
    * Validates custom SFPM properties (runs once, logs warnings only).
-   * This is called automatically by getProjectDefinition().
    */
   private validateCustomProperties(): void {
     if (this.hasValidated) return;

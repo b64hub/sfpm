@@ -5,6 +5,7 @@ import {readdir} from 'node:fs/promises';
 import {join} from 'node:path';
 
 import type {
+  ComponentMap,
   OrgMetadataProvider,
   Profile,
   ProfileHooksOptions,
@@ -66,17 +67,19 @@ export class ProfileCleaner {
    * 4. Unassigned user permission stripping
    *
    * @param profile - The profile to clean
-   * @param packageMetadata - Known component names in the package
-   * @param orgResolver - Optional org metadata provider for org-aware scoping
+   * @param packageComponents - Package components grouped by profile section
+   * @param orgComponents - Pre-resolved org components grouped by profile section.
+   *   When provided, these are merged with package components before scoping.
+   *   Use {@link resolveOrgComponents} to pre-fetch from an {@link OrgMetadataProvider}.
    * @returns The cleaned profile (same reference, mutated)
    */
   async cleanProfile(
     profile: Profile,
-    packageMetadata?: Set<string>,
-    orgResolver?: OrgMetadataProvider,
+    packageComponents?: ComponentMap,
+    orgComponents?: ComponentMap,
   ): Promise<Profile> {
-    if (this.options.scope !== 'none' && packageMetadata && packageMetadata.size > 0) {
-      await this.scopeSections(profile, packageMetadata, orgResolver);
+    if (this.options.scope !== 'none' && packageComponents && packageComponents.size > 0) {
+      this.scopeSections(profile, packageComponents, orgComponents);
     }
 
     if (this.options.removeLoginHours) {
@@ -101,18 +104,17 @@ export class ProfileCleaner {
    * stripping rules, then writes the cleaned XML back to disk.
    *
    * @param profilesDirectory - Absolute path to the profiles directory
-   * @param packageMetadata - Set of fully-qualified metadata component names
-   *   present in the package (e.g., `"Account"`, `"MyApp__c"`, `"Account.MyField__c"`).
+   * @param packageComponents - Package components grouped by profile section.
    *   When provided and `scope` is not `'none'`, profile sections referencing
-   *   components not in this set are removed.
+   *   components not in the matching section set are removed.
    * @param orgResolver - Optional org metadata provider. When provided (and
    *   `scope` is `'org'`), components found in the target org are also
-   *   preserved during scoping.
+   *   preserved during scoping. Queried once upfront and shared across all profiles.
    * @returns Array of file paths that were cleaned
    */
   async cleanProfiles(
     profilesDirectory: string,
-    packageMetadata?: Set<string>,
+    packageComponents?: ComponentMap,
     orgResolver?: OrgMetadataProvider,
   ): Promise<string[]> {
     if (!existsSync(profilesDirectory)) {
@@ -129,11 +131,16 @@ export class ProfileCleaner {
 
     this.logger?.debug(`Found ${profileFiles.length} profile(s) to clean`);
 
+    // Resolve org components once upfront, shared across all profiles
+    const orgComponents = orgResolver
+      ? await this.resolveOrgComponents(orgResolver)
+      : undefined;
+
     const results = await Promise.all(profileFiles.map(async file => {
       const filePath = join(profilesDirectory, file);
       try {
         const profile = await readProfileXml(filePath);
-        const modified = await this.cleanProfile(profile, packageMetadata, orgResolver);
+        const modified = await this.cleanProfile(profile, packageComponents, orgComponents);
         await writeProfileXml(filePath, modified);
         this.logger?.debug(`Cleaned profile: ${file}`);
         return filePath;
@@ -152,82 +159,102 @@ export class ProfileCleaner {
   // ==========================================================================
 
   /**
-   * Filter items in a single profile section, keeping only those whose
-   * referenced component exists in the known set.
+   * Resolve org components for all profile sections in parallel.
+   *
+   * Call once and pass the result to {@link cleanProfile} to avoid
+   * repeated org queries when cleaning multiple profiles.
    */
-  private filterSectionItems(
-    section: string,
-    items: Array<Record<string, unknown>>,
-    nameField: string,
-    context: {knownComponents: Set<string>; orgComponentsMap: Map<string, Set<string>>},
-  ): Array<Record<string, unknown>> {
-    return items.filter(item => {
-      const name = item[nameField] as string | undefined;
-      if (!name) return true;
-
-      if (section === 'fieldPermissions') {
-        return this.isFieldKnown(name, context.knownComponents);
-      }
-
-      if (section === 'layoutAssignments') {
-        return this.isLayoutKnown(
-          item as {layout?: string; recordType?: string},
-          context.knownComponents,
-          context.orgComponentsMap,
-        );
-      }
-
-      return context.knownComponents.has(name);
-    });
-  }
-
-  /**
-   * Check whether a field permission's component is known (by full name or parent object).
-   */
-  private isFieldKnown(name: string, knownComponents: Set<string>): boolean {
-    const parent = name.split('.')[0];
-    return knownComponents.has(name) || knownComponents.has(parent);
-  }
-
-  /**
-   * Check whether a layout assignment is known (layout + optional recordType).
-   */
-  private isLayoutKnown(
-    item: {layout?: string; recordType?: string},
-    knownComponents: Set<string>,
-    orgComponentsMap: Map<string, Set<string>>,
-  ): boolean {
-    if (!knownComponents.has(item.layout ?? '')) return false;
-    if (!item.recordType) return true;
-    if (knownComponents.has(item.recordType)) return true;
-
-    const orgRecordTypes = orgComponentsMap.get('recordTypeVisibilities');
-    return orgRecordTypes?.has(item.recordType) ?? false;
-  }
-
-  /**
-   * Merge source metadata with org components for a given section.
-   */
-  private mergeWithOrgComponents(
-    metadata: Set<string>,
-    orgComponents?: Set<string>,
-  ): Set<string> {
-    if (!orgComponents || orgComponents.size === 0) return metadata;
-    return new Set([...metadata, ...orgComponents]);
-  }
-
-  /**
-   * Pre-fetch org components for all sections in parallel.
-   */
-  private async prefetchOrgComponents(
-    resolver: OrgMetadataProvider,
-    sections: string[],
-  ): Promise<Map<string, Set<string>>> {
+  async resolveOrgComponents(resolver: OrgMetadataProvider): Promise<ComponentMap> {
+    const sections = Object.keys(PROFILE_SECTION_NAME_FIELD);
     const entries = await Promise.all(sections.map(async section => {
       const components = await resolver.getOrgComponents(section);
       return [section, components] as const;
     }));
     return new Map(entries);
+  }
+
+  /**
+   * Filter items in a single profile section, keeping only those whose
+   * referenced component exists in the known set for that section.
+   */
+  private filterSectionItems(
+    section: string,
+    items: Array<Record<string, unknown>>,
+    nameField: string,
+    knownComponents: ComponentMap,
+  ): Array<Record<string, unknown>> {
+    const sectionComponents = knownComponents.get(section) ?? new Set<string>();
+
+    return items.filter(item => {
+      const name = item[nameField] as string | undefined;
+      if (!name) return true;
+
+      if (section === 'fieldPermissions') {
+        return this.isFieldKnown(name, sectionComponents);
+      }
+
+      if (section === 'layoutAssignments') {
+        return this.isLayoutKnown(
+          item as {layout?: string; recordType?: string},
+          sectionComponents,
+          knownComponents.get('recordTypeVisibilities'),
+        );
+      }
+
+      return sectionComponents.has(name);
+    });
+  }
+
+  /**
+   * Check whether a field permission's component is known.
+   *
+   * A field is kept only if the full qualified name (e.g. `Account.CustomField__c`)
+   * exists in the field set. We intentionally do NOT fall back to checking
+   * the parent object — a deleted field whose parent object still exists
+   * would cause deployment failures.
+   */
+  private isFieldKnown(name: string, fieldComponents: Set<string>): boolean {
+    return fieldComponents.has(name);
+  }
+
+  /**
+   * Check whether a layout assignment is known.
+   *
+   * The layout name must exist in the layout set. If a recordType is specified,
+   * it must exist in either the layout set or the recordType set.
+   */
+  private isLayoutKnown(
+    item: {layout?: string; recordType?: string},
+    layoutComponents: Set<string>,
+    recordTypeComponents?: Set<string>,
+  ): boolean {
+    if (!layoutComponents.has(item.layout ?? '')) return false;
+    if (!item.recordType) return true;
+    if (layoutComponents.has(item.recordType)) return true;
+    return recordTypeComponents?.has(item.recordType) ?? false;
+  }
+
+  /**
+   * Merge two component maps. For each section, the result is the union of
+   * both maps' sets for that section.
+   */
+  private mergeComponentMaps(a: ComponentMap, b: ComponentMap): ComponentMap {
+    const merged = new Map<string, Set<string>>();
+
+    for (const [section, components] of a) {
+      merged.set(section, new Set(components));
+    }
+
+    for (const [section, components] of b) {
+      const existing = merged.get(section);
+      if (existing) {
+        for (const name of components) existing.add(name);
+      } else {
+        merged.set(section, new Set(components));
+      }
+    }
+
+    return merged;
   }
 
   /**
@@ -254,25 +281,23 @@ export class ProfileCleaner {
 
   /**
    * For each profile section, filter out entries whose referenced component
-   * name is not in the known metadata set.
+   * name is not in the known component map for that section.
    *
-   * This is the core logic migrated from sfprofiles' `ProfileComponentReconciler`.
-   * When an org resolver is provided and `scope` is `'org'`, components found in
-   * the org are merged with the source metadata set before filtering — preserving
-   * permissions for standard metadata that is present in the org but not in the
-   * package.
+   * When org components are provided, they are merged with package
+   * components before filtering — preserving permissions for metadata that
+   * is present in the org but not in the package source.
    */
-  private async scopeSections(
+  private scopeSections(
     profile: Profile,
-    metadata: Set<string>,
-    orgResolver?: OrgMetadataProvider,
-  ): Promise<void> {
+    packageComponents: ComponentMap,
+    orgComponents?: ComponentMap,
+  ): void {
     const sections = Object.entries(PROFILE_SECTION_NAME_FIELD);
 
-    // Pre-fetch all org components in parallel to avoid await-in-loop
-    const orgComponentsMap = orgResolver
-      ? await this.prefetchOrgComponents(orgResolver, sections.map(([s]) => s))
-      : new Map<string, Set<string>>();
+    // Merge package + org into a single map for uniform lookup
+    const knownComponents = orgComponents
+      ? this.mergeComponentMaps(packageComponents, orgComponents)
+      : packageComponents;
 
     for (const [section, nameField] of sections) {
       const items = profile[section as keyof Profile] as Array<Record<string, unknown>> | undefined;
@@ -280,9 +305,8 @@ export class ProfileCleaner {
         continue;
       }
 
-      const knownComponents = this.mergeWithOrgComponents(metadata, orgComponentsMap.get(section));
       const before = items.length;
-      const filtered = this.filterSectionItems(section, items, nameField, {knownComponents, orgComponentsMap});
+      const filtered = this.filterSectionItems(section, items, nameField, knownComponents);
 
       if (filtered.length !== before) {
         this.logger?.debug(`${section}: reduced from ${before} to ${filtered.length}`);
@@ -314,134 +338,121 @@ export function findProfilesDirectory(packagePath: string): string | undefined {
 }
 
 /**
- * Collect metadata component names from a Salesforce source directory.
+ * Collect metadata component names from a Salesforce source directory,
+ * grouped by profile section.
  *
  * Walks standard metadata directories (classes, objects, pages, etc.)
- * and extracts component API names from file names. This builds the set
- * against which profile sections are scoped.
+ * and extracts component API names from file names. The results are
+ * grouped by the profile section that references them, enabling
+ * symmetric comparison with org metadata during profile scoping.
  *
  * @param packagePath - Root of the package source (e.g., `force-app/main/default`)
- * @returns Set of fully-qualified component names
+ * @returns Components grouped by profile section
  */
-export async function collectPackageMetadata(packagePath: string): Promise<Set<string>> {
-  const metadata = new Set<string>();
+export async function collectPackageComponents(packagePath: string): Promise<ComponentMap> {
+  const components: ComponentMap = new Map();
 
-  // Mapping of directory names to how we extract component names
-  const directoryMappings: Array<{
-    dir: string;
-    extractor: (fileName: string, parentDir?: string) => string[];
-  }> = [
-    {dir: 'applications', extractor: f => [stripSuffix(f)]},
-    {dir: 'classes', extractor: f => [stripSuffix(f)]},
-    {dir: 'customMetadata', extractor: f => [stripSuffix(f)]},
-    {dir: 'customPermissions', extractor: f => [stripSuffix(f)]},
-    {dir: 'dataSources', extractor: f => [stripSuffix(f)]},
-    {dir: 'flows', extractor: f => [stripSuffix(f)]},
-    {dir: 'layouts', extractor: f => [stripSuffix(f)]},
-    {dir: 'pages', extractor: f => [stripSuffix(f)]},
-    {dir: 'tabs', extractor: f => [stripSuffix(f)]},
-    {dir: 'objects', extractor: objectExtractor},
+  /** Get or create the set for a section. */
+  const forSection = (section: string): Set<string> => {
+    let set = components.get(section);
+    if (!set) {
+      set = new Set();
+      components.set(section, set);
+    }
+
+    return set;
+  };
+
+  // Mapping of directory names to the profile section they populate
+  const directoryToSection: Array<{dir: string; section: string}> = [
+    {dir: 'applications', section: 'applicationVisibilities'},
+    {dir: 'classes', section: 'classAccesses'},
+    {dir: 'customMetadata', section: 'customMetadataTypeAccesses'},
+    {dir: 'customPermissions', section: 'customPermissions'},
+    {dir: 'dataSources', section: 'externalDataSourceAccesses'},
+    {dir: 'flows', section: 'flowAccesses'},
+    {dir: 'layouts', section: 'layoutAssignments'},
+    {dir: 'pages', section: 'pageAccesses'},
+    {dir: 'tabs', section: 'tabVisibilities'},
   ];
 
-  for (const {dir, extractor} of directoryMappings) {
+  for (const {dir, section} of directoryToSection) {
     const dirPath = join(packagePath, dir);
     if (!existsSync(dirPath)) continue;
 
     try {
-      if (dir === 'objects') {
-        // eslint-disable-next-line no-await-in-loop
-        await collectObjectMetadata(dirPath, metadata);
-      } else {
-        // eslint-disable-next-line no-await-in-loop
-        const files = await readdir(dirPath);
-        addFileMetadata(files, extractor, metadata);
+      // eslint-disable-next-line no-await-in-loop
+      const files = await readdir(dirPath);
+      const set = forSection(section);
+      for (const file of files) {
+        const name = stripSuffix(file);
+        if (name) set.add(name);
       }
     } catch {
       // Skip directories we can't read
     }
   }
 
-  return metadata;
+  // Objects directory populates multiple sections
+  const objectsDir = join(packagePath, 'objects');
+  if (existsSync(objectsDir)) {
+    try {
+      await collectObjectComponents(objectsDir, forSection);
+    } catch {
+      // Skip unreadable directory
+    }
+  }
+
+  return components;
 }
 
 /**
- * Walk an `objects/` directory tree and collect object names, field names,
- * record type names, etc.
+ * Walk an `objects/` directory tree and collect components into their
+ * respective profile sections:
+ * - Object names → `objectPermissions`
+ * - Field names → `fieldPermissions` (as `Object.Field`)
+ * - Record type names → `recordTypeVisibilities` (as `Object.RecordType`)
  */
-async function collectObjectMetadata(objectsDir: string, metadata: Set<string>): Promise<void> {
+async function collectObjectComponents(
+  objectsDir: string,
+  forSection: (section: string) => Set<string>,
+): Promise<void> {
   const objectDirs = await readdir(objectsDir);
+  const objects = forSection('objectPermissions');
+  const fields = forSection('fieldPermissions');
+  const recordTypes = forSection('recordTypeVisibilities');
 
   for (const objDir of objectDirs) {
     const objPath = join(objectsDir, objDir);
-
-    // The directory name is the object API name
     const objectName = objDir;
-    metadata.add(objectName);
+    objects.add(objectName);
 
-    // Collect child components (fields, recordTypes, etc.)
-    const childDirs: Array<{prefix: boolean; subdir: string;}> = [
-      {prefix: true, subdir: 'fields'},
-      {prefix: true, subdir: 'recordTypes'},
-      {prefix: true, subdir: 'listViews'},
-      {prefix: true, subdir: 'validationRules'},
-      {prefix: true, subdir: 'webLinks'},
-      {prefix: true, subdir: 'compactLayouts'},
-      {prefix: true, subdir: 'businessProcesses'},
-    ];
-
-    for (const {prefix, subdir} of childDirs) {
-      const childPath = join(objPath, subdir);
-      if (!existsSync(childPath)) continue;
-
+    // Fields → fieldPermissions
+    const fieldsDir = join(objPath, 'fields');
+    if (existsSync(fieldsDir)) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        const files = await readdir(childPath);
-        addChildMetadata(files, objectName, prefix, metadata);
-      } catch {
-        // Skip unreadable directories
-      }
+        const fieldFiles = await readdir(fieldsDir);
+        for (const f of fieldFiles) {
+          const name = stripSuffix(f);
+          if (name) fields.add(`${objectName}.${name}`);
+        }
+      } catch {/* skip */}
+    }
+
+    // Record types → recordTypeVisibilities
+    const rtDir = join(objPath, 'recordTypes');
+    if (existsSync(rtDir)) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const rtFiles = await readdir(rtDir);
+        for (const f of rtFiles) {
+          const name = stripSuffix(f);
+          if (name) recordTypes.add(`${objectName}.${name}`);
+        }
+      } catch {/* skip */}
     }
   }
-}
-
-/**
- * Add metadata names from file names using the given extractor.
- */
-function addFileMetadata(
-  files: string[],
-  extractor: (fileName: string, parentDir?: string) => string[],
-  metadata: Set<string>,
-): void {
-  for (const file of files) {
-    for (const name of extractor(file)) {
-      if (name) metadata.add(name);
-    }
-  }
-}
-
-/**
- * Add child component metadata (fields, recordTypes, etc.) from file names.
- */
-function addChildMetadata(
-  files: string[],
-  objectName: string,
-  prefix: boolean,
-  metadata: Set<string>,
-): void {
-  for (const file of files) {
-    const name = stripSuffix(file);
-    if (name) {
-      metadata.add(prefix ? `${objectName}.${name}` : name);
-    }
-  }
-}
-
-/**
- * Extract component names from files in an objects directory.
- * For top-level object files, returns the object name.
- */
-function objectExtractor(fileName: string): string[] {
-  return [stripSuffix(fileName)];
 }
 
 /**

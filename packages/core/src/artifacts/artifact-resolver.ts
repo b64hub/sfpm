@@ -7,14 +7,8 @@ import { Logger } from '../types/logger.js';
 import { ArtifactManifest, ResolvedArtifact, ArtifactResolveOptions } from '../types/artifact.js';
 import { ArtifactError } from '../types/errors.js';
 import { ArtifactRepository } from './artifact-repository.js';
-import { 
-    RegistryClient, 
-    NpmRegistryClient, 
-    readNpmConfig, 
-    readNpmConfigSync,
-    readNpmrcRegistry,
-    normalizeRegistryUrl 
-} from './registry/index.js';
+import { RegistryClient } from './registry/index.js';
+import { PnpmRegistryClient } from './registry/pnpm-registry-client.js';
 import { toVersionFormat } from '../utils/version-utils.js';
 
 /**
@@ -35,16 +29,6 @@ export interface ArtifactResolverEvents {
  * Default TTL for remote checks in minutes
  */
 const DEFAULT_TTL_MINUTES = 60;
-
-/**
- * Default NPM registry URL (fallback)
- */
-const DEFAULT_NPM_REGISTRY_URL = 'https://registry.npmjs.org';
-
-/**
- * Environment variable for custom NPM registry
- */
-const NPM_REGISTRY_ENV_VAR = 'SFPM_NPM_REGISTRY';
 
 /**
  * ArtifactResolver reconciles local manifest.json with remote NPM versions
@@ -86,51 +70,34 @@ export class ArtifactResolver extends EventEmitter {
     }
 
     /**
-     * Create a resolver with default npm registry client.
+     * Create a resolver with the default pnpm-based registry client.
      *
-     * Registry Resolution Order:
-     * 1. Explicit registry URL if provided in options
-     * 2. SFPM_NPM_REGISTRY environment variable
-     * 3. npm config (.npmrc files) - supports scoped registries
-     * 4. Default: https://registry.npmjs.org
+     * Registry and auth configuration is handled by pnpm natively —
+     * it reads `.npmrc` files (project, user, global), handles scoped
+     * registries, auth tokens, and environment variable expansion.
      *
-     * Auth Token Resolution (when using npm config):
-     * - Reads from .npmrc (project, user, global)
-     * - Supports environment variable expansion (${GITHUB_TOKEN})
-     * - Handles scoped registry auth (//npm.pkg.github.com/:_authToken)
-     *
-     * @param projectDirectory - Project directory for artifact storage and .npmrc lookup
+     * @param projectDirectory - Project directory for artifact storage and pnpm config
      * @param logger - Optional logger
-     * @param options - Optional overrides for registry URL and auth token
+     * @param options - Optional overrides
      */
     public static create(
         projectDirectory: string,
         logger?: Logger,
         options?: {
-            /** Package name for scoped registry lookup */
-            packageName?: string;
-            /** Explicit registry URL (overrides npm config) */
-            registry?: string;
-            /** Explicit auth token (overrides npm config) */
-            authToken?: string;
-            /** Whether to read .npmrc files (default: true) */
-            useNpmrc?: boolean;
+            /** Inject a custom registry client (for testing or alternative package managers) */
+            registryClient?: RegistryClient;
             /** Local-only mode - no registry client */
             localOnly?: boolean;
         },
     ): ArtifactResolver {
         const repository = new ArtifactRepository(projectDirectory, logger);
 
-        // Local-only mode: no registry client
         if (options?.localOnly) {
             return new ArtifactResolver(repository, undefined, logger);
         }
 
-        const { registryUrl, authToken } = ArtifactResolver.resolveRegistryConfig(projectDirectory, options, logger);
-
-        const registryClient = new NpmRegistryClient({
-            registryUrl,
-            authToken,
+        const registryClient = options?.registryClient ?? new PnpmRegistryClient({
+            projectDir: projectDirectory,
             logger,
         });
 
@@ -140,49 +107,19 @@ export class ArtifactResolver extends EventEmitter {
     /**
      * Create a resolver configured for a specific package.
      *
-     * This is the preferred method when you know the package name upfront,
-     * as it properly resolves scoped registries (e.g., @myorg packages).
-     *
-     * @param projectDirectory - Project directory for artifact storage
-     * @param packageName - Package name (used for scoped registry lookup)
-     * @param logger - Optional logger
-     * @param options - Optional overrides
+     * @deprecated Use `create()` instead — pnpm handles scoped registry
+     * resolution natively, so there's no need for a package-specific factory.
      */
     public static async createForPackage(
         projectDirectory: string,
-        packageName: string,
+        _packageName: string,
         logger?: Logger,
         options?: {
-            registry?: string;
-            authToken?: string;
+            registryClient?: RegistryClient;
             localOnly?: boolean;
         },
     ): Promise<ArtifactResolver> {
-        const repository = new ArtifactRepository(projectDirectory, logger);
-
-        // Local-only mode: no registry client
-        if (options?.localOnly) {
-            return new ArtifactResolver(repository, undefined, logger);
-        }
-
-        // Read npm config for this specific package (handles scoped registries)
-        const npmConfig = await readNpmConfig(packageName, projectDirectory, logger);
-
-        // Options override npm config
-        const registryUrl = options?.registry || npmConfig.registry;
-        const authToken = options?.authToken || npmConfig.authToken;
-
-        if (npmConfig.isScopedRegistry) {
-            logger?.debug(`Using scoped registry for ${packageName}: ${registryUrl}`);
-        }
-
-        const registryClient = new NpmRegistryClient({
-            registryUrl,
-            authToken,
-            logger,
-        });
-
-        return new ArtifactResolver(repository, registryClient, logger);
+        return ArtifactResolver.create(projectDirectory, logger, options);
     }
 
     /**
@@ -470,73 +407,6 @@ export class ArtifactResolver extends EventEmitter {
             context,
             cause: error instanceof Error ? error : new Error(String(error)),
         });
-    }
-
-    /**
-     * Resolve the NPM registry URL from various sources.
-     * Resolution order:
-     * 1. Explicit registry option
-     * 2. SFPM_NPM_REGISTRY environment variable
-     * 3. npm config (.npmrc files) with package name for scoped lookup
-     * 4. Default: https://registry.npmjs.org
-     */
-    private static resolveRegistryConfig(
-        projectDirectory: string,
-        options?: {
-            packageName?: string;
-            registry?: string;
-            authToken?: string;
-            useNpmrc?: boolean;
-        },
-        logger?: Logger,
-    ): { registryUrl: string; authToken?: string } {
-        // 1. Explicit option (highest priority)
-        if (options?.registry) {
-            return {
-                registryUrl: normalizeRegistryUrl(options.registry),
-                authToken: options.authToken,
-            };
-        }
-
-        // 2. Environment variable
-        const envRegistry = process.env[NPM_REGISTRY_ENV_VAR];
-        if (envRegistry) {
-            logger?.debug(`Using registry from ${NPM_REGISTRY_ENV_VAR} env var`);
-            return {
-                registryUrl: normalizeRegistryUrl(envRegistry),
-                authToken: options?.authToken,
-            };
-        }
-
-        // 3. npm config with package name for scoped registry support
-        if (options?.useNpmrc !== false && options?.packageName) {
-            try {
-                const npmConfig = readNpmConfigSync(options.packageName, projectDirectory, logger);
-                return {
-                    registryUrl: npmConfig.registry,
-                    authToken: options?.authToken || npmConfig.authToken,
-                };
-            } catch (error) {
-                logger?.debug(`Failed to read npm config: ${error}`);
-            }
-        }
-
-        // 3b. Legacy: simple .npmrc reading (no scope support)
-        if (options?.useNpmrc !== false) {
-            const npmrcRegistry = readNpmrcRegistry(projectDirectory, logger);
-            if (npmrcRegistry) {
-                return {
-                    registryUrl: normalizeRegistryUrl(npmrcRegistry),
-                    authToken: options?.authToken,
-                };
-            }
-        }
-
-        // 4. Default
-        return {
-            registryUrl: DEFAULT_NPM_REGISTRY_URL,
-            authToken: options?.authToken,
-        };
     }
 
     /**

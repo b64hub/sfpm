@@ -14,7 +14,7 @@ export type PackageDir = ProjectJson['packageDirectories'][number];
 export interface PackageOptions {
   [key: string]: any;
   build?: BuildOptions;
-  deploy?: InstallOptions;
+  deploy?: DeployOptions;
   envAliased?: boolean;
   /**
    * Per-package hook configuration.
@@ -41,6 +41,7 @@ export interface PackageOptions {
 }
 
 export interface BuildOptions {
+  asyncValidation?: boolean;
   skipValidation?: boolean;
 }
 
@@ -77,7 +78,7 @@ export interface PackageHookConfig {
  * Controls build-time and deploy-time behavior that is not hook-specific:
  * script assembly, optimized deployment, etc.
  */
-export interface InstallOptions {
+export interface DeployOptions {
   isTriggerAllTests?: boolean;
   optimize?: boolean;
   post?: {
@@ -88,6 +89,7 @@ export interface InstallOptions {
     destructiveChanges?: string;
     unpackagedMetadata?: {path: string};
   },
+  testLevel?: string;
 }
 
 /**
@@ -95,6 +97,8 @@ export interface InstallOptions {
  * Extracts the named+versioned variant of PackageDir to avoid union distribution issues.
  */
 export interface PackageDefinition extends Extract<PackageDir, {package: string, path: string; versionNumber: string,}> {
+  /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package"). Undefined in legacy mode. */
+  npmName?: string;
   packageOptions?: PackageOptions;
   type?: PackageType;
 }

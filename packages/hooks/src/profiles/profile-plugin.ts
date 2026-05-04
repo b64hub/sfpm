@@ -1,10 +1,10 @@
 import {HookContext, LifecycleHooks, Logger} from '@b64/sfpm-core';
-import {Connection, Org} from '@salesforce/core';
+import {Org} from '@salesforce/core';
 
 import type {ProfileHooksOptions} from './types.js';
 
 import {OrgMetadataResolver} from './org-metadata-resolver.js';
-import {collectPackageMetadata, findProfilesDirectory, ProfileCleaner} from './profile-cleaner.js';
+import {collectPackageComponents, findProfilesDirectory, ProfileCleaner} from './profile-cleaner.js';
 
 /**
  * Creates lifecycle hooks for profile cleaning and scoping.
@@ -41,12 +41,8 @@ export function profileHooks(options?: ProfileHooksOptions): LifecycleHooks {
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, packageName, packagePath} = context;
           const cleaner = new ProfileCleaner(options, logger);
-
-          // Determine the package source path for profile discovery
-          const packagePath = (context.packagePath as string | undefined)
-            ?? (context.stagingDirectory as string | undefined);
 
           if (!packagePath) {
             logger?.debug(`Profiles: no package path available for '${packageName}', skipping`);
@@ -62,15 +58,15 @@ export function profileHooks(options?: ProfileHooksOptions): LifecycleHooks {
           logger?.info(`Profiles: cleaning profiles for '${packageName}'`);
 
           // Build the metadata component set from the package source
-          const packageMetadata = await collectPackageMetadata(packagePath);
-          logger?.debug(`Profiles: collected ${packageMetadata.size} metadata components from package`);
+          const packageComponents = await collectPackageComponents(packagePath);
+          logger?.debug(`Profiles: collected components from ${packageComponents.size} section(s)`);
 
           // Create org resolver if scope is 'org' and a Salesforce connection is available
           const scope = options?.scope ?? 'source';
           let orgResolver: OrgMetadataResolver | undefined;
 
           if (scope === 'org') {
-            orgResolver = resolveOrgMetadata(context, logger);
+            orgResolver = await resolveOrgMetadata(context, logger);
             if (orgResolver) {
               logger?.info('Profiles: org connection available — scoping against source + org');
             } else {
@@ -83,7 +79,7 @@ export function profileHooks(options?: ProfileHooksOptions): LifecycleHooks {
           }
 
           // Run the cleaner
-          const cleaned = await cleaner.cleanProfiles(profilesDir, packageMetadata, orgResolver);
+          const cleaned = await cleaner.cleanProfiles(profilesDir, packageComponents, orgResolver);
 
           if (cleaned.length > 0) {
             logger?.info(`Profiles: cleaned ${cleaned.length} profile(s) for '${packageName}'`);
@@ -107,18 +103,32 @@ export function profileHooks(options?: ProfileHooksOptions): LifecycleHooks {
 /**
  * Attempt to create an org metadata resolver from the hook context.
  *
- * Expects the orchestrator to place an `Org` instance from `@salesforce/core`
- * on `context.org`. The resolver is built from the org's connection.
+ * Resolution order:
+ * 1. `context.targetOrg` — alias or username string; creates a new Org connection
+ * 2. `context.org` — pre-built `Org` instance (backward compat with orchestrator)
+ *
+ * Returns `undefined` when no org information is available.
  */
-function resolveOrgMetadata(
+async function resolveOrgMetadata(
   context: HookContext,
-  logger?: {debug: (msg: string) => void},
-): OrgMetadataResolver | undefined {
-  const {org} = context;
+  logger?: Logger,
+): Promise<OrgMetadataResolver | undefined> {
+  // Prefer the typed targetOrg alias/username
+  if (context.targetOrg) {
+    try {
+      const org = await Org.create({aliasOrUsername: context.targetOrg});
+      return new OrgMetadataResolver(org.getConnection(), logger);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger?.debug(`Profiles: failed to connect to '${context.targetOrg}': ${message}`);
+      return undefined;
+    }
+  }
 
+  // Fall back to pre-built Org instance on context
+  const {org} = context;
   if (org instanceof Org) {
-    const connection = org.getConnection();
-    return new OrgMetadataResolver(connection, logger as Logger | undefined);
+    return new OrgMetadataResolver(org.getConnection(), logger);
   }
 
   return undefined;

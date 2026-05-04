@@ -1,4 +1,5 @@
 import {Org} from '@salesforce/core';
+import {type DeploySetOptions} from '@salesforce/source-deploy-retrieve';
 import {EventEmitter} from 'node:events';
 
 import {Logger} from '../../../types/logger.js';
@@ -20,7 +21,7 @@ export default class SourceDeployer {
     this.eventEmitter = eventEmitter;
   }
 
-  public async install(deployable: SourceDeployable, targetOrg: string): Promise<{deployId?: string}> {
+  public async install(deployable: SourceDeployable, targetOrg: string, options?: {testLevel?: string}): Promise<{deployId?: string}> {
     const {componentSet, packageName} = deployable;
 
     this.logger?.info(`Using source deployment strategy for package: ${packageName}`);
@@ -38,9 +39,18 @@ export default class SourceDeployer {
     this.emitStart(packageName);
 
     // Deploy to org
-    const deploy = await componentSet.deploy({
+    const deployOptions: DeploySetOptions = {
       usernameOrConnection: connection,
-    });
+    };
+
+    if (options?.testLevel) {
+      deployOptions.apiOptions = {
+        ...deployOptions.apiOptions,
+        testLevel: options.testLevel as DeploySetOptions['apiOptions'] extends {testLevel?: infer T} ? T : never,
+      };
+    }
+
+    const deploy = await componentSet.deploy(deployOptions);
 
     // Track deployment progress
     deploy.onUpdate(response => {

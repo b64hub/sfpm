@@ -1,7 +1,8 @@
 import * as fs from 'fs-extra';
 import path from 'node:path';
 
-import ProjectConfig from '../../../project/project-config.js';
+import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
+
 import {Logger} from '../../../types/logger.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 
@@ -30,12 +31,12 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 export class ScriptAssemblyStep implements AssemblyStep {
   constructor(
     private packageName: string,
-    private projectConfig: ProjectConfig,
+    private provider: ProjectDefinitionProvider,
     private logger?: Logger,
   ) {}
 
   public async execute(_options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
-    const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
+    const packageDefinition = this.provider.getPackageDefinition(this.packageName);
     const hooksConfig = packageDefinition.packageOptions?.hooks;
 
     if (!hooksConfig) return;
@@ -77,7 +78,7 @@ export class ScriptAssemblyStep implements AssemblyStep {
   private async copyScript(targetDir: string, scriptPath: string): Promise<void> {
     const resolvedPath = path.isAbsolute(scriptPath)
       ? scriptPath
-      : path.join(this.projectConfig.projectDirectory, scriptPath);
+      : path.join(this.provider.projectDir, scriptPath);
 
     if (!(await fs.pathExists(resolvedPath))) {
       throw new Error(`[ScriptAssemblyStep] Script '${resolvedPath}' does not exist`);

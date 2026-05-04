@@ -1,7 +1,8 @@
 import {
-  InstallationMode, InstallationSource, InstallOrchestrator, LifecycleEngine, Logger, PackageInstaller, ProjectService,
+  InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger, PackageInstaller, ProjectService,
 } from '@b64/sfpm-core'
 import {Args, Flags} from '@oclif/core'
+import EventEmitter from 'node:events'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64/sfpm-sfdmu'
 
@@ -26,19 +27,15 @@ export default class Install extends SfpmCommand {
     force: Flags.boolean({char: 'f', description: 'force reinstall even if already installed'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key for unlocked packages'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
-    mode: Flags.string({
-      char: 'm',
-      description: 'installation mode for unlocked packages (source-deploy or version-install)',
-      options: ['source-deploy', 'version-install'],
-    }),
     'no-dependencies': Flags.boolean({description: 'only install the specified packages, skip transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
-    source: Flags.string({
-      char: 's',
-      description: 'installation source: local (project source) or artifact',
-      options: ['local', 'artifact'],
+    'target-org': Flags.string({
+      char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
     }),
-    'target-org': Flags.string({char: 'o', description: 'target org username', required: true}),
+    'test-level': Flags.string({
+      char: 'l', description: 'deployment test level (for source deployments)', options: ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'],
+    }),
+    turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies --force)'}),
   }
   static override strict = false
 
@@ -51,10 +48,20 @@ export default class Install extends SfpmCommand {
       this.error('At least one package name is required')
     }
 
+    // --turbo: single-package mode for external orchestrators (Turbo, CI matrix)
+    if (flags.turbo) {
+      if (packages.length !== 1) {
+        this.error('--turbo requires exactly one package name', {exit: 1})
+      }
+
+      flags['no-dependencies'] = true
+      flags.force = true
+    }
+
     // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
     const projectService = await ProjectService.getInstance(projectDir);
-    const projectConfig = projectService.getProjectConfig();
+    const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();
 
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
@@ -71,7 +78,7 @@ export default class Install extends SfpmCommand {
     const sfpmConfig = projectService.getSfpmConfig();
 
     // Create lifecycle engine and register hooks from config
-    const lifecycle = new LifecycleEngine({logger, stage: 'local'});
+    const lifecycle = new LifecycleEngine({logger, stage: 'install'});
     for (const hooks of sfpmConfig.hooks ?? []) {
       lifecycle.use(hooks);
     }
@@ -79,10 +86,8 @@ export default class Install extends SfpmCommand {
     const installOptions = {
       force: flags.force,
       installationKey: flags['installation-key'],
-      mode: flags.mode as InstallationMode | undefined,
-      npmScope: sfpmConfig.npmScope,
-      source: flags.source as InstallationSource | undefined,
       targetOrg: flags['target-org'],
+      testLevel: flags['test-level'],
       trackHistory: sfpmConfig.artifacts?.trackHistory,
     }
 
@@ -95,7 +100,49 @@ export default class Install extends SfpmCommand {
       targetOrg: flags['target-org'],
     });
 
-    const orchestrator = new InstallOrchestrator(
+    // Single-package mode: install exactly one package without orchestration.
+    // Activates when a single package is specified with --no-dependencies.
+    // Designed for external orchestrators (Turbo, CI matrix) that handle
+    // dependency ordering themselves.
+    if (packages.length === 1 && flags['no-dependencies']) {
+      const task = new InstallOrchestrationTask(
+        projectConfig,
+        installOptions,
+        logger,
+        lifecycle,
+      )
+
+      const emitter = new EventEmitter()
+      renderer.attachTo(emitter as any)
+
+      try {
+        const context = await task.setup()
+        const result = await task.processSinglePackage(packages[0], 0, context, emitter)
+
+        if (flags.json) {
+          this.logJson(result)
+        }
+
+        if (!result.success) {
+          this.error(`Install failed for: ${packages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 2})
+        }
+      } catch (error) {
+        renderer.handleError(error as Error)
+        if (flags.json) {
+          this.logJson({error: (error as Error).message, success: false})
+        }
+
+        if (error instanceof Error) {
+          this.error(error.message, {exit: 2})
+        }
+
+        throw error
+      }
+
+      return
+    }
+
+    const orchestrator = InstallOrchestrator.forArtifact(
       projectConfig,
       projectGraph,
       {...installOptions, includeDependencies: !flags['no-dependencies']},

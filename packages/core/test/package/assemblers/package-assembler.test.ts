@@ -32,21 +32,30 @@ vi.mock('../../../src/package/assemblers/steps/mdapi-conversion-step.js', () => 
     };
 });
 
+vi.mock('../../../src/project/project-service.js', () => ({
+    default: {
+        getInstance: vi.fn().mockResolvedValue({
+            resolveForPackage: vi.fn().mockReturnValue({
+                packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
+            }),
+        }),
+    },
+}));
+
 import fs from 'fs-extra';
 import PackageAssembler from '../../../src/package/assemblers/package-assembler.js';
-import ProjectConfig from '../../../src/project/project-config.js';
 
 const mockedFs = fs as any;
 
 describe('PackageAssembler', () => {
-    let mockProjectConfig: any;
+    let mockProvider: any;
     let assembler: any;
 
     beforeEach(() => {
         vi.clearAllMocks();
 
-        mockProjectConfig = {
-            projectDirectory: '/root',
+        mockProvider = {
+            projectDir: '/root',
             getPackageDefinition: vi.fn().mockReturnValue({
                 path: 'force-app',
                 package: 'core',
@@ -55,12 +64,12 @@ describe('PackageAssembler', () => {
             getProjectDefinition: vi.fn().mockReturnValue({
                 packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
             }),
-            getPrunedDefinition: vi.fn().mockReturnValue({
+            resolveForPackage: vi.fn().mockReturnValue({
                 packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
-            })
+            }),
         };
 
-        assembler = new PackageAssembler('core', mockProjectConfig as any);
+        assembler = new PackageAssembler('core', mockProvider as any);
     });
 
     it('should initialize staging directory in constructor', () => {
@@ -132,7 +141,7 @@ describe('PackageAssembler', () => {
     });
 
     it('should create unique build names', () => {
-        const assembler2 = new PackageAssembler('core', mockProjectConfig as any);
+        const assembler2 = new PackageAssembler('core', mockProvider as any);
         expect((assembler as any).stagingDirectory).not.toBe((assembler2 as any).stagingDirectory);
     });
 });

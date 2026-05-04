@@ -15,7 +15,7 @@ vi.mock('@b64/sfpm-core', () => {
     _metadata: any = {identity: {packageName: '', packageType: 'data'}, source: {}, content: {}, orchestration: {}, validation: {}};
     packageName: string;
     projectDirectory: string;
-    stagingDirectory?: string;
+    workingDirectory?: string;
     _packageDefinition?: any;
 
     constructor(name: string, dir: string) {
@@ -32,8 +32,8 @@ vi.mock('@b64/sfpm-core', () => {
     get dataDirectory() {
       const pkgPath = this._packageDefinition?.path;
       if (!pkgPath) throw new Error('must have a path');
-      return this.stagingDirectory
-        ? `${this.stagingDirectory}/${pkgPath}`
+      return this.workingDirectory
+        ? `${this.workingDirectory}/${pkgPath}`
         : `${this.projectDirectory}/${pkgPath}`;
     }
 

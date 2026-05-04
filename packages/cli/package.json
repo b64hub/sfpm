@@ -22,6 +22,7 @@
     "chalk": "^5.6.2",
     "fs-extra": "^11.3.3",
     "listr2": "^8.2.5",
+    "node-notifier": "^10.0.1",
     "object-treeify": "^5.0.1",
     "ora": "^9.0.0"
   },
@@ -31,6 +32,7 @@
     "@types/fs-extra": "^11.0.4",
     "@types/mocha": "^10",
     "@types/node": "^18",
+    "@types/node-notifier": "^8.0.5",
     "chai": "^4",
     "mocha": "^10",
     "oclif": "^4",
@@ -62,6 +64,9 @@
     ],
     "topicSeparator": " ",
     "topics": {
+      "build": {
+        "description": "Build packages and manage async validation"
+      },
       "hello": {
         "description": "Say hello to the world and others"
       },

@@ -1,7 +1,8 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import ProjectConfig from '../../../project/project-config.js';
+import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
+
 import {Logger} from '../../../types/logger.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 
@@ -16,18 +17,18 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 export class SeedMetadataStep implements AssemblyStep {
   constructor(
     private packageName: string,
-    private projectConfig: ProjectConfig,
+    private provider: ProjectDefinitionProvider,
     private logger?: Logger,
   ) { }
 
   public async execute(_options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
-    const packageDefinition = this.projectConfig.getPackageDefinition(this.packageName);
+    const packageDefinition = this.provider.getPackageDefinition(this.packageName);
 
     if (!packageDefinition.seedMetadata?.path) {
       return;
     }
 
-    const sourcePath = path.join(this.projectConfig.projectDirectory, packageDefinition.seedMetadata.path);
+    const sourcePath = path.join(this.provider.projectDir, packageDefinition.seedMetadata.path);
 
     try {
       if (await fs.pathExists(sourcePath)) {

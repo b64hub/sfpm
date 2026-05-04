@@ -3,13 +3,15 @@ import {merge} from 'lodash-es';
 import EventEmitter from 'node:events';
 import path from 'node:path';
 
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+
 import {GitService} from '../git/git-service.js';
-import ProjectConfig from '../project/project-config.js';
 import {IgnoreFilesConfig} from '../types/config.js';
 import {NoSourceChangesError} from '../types/errors.js';
 import {AllBuildEvents} from '../types/events.js';
 import {Logger} from '../types/logger.js';
 import {PackageType} from '../types/package.js';
+import {getPipelineRunId} from '../utils/pipeline.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
@@ -30,8 +32,6 @@ export interface BuildOptions {
   /** Use async validation for unlocked packages — returns immediately with a creation request ID */
   isAsyncValidation?: boolean;
   isSkipValidation?: boolean;
-  /** npm scope for package publishing (e.g., "@myorg") */
-  npmScope?: string;
   orgDefinitionPath?: string;
   /** Timeout in minutes for package version creation (default: 120) */
   waitTime?: number;
@@ -44,13 +44,13 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   private gitService?: GitService;
   private logger: Logger | undefined;
   private options: BuildOptions;
-  private projectConfig: ProjectConfig;
+  private provider: ProjectDefinitionProvider;
 
-  constructor(projectConfig: ProjectConfig, options?: BuildOptions, logger?: Logger, gitService?: GitService) {
+  constructor(provider: ProjectDefinitionProvider, options?: BuildOptions, logger?: Logger, gitService?: GitService) {
     super();
     this.options = options || {};
     this.logger = logger;
-    this.projectConfig = projectConfig;
+    this.provider = provider;
     this.gitService = gitService;
   }
 
@@ -69,7 +69,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    */
   public async buildPackage(packageName: string, projectDirectory: string) {
     // Use PackageFactory to create a fully-configured package
-    const packageFactory = new PackageFactory(this.projectConfig);
+    const packageFactory = new PackageFactory(this.provider);
     const sfpmPackage = packageFactory.createFromName(packageName);
 
     // Emit build start event
@@ -90,6 +90,13 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
     if (this.options.buildNumber) {
       sfpmPackage.setBuildNumber(this.options.buildNumber);
+    } else if (sfpmPackage.type !== PackageType.Unlocked) {
+      // Source and data packages don't get build numbers from Salesforce.
+      // Generate one from the CI pipeline run ID or a timestamp to ensure
+      // each build produces a unique, ever-increasing version.
+      const autoBuildNumber = getPipelineRunId() ?? String(Math.floor(Date.now() / 1000));
+      sfpmPackage.setBuildNumber(autoBuildNumber);
+      this.logger?.debug(`Auto-assigned build number ${autoBuildNumber} for ${sfpmPackage.packageName}`);
     }
 
     if (this.options.orgDefinitionPath) {
@@ -129,7 +136,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       await this.runAnalyzers(sfpmPackage);
 
-      if (!sfpmPackage.stagingDirectory) {
+      if (!sfpmPackage.workingDirectory) {
         const error = new Error('Package must be staged for build');
         this.emit('build:error', {
           error,
@@ -156,11 +163,10 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       // Build options for the builder from sfpm.config.ts
       const builderOptions: BuilderOptions = {
         ignoreFilesConfig: this.options.ignoreFilesConfig,
-        npmScope: this.options.npmScope,
       };
 
       const builderInstance: Builder = new BuilderClass(
-        sfpmPackage.stagingDirectory,
+        sfpmPackage.workingDirectory,
         sfpmPackage,
         builderOptions,
         this.logger,
@@ -265,14 +271,14 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   public async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
     this.emit('stage:start', {
       packageName: sfpmPackage.packageName,
-      stagingDirectory: sfpmPackage.stagingDirectory,
+      stagingDirectory: sfpmPackage.workingDirectory,
       timestamp: new Date(),
     });
 
     try {
       const assemblyOutput = await new PackageAssembler(
         sfpmPackage.packageName,
-        this.projectConfig,
+        this.provider,
         {
           destructiveManifestPath: this.options.destructiveManifestPath,
           ignoreFilesConfig: this.options.ignoreFilesConfig,
@@ -282,7 +288,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         this.logger,
       ).assemble();
 
-      sfpmPackage.stagingDirectory = assemblyOutput.stagingDirectory;
+      sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
 
       this.emit('stage:complete', {
         componentCount: assemblyOutput.componentCount || 0,
@@ -339,9 +345,9 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    */
   private async cleanupStagingDirectory(sfpmPackage: SfpmPackage): Promise<void> {
     if (process.env.DEBUG === 'true') return;
-    if (!sfpmPackage.stagingDirectory) return;
+    if (!sfpmPackage.workingDirectory) return;
 
-    const buildDir = path.dirname(sfpmPackage.stagingDirectory);
+    const buildDir = path.dirname(sfpmPackage.workingDirectory);
     await fs.remove(buildDir).catch(() => {/* already removed or inaccessible */});
   }
 

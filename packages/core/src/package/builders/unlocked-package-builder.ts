@@ -42,9 +42,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     // Use project directory for artifacts, not the staging directory
     const projectDir = this.sfpmPackage.projectDirectory;
 
-    // Get npm scope from options - throw if not configured
-    const npmScope = this.getNpmScope();
-    const assembleOptions: AssembleArtifactTaskOptions = {npmScope};
+    const assembleOptions: AssembleArtifactTaskOptions = {};
 
     this.preBuildTasks = [
       new SourceHashTask(this.sfpmPackage, projectDir, this.logger),
@@ -72,8 +70,8 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     }
 
     // Update working directory to staging if available
-    if (this.sfpmPackage.stagingDirectory) {
-      this.workingDirectory = this.sfpmPackage.stagingDirectory;
+    if (this.sfpmPackage.workingDirectory) {
+      this.workingDirectory = this.sfpmPackage.workingDirectory;
     }
 
     await this.pruneOrgDependentPackage();
@@ -81,6 +79,14 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
   }
 
   private async buildPackage(): Promise<void> {
+    // @salesforce/packaging resolves seedMetadata / unpackagedMetadata paths
+    // relative to process.cwd(), NOT the SfProject root. When building from a
+    // staging directory we must chdir so those relative paths resolve correctly.
+    const originalCwd = process.cwd();
+    if (this.workingDirectory !== originalCwd) {
+      process.chdir(this.workingDirectory);
+    }
+
     const sfProject = await SfProject.resolve(this.workingDirectory);
 
     // Get build options from package metadata
@@ -226,20 +232,10 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${details}`, {cause: error});
     } finally {
       lifecycle.removeAllListeners('packageVersionCreate:progress');
+      if (process.cwd() !== originalCwd) {
+        process.chdir(originalCwd);
+      }
     }
-  }
-
-  /**
-   * Get npm scope from builder options.
-   *
-   * @throws Error if npm scope is not configured
-   */
-  private getNpmScope(): string {
-    if (!this.options.npmScope) {
-      throw new Error('npm scope not configured. Add npmScope to sfpm.config.ts (e.g., npmScope: "@myorg")');
-    }
-
-    return this.options.npmScope;
   }
 
   /**
@@ -256,10 +252,9 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       timestamp: new Date(),
     });
 
-    const projectConfig = (await ProjectService.getInstance(this.workingDirectory)).getProjectConfig();
-    const prunedDefinition = projectConfig.getPrunedDefinition(this.sfpmPackage.packageName, {
-      isOrgDependent: this.sfpmPackage.isOrgDependent,
-      removeCustomProperties: true,
+    const projectService = await ProjectService.getInstance(this.workingDirectory);
+    const prunedDefinition = projectService.resolveForPackage(this.sfpmPackage.packageName, {
+      isOrgDependent: true,
     });
 
     await fs.writeJson(path.join(this.workingDirectory, 'sfdx-project.json'), prunedDefinition, {spaces: 4});

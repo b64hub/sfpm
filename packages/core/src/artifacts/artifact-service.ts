@@ -282,7 +282,7 @@ export class ArtifactService {
    *
    * @param projectDirectory - Root project directory for artifact storage
    * @param packageName - Name of the package to resolve (SFPM package name, not npm name)
-   * @param options - Resolution options (version, forceRefresh, npmScope, etc.)
+   * @param options - Resolution options (version, forceRefresh, npmName, etc.)
    * @returns InstallTarget with resolved artifact and install decision
    */
   public async resolveInstallTarget(
@@ -290,14 +290,12 @@ export class ArtifactService {
     packageName: string,
     options?: ArtifactResolveOptions & {
       localOnly?: boolean;
-      /** npm scope for scoped registry lookup (e.g., "@myorg") */
-      npmScope?: string;
+      /** Full npm-scoped package name for registry lookup (e.g., "@myorg/core-package") */
+      npmName?: string;
     },
   ): Promise<InstallTarget> {
-    // Construct the npm package name (with scope if provided)
-    const npmPackageName = options?.npmScope
-      ? `${options.npmScope}/${packageName}`
-      : packageName;
+    // Use provided npm name, or fall back to bare package name for local-only resolution
+    const npmPackageName = options?.npmName ?? packageName;
 
     // 1. Create resolver for this specific package (handles scoped registries)
     const resolver = await ArtifactResolver.createForPackage(

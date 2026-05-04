@@ -30,7 +30,7 @@ const mockLogger = {
   warn: vi.fn(),
 };
 
-function createMockProjectConfig(): any {
+function createMockProvider(): any {
   return {
     getPackageConfig: vi.fn(),
     getProjectDefinition: vi.fn(),
@@ -75,7 +75,7 @@ function createResolution(
 
 describe('InstallOrchestrator', () => {
   let orchestrator: InstallOrchestrator;
-  let mockProjectConfig: any;
+  let mockProvider: any;
   let mockResolution: DependencyResolution;
   let mockInstallPackage: ReturnType<typeof vi.fn>;
   let mockArtifactInstance: any;
@@ -83,7 +83,7 @@ describe('InstallOrchestrator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockProjectConfig = createMockProjectConfig();
+    mockProvider = createMockProvider();
 
     // Default: single level, two packages
     mockResolution = createResolution([['pkg-a', 'pkg-b']]);
@@ -114,7 +114,7 @@ describe('InstallOrchestrator', () => {
     } as any);
 
     orchestrator = new InstallOrchestrator(
-      mockProjectConfig,
+      mockProvider,
       {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
       {targetOrg: 'test@example.com'},
       mockLogger,
@@ -143,7 +143,7 @@ describe('InstallOrchestrator', () => {
       );
 
       orchestrator = new InstallOrchestrator(
-        mockProjectConfig,
+        mockProvider,
         {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {targetOrg: 'test@example.com'},
         mockLogger,
@@ -163,7 +163,7 @@ describe('InstallOrchestrator', () => {
       );
 
       orchestrator = new InstallOrchestrator(
-        mockProjectConfig,
+        mockProvider,
         {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {targetOrg: 'test@example.com'},
         mockLogger,
@@ -190,7 +190,7 @@ describe('InstallOrchestrator', () => {
       };
 
       const circularOrchestrator = new InstallOrchestrator(
-        mockProjectConfig,
+        mockProvider,
         {resolveDependencies: vi.fn().mockReturnValue(circularResolution)} as any,
         {targetOrg: 'test@example.com'},
         mockLogger,
@@ -206,7 +206,7 @@ describe('InstallOrchestrator', () => {
       );
 
       const noDepsOrchestrator = new InstallOrchestrator(
-        mockProjectConfig,
+        mockProvider,
         {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {includeDependencies: false, targetOrg: 'test@example.com'},
         mockLogger,

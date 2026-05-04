@@ -1,67 +1,85 @@
+import type {WorkspacePackageJson} from '../types/workspace.js';
+
 import SfpmPackage from '../package/sfpm-package.js';
 /**
  * Adapter for converting between npm package.json and SFPM domain models.
  *
  * Responsibilities:
- * - Write: SfpmPackage → NpmPackageJson (for artifact assembly / npm publish)
- * - Read:  NpmPackageJson → SfpmPackageMetadataBase (for artifact resolution / install)
+ * - Write: WorkspacePackageJson + SfpmPackage → NpmPackageJson
+ *   Takes the workspace package.json as the base (static config: name, version,
+ *   author, license, dependencies, etc.) and overlays build-time properties
+ *   (sfpm metadata, files list, repository URL, resolved version).
+ *
+ * - Read:  NpmPackageJson → SfpmPackageMetadataBase
+ *   Extracts SFPM metadata from a published artifact's package.json for
+ *   artifact resolution and installation.
  *
  * Design decisions:
- * - Standard npm fields (name, version, repository, description) live at the top level
- * - All SFPM-specific metadata lives under the `sfpm` property as a nested structure
- *   matching `SfpmPackageMetadataBase` (identity, source, orchestration, content)
+ * - Static npm fields come from the workspace package.json — not from build options
+ * - Build-time additions: `sfpm` enriched with metadata, `files`, `repository`
  * - No duplication: `repository.url` at top level, `source.repositoryUrl` excluded from sfpm
- * - `source.commit` (renamed from `commitSHA` internally) in sfpm for brevity
  */
-import {NpmPackageJson} from '../types/npm.js';
+import {NpmPackageJson, SfpmArtifactMetadata} from '../types/npm.js';
 import {
   SfpmPackageMetadataBase,
   SfpmUnlockedPackageMetadata,
 } from '../types/package.js';
+import {toVersionFormat} from '../utils/version-utils.js';
 
 // ---------------------------------------------------------------------------
-// Write path: SfpmPackage → NpmPackageJson
+// Write path: WorkspacePackageJson + SfpmPackage → NpmPackageJson
 // ---------------------------------------------------------------------------
 
 /**
- * Options for generating a package.json from an SfpmPackage.
- * Only includes fields relevant to the package.json content — assembly concerns
- * (changelog provider, quietPack, etc.) stay in ArtifactAssemblerOptions.
+ * Build-time options for generating an artifact package.json.
+ *
+ * Only includes concerns that are determined at build time.
+ * Static configuration (author, license, keywords, etc.) comes from the
+ * workspace package.json passed as the first argument.
  */
 export interface ToNpmPackageJsonOptions {
-  /** Additional keywords for package.json */
+  /** Additional keywords to append (e.g., build-injected tags) */
   additionalKeywords?: string[];
-  /** Author string for package.json */
-  author?: string;
-  /** Homepage URL (e.g., AppExchange listing, project docs) */
-  homepage?: string;
-  /** License identifier for package.json */
-  license?: string;
   /** Pre-classified managed dependencies (alias → packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
-  /** npm scope for the package (e.g., "@myorg") — required */
-  npmScope: string;
-  /** Pre-classified versioned dependencies (scoped npm name → semver range) */
-  versionedDependencies?: Record<string, string>;
 }
 
 /**
- * Build a complete npm package.json from an SfpmPackage and its metadata.
+ * Build an artifact package.json by overlaying build-time properties onto
+ * the workspace package.json.
  *
- * Convention:
- * - Standard npm fields (name, version, repository, description) at top level
- * - SFPM-specific metadata under `sfpm` as nested `SfpmPackageMetadataBase`
- * - `repositoryUrl` promoted to top-level `repository`, removed from `sfpm.source`
+ * Static fields (name, version, author, license, description, keywords,
+ * dependencies, managedDependencies) are inherited from the workspace
+ * package.json. The adapter only adds or overrides build-time concerns:
+ * - `version` — resolved base semver (no build suffix)
+ * - `sfpm` — workspace config merged with build metadata
+ * - `files` — list of files to include in the tarball
+ * - `repository` — reconstructed from source metadata
+ * - `keywords` — appended with build-injected tags
+ *
+ * @param workspacePkgJson - The workspace package.json (source of truth for static config)
+ * @param pkg - The SfpmPackage with build-time metadata
+ * @param version - The resolved version string (e.g., "1.0.0-1")
+ * @param options - Build-time options
  */
 export async function toNpmPackageJson(
+  workspacePkgJson: WorkspacePackageJson,
   pkg: SfpmPackage,
   version: string,
-  options: ToNpmPackageJsonOptions,
+  options: ToNpmPackageJsonOptions = {},
 ): Promise<NpmPackageJson> {
-  const {additionalKeywords, author, homepage, license, npmScope} = options;
+  // Top-level version is base semver (no build suffix).
+  // The full version with build number lives in sfpm.versionNumber.
+  const baseVersion = toVersionFormat(version, 'semver', {includeBuildNumber: false});
 
-  // Get sfpm metadata from the package and strip empty properties
-  const sfpmMeta = removeEmptyValues(await pkg.toJson());
+  // Build sfpm metadata: merge workspace static config with build-time metadata.
+  // Cast to SfpmArtifactMetadata — at this boundary we trust the metadata
+  // produced by toJson() to be the canonical artifact representation.
+  const buildMetadata = removeEmptyValues(await pkg.toJson());
+  const sfpmMeta = {
+    ...workspacePkgJson.sfpm,
+    ...buildMetadata,
+  } as SfpmArtifactMetadata;
 
   // Remove repositoryUrl from sfpm.source — it lives at the npm top-level `repository`
   if (sfpmMeta?.source?.repositoryUrl) {
@@ -69,14 +87,36 @@ export async function toNpmPackageJson(
     sfpmMeta.source = rest;
   }
 
-  const optionalDependencies = options.versionedDependencies ?? {};
-  const managedDependencies = options.managedDependencies ?? {};
+  // Rewrite staging-relative paths: the artifact already contains the copied
+  // directories so the paths should reference the local directory name, not the
+  // original workspace-relative path.
+  if (sfpmMeta.seedMetadata) {
+    sfpmMeta.seedMetadata = 'seedMetadata';
+  }
 
-  const keywords = ['sfpm', 'salesforce', String(pkg.type), ...(additionalKeywords || [])];
+  if (sfpmMeta.unpackagedMetadata) {
+    sfpmMeta.unpackagedMetadata = 'unpackagedMetadata';
+  }
+
+  // sourceBehaviorOptions is a project-level setting (from sfpm.config.ts),
+  // not a per-package concern. Strip it from the artifact if it leaked in
+  // from the workspace package.json.
+  delete (sfpmMeta as any).sourceBehaviorOptions;
+
+  // Build keywords: workspace keywords + sfpm defaults + additional build-time keywords
+  const baseKeywords = workspacePkgJson.keywords ?? [];
+  const sfpmKeywords = ['sfpm', 'salesforce', String(pkg.type)];
+  const additionalKeywords = options.additionalKeywords ?? [];
+  const keywords = [...new Set([...additionalKeywords, ...baseKeywords, ...sfpmKeywords])];
+
   const packageSourcePath = pkg.packageDefinition?.path || 'force-app';
 
+  // Start from the workspace package.json, then overlay build-time properties.
+  // Destructure to omit workspace-only fields that shouldn't be in the artifact.
+  const {devDependencies: _devDeps, private: _private, scripts: _scripts, ...staticFields} = workspacePkgJson;
+
   const packageJson: NpmPackageJson = {
-    description: pkg.packageDefinition?.versionDescription || `SFPM ${pkg.type} package: ${pkg.packageName}`,
+    ...staticFields,
     files: [
       `${packageSourcePath}/**`,
       'scripts/**',
@@ -87,26 +127,13 @@ export async function toNpmPackageJson(
       'changelog.json',
     ],
     keywords,
-    license: license || 'UNLICENSED',
-    name: `${npmScope}/${pkg.packageName}`,
     sfpm: sfpmMeta,
-    version,
+    version: baseVersion,
   };
 
-  if (author) {
-    packageJson.author = author;
-  }
-
-  if (homepage) {
-    packageJson.homepage = homepage;
-  }
-
-  if (Object.keys(optionalDependencies).length > 0) {
-    packageJson.optionalDependencies = optionalDependencies;
-  }
-
-  if (Object.keys(managedDependencies).length > 0) {
-    packageJson.managedDependencies = managedDependencies;
+  // Override managedDependencies from build options if provided (classified at build time)
+  if (options.managedDependencies && Object.keys(options.managedDependencies).length > 0) {
+    packageJson.managedDependencies = options.managedDependencies;
   }
 
   // Add repository if available (npm convention — top-level field)
@@ -141,13 +168,18 @@ export function fromNpmPackageJson(packageJson: NpmPackageJson): SfpmPackageMeta
     source: {
       ...sfpm.source,
     },
-    // Ensure version is always present (top-level npm version is authoritative)
+    // sfpm.versionNumber contains the full version with build suffix
     versionNumber: sfpm.versionNumber || packageJson.version,
   };
 
   // Reconstruct repositoryUrl from npm top-level field if not already set
   if (!metadata.source.repositoryUrl && packageJson.repository?.url) {
     metadata.source.repositoryUrl = packageJson.repository.url;
+  }
+
+  // Backward compat: older artifacts may have managedDependencies under sfpm
+  if (!metadata.managedDependencies && (packageJson as any).managedDependencies) {
+    metadata.managedDependencies = (packageJson as any).managedDependencies;
   }
 
   return metadata;

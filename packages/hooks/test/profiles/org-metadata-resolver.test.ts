@@ -68,29 +68,26 @@ describe('OrgMetadataResolver', () => {
     });
   });
 
-  describe('fieldPermissions — FieldDefinition query', () => {
+  describe('fieldPermissions — CustomField metadata list', () => {
     it('should return qualified Object.Field names', async () => {
       const conn = createMockConnection({
-        query: vi.fn().mockResolvedValue({
-          records: [
-            {QualifiedApiName: 'Name', EntityDefinition: {QualifiedApiName: 'Account'}},
-            {QualifiedApiName: 'Email', EntityDefinition: {QualifiedApiName: 'Contact'}},
-            {QualifiedApiName: 'Custom__c', EntityDefinition: {QualifiedApiName: 'Account'}},
-          ],
-        }),
+        metadata: {
+          list: vi.fn().mockResolvedValue([
+            {fullName: 'Account.Custom__c'},
+            {fullName: 'Contact.Other__c'},
+          ]),
+        },
       });
 
       const resolver = new OrgMetadataResolver(conn);
       const result = await resolver.getOrgComponents('fieldPermissions');
 
       expect(result).toEqual(new Set([
-        'Account.Name',
-        'Contact.Email',
         'Account.Custom__c',
+        'Contact.Other__c',
       ]));
-      expect(conn.query).toHaveBeenCalledWith(
-        expect.stringContaining('FieldDefinition'),
-      );
+      const metadataList = conn.metadata.list as ReturnType<typeof vi.fn>;
+      expect(metadataList).toHaveBeenCalledWith([{type: 'CustomField'}]);
     });
   });
 

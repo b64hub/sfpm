@@ -6,24 +6,28 @@ export type {BrowserforceHooksOptions, BrowserforcePlanEntry} from './browserfor
 export {feedTrackingHooks} from './fields/feed-tracking-plugin.js';
 
 export {fieldHistoryTrackingHooks} from './fields/field-history-tracking-plugin.js';
+
 // ── Field History Tracking ──────────────────────────────────────────────────
 export {FieldTrackingEnabler} from './fields/field-tracking-enabler.js';
 export type {
   FeedTrackingHooksOptions, FieldHistoryTrackingHooksOptions, FieldTrackingResult, FieldTrackingType,
 } from './fields/types.js';
-
 export {flowActivationHooks} from './flows/flow-activation-plugin.js';
 // ── Flow Activation ─────────────────────────────────────────────────────────
 export {FlowActivator} from './flows/flow-activator.js';
+
 export type {FlowActivationHooksOptions, FlowDefinitionRecord, PackageFlowEntry} from './flows/types.js';
 // ── LWC Tailwind ────────────────────────────────────────────────────────────
 export {lwcTailwindHooks} from './lwc/lwc-tailwind-plugin.js';
-
 // ── LWC TypeScript ──────────────────────────────────────────────────────────
 export {lwcTypescriptHooks} from './lwc/lwc-typescript-plugin.js';
 export type {LwcTypescriptHooksOptions} from './lwc/types.js';
 
 export type {LwcTailwindHooksOptions} from './lwc/types.js';
+// ── Managed Package ─────────────────────────────────────────────────────────
+export {managedPackageHooks} from './managed-package/managed-package-plugin.js';
+
+export type {ManagedPackageHooksOptions} from './managed-package/managed-package-plugin.js';
 // ── Permission Set ──────────────────────────────────────────────────────────
 export {PermissionSetAssigner} from './permissionset/permset-assigner.js';
 export {permissionSetHooks} from './permissionset/permset-plugin.js';
@@ -38,7 +42,7 @@ export type {PicklistFieldData, PicklistHooksOptions, PicklistValue} from './pic
 // ── Profiles ────────────────────────────────────────────────────────────────
 export {OrgMetadataResolver} from './profiles/org-metadata-resolver.js';
 
-export {collectPackageMetadata, findProfilesDirectory, ProfileCleaner} from './profiles/profile-cleaner.js';
+export {collectPackageComponents, findProfilesDirectory, ProfileCleaner} from './profiles/profile-cleaner.js';
 export {profileHooks} from './profiles/profile-plugin.js';
 
 export {
@@ -46,6 +50,7 @@ export {
 } from './profiles/profile-xml.js';
 export type {
   ApplicationVisibility,
+  ComponentMap,
   CustomMetadataTypeAccess,
   CustomSettingAccess,
   FlowAccess,

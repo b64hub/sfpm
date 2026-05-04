@@ -23,8 +23,8 @@ const mockLogger = {
   warn: vi.fn(),
 };
 
-// Helper to create a mock ProjectConfig
-function createMockProjectConfig(): any {
+// Helper to create a mock ProjectDefinitionProvider
+function createMockProvider(): any {
   return {
     getPackageConfig: vi.fn(),
     getProjectDefinition: vi.fn(),
@@ -72,14 +72,14 @@ function createResolution(
 
 describe('BuildOrchestrator', () => {
   let orchestrator: BuildOrchestrator;
-  let mockProjectConfig: any;
+  let mockProvider: any;
   let mockResolution: DependencyResolution;
   let mockBuildPackage: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockProjectConfig = createMockProjectConfig();
+    mockProvider = createMockProvider();
 
     // Default: single-level resolution with two packages
     mockResolution = createResolution([['pkg-a', 'pkg-b']]);
@@ -98,7 +98,7 @@ describe('BuildOrchestrator', () => {
     } as any);
 
     orchestrator = new BuildOrchestrator(
-      mockProjectConfig,
+      mockProvider,
       {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
       {devHub: 'test-hub'},
       mockLogger,
@@ -129,7 +129,7 @@ describe('BuildOrchestrator', () => {
       );
 
       orchestrator = new BuildOrchestrator(
-        mockProjectConfig,
+        mockProvider,
         {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {devHub: 'test-hub'},
         mockLogger,
@@ -152,7 +152,7 @@ describe('BuildOrchestrator', () => {
       );
 
       orchestrator = new BuildOrchestrator(
-        mockProjectConfig,
+        mockProvider,
         {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {devHub: 'test-hub'},
         mockLogger,
@@ -180,7 +180,7 @@ describe('BuildOrchestrator', () => {
       };
 
       const circularOrchestrator = new BuildOrchestrator(
-        mockProjectConfig,
+        mockProvider,
         {resolveDependencies: vi.fn().mockReturnValue(circularResolution)} as any,
         {devHub: 'test-hub'},
         mockLogger,
@@ -198,7 +198,7 @@ describe('BuildOrchestrator', () => {
       );
 
       const noDepsOrchestrator = new BuildOrchestrator(
-        mockProjectConfig,
+        mockProvider,
         {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {devHub: 'test-hub', includeDependencies: false},
         mockLogger,

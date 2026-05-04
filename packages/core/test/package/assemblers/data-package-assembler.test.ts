@@ -31,6 +31,16 @@ vi.mock('../../../../src/package/assemblers/steps/mdapi-conversion-step.js', () 
   };
 });
 
+vi.mock('../../../src/project/project-service.js', () => ({
+  default: {
+    getInstance: vi.fn().mockResolvedValue({
+      resolveForPackage: vi.fn().mockReturnValue({
+        packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
+      }),
+    }),
+  },
+}));
+
 import fs from 'fs-extra';
 import path from 'path';
 import PackageAssembler from '../../../../src/package/assemblers/package-assembler.js';
@@ -38,14 +48,14 @@ import PackageAssembler from '../../../../src/package/assemblers/package-assembl
 const mockedFs = fs as any;
 
 describe('PackageAssembler — Data packages', () => {
-  let mockProjectConfig: any;
+  let mockProvider: any;
   let assembler: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockProjectConfig = {
-      projectDirectory: '/root',
+    mockProvider = {
+      projectDir: '/root',
       getPackageDefinition: vi.fn().mockReturnValue({
         package: 'my-data',
         path: 'data',
@@ -55,12 +65,12 @@ describe('PackageAssembler — Data packages', () => {
       getProjectDefinition: vi.fn().mockReturnValue({
         packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
       }),
-      getPrunedDefinition: vi.fn().mockReturnValue({
+      resolveForPackage: vi.fn().mockReturnValue({
         packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
       }),
     };
 
-    assembler = new PackageAssembler('my-data', mockProjectConfig as any);
+    assembler = new PackageAssembler('my-data', mockProvider as any);
   });
 
   it('should use reduced assembly pipeline for data packages', async () => {

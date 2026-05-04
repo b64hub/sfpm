@@ -21,11 +21,22 @@ vi.mock('@salesforce/source-deploy-retrieve', () => ({
     },
 }));
 
+const { mockResolveForPackage } = vi.hoisted(() => ({
+    mockResolveForPackage: vi.fn(),
+}));
+vi.mock('../../../../src/project/project-service.js', () => ({
+    default: {
+        getInstance: vi.fn().mockResolvedValue({
+            resolveForPackage: mockResolveForPackage,
+        }),
+    },
+}));
+
 import fs from 'fs-extra';
 import { ProjectJsonAssemblyStep } from '../../../../src/package/assemblers/steps/project-json-assembly-step.js';
 
 describe('ProjectJsonAssemblyStep', () => {
-    let mockProjectConfig: any;
+    let mockProvider: any;
     let step: ProjectJsonAssemblyStep;
     let options: any;
     let output: any;
@@ -33,18 +44,24 @@ describe('ProjectJsonAssemblyStep', () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        mockProjectConfig = {
-            projectDirectory: '/root',
-            getPrunedDefinition: vi.fn().mockReturnValue({
+        mockProvider = {
+            projectDir: '/root',
+            getPackageDefinition: vi.fn().mockReturnValue({
+                package: 'core',
+                path: 'force-app',
+                type: 'unlocked',
+                versionNumber: '1.0.0.NEXT',
+            }),
+            resolveForPackage: vi.fn().mockReturnValue({
                 packageDirectories: [{
                     path: 'force-app',
                     package: 'core',
                     versionNumber: '1.0.0.NEXT'
                 }]
-            })
+            }),
         };
 
-        step = new ProjectJsonAssemblyStep('core', mockProjectConfig as any);
+        step = new ProjectJsonAssemblyStep('core', mockProvider as any);
         options = { versionNumber: '1.2.3.4' };
         output = {
             stagingDirectory: '/staging',

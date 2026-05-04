@@ -129,7 +129,7 @@ export default class Bootstrap extends SfpmCommand {
 
       // ── Step 6: Load project from cloned repo ─────────────────────
       const projectService = await ProjectService.create(tmpDir)
-      const projectConfig = projectService.getProjectConfig()
+      const projectConfig = projectService.getDefinitionProvider()
       const projectGraph = projectService.getProjectGraph()
       const sfpmConfig = projectService.getSfpmConfig()
 
@@ -142,7 +142,6 @@ export default class Bootstrap extends SfpmCommand {
         devhubUsername: flags['target-org'],
         force: true,
         includeDependencies: true,
-        npmScope: sfpmConfig.npmScope,
       }
 
       const buildOrchestrator = new BuildOrchestrator(
@@ -190,7 +189,6 @@ export default class Bootstrap extends SfpmCommand {
       const installOptions = {
         force: flags.force,
         includeDependencies: true,
-        npmScope: sfpmConfig.npmScope,
         targetOrg: flags['target-org'],
         trackHistory: sfpmConfig.artifacts?.trackHistory,
       }

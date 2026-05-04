@@ -24,12 +24,32 @@ export interface HookContext {
   operation: string;
   /** Current package name being processed */
   packageName?: string;
+  /**
+   * Absolute path to the package's metadata directory.
+   *
+   * This is the directory that contains the package's source files (profiles,
+   * classes, etc.). The value depends on the installation source:
+   * - **Artifact install**: extracted tarball dir + package path (e.g., `/tmp/sfpm-install/.../package/src-access-management`)
+   * - **Local source deploy**: project root + package path (e.g., `/Users/dev/project/src-access-management`)
+   * - **Managed packages**: `undefined` (no local source to process)
+   */
+  packagePath?: string;
   /** Package type identifier (e.g., 'Source', 'Unlocked') */
   packageType?: string;
   /** Project root directory */
   projectDir?: string;
-  /** The lifecycle stage that triggered this invocation (e.g., 'validate', 'deploy', 'local') */
+  /** The lifecycle stage that triggered this invocation (e.g., 'validate', 'deploy', 'install', 'build') */
   stage: string;
+  /**
+   * Org alias or username that hooks can use to connect to the relevant org.
+   *
+   * - **Install operations**: the target org receiving the deployment
+   * - **Build operations**: the default DevHub (if one was specified)
+   *
+   * Hooks that need a live connection can call `Org.create({ aliasOrUsername: targetOrg })`
+   * from `@salesforce/core` to obtain one.
+   */
+  targetOrg?: string;
   /** The timing within the operation (e.g., 'pre', 'post') */
   timing: string;
 }

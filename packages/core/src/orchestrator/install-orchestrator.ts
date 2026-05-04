@@ -1,10 +1,11 @@
 import {Org} from '@salesforce/core';
 import EventEmitter from 'node:events';
 
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+
 import {ArtifactService} from '../artifacts/artifact-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import PackageInstaller, {InstallOptions} from '../package/package-installer.js';
-import ProjectConfig from '../project/project-config.js';
 import {ProjectGraph} from '../project/project-graph.js';
 import {
   InstallEvents,
@@ -12,7 +13,6 @@ import {
   OrchestrationResult,
   PackageResult,
 } from '../types/events.js';
-import {HookContext} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {InstallationSource} from '../types/package.js';
 import {
@@ -47,15 +47,15 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
   private readonly lifecycle: LifecycleEngine | undefined;
   private readonly logger: Logger | undefined;
   private readonly options: InstallOptions;
-  private readonly projectConfig: ProjectConfig;
+  private readonly provider: ProjectDefinitionProvider;
 
   constructor(
-    projectConfig: ProjectConfig,
+    provider: ProjectDefinitionProvider,
     options: InstallOptions,
     logger?: Logger,
     lifecycle?: LifecycleEngine,
   ) {
-    this.projectConfig = projectConfig;
+    this.provider = provider;
     this.options = options;
     this.logger = logger;
     this.lifecycle = lifecycle;
@@ -71,7 +71,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
 
     // Check if this package should be skipped for the current lifecycle stage
     if (this.lifecycle) {
-      const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
+      const packageDefinition = this.provider.getPackageDefinition(packageName);
       const skipStages = packageDefinition.packageOptions?.skip ?? [];
       if (skipStages.includes(this.lifecycle.stage)) {
         this.logger?.info(`Skipping '${packageName}' — stage '${this.lifecycle.stage}' is in skip list`);
@@ -82,10 +82,11 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     }
 
     const installer = new PackageInstaller(
-      this.projectConfig,
+      this.provider,
       this.options,
       this.logger,
       context.org,
+      this.lifecycle,
     );
 
     this.forwardInstallerEvents(installer, emitter);
@@ -95,21 +96,9 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     let error: string | undefined;
 
     try {
-      // Run pre-install hooks
-      if (this.lifecycle) {
-        const hookContext = this.buildHookContext(packageName, context);
-        await this.lifecycle.run('install', 'pre', hookContext);
-      }
-
       const result = await installer.installPackage(packageName);
       if (result.skipped) {
         skipped = true;
-      }
-
-      // Run post-install hooks
-      if (this.lifecycle && !result.skipped) {
-        const hookContext = this.buildHookContext(packageName, context);
-        await this.lifecycle.run('install', 'post', hookContext);
       }
     } catch (error_) {
       success = false;
@@ -133,25 +122,6 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     .setLogger(this.logger);
 
     return {artifactService, org};
-  }
-
-  /**
-   * Build a {@link HookContext} for lifecycle hooks at the install operation.
-   * Provides the package definition, org, logger, and project directory.
-   */
-  private buildHookContext(packageName: string, context: InstallContext): HookContext {
-    const packageDefinition = this.projectConfig.getPackageDefinition(packageName);
-
-    return {
-      logger: this.logger,
-      operation: 'install',
-      org: context.org,
-      packageName,
-      packageType: packageDefinition.type,
-      sfpmPackage: {packageDefinition},
-      stage: this.lifecycle?.stage ?? 'local',
-      timing: '',
-    };
   }
 
   private forwardInstallerEvents(installer: PackageInstaller, emitter: OrchestratorEmitter): void {
@@ -195,14 +165,14 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
   private readonly orchestrator: Orchestrator<InstallContext>;
 
   constructor(
-    projectConfig: ProjectConfig,
+    provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
     options: InstallOrchestratorOptions,
     logger?: Logger,
     lifecycle?: LifecycleEngine,
   ) {
     super();
-    const task = new InstallOrchestrationTask(projectConfig, options, logger, lifecycle);
+    const task = new InstallOrchestrationTask(provider, options, logger, lifecycle);
     this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: true}, task, logger, this);
   }
 
@@ -215,14 +185,14 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
    * Uses artifact resolution (local or npm) to find the best version.
    */
   static forArtifact(
-    projectConfig: ProjectConfig,
+    provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
     options: Omit<InstallOrchestratorOptions, 'source'> & {source?: never},
     logger?: Logger,
     lifecycle?: LifecycleEngine,
   ): InstallOrchestrator {
     return new InstallOrchestrator(
-      projectConfig,
+      provider,
       graph,
       {...options, source: InstallationSource.Artifact},
       logger,
@@ -235,14 +205,14 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
    * Deploys source metadata via the metadata API without artifact resolution.
    */
   static forSource(
-    projectConfig: ProjectConfig,
+    provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
     options: Omit<InstallOrchestratorOptions, 'mode' | 'source'> & {mode?: never; source?: never},
     logger?: Logger,
     lifecycle?: LifecycleEngine,
   ): InstallOrchestrator {
     return new InstallOrchestrator(
-      projectConfig,
+      provider,
       graph,
       {...options, source: InstallationSource.Local},
       logger,

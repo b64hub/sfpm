@@ -1,10 +1,10 @@
 import {Org} from '@salesforce/core';
 import semver from 'semver';
 
-import {formatVersion} from '../utils/version-utils.js';
 import {Logger} from '../types/logger.js';
 import {PackageType} from '../types/package.js';
 import {soql} from '../utils/soql.js';
+import {formatVersion} from '../utils/version-utils.js';
 
 export interface Package2 {
   ContainerOptions: string;
@@ -171,8 +171,7 @@ export class PackageService {
     ];
 
     if (versionNumber) {
-      const semverVersion = semver.coerce(versionNumber);
-      if (!semverVersion) {
+      if (!/^\d+(\.\d+){0,3}$/.test(versionNumber)) {
         throw new Error(`Invalid version number: ${versionNumber}`);
       }
 
@@ -213,8 +212,8 @@ export class PackageService {
 
       if (records.length > 1) {
         return records.sort((a, b) => {
-          const v1 = formatVersion(a.MajorVersion, a.MinorVersion, a.PatchVersion, a.BuildNumber);
-          const v2 = formatVersion(b.MajorVersion, b.MinorVersion, b.PatchVersion, b.BuildNumber);
+          const v1 = formatVersion(a.MajorVersion, a.MinorVersion, a.PatchVersion, a.BuildNumber, 'semver');
+          const v2 = formatVersion(b.MajorVersion, b.MinorVersion, b.PatchVersion, b.BuildNumber, 'semver');
           return semver.rcompare(v1, v2);
         });
       }

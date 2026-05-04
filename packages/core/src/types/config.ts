@@ -68,7 +68,6 @@ export interface IgnoreFilesConfig {
  * import { profileHooks } from '@b64/sfpm-hooks';
  *
  * export default defineConfig({
- *   npmScope: '@myorg',
  *   hooks: [
  *     profileHooks({ scope: 'source' }),
  *   ],
@@ -121,12 +120,40 @@ export interface SfpmConfig {
   ignoreFiles?: IgnoreFilesConfig;
 
   /**
-   * npm scope for publishing packages (e.g., '@myorg').
-   * Required for npm registry integration and artifact publishing.
+   * Salesforce namespace prefix for the project.
+   * Written to sfdx-project.json during sync.
+   * Use empty string for no namespace.
    *
-   * @example '@myorg'
+   * @example 'myns'
    */
-  npmScope?: string;
+  namespace?: string;
+
+  /**
+   * Salesforce login URL for the project.
+   * Written to sfdx-project.json during sync.
+   *
+   * @default 'https://login.salesforce.com'
+   * @example 'https://test.salesforce.com'
+   */
+  sfdcLoginUrl?: string;
+
+  /**
+   * Source API version for the project (e.g., '63.0').
+   * Written to sfdx-project.json during sync.
+   *
+   * @example '63.0'
+   */
+  sourceApiVersion?: string;
+
+  /**
+   * Source behavior options for the project.
+   * Written to sfdx-project.json during sync.
+   * Controls source decomposition and other behavior presets.
+   *
+   * @see https://github.com/forcedotcom/source-deploy-retrieve/tree/main/src/registry/presets
+   * @example ['decomposeCustomLabelsBeta']
+   */
+  sourceBehaviorOptions?: string[];
 }
 
 // ============================================================================

@@ -1,3 +1,5 @@
+import type {ProjectDefinitionProvider} from './providers/project-definition-provider.js';
+
 import {
   ManagedPackageDefinition,
   PackageDefinition,
@@ -50,8 +52,8 @@ export class PackageNode {
 export class ProjectGraph {
   private nodes: Map<string, PackageNode> = new Map();
 
-  constructor(projectDefinition: ProjectDefinition) {
-    this.buildGraph(projectDefinition);
+  constructor(provider: ProjectDefinitionProvider) {
+    this.buildGraph(provider.getProjectDefinition());
   }
 
   /**

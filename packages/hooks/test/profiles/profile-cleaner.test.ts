@@ -4,9 +4,9 @@ import {mkdirSync, rmSync, writeFileSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 
-import {ProfileCleaner, findProfilesDirectory, collectPackageMetadata} from '../../src/profiles/profile-cleaner.js';
+import {ProfileCleaner, findProfilesDirectory, collectPackageComponents} from '../../src/profiles/profile-cleaner.js';
 import {parseProfileXml} from '../../src/profiles/profile-xml.js';
-import type {OrgMetadataProvider, Profile} from '../../src/profiles/types.js';
+import type {ComponentMap, Profile} from '../../src/profiles/types.js';
 
 // ============================================================================
 // Test Fixtures
@@ -216,18 +216,18 @@ describe('ProfileCleaner', () => {
       const profilePath = join(testDir, 'Admin.profile-meta.xml');
       writeFileSync(profilePath, FULL_PROFILE_XML);
 
-      // Only these components exist in the package
-      const metadata = new Set([
-        'standard__LightningSales',
-        'MyController',
-        'MyCustomPerm',
-        'Account',
-        'Account.CustomField__c',
-        'My_Flow',
-        'Account-Account Layout',
-        'MyPage',
-        'Account.Business',
-        'standard-Account',
+      // Only these components exist in the package, keyed by section
+      const metadata: ComponentMap = new Map([
+        ['applicationVisibilities', new Set(['standard__LightningSales'])],
+        ['classAccesses', new Set(['MyController'])],
+        ['customPermissions', new Set(['MyCustomPerm'])],
+        ['objectPermissions', new Set(['Account'])],
+        ['fieldPermissions', new Set(['Account.CustomField__c'])],
+        ['flowAccesses', new Set(['My_Flow'])],
+        ['layoutAssignments', new Set(['Account-Account Layout'])],
+        ['pageAccesses', new Set(['MyPage'])],
+        ['recordTypeVisibilities', new Set(['Account.Business'])],
+        ['tabVisibilities', new Set(['standard-Account'])],
       ]);
 
       const cleaner = new ProfileCleaner({scope: 'source'});
@@ -284,7 +284,7 @@ describe('ProfileCleaner', () => {
       const cleaner = new ProfileCleaner({scope: 'none'});
       const profile = parseProfileXml(FULL_PROFILE_XML);
 
-      const metadata = new Set(['Account']); // Only Account exists
+      const metadata: ComponentMap = new Map([['objectPermissions', new Set(['Account'])]]);
       await cleaner.cleanProfile(profile, metadata);
 
       // Nothing should be removed since scoping is disabled
@@ -292,11 +292,11 @@ describe('ProfileCleaner', () => {
       expect(profile.applicationVisibilities).toHaveLength(2);
     });
 
-    it('should not scope when metadata set is empty', async () => {
+    it('should not scope when metadata map is empty', async () => {
       const cleaner = new ProfileCleaner({scope: 'source'});
       const profile = parseProfileXml(FULL_PROFILE_XML);
 
-      await cleaner.cleanProfile(profile, new Set());
+      await cleaner.cleanProfile(profile, new Map());
 
       // Empty set means skip scoping
       expect(profile.classAccesses).toHaveLength(2);
@@ -338,21 +338,25 @@ describe('ProfileCleaner', () => {
       expect(profile.userPermissions).toBeUndefined();
     });
 
-    it('should keep field permissions when parent object is in metadata', async () => {
+    it('should require exact field match, not parent object', async () => {
       const cleaner = new ProfileCleaner({scope: 'source'});
       const profile: Profile = {
         custom: true,
         fieldPermissions: [
           {field: 'Account.Name', editable: false, readable: true},
+          {field: 'Account.Custom__c', editable: false, readable: true},
           {field: 'Contact.Email', editable: false, readable: true},
         ],
       };
 
-      // Only Account is in metadata (not 'Account.Name' directly)
-      await cleaner.cleanProfile(profile, new Set(['Account']));
+      // Only the explicit field is in metadata — parent object alone is not enough
+      await cleaner.cleanProfile(profile, new Map([
+        ['fieldPermissions', new Set(['Account.Custom__c'])],
+        ['objectPermissions', new Set(['Account'])],
+      ]));
 
       expect(profile.fieldPermissions).toHaveLength(1);
-      expect(profile.fieldPermissions![0].field).toBe('Account.Name');
+      expect(profile.fieldPermissions![0].field).toBe('Account.Custom__c');
     });
 
     it('should handle layoutAssignments with recordType check', async () => {
@@ -366,11 +370,9 @@ describe('ProfileCleaner', () => {
         ],
       };
 
-      const metadata = new Set([
-        'Account-Account Layout',
-        'Contact-Contact Layout',
-        'Contact.Business',
-        'Lead-Lead Layout',
+      const metadata: ComponentMap = new Map([
+        ['layoutAssignments', new Set(['Account-Account Layout', 'Contact-Contact Layout', 'Lead-Lead Layout'])],
+        ['recordTypeVisibilities', new Set(['Contact.Business'])],
         // Note: Lead.MissingRT is NOT in metadata
       ]);
 
@@ -390,7 +392,11 @@ describe('ProfileCleaner', () => {
       });
 
       const profile = parseProfileXml(FULL_PROFILE_XML);
-      const metadata = new Set(['Account', 'MyController', 'standard__LightningSales']);
+      const metadata: ComponentMap = new Map([
+        ['objectPermissions', new Set(['Account'])],
+        ['classAccesses', new Set(['MyController'])],
+        ['applicationVisibilities', new Set(['standard__LightningSales'])],
+      ]);
 
       await cleaner.cleanProfile(profile, metadata);
 
@@ -412,7 +418,7 @@ describe('ProfileCleaner', () => {
       };
 
       // Should not throw
-      await cleaner.cleanProfile(profile, new Set(['Account']));
+      await cleaner.cleanProfile(profile, new Map([['objectPermissions', new Set(['Account'])]]));
 
       expect(profile.custom).toBe(true);
     });
@@ -421,14 +427,13 @@ describe('ProfileCleaner', () => {
     // Org-aware scoping
     // ========================================================================
 
-    describe('with OrgMetadataProvider', () => {
-      function createMockResolver(
+    describe('with org components', () => {
+      function createOrgComponents(
         orgData: Record<string, string[]>,
-      ): OrgMetadataProvider {
-        return {
-          getOrgComponents: async (section: string) =>
-            new Set(orgData[section] ?? []),
-        };
+      ): ComponentMap {
+        return new Map(
+          Object.entries(orgData).map(([section, names]) => [section, new Set(names)]),
+        );
       }
 
       it('should keep entries found in org but not in source', async () => {
@@ -442,12 +447,12 @@ describe('ProfileCleaner', () => {
         };
 
         // Source only has MyController, org has OrgOnlyClass
-        const sourceMetadata = new Set(['MyController']);
-        const orgResolver = createMockResolver({
+        const sourceMetadata: ComponentMap = new Map([['classAccesses', new Set(['MyController'])]]);
+        const orgComponents = createOrgComponents({
           classAccesses: ['OrgOnlyClass'],
         });
 
-        await cleaner.cleanProfile(profile, sourceMetadata, orgResolver);
+        await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
         expect(profile.classAccesses).toHaveLength(2);
         const names = profile.classAccesses!.map((c) => c.apexClass);
@@ -467,12 +472,12 @@ describe('ProfileCleaner', () => {
         };
 
         // Only Account in source, but Contact is a standard object in the org
-        const sourceMetadata = new Set(['Account']);
-        const orgResolver = createMockResolver({
+        const sourceMetadata: ComponentMap = new Map([['objectPermissions', new Set(['Account'])]]);
+        const orgComponents = createOrgComponents({
           objectPermissions: ['Account', 'Contact', 'Lead', 'Opportunity'],
         });
 
-        await cleaner.cleanProfile(profile, sourceMetadata, orgResolver);
+        await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
         expect(profile.objectPermissions).toHaveLength(2);
         const objects = profile.objectPermissions!.map((o) => o.object);
@@ -491,15 +496,15 @@ describe('ProfileCleaner', () => {
           ],
         };
 
-        // Source has Account, org has Account.Name and Account.Industry
-        const sourceMetadata = new Set(['Account']);
-        const orgResolver = createMockResolver({
+        // Source has Account object only, org has the specific fields
+        const sourceMetadata: ComponentMap = new Map([['objectPermissions', new Set(['Account'])]]);
+        const orgComponents = createOrgComponents({
           fieldPermissions: ['Account.Name', 'Account.Industry'],
         });
 
-        await cleaner.cleanProfile(profile, sourceMetadata, orgResolver);
+        await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
-        // All Account fields kept — Account.Name and Account.Industry via parent + org
+        // Account fields kept via exact match from org fieldPermissions
         expect(profile.fieldPermissions).toHaveLength(2);
         const fields = profile.fieldPermissions!.map((f) => f.field);
         expect(fields).toContain('Account.Name');
@@ -507,7 +512,7 @@ describe('ProfileCleaner', () => {
         expect(fields).not.toContain('Deleted__c.Field__c');
       });
 
-      it('should fall back to source-only when org resolver returns empty', async () => {
+      it('should fall back to source-only when org components are empty', async () => {
         const cleaner = new ProfileCleaner({scope: 'source'});
         const profile: Profile = {
           classAccesses: [
@@ -516,16 +521,16 @@ describe('ProfileCleaner', () => {
           ],
         };
 
-        const sourceMetadata = new Set(['MyController']);
-        const orgResolver = createMockResolver({}); // Empty org data
+        const sourceMetadata: ComponentMap = new Map([['classAccesses', new Set(['MyController'])]]);
+        const orgComponents = createOrgComponents({}); // Empty org data
 
-        await cleaner.cleanProfile(profile, sourceMetadata, orgResolver);
+        await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
         expect(profile.classAccesses).toHaveLength(1);
         expect(profile.classAccesses![0].apexClass).toBe('MyController');
       });
 
-      it('should work with org resolver for layout recordType checks', async () => {
+      it('should work with org components for layout recordType checks', async () => {
         const cleaner = new ProfileCleaner({scope: 'source'});
         const profile: Profile = {
           layoutAssignments: [
@@ -535,19 +540,16 @@ describe('ProfileCleaner', () => {
         };
 
         // Source has account layout, org has contact layout + record type
-        const sourceMetadata = new Set(['Account-Account Layout']);
-        const orgResolver = createMockResolver({
+        const sourceMetadata: ComponentMap = new Map([
+          ['layoutAssignments', new Set(['Account-Account Layout'])],
+        ]);
+        const orgComponents = createOrgComponents({
           layoutAssignments: ['Contact-Contact Layout'],
           recordTypeVisibilities: ['Contact.Business'],
         });
 
-        await cleaner.cleanProfile(profile, sourceMetadata, orgResolver);
+        await cleaner.cleanProfile(profile, sourceMetadata, orgComponents);
 
-        // Both kept: Account layout from source, Contact layout from org
-        // Note: recordType 'Contact.Business' is checked against the same merged set
-        // for layoutAssignments — the org resolver for layoutAssignments only adds
-        // layout names, not record types. Record types need to be in the source or
-        // in the layoutAssignments org set.
         expect(profile.layoutAssignments).toHaveLength(2);
       });
     });
@@ -593,10 +595,10 @@ describe('findProfilesDirectory', () => {
 });
 
 // ============================================================================
-// collectPackageMetadata
+// collectPackageComponents
 // ============================================================================
 
-describe('collectPackageMetadata', () => {
+describe('collectPackageComponents', () => {
   let testDir: string;
 
   beforeEach(() => {
@@ -607,63 +609,65 @@ describe('collectPackageMetadata', () => {
     rmSync(testDir, {recursive: true, force: true});
   });
 
-  it('should collect class names', async () => {
+  it('should collect class names into classAccesses section', async () => {
     mkdirSync(join(testDir, 'classes'), {recursive: true});
     writeFileSync(join(testDir, 'classes', 'MyController.cls-meta.xml'), '<ApexClass/>');
     writeFileSync(join(testDir, 'classes', 'OtherClass.cls-meta.xml'), '<ApexClass/>');
 
-    const metadata = await collectPackageMetadata(testDir);
+    const components = await collectPackageComponents(testDir);
 
-    expect(metadata.has('MyController')).toBe(true);
-    expect(metadata.has('OtherClass')).toBe(true);
+    const classes = components.get('classAccesses');
+    expect(classes).toBeDefined();
+    expect(classes!.has('MyController')).toBe(true);
+    expect(classes!.has('OtherClass')).toBe(true);
   });
 
-  it('should collect application names', async () => {
+  it('should collect application names into applicationVisibilities section', async () => {
     mkdirSync(join(testDir, 'applications'), {recursive: true});
     writeFileSync(join(testDir, 'applications', 'MyApp.app-meta.xml'), '<CustomApplication/>');
 
-    const metadata = await collectPackageMetadata(testDir);
+    const components = await collectPackageComponents(testDir);
 
-    expect(metadata.has('MyApp')).toBe(true);
+    expect(components.get('applicationVisibilities')!.has('MyApp')).toBe(true);
   });
 
-  it('should collect page names', async () => {
+  it('should collect page names into pageAccesses section', async () => {
     mkdirSync(join(testDir, 'pages'), {recursive: true});
     writeFileSync(join(testDir, 'pages', 'MyPage.page-meta.xml'), '<ApexPage/>');
 
-    const metadata = await collectPackageMetadata(testDir);
+    const components = await collectPackageComponents(testDir);
 
-    expect(metadata.has('MyPage')).toBe(true);
+    expect(components.get('pageAccesses')!.has('MyPage')).toBe(true);
   });
 
-  it('should collect flow names', async () => {
+  it('should collect flow names into flowAccesses section', async () => {
     mkdirSync(join(testDir, 'flows'), {recursive: true});
     writeFileSync(join(testDir, 'flows', 'My_Flow.flow-meta.xml'), '<Flow/>');
 
-    const metadata = await collectPackageMetadata(testDir);
+    const components = await collectPackageComponents(testDir);
 
-    expect(metadata.has('My_Flow')).toBe(true);
+    expect(components.get('flowAccesses')!.has('My_Flow')).toBe(true);
   });
 
-  it('should collect layout names', async () => {
+  it('should collect layout names into layoutAssignments section', async () => {
     mkdirSync(join(testDir, 'layouts'), {recursive: true});
     writeFileSync(join(testDir, 'layouts', 'Account-Account Layout.layout-meta.xml'), '<Layout/>');
 
-    const metadata = await collectPackageMetadata(testDir);
+    const components = await collectPackageComponents(testDir);
 
-    expect(metadata.has('Account-Account Layout')).toBe(true);
+    expect(components.get('layoutAssignments')!.has('Account-Account Layout')).toBe(true);
   });
 
-  it('should collect tab names', async () => {
+  it('should collect tab names into tabVisibilities section', async () => {
     mkdirSync(join(testDir, 'tabs'), {recursive: true});
     writeFileSync(join(testDir, 'tabs', 'MyTab.tab-meta.xml'), '<CustomTab/>');
 
-    const metadata = await collectPackageMetadata(testDir);
+    const components = await collectPackageComponents(testDir);
 
-    expect(metadata.has('MyTab')).toBe(true);
+    expect(components.get('tabVisibilities')!.has('MyTab')).toBe(true);
   });
 
-  it('should collect object and field names', async () => {
+  it('should collect objects, fields, and record types into separate sections', async () => {
     const objDir = join(testDir, 'objects', 'Account');
     mkdirSync(join(objDir, 'fields'), {recursive: true});
     mkdirSync(join(objDir, 'recordTypes'), {recursive: true});
@@ -671,34 +675,34 @@ describe('collectPackageMetadata', () => {
     writeFileSync(join(objDir, 'fields', 'CustomField__c.field-meta.xml'), '<CustomField/>');
     writeFileSync(join(objDir, 'recordTypes', 'Business.recordType-meta.xml'), '<RecordType/>');
 
-    const metadata = await collectPackageMetadata(testDir);
+    const components = await collectPackageComponents(testDir);
 
-    expect(metadata.has('Account')).toBe(true);
-    expect(metadata.has('Account.CustomField__c')).toBe(true);
-    expect(metadata.has('Account.Business')).toBe(true);
+    expect(components.get('objectPermissions')!.has('Account')).toBe(true);
+    expect(components.get('fieldPermissions')!.has('Account.CustomField__c')).toBe(true);
+    expect(components.get('recordTypeVisibilities')!.has('Account.Business')).toBe(true);
   });
 
   it('should handle empty package directory', async () => {
-    const metadata = await collectPackageMetadata(testDir);
+    const components = await collectPackageComponents(testDir);
 
-    expect(metadata.size).toBe(0);
+    expect(components.size).toBe(0);
   });
 
   it('should collect customPermission names', async () => {
     mkdirSync(join(testDir, 'customPermissions'), {recursive: true});
     writeFileSync(join(testDir, 'customPermissions', 'MyPerm.customPermission-meta.xml'), '<CustomPermission/>');
 
-    const metadata = await collectPackageMetadata(testDir);
+    const components = await collectPackageComponents(testDir);
 
-    expect(metadata.has('MyPerm')).toBe(true);
+    expect(components.get('customPermissions')!.has('MyPerm')).toBe(true);
   });
 
   it('should collect externalDataSource names', async () => {
     mkdirSync(join(testDir, 'dataSources'), {recursive: true});
     writeFileSync(join(testDir, 'dataSources', 'MySource.dataSource-meta.xml'), '<ExternalDataSource/>');
 
-    const metadata = await collectPackageMetadata(testDir);
+    const components = await collectPackageComponents(testDir);
 
-    expect(metadata.has('MySource')).toBe(true);
+    expect(components.get('externalDataSourceAccesses')!.has('MySource')).toBe(true);
   });
 });

@@ -1,14 +1,21 @@
 import {Org} from '@salesforce/core';
+import fs from 'fs-extra';
+import {execSync} from 'node:child_process';
 import EventEmitter from 'node:events';
+import os from 'node:os';
+import path from 'node:path';
+
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {ArtifactService, InstallTarget} from '../artifacts/artifact-service.js';
-import ProjectConfig from '../project/project-config.js';
+import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
+import {HookContext} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {InstallationMode, InstallationSource, PackageType} from '../types/package.js';
 import {Installer, InstallerRegistry} from './installers/installer-registry.js';
 import {ManagedPackageRef} from './installers/types.js';
 import {PackageService} from './package-service.js';
-import SfpmPackage, {PackageFactory, SfpmUnlockedPackage} from './sfpm-package.js';
+import SfpmPackage, {PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage} from './sfpm-package.js';
 // Import installers to trigger registration
 import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
@@ -26,13 +33,16 @@ export interface InstallOptions {
    * Set specific installation mode (mainly for unlocked packages, overrides auto-detection).
    */
   mode?: InstallationMode;
-  /** npm scope for resolving packages from npm registry (e.g., "@myorg") */
-  npmScope?: string;
   /**
    * Where to install from: 'local' (project source) or 'artifact'.
    */
   source?: InstallationSource;
   targetOrg: string;
+  /**
+   * Salesforce test level for source deployments.
+   * Valid values: NoTestRun, RunSpecifiedTests, RunLocalTests, RunAllTestsInOrg
+   */
+  testLevel?: string;
   /**
    * When true, creates an `Sfpm_Artifact_History__c` record after each artifact upsert.
    * Read from `sfpmConfig.artifacts?.trackHistory` and passed through by the CLI/Actions layer.
@@ -58,22 +68,25 @@ export interface InstallTask {
  * Orchestrator for package installations
  */
 export default class PackageInstaller extends EventEmitter {
+  private lifecycle: LifecycleEngine | undefined;
   private logger: Logger | undefined;
   private options: InstallOptions;
   private org?: Org;
-  private projectConfig: ProjectConfig;
+  private provider: ProjectDefinitionProvider;
 
   constructor(
-    projectConfig: ProjectConfig,
+    provider: ProjectDefinitionProvider,
     options: InstallOptions,
     logger?: Logger,
     org?: Org,
+    lifecycle?: LifecycleEngine,
   ) {
     super();
     this.options = options;
     this.logger = logger;
-    this.projectConfig = projectConfig;
+    this.provider = provider;
     this.org = org;
+    this.lifecycle = lifecycle;
   }
 
   /**
@@ -88,7 +101,7 @@ export default class PackageInstaller extends EventEmitter {
    * @returns InstallResult with details of what happened
    */
   public async installPackage(packageName: string): Promise<InstallResult> {
-    const factory = new PackageFactory(this.projectConfig);
+    const factory = new PackageFactory(this.provider);
 
     // Managed packages: skip artifact resolution, go straight to version install
     if (factory.isManagedPackage(packageName)) {
@@ -113,6 +126,39 @@ export default class PackageInstaller extends EventEmitter {
       this.logger?.error(`Failed to install ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
+  }
+
+  /**
+   * Build a {@link HookContext} for lifecycle hooks during installation.
+   *
+   * The `packagePath` points to the actual source that will be deployed:
+   * - For artifact installs: the extracted artifact directory (`workingDirectory`)
+   * - For local source deploys: the project package directory
+   * - For managed packages: omitted (no source to process)
+   */
+  private buildHookContext(packageName: string, packagePath?: string): HookContext {
+    const projectDefinition = this.provider.getProjectDefinition();
+
+    let packageType: string | undefined;
+    try {
+      packageType = this.provider.getPackageDefinition(packageName).type;
+    } catch {
+      // Managed packages are not in packageDirectories
+    }
+
+    return {
+      logger: this.logger,
+      operation: 'install',
+      org: this.org,
+      packageAliases: projectDefinition.packageAliases ?? {},
+      packageName,
+      packagePath,
+      packageType,
+      projectDir: this.provider.projectDir,
+      stage: '',
+      targetOrg: this.options.targetOrg,
+      timing: '',
+    };
   }
 
   private emitComplete(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
@@ -239,6 +285,80 @@ export default class PackageInstaller extends EventEmitter {
   }
 
   /**
+   * Install directly from project source without artifact resolution.
+   * Used for `sfpm deploy` where the source is the local project directory.
+   */
+  private async installFromSource(sfpmPackage: SfpmPackage): Promise<InstallResult> {
+    const packageName = sfpmPackage.name;
+
+    if (!this.org) {
+      this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
+    }
+
+    // For source deploys, set workingDirectory to the project root
+    // so getComponentSet() can resolve the metadata path.
+    if (!sfpmPackage.workingDirectory) {
+      sfpmPackage.workingDirectory = this.provider.projectDir;
+    }
+
+    this.logger?.info(`Deploying ${packageName} from local source`);
+    this.emit('install:start', {
+      installReason: 'source deploy',
+      packageName: sfpmPackage.packageName,
+      packageType: sfpmPackage.type as PackageType,
+      source: InstallationSource.Local,
+      targetOrg: this.options.targetOrg,
+      timestamp: new Date(),
+      versionNumber: sfpmPackage.version,
+    });
+
+    // Run pre-install hooks with the local source path
+    await this.runHooks('pre', packageName, sfpmPackage);
+
+    try {
+      const InstallerConstructor = InstallerRegistry.getInstaller(sfpmPackage.type as any);
+      if (!InstallerConstructor) {
+        throw new Error(`No installer registered for package type: ${sfpmPackage.type}`);
+      }
+
+      const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
+        source: InstallationSource.Local,
+        testLevel: this.options.testLevel,
+      });
+      this.forwardInstallerEvents(installer, packageName);
+
+      await installer.connect(this.options.targetOrg);
+      const execResult = await installer.exec();
+
+      this.emit('install:complete', {
+        packageName: sfpmPackage.packageName,
+        packageType: sfpmPackage.type as PackageType,
+        source: InstallationSource.Local,
+        success: true,
+        targetOrg: this.options.targetOrg,
+        timestamp: new Date(),
+        versionNumber: sfpmPackage.version,
+      });
+      this.logger?.info(`Successfully deployed ${packageName}`);
+
+      // Run post-install hooks
+      await this.runHooks('post', packageName, sfpmPackage);
+
+      return {
+        deployId: execResult.deployId,
+        installed: true,
+        packageName,
+        skipped: false,
+        version: sfpmPackage.version ?? 'local',
+      };
+    } catch (error) {
+      this.emitError(sfpmPackage, error as Error);
+      this.logger?.error(`Failed to deploy ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+
+  /**
    * Fast path for managed packages — no artifact resolution needed.
    * Uses the packageVersionId already known from packageAliases.
    * Checks if the version is already installed before attempting installation.
@@ -276,6 +396,9 @@ export default class PackageInstaller extends EventEmitter {
 
     this.emitManagedStart(packageName, managedRef.packageVersionId);
 
+    // Run pre-install hooks (no packagePath for managed packages — no source to process)
+    await this.runHooks('pre', packageName);
+
     try {
       const InstallerConstructor = InstallerRegistry.getInstaller(PackageType.Managed as any);
       if (!InstallerConstructor) {
@@ -294,6 +417,9 @@ export default class PackageInstaller extends EventEmitter {
 
       this.emitManagedComplete(packageName, managedRef.packageVersionId, true);
       this.logger?.info(`Successfully installed managed package ${packageName}`);
+
+      // Run post-install hooks
+      await this.runHooks('post', packageName);
 
       return {
         installed: true,
@@ -314,15 +440,22 @@ export default class PackageInstaller extends EventEmitter {
    * @returns installResult
    */
   private async installSfpmPackage(sfpmPackage: SfpmPackage): Promise<InstallResult> {
+    // Source-local deploy: skip artifact resolution entirely — deploy from project source
+    if (this.options.source === InstallationSource.Local) {
+      return this.installFromSource(sfpmPackage);
+    }
+
     const packageName = sfpmPackage.name;
 
     if (!this.org) {
       this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
     }
 
-    const {npmScope} = this.options;
-    if (!npmScope) {
-      throw new Error('npm scope not configured. Add npmScope to sfpm.config.ts');
+    const {npmName} = sfpmPackage;
+    if (!npmName) {
+      throw new Error(`Package "${packageName}" has no npm name. `
+        + 'In workspace mode, this is set from the package.json "name" field. '
+        + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
     }
 
     // Use singleton artifact service
@@ -336,7 +469,7 @@ export default class PackageInstaller extends EventEmitter {
       {
         forceRefresh: this.options.forceRefresh,
         localOnly: this.options.localOnly,
-        npmScope,
+        npmName,
       },
     );
 
@@ -360,13 +493,20 @@ export default class PackageInstaller extends EventEmitter {
       + `(reason: ${installTarget.installReason}, source: ${installTarget.resolved.source})`);
     this.emitStart(sfpmPackage, installTarget);
 
+    // Run pre-install hooks with the resolved package path
+    // (extracted artifact dir for source packages, project source for unlocked)
+    await this.runHooks('pre', packageName, sfpmPackage);
+
     try {
       const InstallerConstructor = InstallerRegistry.getInstaller(sfpmPackage.type as any);
       if (!InstallerConstructor) {
         throw new Error(`No installer registered for package type: ${sfpmPackage.type}`);
       }
 
-      const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger);
+      const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
+        source: this.options.source,
+        testLevel: this.options.testLevel,
+      });
 
       // Forward sub-events (connection:*, deployment:*, version-install:*) from the
       // concrete installer through this PackageInstaller so they reach the renderer.
@@ -387,6 +527,9 @@ export default class PackageInstaller extends EventEmitter {
       this.emitComplete(sfpmPackage, installTarget);
       this.logger?.info(`Successfully installed ${packageName}@${sfpmPackage.version}`);
 
+      // Run post-install hooks
+      await this.runHooks('post', packageName, sfpmPackage);
+
       return {
         deployId: execResult.deployId,
         installed: true,
@@ -402,6 +545,31 @@ export default class PackageInstaller extends EventEmitter {
   }
 
   /**
+   * Resolve the absolute path to a package's metadata directory.
+   *
+   * Resolution hierarchy for the root:
+   * 1. `workingDirectory` — set when an artifact has been extracted to a temp dir
+   * 2. `projectDir` — the project root from the provider
+   *
+   * The package definition's `path` (e.g. `src-access-management`) is always
+   * appended so the result points to the actual metadata directory, not just
+   * the project/artifact root.
+   */
+  private resolvePackageSourceDir(sfpmPackage: SfpmPackage): string {
+    const root = sfpmPackage.workingDirectory ?? this.provider.projectDir;
+    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.packageName);
+    return path.join(root, packageDefinition.path);
+  }
+
+  private async runHooks(timing: string, packageName: string, sfpmPackage?: SfpmPackage): Promise<void> {
+    if (!this.lifecycle) return;
+
+    const packagePath = sfpmPackage ? this.resolvePackageSourceDir(sfpmPackage) : undefined;
+    const hookContext = this.buildHookContext(packageName, packagePath);
+    await this.lifecycle.run('install', timing, hookContext);
+  }
+
+  /**
    * Update the SfpmPackage instance with information from the resolved install target.
    */
   private updatePackageFromTarget(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
@@ -414,6 +582,17 @@ export default class PackageInstaller extends EventEmitter {
     // For unlocked packages, set the packageVersionId
     if (sfpmPackage instanceof SfpmUnlockedPackage && resolved.packageVersionId) {
       sfpmPackage.packageVersionId = resolved.packageVersionId;
+    }
+
+    // For source packages, extract the artifact tarball so the source deployer
+    // can build a ComponentSet from the metadata files inside.
+    if (sfpmPackage instanceof SfpmSourcePackage && resolved.artifactPath) {
+      const extractDir = path.join(os.tmpdir(), 'sfpm-install', sfpmPackage.name, resolved.version);
+      fs.ensureDirSync(extractDir);
+      execSync(`tar -xzf "${resolved.artifactPath}" -C "${extractDir}"`, {timeout: 60_000});
+
+      // npm tarballs extract into a package/ subdirectory
+      sfpmPackage.workingDirectory = path.join(extractDir, 'package');
     }
   }
 }

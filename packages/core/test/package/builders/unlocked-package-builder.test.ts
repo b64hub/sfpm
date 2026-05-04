@@ -98,12 +98,10 @@ describe('UnlockedPackageBuilder', () => {
         });
 
         // Set required staging directory for build
-        mockSfpmPackage.stagingDirectory = '/tmp/project';
+        mockSfpmPackage.workingDirectory = '/tmp/project';
 
-        // Builder options with npm scope for artifact assembly
-        builderOptions = {
-            npmScope: '@testorg'
-        };
+        // Builder options for assembly
+        builderOptions = {};
 
         // Setup Org Mock
         mockConnection = { getApiVersion: () => '50.0' };
@@ -221,7 +219,7 @@ describe('UnlockedPackageBuilder', () => {
                 } as any
             }
         });
-        mockSfpmPackage.stagingDirectory = '/tmp/project';
+        mockSfpmPackage.workingDirectory = '/tmp/project';
         builder = new UnlockedPackageBuilder('/tmp/project', mockSfpmPackage, builderOptions, mockLogger);
 
         // Mock result
