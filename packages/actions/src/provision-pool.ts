@@ -3,7 +3,6 @@ import {
   createPoolServices,
   type PoolConfig,
   type PoolProvisionResult,
-  type SandboxLicenseType,
 } from '@b64hub/sfpm-orgs';
 import {Org, OrgTypes} from '@salesforce/core';
 
@@ -17,24 +16,18 @@ import {ActionsProgressRenderer} from './progress-renderer.js';
 export interface ProvisionPoolOptions {
   /** Max concurrent org creations (default: 5) */
   batchSize?: number;
-  /** Scratch org definition file path */
+  /** Org definition file path (scratch org or sandbox) */
   definitionFile?: string;
   /** DevHub username or alias */
   devhubUsername: string;
   /** Scratch org expiry in days (default: 7) */
   expiryDays?: number;
-  /** Sandbox activation user group name */
-  groupName?: string;
-  /** Sandbox license type (default: DEVELOPER) */
-  licenseType?: SandboxLicenseType;
   /** Maximum number of orgs to allocate */
   maxAllocation: number;
-  /** Pool type: scratchOrg or sandbox */
+  /** Pool type: scratch or sandbox */
   poolType?: OrgTypes;
   /** Sandbox name prefix (e.g., SB → SB1, SB2, ...) */
   sandboxNamePattern?: string;
-  /** Source sandbox name to clone from */
-  sourceSandboxName?: string;
   /** Pool tag */
   tag: string;
 }
@@ -150,12 +143,15 @@ function buildPoolConfig(options: ProvisionPoolOptions, poolType: OrgTypes): Poo
   };
 
   if (poolType === OrgTypes.Sandbox) {
+    if (!options.definitionFile) {
+      throw new Error('definition-file is required for sandbox pools');
+    }
+
     return {
       sandbox: {
-        groupName: options.groupName,
-        licenseType: options.licenseType ?? 'DEVELOPER',
+        definitionFile: options.definitionFile,
+        licenseType: 'DEVELOPER',
         namePattern: options.sandboxNamePattern ?? 'SB',
-        sourceSandboxName: options.sourceSandboxName,
       },
       sizing,
       tag: options.tag,
@@ -164,7 +160,7 @@ function buildPoolConfig(options: ProvisionPoolOptions, poolType: OrgTypes): Poo
   }
 
   if (!options.definitionFile) {
-    throw new Error('--definition-file is required for scratch org pools');
+    throw new Error('definition-file is required for scratch org pools');
   }
 
   return {
