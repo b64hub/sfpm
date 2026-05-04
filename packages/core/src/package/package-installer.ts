@@ -15,7 +15,7 @@ import {InstallationMode, InstallationSource, PackageType} from '../types/packag
 import {Installer, InstallerRegistry} from './installers/installer-registry.js';
 import {ManagedPackageRef} from './installers/types.js';
 import {PackageService} from './package-service.js';
-import SfpmPackage, {PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage} from './sfpm-package.js';
+import SfpmPackage, {isEnvAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage} from './sfpm-package.js';
 // Import installers to trigger registration
 import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
@@ -557,7 +557,7 @@ export default class PackageInstaller extends EventEmitter {
    * by downstream consumers.
    */
   private async resolveEnvAliasForDeploy(sfpmPackage: SfpmPackage): Promise<void> {
-    if (!sfpmPackage.isEnvAliased) return;
+    if (!isEnvAliasable(sfpmPackage) || !sfpmPackage.isEnvAliased) return;
 
     const resolution = await sfpmPackage.resolveEnvAlias(this.options.targetOrg, this.logger);
     this.logger?.info(`Env alias resolved for ${sfpmPackage.packageName}: alias='${resolution.resolvedAlias}', matched=${resolution.matched}`);
@@ -591,7 +591,7 @@ export default class PackageInstaller extends EventEmitter {
    */
   private resolvePackageSourceDir(sfpmPackage: SfpmPackage): string {
     // If env alias was resolved, use the effective path directly
-    if (sfpmPackage.envAliasResolution) {
+    if (isEnvAliasable(sfpmPackage) && sfpmPackage.envAliasResolution) {
       return sfpmPackage.envAliasResolution.effectivePath;
     }
 

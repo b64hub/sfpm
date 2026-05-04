@@ -81,7 +81,7 @@ export {type Package2, PackageService, type SubscriberPackage} from './package/p
 export {
   type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
 } from './package/services/validation-poller.js';
-export {PackageFactory, SfpmDataPackage, default as SfpmPackage} from './package/sfpm-package.js';
+export {type EnvAliasable, isEnvAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage} from './package/sfpm-package.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export {
   collectPackageAliases, stripScope, toManagedPackageDefinitions, toPackageDefinition,
