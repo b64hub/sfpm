@@ -56,21 +56,21 @@ export const BOOTSTRAP_PACKAGES: BootstrapPackageConfig[] = [
     description: 'Core custom setting for artifact tracking (SfpmArtifact__c)',
     isOrgDependent: false,
     name: 'sfpm-artifact',
-    path: 'sfpm-artifact',
+    path: 'packages/sfpm-artifact',
   },
   {
     dependencies: ['sfpm-artifact'],
     description: 'Scratch org & sandbox pool management (org-dependent)',
     isOrgDependent: true,
     name: 'sfpm-orgs',
-    path: 'sfpm-orgs',
+    path: 'packages/sfpm-orgs',
   },
   {
     dependencies: ['sfpm-artifact'],
     description: 'Artifact history object & UI components',
     isOrgDependent: false,
     name: 'sfpm-ui',
-    path: 'sfpm-ui',
+    path: 'packages/sfpm-ui',
   },
 ];
 

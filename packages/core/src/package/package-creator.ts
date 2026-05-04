@@ -107,7 +107,6 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
       if (found) {
         this.logger?.info(`Package '${config.name}' already exists (${found.Id})`);
         await this.updateProjectAliases(projectDir, config.name, found.Id);
-        await this.updatePackageConfig(projectDir, config.path, found.Id);
         results.push({created: false, name: config.name, packageId: found.Id});
         continue;
       }
@@ -120,7 +119,6 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
 
       const packageId = await this.createPackage(config, projectDir);
       await this.updateProjectAliases(projectDir, config.name, packageId);
-      await this.updatePackageConfig(projectDir, config.path, packageId);
       results.push({created: true, name: config.name, packageId});
     }
     /* eslint-enable no-await-in-loop */
