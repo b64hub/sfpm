@@ -21,10 +21,11 @@ import {
   SfpmUnlockedPackageMetadata,
   VersionFormat,
 } from '../types/package.js';
-import {PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {EnvAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
+import {ENV_ALIAS_DEFAULT_DIR, EnvAliasResolution, EnvAliasResolver} from './env-alias-resolver.js';
 import {
   type DataDeployable,
   ManagedPackageRef,
@@ -63,6 +64,7 @@ const PROFILE_SUPPORTED_METADATA_TYPES = new Set([
 ]);
 
 export default abstract class SfpmPackage {
+  protected _envAliasResolution?: EnvAliasResolution;
   protected _metadata: SfpmPackageMetadataBase;
   protected _packageDefinition?: PackageDefinition;
   public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
@@ -101,6 +103,23 @@ export default abstract class SfpmPackage {
 
   get dependencies(): undefined | {package: string; versionNumber?: string}[] {
     return this.packageDefinition?.dependencies;
+  }
+
+  /** The env alias configuration, normalized. `undefined` when not env-aliased. */
+  get envAliasConfig(): EnvAliasConfig | undefined {
+    const raw = this._packageDefinition?.packageOptions?.envAliased;
+    if (!raw) return undefined;
+    return typeof raw === 'object' ? raw : {};
+  }
+
+  /** The last env alias resolution, set by {@link resolveEnvAlias}. */
+  get envAliasResolution(): EnvAliasResolution | undefined {
+    return this._envAliasResolution;
+  }
+
+  /** Whether this package uses environment-aliased source directories. */
+  get isEnvAliased(): boolean {
+    return Boolean(this._packageDefinition?.packageOptions?.envAliased);
   }
 
   get metadata(): SfpmPackageMetadataBase {
@@ -168,6 +187,10 @@ export default abstract class SfpmPackage {
     return this._metadata.packageType;
   }
 
+  // ---------------------------------------------------------------------------
+  // Env Alias
+  // ---------------------------------------------------------------------------
+
   set type(val: Omit<PackageType, 'managed'>) {
     this._metadata.packageType = val;
   }
@@ -182,6 +205,21 @@ export default abstract class SfpmPackage {
 
   /** Returns the number of deployable components (metadata) or files (data) in the package. */
   public abstract componentCount(): Promise<number>;
+
+  /**
+   * For env-aliased packages, returns the path to the `default/` subdirectory
+   * within the package source. Used during build for analysis.
+   *
+   * For non-env-aliased packages, returns the normal package source path.
+   */
+  public getAnalysisSourcePath(): string {
+    const basePath = this.resolveSourcePackagePath();
+    if (!this.isEnvAliased) {
+      return basePath;
+    }
+
+    return path.join(basePath, ENV_ALIAS_DEFAULT_DIR);
+  }
 
   /**
    * Returns the version number in the requested format.
@@ -200,6 +238,40 @@ export default abstract class SfpmPackage {
     const raw = this.version;
     if (!raw) return undefined;
     return toVersionFormat(raw, format, {includeBuildNumber: options?.includeBuildNumber});
+  }
+
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve the env alias for a target org and return the resolution.
+   *
+   * For **analysis / build** contexts (no target org), pass `undefined` — the
+   * resolver will fall back to the `default/` directory.
+   *
+   * The resolution is cached on the instance so downstream consumers
+   * (builder, installer, hooks) can read `envAliasResolution` without
+   * re-resolving.
+   *
+   * @param targetOrg - The org alias/username to match against env directories.
+   *                     When `undefined`, always resolves to `default/`.
+   * @param logger    - Optional logger for resolution diagnostics.
+   * @returns The resolution result with the effective path and match info.
+   */
+  public async resolveEnvAlias(targetOrg?: string, logger?: {debug: (msg: string) => void; info: (msg: string) => void}): Promise<EnvAliasResolution> {
+    if (!this.isEnvAliased) {
+      throw new Error(`Package '${this.packageName}' is not env-aliased`);
+    }
+
+    const packagePath = this.resolveSourcePackagePath();
+    const resolver = new EnvAliasResolver(logger as any);
+    const resolution = await resolver.resolve(
+      packagePath,
+      targetOrg ?? ENV_ALIAS_DEFAULT_DIR,
+      this.envAliasConfig,
+    );
+
+    this._envAliasResolution = resolution;
+    return resolution;
   }
 
   public setBuildNumber(buildNumber: string): void {
@@ -241,6 +313,20 @@ export default abstract class SfpmPackage {
    */
   public async toJson(): Promise<SfpmPackageMetadataBase> {
     return this.metadata;
+  }
+
+  /**
+   * Resolve the absolute path to the package source directory,
+   * using either the working directory (staging) or project root.
+   */
+  private resolveSourcePackagePath(): string {
+    const root = this.workingDirectory ?? this.projectDirectory;
+    const pkgPath = this.packageDefinition?.path;
+    if (!pkgPath) {
+      throw new Error(`Package '${this.packageName}' has no path defined`);
+    }
+
+    return path.join(root, pkgPath);
   }
 }
 

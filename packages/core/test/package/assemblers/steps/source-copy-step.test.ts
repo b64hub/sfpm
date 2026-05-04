@@ -204,4 +204,28 @@ describe('SourceCopyStep', () => {
       expect.stringContaining('Excluded by build ignore: excluded.tmp'),
     );
   });
+
+  it('should copy all env subdirectories for env-aliased packages', async () => {
+    // Setup env-aliased directory structure inside the source dir
+    const defaultDir = path.join(sourceDir, 'default');
+    const uatDir = path.join(sourceDir, 'uat');
+    await fs.ensureDir(path.join(defaultDir, 'classes'));
+    await fs.ensureDir(path.join(uatDir, 'classes'));
+    await fs.writeFile(path.join(defaultDir, 'classes', 'DefaultClass.cls'), 'default class');
+    await fs.writeFile(path.join(uatDir, 'classes', 'UatClass.cls'), 'uat class');
+
+    // Mark package as env-aliased
+    mockProvider.getPackageDefinition.mockReturnValue({
+      package: 'core',
+      packageOptions: {envAliased: true},
+      path: 'force-app',
+    });
+
+    const step = new SourceCopyStep('core', mockProvider, mockLogger);
+    await step.execute({}, makeOutput());
+
+    // Build stages the entire package including all env directories
+    expect(await fs.pathExists(path.join(stagingDir, 'force-app', 'default', 'classes', 'DefaultClass.cls'))).toBe(true);
+    expect(await fs.pathExists(path.join(stagingDir, 'force-app', 'uat', 'classes', 'UatClass.cls'))).toBe(true);
+  });
 });
