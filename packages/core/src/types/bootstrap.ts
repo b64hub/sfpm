@@ -1,3 +1,5 @@
+import {PackageCreateConfig} from '../package/package-creator.js';
+
 /**
  * Bootstrap tiers determine which packages are installed into the target org.
  *
@@ -12,17 +14,9 @@ export enum BootstrapTier {
 }
 
 /** Static definition of the three SFPM bootstrap packages and their relationships. */
-export interface BootstrapPackageConfig {
+export interface BootstrapPackageConfig extends PackageCreateConfig {
   /** Package names this package depends on (within the bootstrap set). */
   dependencies: string[];
-  /** Human-readable description shown during interactive selection. */
-  description: string;
-  /** Whether this is an org-dependent unlocked package. */
-  isOrgDependent: boolean;
-  /** Package name as it appears in sfdx-project.json. */
-  name: string;
-  /** Relative path inside the bootstrap repo. */
-  path: string;
 }
 
 /** Result of attempting to create or resolve a single Package2 container in the DevHub. */

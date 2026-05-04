@@ -75,13 +75,15 @@ export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
 export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
-export {PackageCreator} from './package/package-creator.js';
+export {type PackageCreateConfig, PackageCreator} from './package/package-creator.js';
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
 export {
   type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
 } from './package/services/validation-poller.js';
-export {type EnvAliasable, isEnvAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage} from './package/sfpm-package.js';
+export {
+  type EnvAliasable, isEnvAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
+} from './package/sfpm-package.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export {
   collectPackageAliases, stripScope, toManagedPackageDefinitions, toPackageDefinition,

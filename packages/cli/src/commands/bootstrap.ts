@@ -1,4 +1,5 @@
 import {
+  BootstrapPackageConfig,
   BootstrapResult,
   BootstrapTier,
   BuildOrchestrator,
@@ -34,6 +35,13 @@ const TIER_DESCRIPTIONS: Record<BootstrapTier, string> = {
   [BootstrapTier.Pool]: 'sfpm-artifact + sfpm-orgs -- adds scratch org & sandbox pooling',
 }
 
+interface BootstrapContext {
+  isInteractive: boolean;
+  logger: Logger;
+  mode: OutputMode;
+  targetOrg: string;
+}
+
 export default class Bootstrap extends SfpmCommand {
   static override description = 'Bootstrap SFPM packages into a production org'
   static override examples = [
@@ -58,205 +66,146 @@ export default class Bootstrap extends SfpmCommand {
     const {flags} = await this.parse(Bootstrap)
 
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive'
-    const isInteractive = mode === 'interactive'
-
-    const logger: Logger = {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
+    const ctx: BootstrapContext = {
+      isInteractive: mode === 'interactive',
+      logger: this.createLogger(),
+      mode,
+      targetOrg: flags['target-org'],
     }
 
-    // ── Step 1: Select tier ─────────────────────────────────────────────
-    const tier = await this.resolveTier(flags.tier as BootstrapTier | undefined, isInteractive)
+    const tier = await this.resolveTier(flags.tier as BootstrapTier | undefined, ctx.isInteractive)
     const selectedPackages = getPackagesForTier(tier)
     const packageNames = selectedPackages.map(p => p.name)
 
-    if (isInteractive) {
+    if (ctx.isInteractive) {
       this.log(infoBox('Bootstrap', {
         Packages: packageNames.join(', '),
-        'Target Org': flags['target-org'],
+        'Target Org': ctx.targetOrg,
         Tier: tier,
       }))
     }
 
-    // ── Step 2: Clone bootstrap repo ────────────────────────────────────
-    const tmpDir = await this.cloneRepo(isInteractive)
+    const tmpDir = await this.cloneRepo(ctx.isInteractive)
 
     try {
-      // ── Step 3: Connect to org and verify DevHub ────────────────────
-      const org = await this.connectToOrg(flags['target-org'], isInteractive)
+      const org = await this.connectToOrg(ctx.targetOrg, ctx.isInteractive)
 
-      // ── Step 4: Check if packages are already installed ─────────────
-      if (!flags.force) {
-        const alreadyInstalled = await this.checkInstalledPackages(org, packageNames, logger)
-        if (alreadyInstalled.length > 0) {
-          if (isInteractive) {
-            this.log(warningBox('Already Installed', {
-              Hint: 'Use --force to re-install',
-              Packages: alreadyInstalled.join(', '),
-            }))
-          }
+      const skipResult = await this.checkAndSkipIfInstalled(org, packageNames, tier, flags, ctx)
+      if (skipResult) return skipResult
 
-          if (flags.json) {
-            const result: BootstrapResult = {
-              packages: alreadyInstalled.map(name => ({
-                packageName: name, skipped: true, success: true,
-              })),
-              success: true,
-              targetOrg: flags['target-org'],
-              tier,
-            }
-            this.logJson(result)
-            return result
-          }
+      await this.ensurePackageContainers(org, selectedPackages, tmpDir, ctx)
 
-          return
-        }
-      }
-
-      // ── Step 5: Ensure Package2 containers exist in DevHub ──────────
-      const creator = new PackageCreator(org, logger)
-      await creator.ensurePackages(selectedPackages, tmpDir, async name => {
-        if (!isInteractive) return true
-        return confirm({
-          default: true,
-          message: `Package '${name}' does not exist in the DevHub. Create it?`,
-        })
-      })
-
-      // ── Step 6: Load project from cloned repo ─────────────────────
       const projectService = await ProjectService.create(tmpDir)
-      const projectConfig = projectService.getDefinitionProvider()
-      const projectGraph = projectService.getProjectGraph()
-      const sfpmConfig = projectService.getSfpmConfig()
 
-      // ── Step 7: Build packages ────────────────────────────────────
-      if (isInteractive) {
-        this.log(chalk.bold('\nBuilding packages...\n'))
-      }
+      const buildResult = await this.buildPackages(projectService, packageNames, tier, flags, ctx)
+      if (!buildResult.success) return buildResult.result
 
-      const buildOptions = {
-        devhubUsername: flags['target-org'],
-        force: true,
-        includeDependencies: true,
-      }
-
-      const buildOrchestrator = new BuildOrchestrator(
-        projectConfig,
-        projectGraph,
-        buildOptions,
-        logger,
-        tmpDir,
-      )
-
-      const buildRenderer = new BuildProgressRenderer({
-        logger: {
-          error: (msgOrError: Error | string) => this.error(msgOrError),
-          log: (msg: string) => this.log(msg),
-        },
-        mode,
-      })
-      buildRenderer.attachTo(buildOrchestrator as any)
-
-      const buildResult = await buildOrchestrator.buildAll(packageNames)
-
-      if (!buildResult.success) {
-        const failedNames = buildResult.failedPackages.join(', ')
-        if (flags.json) {
-          const result: BootstrapResult = {
-            packages: buildResult.results.map(p => ({
-              error: p.error, packageName: p.packageName, skipped: p.skipped, success: p.success,
-            })),
-            success: false,
-            targetOrg: flags['target-org'],
-            tier,
-          }
-          this.logJson(result)
-          return result
-        }
-
-        this.error(`Build failed for: ${failedNames}`, {exit: 1})
-      }
-
-      // ── Step 8: Install packages ──────────────────────────────────
-      if (isInteractive) {
-        this.log(chalk.bold('\nInstalling packages...\n'))
-      }
-
-      const installOptions = {
-        force: flags.force,
-        includeDependencies: true,
-        targetOrg: flags['target-org'],
-        trackHistory: sfpmConfig.artifacts?.trackHistory,
-      }
-
-      const installOrchestrator = new InstallOrchestrator(
-        projectConfig,
-        projectGraph,
-        installOptions,
-        logger,
-      )
-
-      const installRenderer = new InstallProgressRenderer({
-        logger: {
-          error: (msgOrError: Error | string) => this.error(msgOrError),
-          log: (msg: string) => this.log(msg),
-        },
-        mode,
-        targetOrg: flags['target-org'],
-      })
-      installRenderer.attachTo(installOrchestrator as any)
-
-      const installResult = await installOrchestrator.installAll(packageNames)
-
-      // ── Step 9: Report results ────────────────────────────────────
-      const result: BootstrapResult = {
-        packages: installResult.results.map(p => ({
-          error: p.error, packageName: p.packageName, skipped: p.skipped, success: p.success,
-        })),
-        success: installResult.success,
-        targetOrg: flags['target-org'],
-        tier,
-      }
+      const result = await this.installPackages(projectService, packageNames, tier, flags, ctx)
 
       if (flags.json) {
         this.logJson(result)
         return result
       }
 
-      if (installResult.success) {
-        this.log(successBox('Bootstrap Complete', {
-          Packages: packageNames.join(', '),
-          'Target Org': flags['target-org'],
-          Tier: tier,
-        }))
-      } else {
-        const failedNames = installResult.failedPackages.join(', ')
-        this.log(errorBox('Bootstrap Failed', {
-          'Failed Packages': failedNames,
-          'Target Org': flags['target-org'],
-        }))
-        this.error(`Install failed for: ${failedNames}`, {exit: 2})
-      }
-
+      this.renderFinalResult(result, packageNames, tier, ctx)
       return result
     } finally {
-      // ── Step 10: Cleanup ──────────────────────────────────────────
-      await this.cleanup(tmpDir, isInteractive)
+      await this.cleanup(tmpDir, ctx.isInteractive)
     }
   }
 
   // ====================================================================
-  // Private helpers
+  // Pipeline steps
   // ====================================================================
+
+  private async buildPackages(
+    projectService: ProjectService,
+    packageNames: string[],
+    tier: BootstrapTier,
+    flags: {force?: boolean; json?: boolean; 'target-org': string},
+    ctx: BootstrapContext,
+  ): Promise<{result?: BootstrapResult; success: boolean}> {
+    if (ctx.isInteractive) {
+      this.log(chalk.bold('\nBuilding packages...\n'))
+    }
+
+    const buildOrchestrator = new BuildOrchestrator(
+      projectService.getDefinitionProvider(),
+      projectService.getProjectGraph(),
+      {devhubUsername: ctx.targetOrg, force: true, includeDependencies: true},
+      ctx.logger,
+      projectService.getDefinitionProvider().projectDir,
+    )
+
+    const buildRenderer = new BuildProgressRenderer({
+      logger: {
+        error: (msgOrError: Error | string) => this.error(msgOrError),
+        log: (msg: string) => this.log(msg),
+      },
+      mode: ctx.mode,
+    })
+    buildRenderer.attachTo(buildOrchestrator as any)
+
+    const buildResult = await buildOrchestrator.buildAll(packageNames)
+
+    if (!buildResult.success) {
+      const failedNames = buildResult.failedPackages.join(', ')
+
+      if (flags.json) {
+        const result: BootstrapResult = {
+          packages: buildResult.results.map(p => ({
+            error: p.error, packageName: p.packageName, skipped: p.skipped, success: p.success,
+          })),
+          success: false,
+          targetOrg: ctx.targetOrg,
+          tier,
+        }
+        this.logJson(result)
+        return {result, success: false}
+      }
+
+      this.error(`Build failed for: ${failedNames}`, {exit: 1})
+    }
+
+    return {success: true}
+  }
+
+  private async checkAndSkipIfInstalled(
+    org: Org,
+    packageNames: string[],
+    tier: BootstrapTier,
+    flags: {force?: boolean; json?: boolean; 'target-org': string},
+    ctx: BootstrapContext,
+  ): Promise<BootstrapResult | void> {
+    if (flags.force) return
+
+    const alreadyInstalled = await this.checkInstalledPackages(org, packageNames, ctx.logger)
+    if (alreadyInstalled.length === 0) return
+
+    if (ctx.isInteractive) {
+      this.log(warningBox('Already Installed', {
+        Hint: 'Use --force to re-install',
+        Packages: alreadyInstalled.join(', '),
+      }))
+    }
+
+    if (flags.json) {
+      const result: BootstrapResult = {
+        packages: alreadyInstalled.map(name => ({
+          packageName: name, skipped: true, success: true,
+        })),
+        success: true,
+        targetOrg: ctx.targetOrg,
+        tier,
+      }
+      this.logJson(result)
+      return result
+    }
+  }
 
   private async checkInstalledPackages(org: Org, packageNames: string[], logger: Logger): Promise<string[]> {
     const service = new PackageService(org, logger)
     const installed = await service.getAllInstalled2GPPackages()
-
     const installedNames = new Set(installed.map(p => p.name))
     return packageNames.filter(name => installedNames.has(name))
   }
@@ -297,6 +246,10 @@ export default class Bootstrap extends SfpmCommand {
     return tmpDir
   }
 
+  // ====================================================================
+  // Private helpers
+  // ====================================================================
+
   private async connectToOrg(username: string, isInteractive: boolean): Promise<Org> {
     let spinner: Ora | undefined
     if (isInteractive) {
@@ -325,6 +278,105 @@ export default class Bootstrap extends SfpmCommand {
         `Unable to connect to org '${username}'. Ensure the org is authenticated via 'sf org login'.`,
         {cause: error instanceof Error ? error : undefined},
       )
+    }
+  }
+
+  private createLogger(): Logger {
+    return {
+      debug: (msg: string) => this.debug(msg),
+      error: (msg: string) => this.error(msg),
+      info: (msg: string) => this.debug(msg),
+      log: (msg: string) => this.log(msg),
+      trace: (msg: string) => this.debug(msg),
+      warn: (msg: string) => this.warn(msg),
+    }
+  }
+
+  private async ensurePackageContainers(
+    org: Org,
+    selectedPackages: BootstrapPackageConfig[],
+    tmpDir: string,
+    ctx: BootstrapContext,
+  ): Promise<void> {
+    const creator = new PackageCreator(org, ctx.logger)
+    await creator.ensurePackages(selectedPackages, tmpDir, async name => {
+      if (!ctx.isInteractive) return true
+      return confirm({
+        default: true,
+        message: `Package '${name}' does not exist in the DevHub. Create it?`,
+      })
+    })
+  }
+
+  private async installPackages(
+    projectService: ProjectService,
+    packageNames: string[],
+    tier: BootstrapTier,
+    flags: {force?: boolean; 'target-org': string},
+    ctx: BootstrapContext,
+  ): Promise<BootstrapResult> {
+    if (ctx.isInteractive) {
+      this.log(chalk.bold('\nInstalling packages...\n'))
+    }
+
+    const sfpmConfig = projectService.getSfpmConfig()
+
+    const installOrchestrator = new InstallOrchestrator(
+      projectService.getDefinitionProvider(),
+      projectService.getProjectGraph(),
+      {
+        force: flags.force,
+        includeDependencies: true,
+        targetOrg: ctx.targetOrg,
+        trackHistory: sfpmConfig.artifacts?.trackHistory,
+      },
+      ctx.logger,
+    )
+
+    const installRenderer = new InstallProgressRenderer({
+      logger: {
+        error: (msgOrError: Error | string) => this.error(msgOrError),
+        log: (msg: string) => this.log(msg),
+      },
+      mode: ctx.mode,
+      targetOrg: ctx.targetOrg,
+    })
+    installRenderer.attachTo(installOrchestrator as any)
+
+    const installResult = await installOrchestrator.installAll(packageNames)
+
+    return {
+      packages: installResult.results.map(p => ({
+        error: p.error, packageName: p.packageName, skipped: p.skipped, success: p.success,
+      })),
+      success: installResult.success,
+      targetOrg: ctx.targetOrg,
+      tier,
+    }
+  }
+
+  private renderFinalResult(
+    result: BootstrapResult,
+    packageNames: string[],
+    tier: BootstrapTier,
+    ctx: BootstrapContext,
+  ): void {
+    if (result.success) {
+      this.log(successBox('Bootstrap Complete', {
+        Packages: packageNames.join(', '),
+        'Target Org': ctx.targetOrg,
+        Tier: tier,
+      }))
+    } else {
+      const failedNames = result.packages
+      .filter(p => !p.success)
+      .map(p => p.packageName)
+      .join(', ')
+      this.log(errorBox('Bootstrap Failed', {
+        'Failed Packages': failedNames,
+        'Target Org': ctx.targetOrg,
+      }))
+      this.error(`Install failed for: ${failedNames}`, {exit: 2})
     }
   }
 

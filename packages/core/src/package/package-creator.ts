@@ -4,9 +4,27 @@ import fs from 'fs-extra';
 import EventEmitter from 'node:events';
 import path from 'node:path';
 
-import {BootstrapPackageConfig, PackageCreationResult} from '../types/bootstrap.js';
+import {PackageCreationResult} from '../types/bootstrap.js';
 import {Logger} from '../types/logger.js';
 import {Package2, PackageService} from './package-service.js';
+
+/**
+ * Configuration for creating a Package2 container in a DevHub.
+ *
+ * This is the generic contract — callers provide these fields regardless of
+ * whether the package is part of bootstrap, a new workspace package, or
+ * anything else.
+ */
+export interface PackageCreateConfig {
+  /** Human-readable description of the package. */
+  description: string;
+  /** Whether this is an org-dependent unlocked package. */
+  isOrgDependent: boolean;
+  /** Package name as it appears in sfdx-project.json. */
+  name: string;
+  /** Relative path to the package directory. */
+  path: string;
+}
 
 interface PackageCreatorEvents {
   'package:alias:update': [data: {name: string; packageId: string}];
@@ -36,7 +54,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
    * Create a Package2 record in the DevHub for the given bootstrap package config.
    * Returns the new package ID.
    */
-  async createPackage(config: BootstrapPackageConfig, projectDir: string): Promise<string> {
+  async createPackage(config: PackageCreateConfig, projectDir: string): Promise<string> {
     this.emit('package:create:start', {name: config.name});
 
     const sfProject = await SfProject.resolve(projectDir);
@@ -73,7 +91,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
    * @returns Array of creation results (created or resolved)
    */
   async ensurePackages(
-    packages: BootstrapPackageConfig[],
+    packages: PackageCreateConfig[],
     projectDir: string,
     shouldCreate: (name: string) => Promise<boolean>,
   ): Promise<PackageCreationResult[]> {
@@ -89,6 +107,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
       if (found) {
         this.logger?.info(`Package '${config.name}' already exists (${found.Id})`);
         await this.updateProjectAliases(projectDir, config.name, found.Id);
+        await this.updatePackageConfig(projectDir, config.path, found.Id);
         results.push({created: false, name: config.name, packageId: found.Id});
         continue;
       }
@@ -101,6 +120,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
 
       const packageId = await this.createPackage(config, projectDir);
       await this.updateProjectAliases(projectDir, config.name, packageId);
+      await this.updatePackageConfig(projectDir, config.path, packageId);
       results.push({created: true, name: config.name, packageId});
     }
     /* eslint-enable no-await-in-loop */
@@ -132,6 +152,25 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
 
     this.logger?.debug(`Found ${existing.length} existing package(s), ${missing.length} missing`);
     return result;
+  }
+
+  /**
+   * Write the packageId into a package's package.json `sfpm.packageId` field.
+   *
+   * The bootstrap repo ships without packageIds (they are org-specific).
+   * After creating or resolving Package2 containers, this method persists
+   * the ID so that the downstream workspace provider can pick it up for
+   * package version creation.
+   */
+  async updatePackageConfig(projectDir: string, packagePath: string, packageId: string): Promise<void> {
+    const pkgJsonPath = path.join(projectDir, packagePath, 'package.json');
+    const pkgJson = await fs.readJson(pkgJsonPath);
+
+    pkgJson.sfpm = pkgJson.sfpm || {};
+    pkgJson.sfpm.packageId = packageId;
+
+    await fs.writeJson(pkgJsonPath, pkgJson, {spaces: 2});
+    this.logger?.debug(`Updated ${packagePath}/package.json: sfpm.packageId → ${packageId}`);
   }
 
   /**
