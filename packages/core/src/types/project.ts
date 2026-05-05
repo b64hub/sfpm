@@ -6,7 +6,6 @@ import {PackageType} from './package.js';
 export const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
 
 
-
 /**
  * Merge mode for env-aliased packages.
  * - `union`: env directory contents are merged on top of the default directory (env wins conflicts)

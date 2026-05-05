@@ -65,14 +65,14 @@ export function toPackageDefinition(
   }
 
   // Resolve metadata dependencies relative to the package directory
-  if (pkgJson.metadataDependencies) {
+  if (sfpm.metadataDependencies) {
     const md: {seed?: string; unpackaged?: string} = {};
-    if (pkgJson.metadataDependencies.seed) {
-      md.seed = path.posix.join(packageDir, pkgJson.metadataDependencies.seed);
+    if (sfpm.metadataDependencies.seed) {
+      md.seed = path.posix.join(packageDir, sfpm.metadataDependencies.seed);
     }
 
-    if (pkgJson.metadataDependencies.unpackaged) {
-      md.unpackaged = path.posix.join(packageDir, pkgJson.metadataDependencies.unpackaged);
+    if (sfpm.metadataDependencies.unpackaged) {
+      md.unpackaged = path.posix.join(packageDir, sfpm.metadataDependencies.unpackaged);
     }
 
     if (md.seed || md.unpackaged) {
@@ -130,8 +130,7 @@ export function toWorkspacePackageJson(
     sfpm.packageOptions = pkgDef.packageOptions;
   }
 
-  // Resolve metadataDependencies paths relative to package dir
-  let metadataDependencies: {seed?: string; unpackaged?: string} | undefined;
+  // Resolve metadataDependencies paths relative to package dir → store in sfpm config
   if (pkgDef.metadataDependencies) {
     const md: {seed?: string; unpackaged?: string} = {};
     if (pkgDef.metadataDependencies.seed) {
@@ -143,7 +142,7 @@ export function toWorkspacePackageJson(
     }
 
     if (md.seed || md.unpackaged) {
-      metadataDependencies = md;
+      sfpm.metadataDependencies = md;
     }
   }
 
@@ -163,7 +162,6 @@ export function toWorkspacePackageJson(
     ...(pkgDef.description ? {description: pkgDef.description} : {}),
     ...(pkgDef.managedDependencies && Object.keys(pkgDef.managedDependencies).length > 0
       ? {managedDependencies: pkgDef.managedDependencies} : {}),
-    ...(metadataDependencies ? {metadataDependencies} : {}),
     name: packageName.includes('/') ? packageName : `${options.npmScope}/${packageName}`,
     private: true,
     scripts: {

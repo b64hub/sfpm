@@ -79,9 +79,8 @@ describe('toPackageDefinition', () => {
   });
 
   it('resolves metadataDependencies paths relative to package dir', () => {
-    const pkgJson = makeWorkspacePackageJson({
-      metadataDependencies: {seed: 'seed-meta', unpackaged: 'unpackaged-meta'},
-    });
+    const pkgJson = makeWorkspacePackageJson();
+    pkgJson.sfpm.metadataDependencies = {seed: 'seed-meta', unpackaged: 'unpackaged-meta'};
 
     const result = toPackageDefinition(pkgJson, 'packages/core');
     expect(result.metadataDependencies).toEqual({

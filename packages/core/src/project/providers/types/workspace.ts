@@ -41,6 +41,14 @@ import type {PackageOptions} from '../../../types/project.js';
 export interface SfpmPackageConfig {
   /** Whether this is an org-dependent unlocked package. */
   isOrgDependent?: boolean;
+  /**
+   * Metadata dependencies with relative paths to seed and unpackaged metadata directories.
+   * Paths are relative to the package directory.
+   */
+  metadataDependencies?: {
+    seed?: string;
+    unpackaged?: string;
+  };
   /** Salesforce package ID (0Ho prefix) */
   packageId?: string;
   /** Per-package build, deploy, and hook configuration */
@@ -97,14 +105,6 @@ export interface SfpmPackageJson<TSfpm extends SfpmPackageConfig = SfpmPackageCo
    * These are NOT workspace dependencies — they are installed directly via the Tooling API.
    */
   managedDependencies?: Record<string, string>;
-  /**
-   * Metadata dependencies with relative paths to seed and unpackaged metadata directories.
-   * Paths are relative to the package directory.
-   */
-  metadataDependencies?: {
-    seed?: string;
-    unpackaged?: string;
-  };
   /** Scoped package name (e.g., "@myorg/core-package") */
   name: string;
   /** Always true for SF packages — these are not published directly to npm */
