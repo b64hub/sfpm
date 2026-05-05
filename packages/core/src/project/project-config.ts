@@ -1,5 +1,5 @@
 import {
-  ProjectJsonSchema, SfProject,
+  SfProject,
 } from '@salesforce/core';
 
 import type {ClassifiedDependencies, PackageDependency} from './providers/project-definition-provider.js';
@@ -11,6 +11,7 @@ import {PackageType} from '../types/package.js';
 import {
   ManagedPackageDefinition, PackageDefinition, ProjectDefinition, ProjectDefinitionSchema,
 } from '../types/project.js';
+import {fromSalesforceProjectJson, toSalesforceProjectJson} from './package-json-adapter.js';
 import {
   classifyDependencies,
   getAllPackageDefinitions,
@@ -127,7 +128,8 @@ export default class ProjectConfig {
    */
   public getProjectDefinition(): ProjectDefinition {
     this.validateCustomProperties();
-    return this.project.getSfProjectJson().getContents() as ProjectDefinition;
+    const raw = this.project.getSfProjectJson().getContents() as unknown as Record<string, unknown>;
+    return fromSalesforceProjectJson(raw);
   }
 
   // =========================================================================
@@ -143,7 +145,7 @@ export default class ProjectConfig {
 
     const pruned = structuredClone(definition) as ProjectDefinition;
 
-    const filteredPackages = pruned.packageDirectories.filter((pkg): pkg is PackageDefinition => 'package' in pkg && pkg.package === packageName);
+    const filteredPackages = pruned.packageDirectories.filter(pkg => pkg.package === packageName);
 
     if (filteredPackages.length === 0) {
       throw new Error(`Package ${packageName} not found in project definition`);
@@ -169,16 +171,17 @@ export default class ProjectConfig {
    */
   public async save(updatedDefinition?: ProjectDefinition): Promise<void> {
     const projectJson = this.project.getSfProjectJson();
-    const dataToSave = updatedDefinition || projectJson.getContents();
 
-    // Use individual set calls to avoid protected setContents
-    projectJson.set('packageDirectories', dataToSave.packageDirectories);
-    if (dataToSave.packageAliases) {
-      projectJson.set('packageAliases', dataToSave.packageAliases);
-    }
+    if (updatedDefinition) {
+      const sfFormat = toSalesforceProjectJson(updatedDefinition);
+      projectJson.set('packageDirectories', sfFormat.packageDirectories as unknown as ProjectDefinition['packageDirectories']);
+      if (sfFormat.packageAliases) {
+        projectJson.set('packageAliases', sfFormat.packageAliases as Record<string, string>);
+      }
 
-    if (dataToSave.sourceApiVersion) {
-      projectJson.set('sourceApiVersion', dataToSave.sourceApiVersion);
+      if (sfFormat.sourceApiVersion) {
+        projectJson.set('sourceApiVersion', sfFormat.sourceApiVersion as string);
+      }
     }
 
     await projectJson.write();
@@ -193,17 +196,18 @@ export default class ProjectConfig {
    * Prunes a package definition for Salesforce CLI compatibility
    */
   private pruneForSalesforce(pkg: PackageDefinition, isOrgDependent: boolean = false): PackageDefinition {
-    // Strip SFPM-specific properties before parsing against the standard Salesforce schema,
-    // which does not recognize custom fields like packageOptions or type.
-    const {packageOptions: _, type: _type, ...sfPkg} = pkg as any;
-    const standardPkgSchema = ProjectJsonSchema.shape.packageDirectories.element;
-    const cleanPkg = standardPkgSchema.parse(sfPkg) as any;
+    // Strip SFPM-specific properties that Salesforce CLI doesn't understand
+    const pruned = {...pkg};
+    delete pruned.packageOptions;
+    delete pruned.type;
+    delete pruned.npmName;
+    delete pruned.packageId;
 
-    if (isOrgDependent && cleanPkg.dependencies) {
-      delete cleanPkg.dependencies;
+    if (isOrgDependent && pruned.dependencies) {
+      delete pruned.dependencies;
     }
 
-    return cleanPkg;
+    return pruned;
   }
 
   /**

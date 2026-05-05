@@ -15,16 +15,18 @@ import {PackageType} from '../../types/package.js';
 import {
   type ManagedPackageDefinition,
   type PackageDefinition,
+  type PackageDependency,
   type ProjectDefinition,
   SUBSCRIBER_PKG_VERSION_ID_PREFIX,
 } from '../../types/project.js';
+
+export type {PackageDependency} from '../../types/project.js';
 
 // ---------------------------------------------------------------------------
 // Dependency classification
 // ---------------------------------------------------------------------------
 
-/** Dependency from sfdx-project.json packageDirectories[].dependencies */
-export type PackageDependency = {package: string; versionNumber?: string};
+
 
 /**
  * Classified dependencies for a package as declared in the project definition.
@@ -139,6 +141,17 @@ export interface ProjectDefinitionProvider {
    * the relevant packageAliases, and project-level settings.
    */
   resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition;
+
+  /**
+   * Update fields on a package's backing configuration.
+   * WorkspaceProvider writes to package.json; SfdxProjectProvider writes to sfdx-project.json.
+   */
+  updatePackageConfig(packageName: string, updates: Partial<PackageDefinition>): Promise<void>;
+
+  /**
+   * Merge aliases into the project's packageAliases map.
+   */
+  updatePackageAliases(aliases: Record<string, string>): Promise<void>;
 }
 
 /**
@@ -153,13 +166,13 @@ export interface ProjectDefinitionProvider {
 // ---------------------------------------------------------------------------
 
 export function getAllPackageDefinitions(definition: ProjectDefinition): PackageDefinition[] {
-  return definition.packageDirectories as PackageDefinition[];
+  return definition.packageDirectories;
 }
 
 export function getAllPackageNames(definition: ProjectDefinition): string[] {
   return getAllPackageDefinitions(definition)
-  .filter(dir => 'package' in dir && dir.package)
-  .map(dir => dir.package as string);
+  .filter(dir => dir.package)
+  .map(dir => dir.package);
 }
 
 export function getPackageDefinition(definition: ProjectDefinition, packageName: string): PackageDefinition {
@@ -177,7 +190,7 @@ export function getPackageType(definition: ProjectDefinition, packageName: strin
 }
 
 export function getPackageId(definition: ProjectDefinition, packageAlias: string): string | undefined {
-  return (definition.packageAliases as Record<string, string> | undefined)?.[packageAlias];
+  return definition.packageAliases?.[packageAlias];
 }
 
 export function getPackageDefinitionByPath(definition: ProjectDefinition, packagePath: string): PackageDefinition {
@@ -199,7 +212,7 @@ export function getDependencies(definition: ProjectDefinition, packageName: stri
 
 export function classifyDependencies(definition: ProjectDefinition, packageName: string): ClassifiedDependencies {
   const dependencies = getDependencies(definition, packageName);
-  const aliases = (definition.packageAliases ?? {}) as Record<string, string>;
+  const aliases = definition.packageAliases ?? {};
 
   const versioned: Record<string, string> = {};
   const managed: Record<string, string> = {};
@@ -221,12 +234,11 @@ export function classifyDependencies(definition: ProjectDefinition, packageName:
 }
 
 export function getManagedPackages(definition: ProjectDefinition): ManagedPackageDefinition[] {
-  const packageAliases = (definition.packageAliases as Record<string, string>) ?? {};
+  const packageAliases = definition.packageAliases ?? {};
   const localPackageNames = new Set(getAllPackageNames(definition));
   const managed = new Map<string, ManagedPackageDefinition>();
 
-  for (const pkgDir of definition.packageDirectories) {
-    const pkg = pkgDir as PackageDefinition;
+  for (const pkg of definition.packageDirectories) {
     if (!pkg.dependencies) continue;
 
     for (const dep of pkg.dependencies) {

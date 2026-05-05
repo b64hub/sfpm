@@ -324,7 +324,7 @@ export class ProjectGraph {
    */
   private createLocalNodes(projectDefinition: ProjectDefinition): PackageDefinition[] {
     const packages = projectDefinition.packageDirectories
-    .filter((pkg): pkg is PackageDefinition => 'package' in pkg && typeof pkg.package === 'string');
+    .filter(pkg => typeof pkg.package === 'string');
 
     for (const pkg of packages) {
       if (this.nodes.has(pkg.package)) {
@@ -343,7 +343,7 @@ export class ProjectGraph {
    * listed in packageAliases with a subscriber package version ID (04t).
    */
   private createManagedNodes(packages: PackageDefinition[], projectDefinition: ProjectDefinition): void {
-    const packageAliases: Record<string, string> = (projectDefinition.packageAliases as Record<string, string>) ?? {};
+    const packageAliases = projectDefinition.packageAliases ?? {};
 
     for (const pkg of packages) {
       if (!pkg.dependencies) continue;

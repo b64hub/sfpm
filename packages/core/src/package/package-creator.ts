@@ -153,25 +153,6 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
   }
 
   /**
-   * Write the packageId into a package's package.json `sfpm.packageId` field.
-   *
-   * The bootstrap repo ships without packageIds (they are org-specific).
-   * After creating or resolving Package2 containers, this method persists
-   * the ID so that the downstream workspace provider can pick it up for
-   * package version creation.
-   */
-  async updatePackageConfig(projectDir: string, packagePath: string, packageId: string): Promise<void> {
-    const pkgJsonPath = path.join(projectDir, packagePath, 'package.json');
-    const pkgJson = await fs.readJson(pkgJsonPath);
-
-    pkgJson.sfpm = pkgJson.sfpm || {};
-    pkgJson.sfpm.packageId = packageId;
-
-    await fs.writeJson(pkgJsonPath, pkgJson, {spaces: 2});
-    this.logger?.debug(`Updated ${packagePath}/package.json: sfpm.packageId → ${packageId}`);
-  }
-
-  /**
    * Read sfdx-project.json from the given project directory, set or update
    * the packageAliases entry for the given package, and write it back.
    */

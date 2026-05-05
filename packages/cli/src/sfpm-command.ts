@@ -26,10 +26,10 @@ export default abstract class SfpmCommand extends Command {
   }
 
   private logHeader(): void {
-    const sfpmGradient = gradient(['#FF0000', '#FF00FF', '#0000FF']);
+    const sfpmGradient = gradient(['#0000FF', '#FF0000'], {interpolation: 'hsv'});
 
     const header
-      = sfpmGradient.multiline('sfpm', {interpolation: 'hsv'})
+      = sfpmGradient('sfpm')
         + chalk.gray(' • ')
         + chalk.gray(`${this.config.version}`);
     this.log(header);

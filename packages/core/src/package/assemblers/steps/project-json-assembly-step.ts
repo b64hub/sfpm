@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
+import {toSalesforceProjectJson} from '../../../project/package-json-adapter.js';
 import ProjectService from '../../../project/project-service.js';
 import {Logger} from '../../../types/logger.js';
 import {PackageType} from '../../../types/package.js';
@@ -39,10 +40,10 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
       const packageDefinition = this.provider.resolveForPackage(this.packageName);
 
       if (options.versionNumber) {
-        (packageDefinition.packageDirectories[0] as PackageDefinition).versionNumber = toVersionFormat(options.versionNumber, 'salesforce');
+        packageDefinition.packageDirectories[0].versionNumber = toVersionFormat(options.versionNumber, 'salesforce');
       }
 
-      const pkg = packageDefinition.packageDirectories[0] as PackageDefinition;
+      const pkg = packageDefinition.packageDirectories[0];
 
       output.projectDefinitionPath = await this.writeProjectDefinition(packageDefinition, pkg, output.stagingDirectory);
       output.componentCount = await this.countComponents(pkg.type || PackageType.Managed, output.stagingDirectory);
@@ -88,16 +89,18 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
   ): Promise<string> {
     const unpackagedMetadataDir = path.join(stagingDir, 'unpackagedMetadata');
     if (await fs.pathExists(unpackagedMetadataDir)) {
-      pkg.unpackagedMetadata = {path: 'unpackagedMetadata'};
+      pkg.unpackagedMetadata = 'unpackagedMetadata';
     }
 
     const seedMetadataDir = path.join(stagingDir, 'seedMetadata');
     if (await fs.pathExists(seedMetadataDir)) {
-      pkg.seedMetadata = {path: 'seedMetadata'};
+      pkg.seedMetadata = 'seedMetadata';
     }
 
+    // Convert to SF format for sfdx-project.json output
+    const sfProjectJson = toSalesforceProjectJson(packageDefinition);
     const projectJsonPath = path.join(stagingDir, 'sfdx-project.json');
-    await fs.writeJson(projectJsonPath, packageDefinition, {spaces: 4});
+    await fs.writeJson(projectJsonPath, sfProjectJson, {spaces: 4});
 
     return projectJsonPath;
   }

@@ -137,7 +137,7 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
    */
   getUpdatedDefinition(): ProjectDefinition {
     const newConfig = {...this.definition};
-    newConfig.packageDirectories = (newConfig.packageDirectories as PackageDefinition[]).map((pkgDef: PackageDefinition) => {
+    newConfig.packageDirectories = newConfig.packageDirectories.map(pkgDef => {
       const tracker = this.trackers.get(pkgDef.package);
       if (tracker && tracker.isUpdated) {
         return tracker.writeToDefinition(pkgDef);

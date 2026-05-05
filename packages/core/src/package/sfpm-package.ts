@@ -8,7 +8,6 @@ import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {Logger} from '../types/logger.js';
-import type {WorkspacePackageJson} from '../types/workspace.js';
 
 import {
   MetadataFile,
@@ -22,7 +21,7 @@ import {
   SfpmUnlockedPackageMetadata,
   VersionFormat,
 } from '../types/package.js';
-import {EnvAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {EnvAliasConfig, PackageDefinition, PackageDependency, ProjectDefinition} from '../types/project.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
@@ -101,7 +100,7 @@ export default abstract class SfpmPackage {
     return this._metadata.source?.commit;
   }
 
-  get dependencies(): undefined | {package: string; versionNumber?: string}[] {
+  get dependencies(): PackageDependency[] | undefined {
     return this.packageDefinition?.dependencies;
   }
 
@@ -937,15 +936,10 @@ export class PackageFactory {
     sfpmPackage.packageDefinition = packageDefinition;
     sfpmPackage.version = packageDefinition.versionNumber;
 
-    // In workspace mode, read packageOptions directly from the workspace package.json
-    // rather than from sfdx-project.json (which no longer carries them)
-    // TODO: Refactor to separate workspace vs legacy provider implementations so this special handling isn't needed
-    this.overlayWorkspacePackageOptions(packageDefinition, sfpmPackage);
-
-    // Resolve package ID from aliases for unlocked packages
+    // Resolve package ID from PackageDefinition or packageAliases for unlocked packages
     if (packageType === PackageType.Unlocked && sfpmPackage instanceof SfpmUnlockedPackage) {
-      const projectDef = this.provider.getProjectDefinition();
-      const packageId = projectDef.packageAliases?.[packageName];
+      const packageId = packageDefinition.packageId
+        ?? this.provider.getProjectDefinition().packageAliases?.[packageName];
       if (packageId) {
         sfpmPackage.packageId = packageId;
       }
@@ -1018,36 +1012,6 @@ export class PackageFactory {
     default: {
       throw new Error(`Unsupported package type: ${packageType}`);
     }
-    }
-  }
-
-  /**
-   * Detect workspace package.json and overlay packageOptions onto the PackageDefinition.
-   *
-   * In workspace mode, packageOptions lives in the package-scoped package.json
-   * (not in sfdx-project.json). This method finds the workspace package.json
-   * by walking up from the SF source path and merges packageOptions onto the
-   * existing PackageDefinition so all downstream consumers work unchanged.
-   */
-  private overlayWorkspacePackageOptions(packageDefinition: PackageDefinition, sfpmPackage: SfpmPackage): void {
-    const {projectDir} = this.provider;
-    const sourcePath = packageDefinition.path;
-    const parts = sourcePath.split('/');
-
-    // Walk up from the source path to find a package.json with sfpm config
-    for (let i = parts.length; i > 0; i--) {
-      const candidatePath = path.join(projectDir, ...parts.slice(0, i), 'package.json');
-      try {
-        if (fs.existsSync(candidatePath)) {
-          const pkgJson: WorkspacePackageJson = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
-          if (pkgJson.sfpm?.packageType && pkgJson.sfpm.packageOptions) {
-            packageDefinition.packageOptions = pkgJson.sfpm.packageOptions;
-            return;
-          }
-        }
-      } catch {
-        // Detection failed — continue to next candidate
-      }
     }
   }
 }

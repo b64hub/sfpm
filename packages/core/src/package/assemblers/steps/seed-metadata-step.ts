@@ -24,11 +24,11 @@ export class SeedMetadataStep implements AssemblyStep {
   public async execute(_options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
 
-    if (!packageDefinition.seedMetadata?.path) {
+    if (!packageDefinition.seedMetadata) {
       return;
     }
 
-    const sourcePath = path.join(this.provider.projectDir, packageDefinition.seedMetadata.path);
+    const sourcePath = path.join(this.provider.projectDir, packageDefinition.seedMetadata);
 
     try {
       if (await fs.pathExists(sourcePath)) {
@@ -37,7 +37,7 @@ export class SeedMetadataStep implements AssemblyStep {
         await fs.copy(sourcePath, destPath);
         this.logger?.debug(`Copied seedMetadata from ${sourcePath} to ${destPath}`);
       } else {
-        throw new Error(`seedMetadata ${packageDefinition.seedMetadata.path} does not exist`);
+        throw new Error(`seedMetadata ${packageDefinition.seedMetadata} does not exist`);
       }
     } catch (error: any) {
       throw new Error(`[SeedMetadataStep] ${error.message}`);

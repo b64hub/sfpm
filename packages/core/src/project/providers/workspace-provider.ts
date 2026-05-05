@@ -28,6 +28,7 @@ import {
   collectPackageAliases,
   stripScope,
   toPackageDefinition,
+  toSalesforceProjectJson,
 } from '../package-json-adapter.js';
 import {
   classifyDependencies,
@@ -77,33 +78,10 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
 
   /**
    * Remove SFPM-specific fields that Salesforce CLI doesn't understand.
+   * Delegates to the shared `toSalesforceProjectJson()` adapter.
    */
   static cleanForSalesforce(definition: ProjectDefinition): Record<string, unknown> {
-    const cleaned = structuredClone(definition) as any;
-
-    if (Array.isArray(cleaned.packageDirectories)) {
-      // Build set of unlocked package names — only these are real SF package
-      // dependencies. Source/data packages are SFPM-only constructs.
-      const unlockedPackages = new Set(cleaned.packageDirectories
-      .filter((pkg: any) => pkg.type === 'unlocked' || !pkg.type)
-      .map((pkg: any) => pkg.package));
-
-      cleaned.packageDirectories = cleaned.packageDirectories.map((pkgDir: any) => {
-        const {npmName: _npm, packageOptions: _, type: _type, ...rest} = pkgDir;
-
-        // Filter dependencies to only include unlocked packages and managed deps
-        if (Array.isArray(rest.dependencies)) {
-          rest.dependencies = rest.dependencies.filter((dep: any) => unlockedPackages.has(dep.package) || !dep.versionNumber);
-          if (rest.dependencies.length === 0) {
-            delete rest.dependencies;
-          }
-        }
-
-        return rest;
-      });
-    }
-
-    return cleaned;
+    return toSalesforceProjectJson(definition);
   }
 
   /**
@@ -215,7 +193,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       toPackageDefinition(pkgJson, packageDir, workspaceVersions));
 
     if (packageDefinitions.length > 0) {
-      (packageDefinitions[0] as any).default = true;
+      packageDefinitions[0].default = true;
     }
 
     // 5. Collect packageAliases
@@ -236,7 +214,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       sfdcLoginUrl: this.options.sfdcLoginUrl ?? 'https://login.salesforce.com',
       ...(this.options.sourceApiVersion ? {sourceApiVersion: this.options.sourceApiVersion} : {}),
       ...(this.options.sourceBehaviorOptions?.length ? {sourceBehaviorOptions: this.options.sourceBehaviorOptions} : {}),
-    } as ProjectDefinition;
+    };
 
     this.cachedResult = {definition: projectDefinition, packages: sfpmPackages, warnings};
     return this.cachedResult;
@@ -271,28 +249,30 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       workspaceVersions.set(p.name, p.version);
     }
 
-    const definition = toPackageDefinition(pkgJson, packageDir, workspaceVersions) as PackageDefinition;
+    const definition = toPackageDefinition(pkgJson, packageDir, workspaceVersions);
     definition.default = true;
 
     // Strip SFPM-specific fields that Salesforce CLI doesn't understand
-    delete (definition as any).npmName;
-    delete (definition as any).type;
+    delete definition.npmName;
+    delete definition.type;
+    delete definition.packageOptions;
+    delete definition.packageId;
 
     if (options?.isOrgDependent && definition.dependencies) {
-      delete (definition as any).dependencies;
+      delete definition.dependencies;
     }
 
     // Filter dependencies to only include unlocked packages and managed deps.
     // Source/data packages are SFPM-only constructs that Salesforce CLI doesn't understand.
     if (definition.dependencies) {
-      const allDefs = result.definition.packageDirectories as PackageDefinition[];
+      const allDefs = result.definition.packageDirectories;
       const unlockedPackages = new Set(allDefs
       .filter(pkg => pkg.type === 'unlocked' || !pkg.type)
       .map(pkg => pkg.package));
-      definition.dependencies = (definition.dependencies as Array<{package: string; versionNumber?: string}>)
+      definition.dependencies = definition.dependencies
       .filter(dep => unlockedPackages.has(dep.package) || !dep.versionNumber);
-      if ((definition.dependencies as any[]).length === 0) {
-        delete (definition as any).dependencies;
+      if (definition.dependencies.length === 0) {
+        delete definition.dependencies;
       }
     }
 
@@ -314,10 +294,10 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     // Dependency 0Ho IDs from other workspace packages
     if (definition.dependencies) {
       const fullAliases = result.definition.packageAliases ?? {};
-      for (const dep of definition.dependencies as Array<{package: string}>) {
+      for (const dep of definition.dependencies) {
         const alias = fullAliases[dep.package];
         if (alias && !aliases[dep.package]) {
-          aliases[dep.package] = alias as string;
+          aliases[dep.package] = alias;
         }
       }
     }
@@ -329,7 +309,59 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       sfdcLoginUrl: this.options.sfdcLoginUrl ?? 'https://login.salesforce.com',
       ...(this.options.sourceApiVersion ? {sourceApiVersion: this.options.sourceApiVersion} : {}),
       ...(this.options.sourceBehaviorOptions?.length ? {sourceBehaviorOptions: this.options.sourceBehaviorOptions} : {}),
-    } as ProjectDefinition;
+    };
+  }
+
+  /**
+   * Update fields on a package's package.json `sfpm` config.
+   */
+  async updatePackageConfig(packageName: string, updates: Partial<PackageDefinition>): Promise<void> {
+    // Find the package entry to locate its directory
+    const result = this.resolve();
+    const entry = result.packages?.find(({pkgJson}) => stripScope(pkgJson.name) === packageName);
+    if (!entry) {
+      throw new Error(`Package "${packageName}" not found in workspace.`);
+    }
+
+    const pkgJsonPath = path.join(this.options.projectDir, entry.packageDir, 'package.json');
+    const raw = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+
+    raw.sfpm = raw.sfpm || {};
+
+    if (updates.packageId !== undefined) raw.sfpm.packageId = updates.packageId;
+    if (updates.ancestorId !== undefined) raw.sfpm.ancestorId = updates.ancestorId;
+    if (updates.ancestorVersion !== undefined) raw.sfpm.ancestorVersion = updates.ancestorVersion;
+    if (updates.definitionFile !== undefined) raw.sfpm.definitionFile = updates.definitionFile;
+    if (updates.isOrgDependent !== undefined) raw.sfpm.isOrgDependent = updates.isOrgDependent;
+    if (updates.versionDescription !== undefined) raw.sfpm.versionDescription = updates.versionDescription;
+
+    fs.writeFileSync(pkgJsonPath, JSON.stringify(raw, null, 2) + '\n', 'utf8');
+    this.logger?.debug(`Updated ${entry.packageDir}/package.json for package "${packageName}"`);
+
+    // Invalidate cache so next resolve() picks up the new values
+    this.cachedResult = undefined;
+  }
+
+  /**
+   * Merge aliases into workspace package.json files.
+   * Each alias that matches a workspace package name gets written to that package's sfpm.packageId.
+   */
+  async updatePackageAliases(aliases: Record<string, string>): Promise<void> {
+    const result = this.resolve();
+    if (!result.packages) return;
+
+    for (const [alias, id] of Object.entries(aliases)) {
+      const entry = result.packages.find(({pkgJson}) => stripScope(pkgJson.name) === alias);
+      if (entry) {
+        const pkgJsonPath = path.join(this.options.projectDir, entry.packageDir, 'package.json');
+        const raw = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+        raw.sfpm = raw.sfpm || {};
+        raw.sfpm.packageId = id;
+        fs.writeFileSync(pkgJsonPath, JSON.stringify(raw, null, 2) + '\n', 'utf8');
+      }
+    }
+
+    this.cachedResult = undefined;
   }
 
   // =========================================================================

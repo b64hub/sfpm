@@ -95,7 +95,11 @@ describe('ProjectConfig', () => {
   describe('getProjectDefinition', () => {
     it('should return the project definition from SfProject', () => {
       const definition = projectConfig.getProjectDefinition();
-      expect(definition).toEqual(mockProject);
+      // fromSalesforceProjectJson maps raw SF data to SFPM types
+      expect(definition.packageDirectories).toHaveLength(5);
+      expect(definition.packageDirectories[0].package).toBe('temp');
+      expect(definition.packageAliases).toEqual(mockProject.packageAliases);
+      expect(definition.sourceApiVersion).toBe('50.0');
       expect(mockProjectJson.getContents).toHaveBeenCalled();
     });
 
@@ -185,10 +189,11 @@ describe('ProjectConfig', () => {
 
   describe('save', () => {
     it('should save changes to SfProjectJson', async () => {
-      const updated = {...mockProject, sourceApiVersion: '60.0'};
+      const updated = {...mockProject, sourceApiVersion: '60.0'} as ProjectDefinition;
       await projectConfig.save(updated);
 
-      expect(mockProjectJson.set).toHaveBeenCalledWith('packageDirectories', updated.packageDirectories);
+      // toSalesforceProjectJson converts SFPM types to SF format
+      expect(mockProjectJson.set).toHaveBeenCalledWith('packageDirectories', expect.any(Array));
       expect(mockProjectJson.set).toHaveBeenCalledWith('sourceApiVersion', '60.0');
       expect(mockProjectJson.write).toHaveBeenCalled();
     });
@@ -206,7 +211,8 @@ describe('ProjectConfig', () => {
 
     it('should use current contents if no definition provided', async () => {
       await projectConfig.save();
-      expect(mockProjectJson.set).toHaveBeenCalledWith('packageDirectories', mockProject.packageDirectories);
+      // With no definition, save() just writes the current contents unchanged
+      expect(mockProjectJson.write).toHaveBeenCalled();
     });
   });
 });

@@ -299,22 +299,13 @@ export default class Bootstrap extends SfpmCommand {
     ctx: BootstrapContext,
   ): Promise<void> {
     const creator = new PackageCreator(org, ctx.logger)
-    const results = await creator.ensurePackages(selectedPackages, tmpDir, async name => {
+    await creator.ensurePackages(selectedPackages, tmpDir, async name => {
       if (!ctx.isInteractive) return true
       return confirm({
         default: true,
         message: `Package '${name}' does not exist in the DevHub. Create it?`,
       })
     })
-
-    // Write packageIds to each package's package.json
-    for (const result of results) {
-      const config = selectedPackages.find(p => p.name === result.name)
-      if (config) {
-        // eslint-disable-next-line no-await-in-loop -- must be sequential due to potential shared dependencies between packages
-        await creator.updatePackageConfig(tmpDir, config.path, result.packageId)
-      }
-    }
   }
 
   private async installPackages(

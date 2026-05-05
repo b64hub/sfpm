@@ -12,21 +12,11 @@
  */
 
 import type {PackageType} from './package.js';
-import type {
-  PackageDir, PackageOptions,
-} from './project.js';
+import type {PackageOptions} from './project.js';
 
 // ---------------------------------------------------------------------------
 // package.json `sfpm` field — static configuration (committed to repo)
 // ---------------------------------------------------------------------------
-
-/**
- * The named package variant of PackageDir (the one with `package` and `versionNumber`).
- * PackageDir is a union of a simple `{path}` variant and a full package variant;
- * Extract narrows to the variant that carries SF packaging fields like
- * `ancestorId`, `definitionFile`, `seedMetadata`, etc.
- */
-type NamedPackageDir = Extract<PackageDir, {package: string; versionNumber: string}>;
 
 /**
  * The `sfpm` property in a workspace member's package.json.
@@ -35,10 +25,8 @@ type NamedPackageDir = Extract<PackageDir, {package: string; versionNumber: stri
  * Build results (apex analysis, packageVersionId, coverage) are NOT stored here —
  * they are written to the artifact's package.json by the build pipeline.
  *
- * Extends the named PackageDir variant (which carries SF packaging fields like
- * `ancestorId`, `definitionFile`, `seedMetadata`, `unpackagedMetadata`, etc.),
- * omitting fields that are managed by the package.json itself (`package`,
- * `versionNumber`) or overridden with SFPM semantics (`path`).
+ * All SF packaging fields (ancestorId, definitionFile, etc.) are declared
+ * explicitly — no dependency on @salesforce/core's PackageDir type.
  *
  * @example
  * ```json
@@ -53,7 +41,23 @@ type NamedPackageDir = Extract<PackageDir, {package: string; versionNumber: stri
  * }
  * ```
  */
-export interface SfpmPackageConfig extends Omit<NamedPackageDir, 'package' | 'path' | 'seedMetadata' | 'unpackagedMetadata' | 'versionNumber'> {
+export interface SfpmPackageConfig {
+  // -- SF packaging fields (previously inherited from PackageDir) -----------
+
+  /** Ancestor package version ID for unlocked packages. */
+  ancestorId?: string;
+  /** Ancestor version number for unlocked packages. */
+  ancestorVersion?: string;
+  /** Path to scratch org definition file. */
+  definitionFile?: string;
+  /** Whether to scope profiles to this package directory only. */
+  scopeProfiles?: boolean;
+  /** Description for the package version. */
+  versionDescription?: string;
+
+  // -- SFPM-specific fields ------------------------------------------------
+
+  /** Whether this is an org-dependent unlocked package. */
   isOrgDependent?: boolean;
   /** Salesforce package ID (0Ho prefix) resolved from packageAliases */
   packageId?: string;

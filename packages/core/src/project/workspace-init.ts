@@ -21,6 +21,7 @@ import type {SfpmPackageConfig, WorkspacePackageJson} from '../types/workspace.j
 
 import {PackageType} from '../types/package.js';
 import {toVersionFormat} from '../utils/version-utils.js';
+import {fromSalesforceProjectJson} from './package-json-adapter.js';
 
 // ---------------------------------------------------------------------------
 // Options & Result
@@ -77,8 +78,8 @@ export class WorkspaceInitializer {
       throw new Error('No sfdx-project.json found. Use scaffold mode to create a fresh workspace.');
     }
 
-    const projectDef: ProjectDefinition = JSON.parse(fs.readFileSync(sfdxPath, 'utf8'));
-    const packageDirs = projectDef.packageDirectories.filter((p): p is PackageDefinition => 'package' in p && 'versionNumber' in p && typeof p.path === 'string');
+    const projectDef = fromSalesforceProjectJson(JSON.parse(fs.readFileSync(sfdxPath, 'utf8')));
+    const packageDirs = projectDef.packageDirectories;
 
     if (packageDirs.length === 0) {
       throw new Error('No package directories with package names found in sfdx-project.json.');
@@ -402,21 +403,19 @@ export class WorkspaceInitializer {
     }
 
     // Optional fields
-    if ((pkgDef as any).ancestorId) sfpm.ancestorId = (pkgDef as any).ancestorId;
-    if ((pkgDef as any).ancestorVersion) sfpm.ancestorVersion = (pkgDef as any).ancestorVersion;
-    if ((pkgDef as any).definitionFile) sfpm.definitionFile = (pkgDef as any).definitionFile;
-    if ((pkgDef as any).orgDependent) sfpm.isOrgDependent = (pkgDef as any).orgDependent;
+    if (pkgDef.ancestorId) sfpm.ancestorId = pkgDef.ancestorId;
+    if (pkgDef.ancestorVersion) sfpm.ancestorVersion = pkgDef.ancestorVersion;
+    if (pkgDef.definitionFile) sfpm.definitionFile = pkgDef.definitionFile;
+    if (pkgDef.isOrgDependent) sfpm.isOrgDependent = pkgDef.isOrgDependent;
     if (pkgDef.packageOptions) sfpm.packageOptions = pkgDef.packageOptions;
 
     // Resolve seedMetadata/unpackagedMetadata paths relative to package dir
-    if ((pkgDef as any).seedMetadata?.path) {
-      const absPath = (pkgDef as any).seedMetadata.path;
-      sfpm.seedMetadata = path.posix.relative(packageDir, absPath) || absPath;
+    if (pkgDef.seedMetadata) {
+      sfpm.seedMetadata = path.posix.relative(packageDir, pkgDef.seedMetadata) || pkgDef.seedMetadata;
     }
 
-    if ((pkgDef as any).unpackagedMetadata?.path) {
-      const absPath = (pkgDef as any).unpackagedMetadata.path;
-      sfpm.unpackagedMetadata = path.posix.relative(packageDir, absPath) || absPath;
+    if (pkgDef.unpackagedMetadata) {
+      sfpm.unpackagedMetadata = path.posix.relative(packageDir, pkgDef.unpackagedMetadata) || pkgDef.unpackagedMetadata;
     }
 
     // Build workspace dependencies from SF dependencies
@@ -425,11 +424,10 @@ export class WorkspaceInitializer {
 
     // Collect project-internal package names so we can distinguish them from managed deps
     const projectPackageNames = new Set(projectDef.packageDirectories
-    .filter((p): p is PackageDefinition => 'package' in p)
     .map(p => p.package));
 
-    if ((pkgDef as any).dependencies) {
-      for (const dep of (pkgDef as any).dependencies as Array<{package: string; versionNumber?: string}>) {
+    if (pkgDef.dependencies) {
+      for (const dep of pkgDef.dependencies) {
         if (projectPackageNames.has(dep.package)) {
           // Internal workspace dependency — convert SF version to semver range
           const depVersion = this.toWorkspaceDependencyVersion(dep.versionNumber);

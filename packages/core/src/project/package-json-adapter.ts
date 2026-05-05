@@ -18,7 +18,7 @@
 import path from 'node:path';
 
 import type {PackageType} from '../types/package.js';
-import type {ManagedPackageDefinition, PackageDefinition} from '../types/project.js';
+import type {ManagedPackageDefinition, PackageDefinition, PackageDependency, ProjectDefinition} from '../types/project.js';
 import type {SfpmPackageConfig, WorkspacePackageJson} from '../types/workspace.js';
 
 import {toSalesforceVersionWithToken} from '../utils/version-utils.js';
@@ -70,42 +70,45 @@ export function toPackageDefinition(
 
   // Unlocked package fields
   if (sfpm.ancestorId) {
-    (definition as any).ancestorId = sfpm.ancestorId;
+    definition.ancestorId = sfpm.ancestorId;
   }
 
   if (sfpm.ancestorVersion) {
-    (definition as any).ancestorVersion = sfpm.ancestorVersion;
+    definition.ancestorVersion = sfpm.ancestorVersion;
   }
 
   if (sfpm.definitionFile) {
-    (definition as any).definitionFile = sfpm.definitionFile;
+    definition.definitionFile = sfpm.definitionFile;
   }
 
   if (sfpm.isOrgDependent) {
-    (definition as any).orgDependent = sfpm.isOrgDependent;
+    definition.isOrgDependent = sfpm.isOrgDependent;
   }
 
   // Resolve path-based fields relative to the package directory
   if (sfpm.seedMetadata) {
-    (definition as any).seedMetadata = {
-      path: path.posix.join(packageDir, sfpm.seedMetadata),
-    };
+    definition.seedMetadata = path.posix.join(packageDir, sfpm.seedMetadata);
   }
 
   if (sfpm.unpackagedMetadata) {
-    (definition as any).unpackagedMetadata = {
-      path: path.posix.join(packageDir, sfpm.unpackagedMetadata),
-    };
+    definition.unpackagedMetadata = path.posix.join(packageDir, sfpm.unpackagedMetadata);
   }
 
-  // Note: packageOptions is NOT synced to sfdx-project.json.
-  // It lives exclusively in the workspace package.json and is read directly
-  // by PackageFactory during build/install.
+  // packageOptions lives exclusively in workspace package.json and is read
+  // directly by PackageFactory during build/install.
+  if (sfpm.packageOptions) {
+    definition.packageOptions = sfpm.packageOptions;
+  }
+
+  // packageId from workspace config
+  if (sfpm.packageId) {
+    definition.packageId = sfpm.packageId;
+  }
 
   // Build dependencies array from workspace dependencies
   const dependencies = buildDependenciesArray(pkgJson, sfpm, workspaceVersions);
   if (dependencies.length > 0) {
-    (definition as any).dependencies = dependencies;
+    definition.dependencies = dependencies;
   }
 
   return definition;
@@ -128,8 +131,8 @@ function buildDependenciesArray(
   pkgJson: WorkspacePackageJson,
   sfpm: SfpmPackageConfig,
   workspaceVersions?: Map<string, string>,
-): Array<{package: string; versionNumber?: string}> {
-  const deps: Array<{package: string; versionNumber?: string}> = [];
+): PackageDependency[] {
+  const deps: PackageDependency[] = [];
 
   // Workspace dependencies → SF versioned dependencies
   if (pkgJson.dependencies) {
@@ -225,4 +228,130 @@ export function stripScope(name: string): string {
 export function extractScope(name: string): string | undefined {
   const match = name.match(/^(@[^/]+)\//);
   return match ? match[1] : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Salesforce project adapter
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a ProjectDefinition into sfdx-project.json format.
+ *
+ * Strips SFPM-specific fields that Salesforce CLI doesn't understand
+ * and converts flat field formats to the nested SF representations
+ * (e.g., `seedMetadata: "path"` → `seedMetadata: {path: "path"}`).
+ *
+ * Replaces `WorkspaceProvider.cleanForSalesforce()`.
+ */
+export function toSalesforceProjectJson(definition: ProjectDefinition): Record<string, unknown> {
+  const cleaned = structuredClone(definition) as unknown as Record<string, unknown>;
+
+  if (Array.isArray(cleaned.packageDirectories)) {
+    // Build set of unlocked package names — only these are real SF package
+    // dependencies. Source/data packages are SFPM-only constructs.
+    const unlockedPackages = new Set(
+      (cleaned.packageDirectories as PackageDefinition[])
+        .filter(pkg => pkg.type === 'unlocked' || !pkg.type)
+        .map(pkg => pkg.package),
+    );
+
+    cleaned.packageDirectories = (cleaned.packageDirectories as PackageDefinition[]).map(pkgDef => {
+      // Strip SFPM-only fields
+      const {npmName: _npm, packageOptions: _opts, type: _type, packageId: _id, isOrgDependent, ...rest} = pkgDef;
+
+      const sfPkg: Record<string, unknown> = {...rest};
+
+      // Convert isOrgDependent → orgDependent (SF naming convention)
+      if (isOrgDependent) {
+        sfPkg.orgDependent = isOrgDependent;
+      }
+
+      // Convert flat metadata paths to nested SF format
+      if (typeof sfPkg.seedMetadata === 'string') {
+        sfPkg.seedMetadata = {path: sfPkg.seedMetadata};
+      }
+
+      if (typeof sfPkg.unpackagedMetadata === 'string') {
+        sfPkg.unpackagedMetadata = {path: sfPkg.unpackagedMetadata};
+      }
+
+      // Filter dependencies to only include unlocked packages and managed deps
+      if (Array.isArray(sfPkg.dependencies)) {
+        sfPkg.dependencies = (sfPkg.dependencies as PackageDependency[]).filter(
+          dep => unlockedPackages.has(dep.package) || !dep.versionNumber,
+        );
+        if ((sfPkg.dependencies as PackageDependency[]).length === 0) {
+          delete sfPkg.dependencies;
+        }
+      }
+
+      return sfPkg;
+    });
+  }
+
+  return cleaned;
+}
+
+/**
+ * Convert raw sfdx-project.json contents into an SFPM ProjectDefinition.
+ *
+ * Maps SF naming conventions to SFPM conventions:
+ * - `orgDependent` → `isOrgDependent`
+ * - `seedMetadata: {path}` → `seedMetadata: string`
+ * - `unpackagedMetadata: {path}` → `unpackagedMetadata: string`
+ *
+ * Used by SfdxProjectProvider to produce canonical SFPM types.
+ */
+export function fromSalesforceProjectJson(projectJson: Record<string, unknown>): ProjectDefinition {
+  const result: ProjectDefinition = {
+    packageDirectories: [],
+    ...(projectJson.namespace !== undefined ? {namespace: projectJson.namespace as string} : {}),
+    ...(projectJson.packageAliases ? {packageAliases: projectJson.packageAliases as Record<string, string>} : {}),
+    ...(projectJson.sfdcLoginUrl ? {sfdcLoginUrl: projectJson.sfdcLoginUrl as string} : {}),
+    ...(projectJson.sourceApiVersion ? {sourceApiVersion: projectJson.sourceApiVersion as string} : {}),
+    ...(projectJson.sourceBehaviorOptions ? {sourceBehaviorOptions: projectJson.sourceBehaviorOptions as string[]} : {}),
+  };
+
+  if (Array.isArray(projectJson.packageDirectories)) {
+    result.packageDirectories = (projectJson.packageDirectories as Record<string, unknown>[])
+      .filter(dir => typeof dir.package === 'string' && typeof dir.versionNumber === 'string')
+      .map(dir => {
+        const {orgDependent, ...rest} = dir;
+
+        const pkgDef: PackageDefinition = {
+          package: rest.package as string,
+          path: rest.path as string,
+          versionNumber: rest.versionNumber as string,
+          ...(rest.default ? {default: rest.default as boolean} : {}),
+          ...(rest.type ? {type: rest.type as PackageType} : {}),
+          ...(rest.npmName ? {npmName: rest.npmName as string} : {}),
+          ...(rest.packageId ? {packageId: rest.packageId as string} : {}),
+          ...(rest.packageOptions ? {packageOptions: rest.packageOptions as PackageDefinition['packageOptions']} : {}),
+          ...(rest.ancestorId ? {ancestorId: rest.ancestorId as string} : {}),
+          ...(rest.ancestorVersion ? {ancestorVersion: rest.ancestorVersion as string} : {}),
+          ...(rest.definitionFile ? {definitionFile: rest.definitionFile as string} : {}),
+          ...(orgDependent ? {isOrgDependent: orgDependent as boolean} : {}),
+          ...(rest.scopeProfiles ? {scopeProfiles: rest.scopeProfiles as boolean} : {}),
+          ...(rest.versionDescription ? {versionDescription: rest.versionDescription as string} : {}),
+        };
+
+        // Convert nested SF metadata paths to flat strings
+        if (rest.seedMetadata && typeof rest.seedMetadata === 'object' && 'path' in (rest.seedMetadata as Record<string, unknown>)) {
+          pkgDef.seedMetadata = (rest.seedMetadata as {path: string}).path;
+        }
+
+        if (rest.unpackagedMetadata && typeof rest.unpackagedMetadata === 'object' && 'path' in (rest.unpackagedMetadata as Record<string, unknown>)) {
+          pkgDef.unpackagedMetadata = (rest.unpackagedMetadata as {path: string}).path;
+        }
+
+        // Convert dependencies
+        if (Array.isArray(rest.dependencies)) {
+          pkgDef.dependencies = (rest.dependencies as PackageDependency[]);
+        }
+
+        return pkgDef;
+      });
+  }
+
+  return result;
 }

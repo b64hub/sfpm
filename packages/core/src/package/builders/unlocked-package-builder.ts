@@ -5,6 +5,7 @@ import fs from 'fs-extra';
 import EventEmitter from 'node:events';
 import path from 'node:path';
 
+import {toSalesforceProjectJson} from '../../project/package-json-adapter.js';
 import ProjectService from '../../project/project-service.js';
 import {UnlockedBuildEvents} from '../../types/events.js';
 import {Logger} from '../../types/logger.js';
@@ -253,7 +254,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       isOrgDependent: true,
     });
 
-    await fs.writeJson(path.join(this.workingDirectory, 'sfdx-project.json'), prunedDefinition, {spaces: 4});
+    await fs.writeJson(path.join(this.workingDirectory, 'sfdx-project.json'), toSalesforceProjectJson(prunedDefinition), {spaces: 4});
 
     this.emit('unlocked:prune:complete', {
       packageName: this.sfpmPackage.packageName,

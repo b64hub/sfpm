@@ -12,6 +12,7 @@ import {SfpmConfig} from '../types/config.js';
 import {PackageType} from '../types/package.js';
 import {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {loadSfpmConfig} from './config-loader.js';
+import {toSalesforceProjectJson} from './package-json-adapter.js';
 import {ProjectGraph} from './project-graph.js';
 import {SfdxProjectProvider} from './providers/sfdx-project-provider.js';
 import {WorkspaceProvider} from './providers/workspace-provider.js';
@@ -257,14 +258,15 @@ export default class ProjectService {
 
   /** Persists an updated ProjectDefinition to sfdx-project.json. */
   public async saveProjectDefinition(definition: ProjectDefinition): Promise<void> {
+    const sfProjectJson = toSalesforceProjectJson(definition);
     const projectJson = this.sfProject.getSfProjectJson();
-    projectJson.set('packageDirectories', definition.packageDirectories);
-    if (definition.packageAliases) {
-      projectJson.set('packageAliases', definition.packageAliases);
+    projectJson.set('packageDirectories', sfProjectJson.packageDirectories as unknown as ProjectDefinition['packageDirectories']);
+    if (sfProjectJson.packageAliases) {
+      projectJson.set('packageAliases', sfProjectJson.packageAliases as Record<string, string>);
     }
 
-    if (definition.sourceApiVersion) {
-      projectJson.set('sourceApiVersion', definition.sourceApiVersion);
+    if (sfProjectJson.sourceApiVersion) {
+      projectJson.set('sourceApiVersion', sfProjectJson.sourceApiVersion as string);
     }
 
     await projectJson.write();

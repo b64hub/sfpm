@@ -86,7 +86,8 @@ export {
 } from './package/sfpm-package.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export {
-  collectPackageAliases, stripScope, toManagedPackageDefinitions, toPackageDefinition,
+  collectPackageAliases, fromSalesforceProjectJson, stripScope, toManagedPackageDefinitions,
+  toPackageDefinition, toSalesforceProjectJson,
 } from './project/package-json-adapter.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
