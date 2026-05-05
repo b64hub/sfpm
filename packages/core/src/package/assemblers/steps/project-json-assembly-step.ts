@@ -44,7 +44,7 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
 
       const pkg = packageDefinition.packages[0];
 
-      output.projectDefinitionPath = await this.writeProjectDefinition(packageDefinition, pkg, output.stagingDirectory);
+      output.projectDefinitionPath = await this.writeProjectDefinition(packageDefinition, pkg, output.stagingDirectory, output);
       output.componentCount = await this.countComponents(pkg.type || PackageType.Managed, output.stagingDirectory);
 
       const manifestsDir = path.join(output.stagingDirectory, 'manifests');
@@ -85,17 +85,17 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
     packageDefinition: ReturnType<ProjectDefinitionProvider['resolveForPackage']>,
     pkg: PackageDefinition,
     stagingDir: string,
+    output: AssemblyOutput,
   ): Promise<string> {
-    const unpackagedMetadataDir = path.join(stagingDir, 'unpackagedMetadata');
-    if (await fs.pathExists(unpackagedMetadataDir)) {
+    // Use staged metadata paths set by MetadataDependenciesStep
+    if (output.metadataPaths?.unpackaged) {
       if (!pkg.metadataDependencies) pkg.metadataDependencies = {} as any;
-      (pkg.metadataDependencies as any).unpackaged = 'unpackagedMetadata';
+      (pkg.metadataDependencies as any).unpackaged = output.metadataPaths.unpackaged;
     }
 
-    const seedMetadataDir = path.join(stagingDir, 'seedMetadata');
-    if (await fs.pathExists(seedMetadataDir)) {
+    if (output.metadataPaths?.seed) {
       if (!pkg.metadataDependencies) pkg.metadataDependencies = {} as any;
-      (pkg.metadataDependencies as any).seed = 'seedMetadata';
+      (pkg.metadataDependencies as any).seed = output.metadataPaths.seed;
     }
 
     // Convert to SF format for sfdx-project.json output

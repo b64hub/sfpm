@@ -10,6 +10,11 @@ export interface AssemblyOptions {
 
 export interface AssemblyOutput {
   componentCount?: number;
+  /** Staged metadata dependency paths (set by MetadataDependenciesStep) */
+  metadataPaths?: {
+    seed?: string;
+    unpackaged?: string;
+  };
   projectDefinitionPath?: string;
   scripts?: {
     post?: string[];
