@@ -10,7 +10,7 @@ import {SfpmConfig} from '../types/config.js';
 import {PackageType} from '../types/package.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {loadSfpmConfig} from './config-loader.js';
-import {toSalesforceProjectJson} from './package-json-adapter.js';
+import {toSalesforceProjectJson} from './providers/sfdx-project-adapter.js';
 import {ProjectGraph} from './project-graph.js';
 import {SfdxProjectProvider} from './providers/sfdx-project-provider.js';
 import {WorkspaceProvider} from './providers/workspace-provider.js';

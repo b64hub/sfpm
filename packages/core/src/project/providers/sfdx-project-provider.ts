@@ -22,7 +22,8 @@ import type {
   ResolveForPackageOptions,
 } from './project-definition-provider.js';
 
-import {fromSalesforceProjectJson, stripScope, toSalesforceProjectJson} from '../package-json-adapter.js';
+import {fromSalesforceProjectJson, toSalesforceProjectJson} from './sfdx-project-adapter.js';
+import {stripScope} from '../../utils/scope-utils.js';
 import {
   getAllPackageDefinitions,
   getAllPackageNames,

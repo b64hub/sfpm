@@ -1,153 +1,20 @@
 /**
- * Adapter for converting between workspace package.json files and SFPM
- * PackageDefinition / ProjectDefinition structures, and between SFPM's
- * canonical types and Salesforce's sfdx-project.json format.
+ * Adapter for converting between SFPM's canonical ProjectDefinition and
+ * Salesforce's sfdx-project.json format.
  *
- * Direction: WorkspacePackageJson → PackageDefinition (for sync)
- *
- * @example
- * ```typescript
- * const pkgJson = JSON.parse(fs.readFileSync('packages/core/package.json', 'utf8'));
- * const definition = toPackageDefinition(pkgJson, 'packages/core');
- * // → { name: '@myorg/core-package', path: 'packages/core/force-app', version: '1.0.0', type: 'unlocked', ... }
- * ```
+ * - Write: ProjectDefinition → sfdx-project.json (for disk writes / @salesforce/core)
+ * - Read:  sfdx-project.json → ProjectDefinition (for legacy mode)
  */
 
-import path from 'node:path';
+import type {PackageType} from '../../types/package.js';
+import type {PackageDefinition, ProjectDefinition} from '../../types/project.js';
 
-import type {PackageType} from '../types/package.js';
-import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
-import type {WorkspacePackageJson} from './providers/types/workspace.js';
-
-import {SUBSCRIBER_PKG_VERSION_ID_PREFIX} from '../types/project.js';
-import {toSalesforceVersionWithToken} from '../utils/version-utils.js';
+import {SUBSCRIBER_PKG_VERSION_ID_PREFIX} from '../../types/project.js';
+import {stripScope} from '../../utils/scope-utils.js';
+import {toSalesforceVersionWithToken} from '../../utils/version-utils.js';
 
 // ---------------------------------------------------------------------------
-// WorkspacePackageJson → PackageDefinition
-// ---------------------------------------------------------------------------
-
-/**
- * Convert a workspace package.json into an SFPM PackageDefinition.
- *
- * @param pkgJson           - The workspace member's package.json
- * @param packageDir        - Relative path from project root to the package directory (e.g., "packages/core")
- * @param workspaceVersions - Map of workspace package names → versions (for resolving dep version numbers)
- * @returns A PackageDefinition
- */
-export function toPackageDefinition(
-  pkgJson: WorkspacePackageJson,
-  packageDir: string,
-  workspaceVersions?: Map<string, string>,
-): PackageDefinition {
-  const {sfpm} = pkgJson;
-
-  // Build the path by combining the package directory with the SF source path
-  const sourcePath = path.posix.join(packageDir, sfpm.path ?? '.');
-
-  const definition: PackageDefinition = {
-    name: pkgJson.name,
-    path: sourcePath,
-    type: sfpm.packageType as PackageType,
-    version: pkgJson.version,
-  };
-
-  if (pkgJson.description) {
-    definition.description = pkgJson.description;
-  }
-
-  if (sfpm.packageOptions) {
-    definition.packageOptions = sfpm.packageOptions;
-  }
-
-  if (sfpm.packageId) {
-    definition.packageId = sfpm.packageId;
-  }
-
-  // Build dependencies record from workspace: deps
-  const dependencies = buildDependenciesRecord(pkgJson, workspaceVersions);
-  if (Object.keys(dependencies).length > 0) {
-    definition.dependencies = dependencies;
-  }
-
-  // Copy managed dependencies directly
-  if (pkgJson.managedDependencies && Object.keys(pkgJson.managedDependencies).length > 0) {
-    definition.managedDependencies = {...pkgJson.managedDependencies};
-  }
-
-  // Resolve metadata dependencies relative to the package directory
-  if (pkgJson.metadataDependencies) {
-    const md: {seed?: string; unpackaged?: string} = {};
-    if (pkgJson.metadataDependencies.seed) {
-      md.seed = path.posix.join(packageDir, pkgJson.metadataDependencies.seed);
-    }
-
-    if (pkgJson.metadataDependencies.unpackaged) {
-      md.unpackaged = path.posix.join(packageDir, pkgJson.metadataDependencies.unpackaged);
-    }
-
-    if (md.seed || md.unpackaged) {
-      definition.metadataDependencies = md as {seed: string; unpackaged: string};
-    }
-  }
-
-  return definition;
-}
-
-// ---------------------------------------------------------------------------
-// Dependencies
-// ---------------------------------------------------------------------------
-
-/**
- * Build a dependencies record from workspace: dependencies in package.json.
- *
- * Workspace deps (workspace:^x.y.z) become `{name: version}` entries
- * using the depended-on package's actual version from the workspace.
- */
-function buildDependenciesRecord(
-  pkgJson: WorkspacePackageJson,
-  workspaceVersions?: Map<string, string>,
-): Record<string, string> {
-  const deps: Record<string, string> = {};
-
-  if (!pkgJson.dependencies) return deps;
-
-  for (const [depName, version] of Object.entries(pkgJson.dependencies)) {
-    // Only include workspace: dependencies (local SF packages)
-    if (typeof version === 'string' && version.startsWith('workspace:')) {
-      const depVersion = workspaceVersions?.get(depName);
-      deps[depName] = depVersion ? `^${depVersion.split('-')[0]}` : '*';
-    }
-  }
-
-  return deps;
-}
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
-/**
- * Strip the npm scope from a package name.
- * "@myorg/core-package" → "core-package"
- * "core-package" → "core-package"
- */
-export function stripScope(name: string): string {
-  const match = name.match(/^@[^/]+\/(.+)$/);
-  return match ? match[1] : name;
-}
-
-/**
- * Extract the npm scope from a scoped package name.
- * "@myorg/core-package" → "@myorg"
- * "core-package" → undefined
- */
-export function extractScope(name: string): string | undefined {
-  const match = name.match(/^(@[^/]+)\//);
-  return match ? match[1] : undefined;
-}
-
-// ---------------------------------------------------------------------------
-// Salesforce project adapter
+// ProjectDefinition → sfdx-project.json
 // ---------------------------------------------------------------------------
 
 /**
@@ -258,6 +125,10 @@ export function toSalesforceProjectJson(definition: ProjectDefinition): Record<s
 
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// sfdx-project.json → ProjectDefinition
+// ---------------------------------------------------------------------------
 
 /**
  * Convert raw sfdx-project.json contents into an SFPM ProjectDefinition.

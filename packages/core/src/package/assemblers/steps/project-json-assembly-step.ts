@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
-import {toSalesforceProjectJson} from '../../../project/package-json-adapter.js';
+import {toSalesforceProjectJson} from '../../../project/providers/sfdx-project-adapter.js';
 import {Logger} from '../../../types/logger.js';
 import {PackageType} from '../../../types/package.js';
 import {PackageDefinition} from '../../../types/project.js';

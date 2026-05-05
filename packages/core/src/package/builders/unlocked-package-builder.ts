@@ -5,7 +5,7 @@ import fs from 'fs-extra';
 import EventEmitter from 'node:events';
 import path from 'node:path';
 
-import {toSalesforceProjectJson} from '../../project/package-json-adapter.js';
+import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
 import ProjectService from '../../project/project-service.js';
 import {UnlockedBuildEvents} from '../../types/events.js';
 import {Logger} from '../../types/logger.js';

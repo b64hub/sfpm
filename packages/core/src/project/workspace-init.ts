@@ -17,11 +17,12 @@ import path from 'node:path';
 
 import type {Logger} from '../types/logger.js';
 import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
-import type {SfpmPackageConfig, WorkspacePackageJson} from './providers/types/workspace.js';
+import type {WorkspacePackageJson} from './providers/types/workspace.js';
 
 import {PackageType} from '../types/package.js';
 import {toVersionFormat} from '../utils/version-utils.js';
-import {fromSalesforceProjectJson} from './package-json-adapter.js';
+import {fromSalesforceProjectJson} from './providers/sfdx-project-adapter.js';
+import {toWorkspacePackageJson} from './providers/workspace-adapter.js';
 
 // ---------------------------------------------------------------------------
 // Options & Result
@@ -95,7 +96,14 @@ export class WorkspaceInitializer {
       const packageDir = this.resolvePackageDir(pkgDef, options);
       allPackageRelPaths.push(packageDir);
 
-      const pkgJson = this.toWorkspacePackageJson(pkgDef, packageDir, options, projectDef);
+      const pkgJson = toWorkspacePackageJson(
+        pkgDef,
+        packageDir,
+        this.resolveSourcePath(pkgDef, packageDir),
+        this.inferPackageType(pkgDef),
+        {npmScope: options.npmScope},
+        projectDef,
+      );
       const pkgJsonPath = path.join(options.projectDir, packageDir, 'package.json');
 
       this.writePackageJson(pkgJsonPath, pkgJson, result);
@@ -369,89 +377,6 @@ export class WorkspaceInitializer {
     if (!semver || semver === '0.0.0') return 'workspace:*';
 
     return `workspace:^${semver}`;
-  }
-
-  private toWorkspacePackageJson(
-    pkgDef: PackageDefinition,
-    packageDir: string,
-    options: MigrateOptions,
-    projectDef: ProjectDefinition,
-  ): WorkspacePackageJson {
-    const packageName = pkgDef.name;
-    const sfpmPath = this.resolveSourcePath(pkgDef, packageDir);
-    const packageType = this.inferPackageType(pkgDef);
-
-    // Version is already semver in the new type
-    const version = pkgDef.version;
-
-    const sfpm: SfpmPackageConfig = {
-      packageType,
-      // Only set path when source lives in a subdirectory (not at package root)
-      ...(sfpmPath === '.' ? {} : {path: sfpmPath}),
-    };
-
-    // Copy packageId
-    if (pkgDef.packageId) {
-      sfpm.packageId = pkgDef.packageId;
-    }
-
-    // Optional fields
-    if (pkgDef.packageOptions) sfpm.packageOptions = pkgDef.packageOptions;
-
-    // Resolve metadataDependencies paths relative to package dir
-    let metadataDependencies: {seed?: string; unpackaged?: string} | undefined;
-    if (pkgDef.metadataDependencies) {
-      const md: {seed?: string; unpackaged?: string} = {};
-      if (pkgDef.metadataDependencies.seed) {
-        md.seed = path.posix.relative(packageDir, pkgDef.metadataDependencies.seed) || pkgDef.metadataDependencies.seed;
-      }
-
-      if (pkgDef.metadataDependencies.unpackaged) {
-        md.unpackaged = path.posix.relative(packageDir, pkgDef.metadataDependencies.unpackaged) || pkgDef.metadataDependencies.unpackaged;
-      }
-
-      if (md.seed || md.unpackaged) {
-        metadataDependencies = md;
-      }
-    }
-
-    // Build workspace dependencies from SFPM dependencies
-    const dependencies: Record<string, string> = {};
-
-    // Collect project-internal package names
-    const projectPackageNames = new Set(projectDef.packages
-    .map(p => p.name));
-
-    if (pkgDef.dependencies) {
-      for (const [depName, depVersion] of Object.entries(pkgDef.dependencies)) {
-        if (projectPackageNames.has(depName)) {
-          // Internal workspace dependency
-          dependencies[depName.includes('/') ? depName : `${options.npmScope}/${depName}`] = `workspace:^${depVersion.replace(/^[\^~]/, '')}`;
-        }
-      }
-    }
-
-    const pkgJson: WorkspacePackageJson = {
-      ...(pkgDef.description ? {description: pkgDef.description} : {}),
-      ...(pkgDef.managedDependencies && Object.keys(pkgDef.managedDependencies).length > 0
-        ? {managedDependencies: pkgDef.managedDependencies} : {}),
-      ...(metadataDependencies ? {metadataDependencies} : {}),
-      name: packageName.includes('/') ? packageName : `${options.npmScope}/${packageName}`,
-      private: true,
-      scripts: {
-        'sfpm:build': `sfpm build ${packageName} --turbo`,
-        'sfpm:deploy': `sfpm deploy ${packageName} --turbo`,
-        'sfpm:install': `sfpm install ${packageName} --turbo`,
-      },
-      sfpm,
-      version,
-    };
-
-    if (Object.keys(dependencies).length > 0) {
-      pkgJson.dependencies = dependencies;
-    }
-
-    return pkgJson;
   }
 
   /**

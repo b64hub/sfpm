@@ -86,9 +86,10 @@ export {
 } from './package/sfpm-package.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export {
-  fromSalesforceProjectJson, stripScope,
-  toPackageDefinition, toSalesforceProjectJson,
-} from './project/package-json-adapter.js';
+  fromSalesforceProjectJson, toSalesforceProjectJson,
+} from './project/providers/sfdx-project-adapter.js';
+export {toPackageDefinition} from './project/providers/workspace-adapter.js';
+export {stripScope} from './utils/scope-utils.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
 export {

@@ -21,7 +21,7 @@ import type {
   WorkspaceSyncResult,
 } from './providers/types/workspace.js';
 
-import {stripScope} from './package-json-adapter.js';
+import {stripScope} from '../utils/scope-utils.js';
 import {WorkspaceProvider} from './providers/workspace-provider.js';
 
 // ---------------------------------------------------------------------------

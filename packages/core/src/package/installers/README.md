@@ -89,10 +89,11 @@ The core installation operations (source deployment and version installation) ar
 ```typescript
 import { PackageInstaller, ProjectConfig } from '@b64hub/sfpm-core';
 
-const projectConfig = await ProjectConfig.load('/path/to/project');
+const projectService = await ProjectService.create('/path/to/project');
+const provider = projectService.getDefinitionProvider();
 
 const installer = new PackageInstaller(
-    projectConfig,
+    provider,
     {
         targetOrg: 'myOrg',
         installationKey: 'optional-key',

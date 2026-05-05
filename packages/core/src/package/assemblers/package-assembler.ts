@@ -36,7 +36,7 @@ const DOT_FOLDER = '.sfpm';
  *
  * @example
  * ```typescript
- * const stagingPath = await new PackageAssembler(projectConfig, 'my-package', logger)
+ * const stagingPath = await new PackageAssembler('my-package', provider, logger)
  *     .withVersion('1.2.3.4')
  *     .withOrgDefinition('config/project-scratch-def.json')
  *     .assemble();
