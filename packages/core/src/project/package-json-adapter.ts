@@ -1,9 +1,7 @@
 /**
- * Adapter for converting between workspace package.json files and Salesforce
- * PackageDefinition / ProjectDefinition structures.
- *
- * This module bridges the "package.json-first" workspace model with the
- * sfdx-project.json format that Salesforce CLI requires.
+ * Adapter for converting between workspace package.json files and SFPM
+ * PackageDefinition / ProjectDefinition structures, and between SFPM's
+ * canonical types and Salesforce's sfdx-project.json format.
  *
  * Direction: WorkspacePackageJson → PackageDefinition (for sync)
  *
@@ -11,16 +9,17 @@
  * ```typescript
  * const pkgJson = JSON.parse(fs.readFileSync('packages/core/package.json', 'utf8'));
  * const definition = toPackageDefinition(pkgJson, 'packages/core');
- * // → { package: 'core-package', path: 'packages/core/force-app', versionNumber: '1.0.0.NEXT', ... }
+ * // → { name: '@myorg/core-package', path: 'packages/core/force-app', version: '1.0.0', type: 'unlocked', ... }
  * ```
  */
 
 import path from 'node:path';
 
 import type {PackageType} from '../types/package.js';
-import type {ManagedPackageDefinition, PackageDefinition, PackageDependency, ProjectDefinition} from '../types/project.js';
-import type {SfpmPackageConfig, WorkspacePackageJson} from '../types/workspace.js';
+import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
+import type {WorkspacePackageJson} from '../types/workspace.js';
 
+import {SUBSCRIBER_PKG_VERSION_ID_PREFIX} from '../types/project.js';
 import {toSalesforceVersionWithToken} from '../utils/version-utils.js';
 
 // ---------------------------------------------------------------------------
@@ -28,13 +27,12 @@ import {toSalesforceVersionWithToken} from '../utils/version-utils.js';
 // ---------------------------------------------------------------------------
 
 /**
- * Convert a workspace package.json into a Salesforce PackageDefinition
- * suitable for inclusion in sfdx-project.json's `packageDirectories`.
+ * Convert a workspace package.json into an SFPM PackageDefinition.
  *
  * @param pkgJson           - The workspace member's package.json
  * @param packageDir        - Relative path from project root to the package directory (e.g., "packages/core")
  * @param workspaceVersions - Map of workspace package names → versions (for resolving dep version numbers)
- * @returns A PackageDefinition for sfdx-project.json
+ * @returns A PackageDefinition
  */
 export function toPackageDefinition(
   pkgJson: WorkspacePackageJson,
@@ -42,73 +40,54 @@ export function toPackageDefinition(
   workspaceVersions?: Map<string, string>,
 ): PackageDefinition {
   const {sfpm} = pkgJson;
-  const packageName = stripScope(pkgJson.name);
 
-  // Convert semver version to Salesforce format with appropriate build token
-  const sfVersion = toSalesforceVersionWithToken(pkgJson.version, sfpm.packageType);
   // Build the path by combining the package directory with the SF source path
   const sourcePath = path.posix.join(packageDir, sfpm.path ?? '.');
 
   const definition: PackageDefinition = {
-    npmName: pkgJson.name,
-    package: packageName,
+    name: pkgJson.name,
     path: sourcePath,
-    versionNumber: sfVersion,
+    type: sfpm.packageType as PackageType,
+    version: pkgJson.version,
   };
 
-  // Set explicit type if not the default
-  if (sfpm.packageType) {
-    definition.type = sfpm.packageType as PackageType;
+  if (pkgJson.description) {
+    definition.description = pkgJson.description;
   }
 
-  // Copy optional SF-specific fields
-  // versionDescription: prefer sfpm.versionDescription, fall back to top-level description
-  const versionDescription = sfpm.versionDescription ?? (pkgJson.description as string | undefined);
-  if (versionDescription) {
-    definition.versionDescription = versionDescription;
-  }
-
-  // Unlocked package fields
-  if (sfpm.ancestorId) {
-    definition.ancestorId = sfpm.ancestorId;
-  }
-
-  if (sfpm.ancestorVersion) {
-    definition.ancestorVersion = sfpm.ancestorVersion;
-  }
-
-  if (sfpm.definitionFile) {
-    definition.definitionFile = sfpm.definitionFile;
-  }
-
-  if (sfpm.isOrgDependent) {
-    definition.isOrgDependent = sfpm.isOrgDependent;
-  }
-
-  // Resolve path-based fields relative to the package directory
-  if (sfpm.seedMetadata) {
-    definition.seedMetadata = path.posix.join(packageDir, sfpm.seedMetadata);
-  }
-
-  if (sfpm.unpackagedMetadata) {
-    definition.unpackagedMetadata = path.posix.join(packageDir, sfpm.unpackagedMetadata);
-  }
-
-  // packageOptions lives exclusively in workspace package.json and is read
-  // directly by PackageFactory during build/install.
   if (sfpm.packageOptions) {
     definition.packageOptions = sfpm.packageOptions;
   }
 
-  // packageId from workspace config
   if (sfpm.packageId) {
     definition.packageId = sfpm.packageId;
   }
 
-  // Build dependencies array from workspace dependencies
-  const dependencies = buildDependenciesArray(pkgJson, sfpm, workspaceVersions);
-  if (dependencies.length > 0) {
+  // Build dependencies record from workspace: deps
+  const dependencies = buildDependenciesRecord(pkgJson, workspaceVersions);
+  if (Object.keys(dependencies).length > 0) {
     definition.dependencies = dependencies;
+  }
+
+  // Copy managed dependencies directly
+  if (pkgJson.managedDependencies && Object.keys(pkgJson.managedDependencies).length > 0) {
+    definition.managedDependencies = {...pkgJson.managedDependencies};
+  }
+
+  // Resolve metadata dependencies relative to the package directory
+  if (pkgJson.metadataDependencies) {
+    const md: {seed?: string; unpackaged?: string} = {};
+    if (pkgJson.metadataDependencies.seed) {
+      md.seed = path.posix.join(packageDir, pkgJson.metadataDependencies.seed);
+    }
+
+    if (pkgJson.metadataDependencies.unpackaged) {
+      md.unpackaged = path.posix.join(packageDir, pkgJson.metadataDependencies.unpackaged);
+    }
+
+    if (md.seed || md.unpackaged) {
+      definition.metadataDependencies = md as {seed: string; unpackaged: string};
+    }
   }
 
   return definition;
@@ -119,91 +98,28 @@ export function toPackageDefinition(
 // ---------------------------------------------------------------------------
 
 /**
- * Build the `dependencies` array for sfdx-project.json from workspace deps
- * and managed deps declared in the sfpm config.
+ * Build a dependencies record from workspace: dependencies in package.json.
  *
- * Workspace deps (workspace:^x.y.z) become versioned SF dependencies using
- * the depended-on package's actual version from the workspace.
- * Managed deps (from managedDependencies) become unversioned references
- * resolved via packageAliases.
+ * Workspace deps (workspace:^x.y.z) become `{name: version}` entries
+ * using the depended-on package's actual version from the workspace.
  */
-function buildDependenciesArray(
+function buildDependenciesRecord(
   pkgJson: WorkspacePackageJson,
-  sfpm: SfpmPackageConfig,
   workspaceVersions?: Map<string, string>,
-): PackageDependency[] {
-  const deps: PackageDependency[] = [];
+): Record<string, string> {
+  const deps: Record<string, string> = {};
 
-  // Workspace dependencies → SF versioned dependencies
-  if (pkgJson.dependencies) {
-    for (const [depName, version] of Object.entries(pkgJson.dependencies)) {
-      // Only include workspace: dependencies (local SF packages)
-      if (typeof version === 'string' && version.startsWith('workspace:')) {
-        const sfDepName = stripScope(depName);
-        // Look up the depended-on package's version to emit versionNumber
-        const depVersion = workspaceVersions?.get(depName);
-        if (depVersion) {
-          // Convert semver to SF dependency format: major.minor.patch.LATEST
-          // Strip any prerelease segment (e.g., "1.2.0-3" → "1.2.0") then append LATEST
-          const base = depVersion.split('-')[0];
-          deps.push({package: sfDepName, versionNumber: `${base}.LATEST`});
-        } else {
-          deps.push({package: sfDepName});
-        }
-      }
-    }
-  }
+  if (!pkgJson.dependencies) return deps;
 
-  // Managed dependencies → SF unversioned references (resolved via packageAliases)
-  if (pkgJson.managedDependencies) {
-    for (const alias of Object.keys(pkgJson.managedDependencies)) {
-      deps.push({package: alias});
+  for (const [depName, version] of Object.entries(pkgJson.dependencies)) {
+    // Only include workspace: dependencies (local SF packages)
+    if (typeof version === 'string' && version.startsWith('workspace:')) {
+      const depVersion = workspaceVersions?.get(depName);
+      deps[depName] = depVersion ? `^${depVersion.split('-')[0]}` : '*';
     }
   }
 
   return deps;
-}
-
-// ---------------------------------------------------------------------------
-// Managed dependencies aggregation
-// ---------------------------------------------------------------------------
-
-/**
- * Collect all managed dependencies across workspace packages into a single
- * `packageAliases` map for sfdx-project.json.
- *
- * @param packages - Array of workspace package.json contents
- * @returns Combined packageAliases map (alias → 04t subscriber version ID)
- */
-export function collectPackageAliases(packages: WorkspacePackageJson[]): Record<string, string> {
-  const aliases: Record<string, string> = {};
-
-  for (const pkgJson of packages) {
-    const managed = pkgJson.managedDependencies;
-    if (!managed) continue;
-
-    for (const [alias, versionId] of Object.entries(managed)) {
-      if (aliases[alias] && aliases[alias] !== versionId) {
-        throw new Error(`Conflicting managed dependency: "${alias}" resolves to `
-          + `"${aliases[alias]}" in one package but "${versionId}" in another. `
-          + 'All packages must agree on managed dependency versions.');
-      }
-
-      aliases[alias] = versionId;
-    }
-  }
-
-  return aliases;
-}
-
-/**
- * Extract managed package definitions from collected aliases.
- */
-export function toManagedPackageDefinitions(aliases: Record<string, string>): ManagedPackageDefinition[] {
-  return Object.entries(aliases).map(([alias, versionId]) => ({
-    package: alias,
-    packageVersionId: versionId,
-  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -237,121 +153,232 @@ export function extractScope(name: string): string | undefined {
 /**
  * Convert a ProjectDefinition into sfdx-project.json format.
  *
- * Strips SFPM-specific fields that Salesforce CLI doesn't understand
- * and converts flat field formats to the nested SF representations
- * (e.g., `seedMetadata: "path"` → `seedMetadata: {path: "path"}`).
+ * Maps SFPM canonical types to Salesforce CLI conventions:
+ * - `.name` → `.package` (scope stripped)
+ * - `.version` → `.versionNumber` (semver → 4-part SF format)
+ * - `.packages` → `packageDirectories`
+ * - Per-package `managedDependencies` + `packageId` → top-level `packageAliases`
+ * - `dependencies` record → `dependencies` array of `{package, versionNumber}`
  *
- * Replaces `WorkspaceProvider.cleanForSalesforce()`.
+ * Strips SFPM-specific fields that Salesforce CLI doesn't understand.
  */
 export function toSalesforceProjectJson(definition: ProjectDefinition): Record<string, unknown> {
-  const cleaned = structuredClone(definition) as unknown as Record<string, unknown>;
+  // Build set of unlocked package names — only these are real SF package
+  // dependencies. Source/data packages are SFPM-only constructs.
+  const unlockedPackageNames = new Set(
+    definition.packages
+      .filter(pkg => pkg.type === 'unlocked' || !pkg.type)
+      .map(pkg => stripScope(pkg.name)),
+  );
 
-  if (Array.isArray(cleaned.packageDirectories)) {
-    // Build set of unlocked package names — only these are real SF package
-    // dependencies. Source/data packages are SFPM-only constructs.
-    const unlockedPackages = new Set(
-      (cleaned.packageDirectories as PackageDefinition[])
-        .filter(pkg => pkg.type === 'unlocked' || !pkg.type)
-        .map(pkg => pkg.package),
-    );
+  const packageAliases: Record<string, string> = {};
+  const packageDirectories: Record<string, unknown>[] = [];
 
-    cleaned.packageDirectories = (cleaned.packageDirectories as PackageDefinition[]).map(pkgDef => {
-      // Strip SFPM-only fields
-      const {npmName: _npm, packageOptions: _opts, type: _type, packageId: _id, isOrgDependent, ...rest} = pkgDef;
+  for (const pkgDef of definition.packages) {
+    const sfName = stripScope(pkgDef.name);
+    const sfVersion = toSalesforceVersionWithToken(pkgDef.version, pkgDef.type as Exclude<PackageType, 'managed'>);
 
-      const sfPkg: Record<string, unknown> = {...rest};
+    const sfPkg: Record<string, unknown> = {
+      package: sfName,
+      path: pkgDef.path,
+      versionNumber: sfVersion,
+    };
 
-      // Convert isOrgDependent → orgDependent (SF naming convention)
-      if (isOrgDependent) {
-        sfPkg.orgDependent = isOrgDependent;
-      }
+    if (pkgDef.packageOptions?.default) {
+      sfPkg.default = true;
+    }
 
-      // Convert flat metadata paths to nested SF format
-      if (typeof sfPkg.seedMetadata === 'string') {
-        sfPkg.seedMetadata = {path: sfPkg.seedMetadata};
-      }
+    if (pkgDef.description) {
+      sfPkg.versionDescription = pkgDef.description;
+    }
 
-      if (typeof sfPkg.unpackagedMetadata === 'string') {
-        sfPkg.unpackagedMetadata = {path: sfPkg.unpackagedMetadata};
-      }
+    if (pkgDef.namespace) {
+      sfPkg.namespace = pkgDef.namespace;
+    }
 
-      // Filter dependencies to only include unlocked packages and managed deps
-      if (Array.isArray(sfPkg.dependencies)) {
-        sfPkg.dependencies = (sfPkg.dependencies as PackageDependency[]).filter(
-          dep => unlockedPackages.has(dep.package) || !dep.versionNumber,
-        );
-        if ((sfPkg.dependencies as PackageDependency[]).length === 0) {
-          delete sfPkg.dependencies;
+    // Build SF dependencies array from workspace deps + managed deps
+    const sfDeps: Array<{package: string; versionNumber?: string}> = [];
+
+    if (pkgDef.dependencies) {
+      for (const [depName, depVersion] of Object.entries(pkgDef.dependencies)) {
+        const sfDepName = stripScope(depName);
+        // Only include unlocked packages in SF deps
+        if (unlockedPackageNames.has(sfDepName)) {
+          // Convert semver constraint to SF format: ^1.2.3 → 1.2.3.LATEST
+          const cleanVersion = depVersion.replace(/^[\^~]/, '');
+          sfDeps.push({package: sfDepName, versionNumber: `${cleanVersion}.LATEST`});
         }
       }
+    }
 
-      return sfPkg;
-    });
+    // Add managed deps as unversioned references
+    if (pkgDef.managedDependencies) {
+      for (const alias of Object.keys(pkgDef.managedDependencies)) {
+        sfDeps.push({package: alias});
+      }
+    }
+
+    if (sfDeps.length > 0) {
+      sfPkg.dependencies = sfDeps;
+    }
+
+    // Convert metadata dependencies to nested SF format
+    if (pkgDef.metadataDependencies?.seed) {
+      sfPkg.seedMetadata = {path: pkgDef.metadataDependencies.seed};
+    }
+
+    if (pkgDef.metadataDependencies?.unpackaged) {
+      sfPkg.unpackagedMetadata = {path: pkgDef.metadataDependencies.unpackaged};
+    }
+
+    packageDirectories.push(sfPkg);
+
+    // Collect packageAliases from per-package packageId and managedDependencies
+    if (pkgDef.packageId) {
+      packageAliases[sfName] = pkgDef.packageId;
+    }
+
+    if (pkgDef.managedDependencies) {
+      for (const [alias, versionId] of Object.entries(pkgDef.managedDependencies)) {
+        packageAliases[alias] = versionId;
+      }
+    }
   }
 
-  return cleaned;
+  const result: Record<string, unknown> = {
+    packageDirectories,
+    ...(definition.sfdcLoginUrl ? {sfdcLoginUrl: definition.sfdcLoginUrl} : {}),
+    ...(definition.sourceApiVersion ? {sourceApiVersion: definition.sourceApiVersion} : {}),
+    ...(definition.sourceBehaviorOptions?.length ? {sourceBehaviorOptions: definition.sourceBehaviorOptions} : {}),
+  };
+
+  if (Object.keys(packageAliases).length > 0) {
+    result.packageAliases = packageAliases;
+  }
+
+  return result;
 }
 
 /**
  * Convert raw sfdx-project.json contents into an SFPM ProjectDefinition.
  *
  * Maps SF naming conventions to SFPM conventions:
- * - `orgDependent` → `isOrgDependent`
- * - `seedMetadata: {path}` → `seedMetadata: string`
- * - `unpackagedMetadata: {path}` → `unpackagedMetadata: string`
+ * - `packageDirectories` → `packages`
+ * - `package` → `name` (no scope available from SF file — kept as-is)
+ * - `versionNumber` → `version` (4-part → semver: 1.0.0.NEXT → 1.0.0, 1.0.0.5 → 1.0.0-5)
+ * - `dependencies` array → `dependencies` record `{name: version}`
+ * - `packageAliases` → per-package `managedDependencies` (non-local deps with 04t IDs)
  *
  * Used by SfdxProjectProvider to produce canonical SFPM types.
  */
 export function fromSalesforceProjectJson(projectJson: Record<string, unknown>): ProjectDefinition {
+  const packageAliases = (projectJson.packageAliases ?? {}) as Record<string, string>;
+
   const result: ProjectDefinition = {
-    packageDirectories: [],
-    ...(projectJson.namespace !== undefined ? {namespace: projectJson.namespace as string} : {}),
-    ...(projectJson.packageAliases ? {packageAliases: projectJson.packageAliases as Record<string, string>} : {}),
+    packages: [],
     ...(projectJson.sfdcLoginUrl ? {sfdcLoginUrl: projectJson.sfdcLoginUrl as string} : {}),
     ...(projectJson.sourceApiVersion ? {sourceApiVersion: projectJson.sourceApiVersion as string} : {}),
     ...(projectJson.sourceBehaviorOptions ? {sourceBehaviorOptions: projectJson.sourceBehaviorOptions as string[]} : {}),
   };
 
-  if (Array.isArray(projectJson.packageDirectories)) {
-    result.packageDirectories = (projectJson.packageDirectories as Record<string, unknown>[])
-      .filter(dir => typeof dir.package === 'string' && typeof dir.versionNumber === 'string')
-      .map(dir => {
-        const {orgDependent, ...rest} = dir;
+  if (!Array.isArray(projectJson.packageDirectories)) return result;
 
-        const pkgDef: PackageDefinition = {
-          package: rest.package as string,
-          path: rest.path as string,
-          versionNumber: rest.versionNumber as string,
-          ...(rest.default ? {default: rest.default as boolean} : {}),
-          ...(rest.type ? {type: rest.type as PackageType} : {}),
-          ...(rest.npmName ? {npmName: rest.npmName as string} : {}),
-          ...(rest.packageId ? {packageId: rest.packageId as string} : {}),
-          ...(rest.packageOptions ? {packageOptions: rest.packageOptions as PackageDefinition['packageOptions']} : {}),
-          ...(rest.ancestorId ? {ancestorId: rest.ancestorId as string} : {}),
-          ...(rest.ancestorVersion ? {ancestorVersion: rest.ancestorVersion as string} : {}),
-          ...(rest.definitionFile ? {definitionFile: rest.definitionFile as string} : {}),
-          ...(orgDependent ? {isOrgDependent: orgDependent as boolean} : {}),
-          ...(rest.scopeProfiles ? {scopeProfiles: rest.scopeProfiles as boolean} : {}),
-          ...(rest.versionDescription ? {versionDescription: rest.versionDescription as string} : {}),
-        };
+  // Build set of local package names for classifying dependencies
+  const localPackageNames = new Set(
+    (projectJson.packageDirectories as Record<string, unknown>[])
+      .filter(dir => typeof dir.package === 'string')
+      .map(dir => dir.package as string),
+  );
 
-        // Convert nested SF metadata paths to flat strings
-        if (rest.seedMetadata && typeof rest.seedMetadata === 'object' && 'path' in (rest.seedMetadata as Record<string, unknown>)) {
-          pkgDef.seedMetadata = (rest.seedMetadata as {path: string}).path;
+  result.packages = (projectJson.packageDirectories as Record<string, unknown>[])
+    .filter(dir => typeof dir.package === 'string' && typeof dir.versionNumber === 'string')
+    .map(dir => {
+      const sfName = dir.package as string;
+      const sfVersion = dir.versionNumber as string;
+
+      // Convert SF 4-part version to semver
+      const versionParts = sfVersion.split('.');
+      const semverBase = versionParts.slice(0, 3).join('.');
+      const buildSegment = versionParts[3];
+      let version = semverBase;
+      if (buildSegment && buildSegment !== 'NEXT' && buildSegment !== '0') {
+        version = `${semverBase}-${buildSegment}`;
+      }
+
+      const pkgDef: PackageDefinition = {
+        name: sfName,
+        path: dir.path as string,
+        type: (dir.type as PackageType) ?? 'unlocked',
+        version,
+      };
+
+      if (dir.default) {
+        pkgDef.packageOptions = {...pkgDef.packageOptions, default: true};
+      }
+
+      if (dir.versionDescription) {
+        pkgDef.description = dir.versionDescription as string;
+      }
+
+      if (dir.namespace) {
+        pkgDef.namespace = dir.namespace as string;
+      }
+
+      if (dir.packageOptions) {
+        pkgDef.packageOptions = {...pkgDef.packageOptions, ...dir.packageOptions as Record<string, unknown>};
+      }
+
+      // Look up packageId from packageAliases
+      const aliasId = packageAliases[sfName];
+      if (aliasId && !aliasId.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
+        pkgDef.packageId = aliasId;
+      }
+
+      // Convert dependencies array to records
+      if (Array.isArray(dir.dependencies)) {
+        const deps: Record<string, string> = {};
+        const managedDeps: Record<string, string> = {};
+
+        for (const dep of dir.dependencies as Array<{package: string; versionNumber?: string}>) {
+          if (localPackageNames.has(dep.package)) {
+            // Local workspace dependency
+            deps[dep.package] = dep.versionNumber
+              ? `^${dep.versionNumber.split('.').slice(0, 3).join('.')}`
+              : '*';
+          } else {
+            // External/managed dependency — look up in packageAliases
+            const aliasValue = packageAliases[dep.package];
+            if (aliasValue?.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
+              managedDeps[dep.package] = aliasValue;
+            }
+          }
         }
 
-        if (rest.unpackagedMetadata && typeof rest.unpackagedMetadata === 'object' && 'path' in (rest.unpackagedMetadata as Record<string, unknown>)) {
-          pkgDef.unpackagedMetadata = (rest.unpackagedMetadata as {path: string}).path;
+        if (Object.keys(deps).length > 0) {
+          pkgDef.dependencies = deps;
         }
 
-        // Convert dependencies
-        if (Array.isArray(rest.dependencies)) {
-          pkgDef.dependencies = (rest.dependencies as PackageDependency[]);
+        if (Object.keys(managedDeps).length > 0) {
+          pkgDef.managedDependencies = managedDeps;
         }
+      }
 
-        return pkgDef;
-      });
-  }
+      // Convert nested SF metadata paths to metadataDependencies
+      const md: {seed?: string; unpackaged?: string} = {};
+      if (dir.seedMetadata && typeof dir.seedMetadata === 'object' && 'path' in (dir.seedMetadata as Record<string, unknown>)) {
+        md.seed = (dir.seedMetadata as {path: string}).path;
+      }
+
+      if (dir.unpackagedMetadata && typeof dir.unpackagedMetadata === 'object' && 'path' in (dir.unpackagedMetadata as Record<string, unknown>)) {
+        md.unpackaged = (dir.unpackagedMetadata as {path: string}).path;
+      }
+
+      if (md.seed || md.unpackaged) {
+        pkgDef.metadataDependencies = md as {seed: string; unpackaged: string};
+      }
+
+      return pkgDef;
+    });
 
   return result;
 }

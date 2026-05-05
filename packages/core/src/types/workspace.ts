@@ -25,9 +25,6 @@ import type {PackageOptions} from './project.js';
  * Build results (apex analysis, packageVersionId, coverage) are NOT stored here —
  * they are written to the artifact's package.json by the build pipeline.
  *
- * All SF packaging fields (ancestorId, definitionFile, etc.) are declared
- * explicitly — no dependency on @salesforce/core's PackageDir type.
- *
  * @example
  * ```json
  * {
@@ -36,30 +33,15 @@ import type {PackageOptions} from './project.js';
  *   "sfpm": {
  *     "packageType": "unlocked",
  *     "path": "force-app",
- *     "packageOptions": { "deploy": { "isTriggerAllTests": true } }
+ *     "packageOptions": { "install": { "isTriggerAllTests": true } }
  *   }
  * }
  * ```
  */
 export interface SfpmPackageConfig {
-  // -- SF packaging fields (previously inherited from PackageDir) -----------
-
-  /** Ancestor package version ID for unlocked packages. */
-  ancestorId?: string;
-  /** Ancestor version number for unlocked packages. */
-  ancestorVersion?: string;
-  /** Path to scratch org definition file. */
-  definitionFile?: string;
-  /** Whether to scope profiles to this package directory only. */
-  scopeProfiles?: boolean;
-  /** Description for the package version. */
-  versionDescription?: string;
-
-  // -- SFPM-specific fields ------------------------------------------------
-
   /** Whether this is an org-dependent unlocked package. */
   isOrgDependent?: boolean;
-  /** Salesforce package ID (0Ho prefix) resolved from packageAliases */
+  /** Salesforce package ID (0Ho prefix) */
   packageId?: string;
   /** Per-package build, deploy, and hook configuration */
   packageOptions?: PackageOptions;
@@ -71,10 +53,6 @@ export interface SfpmPackageConfig {
    * like `"force-app"` or `"main/default"`.
    */
   path?: string;
-  /** Relative path to the seed metadata directory (resolved to `{path}` object during sync) */
-  seedMetadata?: string;
-  /** Relative path to the unpackaged metadata directory (resolved to `{path}` object during sync) */
-  unpackagedMetadata?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +97,14 @@ export interface SfpmPackageJson<TSfpm extends SfpmPackageConfig = SfpmPackageCo
    * These are NOT workspace dependencies — they are installed directly via the Tooling API.
    */
   managedDependencies?: Record<string, string>;
+  /**
+   * Metadata dependencies with relative paths to seed and unpackaged metadata directories.
+   * Paths are relative to the package directory.
+   */
+  metadataDependencies?: {
+    seed?: string;
+    unpackaged?: string;
+  };
   /** Scoped package name (e.g., "@myorg/core-package") */
   name: string;
   /** Always true for SF packages — these are not published directly to npm */

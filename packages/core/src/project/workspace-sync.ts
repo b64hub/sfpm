@@ -63,7 +63,6 @@ export class WorkspaceSync {
     // Delegate discovery and definition building to WorkspaceProvider
     const provider = new WorkspaceProvider({
       logger: this.logger,
-      namespace: this.options.namespace,
       projectDir: this.options.projectDir,
       sfdcLoginUrl: this.options.sfdcLoginUrl,
       sourceApiVersion: this.options.sourceApiVersion,

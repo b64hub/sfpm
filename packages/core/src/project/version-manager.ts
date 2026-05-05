@@ -137,8 +137,8 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
    */
   getUpdatedDefinition(): ProjectDefinition {
     const newConfig = {...this.definition};
-    newConfig.packageDirectories = newConfig.packageDirectories.map(pkgDef => {
-      const tracker = this.trackers.get(pkgDef.package);
+    newConfig.packages = newConfig.packages.map(pkgDef => {
+      const tracker = this.trackers.get(pkgDef.name);
       if (tracker && tracker.isUpdated) {
         return tracker.writeToDefinition(pkgDef);
       }
@@ -266,8 +266,8 @@ export class VersionTracker {
 
     const def = node.definition as PackageDefinition;
     if (def.dependencies) {
-      for (const d of def.dependencies) {
-        this.dependencies.set(d.package, d.versionNumber ?? '');
+      for (const [depName, depVersion] of Object.entries(def.dependencies)) {
+        this.dependencies.set(depName, depVersion);
       }
     }
   }
@@ -330,8 +330,8 @@ export class VersionTracker {
 
     const def = this.node.definition as PackageDefinition;
     if (def.dependencies) {
-      for (const d of def.dependencies) {
-        this.dependencies.set(d.package, d.versionNumber ?? '');
+      for (const [depName, depVersion] of Object.entries(def.dependencies)) {
+        this.dependencies.set(depName, depVersion);
       }
     }
   }
@@ -369,17 +369,18 @@ export class VersionTracker {
   writeToDefinition(original: PackageDefinition): PackageDefinition {
     const copy = {...original};
     if (this.newVersion) {
-      copy.versionNumber = this.newVersion;
+      copy.version = this.newVersion;
     }
 
     if (this.updatedDependencies.size > 0 && copy.dependencies) {
-      copy.dependencies = copy.dependencies.map(d => {
-        if (this.updatedDependencies.has(d.package)) {
-          return {...d, versionNumber: this.dependencies.get(d.package)!};
+      const updatedDeps = {...copy.dependencies};
+      for (const depName of this.updatedDependencies) {
+        if (depName in updatedDeps) {
+          updatedDeps[depName] = this.dependencies.get(depName)!;
         }
+      }
 
-        return d;
-      });
+      copy.dependencies = updatedDeps;
     }
 
     return copy;

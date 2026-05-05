@@ -21,7 +21,7 @@ import {
   SfpmUnlockedPackageMetadata,
   VersionFormat,
 } from '../types/package.js';
-import {EnvAliasConfig, PackageDefinition, PackageDependency, ProjectDefinition} from '../types/project.js';
+import {EnvAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
@@ -100,7 +100,7 @@ export default abstract class SfpmPackage {
     return this._metadata.source?.commit;
   }
 
-  get dependencies(): PackageDependency[] | undefined {
+  get dependencies(): {[packageName: string]: string} | undefined {
     return this.packageDefinition?.dependencies;
   }
 
@@ -118,7 +118,7 @@ export default abstract class SfpmPackage {
 
   /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package"). Undefined in legacy mode. */
   get npmName(): string | undefined {
-    return this._packageDefinition?.npmName;
+    return this._packageDefinition?.name;
   }
 
   get packageDefinition(): PackageDefinition | undefined {
@@ -130,8 +130,8 @@ export default abstract class SfpmPackage {
       throw new Error('Package definition already set');
     }
 
-    if (packageDefinition.package !== this.name) {
-      throw new Error(`Package definition name ${packageDefinition.package} does not match package name ${this.name}`);
+    if (packageDefinition.name !== this.name) {
+      throw new Error(`Package definition name ${packageDefinition.name} does not match package name ${this.name}`);
     }
 
     this._packageDefinition = packageDefinition;
@@ -222,7 +222,7 @@ export default abstract class SfpmPackage {
       return;
     }
 
-    const version = this.version || this.packageDefinition?.versionNumber;
+    const version = this.version || this.packageDefinition?.version;
 
     if (!version) {
       throw new Error('The package doesnt have a version attribute, Please check your definition');
@@ -539,7 +539,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
       },
       packageName: this.name || content.payload?.Package?.fullName,
       packageType: this.type || this.packageDefinition?.type,
-      versionNumber: this.version || this.packageDefinition?.versionNumber,
+      versionNumber: this.version || this.packageDefinition?.version,
     });
 
     return metadata;
@@ -913,7 +913,7 @@ export class PackageFactory {
   createFromName(packageName: string): SfpmPackage {
     // First, try to find in packageDirectories (local packages)
     const allPackages = this.provider.getAllPackageDefinitions();
-    const packageDefinition = allPackages.find(p => p.package === packageName);
+    const packageDefinition = allPackages.find(p => p.name === packageName);
 
     if (!packageDefinition) {
       // Check if it's a managed dependency — if so, guide the caller
@@ -934,12 +934,11 @@ export class PackageFactory {
     // Populate from project config
     sfpmPackage.projectDefinition = this.provider.getProjectDefinition();
     sfpmPackage.packageDefinition = packageDefinition;
-    sfpmPackage.version = packageDefinition.versionNumber;
+    sfpmPackage.version = packageDefinition.version;
 
     // Resolve package ID from PackageDefinition or packageAliases for unlocked packages
     if (packageType === PackageType.Unlocked && sfpmPackage instanceof SfpmUnlockedPackage) {
-      const packageId = packageDefinition.packageId
-        ?? this.provider.getProjectDefinition().packageAliases?.[packageName];
+      const packageId = packageDefinition.packageId;
       if (packageId) {
         sfpmPackage.packageId = packageId;
       }
@@ -953,7 +952,7 @@ export class PackageFactory {
    */
   createFromPath(packagePath: string): SfpmPackage {
     const packageDefinition = this.provider.getPackageDefinitionByPath(packagePath);
-    return this.createFromName(packageDefinition.package);
+    return this.createFromName(packageDefinition.name);
   }
 
   /**
@@ -961,14 +960,15 @@ export class PackageFactory {
    * Returns undefined if the package is not found as a managed dependency.
    */
   createManagedRef(packageName: string): ManagedPackageRef | undefined {
-    const managedPackages = this.provider.getManagedPackages();
-    const managedDef = managedPackages.find(m => m.package === packageName);
-
-    if (!managedDef) {
-      return undefined;
+    // Look through all packages' managedDependencies for this package
+    const allPackages = this.provider.getAllPackageDefinitions();
+    for (const pkg of allPackages) {
+      if (pkg.managedDependencies?.[packageName]) {
+        return new ManagedPackageRef(packageName, pkg.managedDependencies[packageName]);
+      }
     }
 
-    return new ManagedPackageRef(packageName, managedDef.packageVersionId);
+    return undefined;
   }
 
   /**
@@ -984,12 +984,12 @@ export class PackageFactory {
    */
   isManagedPackage(packageName: string): boolean {
     const allPackages = this.provider.getAllPackageDefinitions();
-    if (allPackages.some(p => p.package === packageName)) {
+    if (allPackages.some(p => p.name === packageName)) {
       return false;
     }
 
-    const managedPackages = this.provider.getManagedPackages();
-    return managedPackages.some(m => m.package === packageName);
+    // Check if any package has this as a managedDependency
+    return allPackages.some(p => p.managedDependencies?.[packageName] !== undefined);
   }
 
   /**

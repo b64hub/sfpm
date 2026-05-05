@@ -79,9 +79,9 @@ export class WorkspaceInitializer {
     }
 
     const projectDef = fromSalesforceProjectJson(JSON.parse(fs.readFileSync(sfdxPath, 'utf8')));
-    const packageDirs = projectDef.packageDirectories;
+    const packageDefs = projectDef.packages;
 
-    if (packageDirs.length === 0) {
+    if (packageDefs.length === 0) {
       throw new Error('No package directories with package names found in sfdx-project.json.');
     }
 
@@ -91,7 +91,7 @@ export class WorkspaceInitializer {
     // Then create package.json for each SF package
     const allPackageRelPaths: string[] = [];
 
-    for (const pkgDef of packageDirs) {
+    for (const pkgDef of packageDefs) {
       const packageDir = this.resolvePackageDir(pkgDef, options);
       allPackageRelPaths.push(packageDir);
 
@@ -211,8 +211,6 @@ export class WorkspaceInitializer {
    */
   private inferPackageType(pkgDef: PackageDefinition): Exclude<PackageType, 'managed'> {
     if (pkgDef.type) return pkgDef.type as Exclude<PackageType, 'managed'>;
-    // Heuristic: if versionNumber has NEXT, likely unlocked
-    if (pkgDef.versionNumber?.includes('NEXT')) return PackageType.Unlocked;
     return PackageType.Source;
   }
 
@@ -228,7 +226,7 @@ export class WorkspaceInitializer {
    */
   private resolvePackageDir(pkgDef: PackageDefinition, options: MigrateOptions): string {
     if (options.workspaceDir) {
-      return path.posix.join(options.workspaceDir, pkgDef.package);
+      return path.posix.join(options.workspaceDir, pkgDef.name);
     }
 
     // Use the SF package path directly as the workspace package directory.
@@ -379,16 +377,12 @@ export class WorkspaceInitializer {
     options: MigrateOptions,
     projectDef: ProjectDefinition,
   ): WorkspacePackageJson {
-    const packageName = pkgDef.package;
+    const packageName = pkgDef.name;
     const sfpmPath = this.resolveSourcePath(pkgDef, packageDir);
     const packageType = this.inferPackageType(pkgDef);
 
-    // Convert Salesforce version to semver (strip build token)
-    const version = toVersionFormat(pkgDef.versionNumber, 'semver', {
-      includeBuildNumber: false,
-      resolveTokens: true,
-      strict: false,
-    });
+    // Version is already semver in the new type
+    const version = pkgDef.version;
 
     const sfpm: SfpmPackageConfig = {
       packageType,
@@ -396,58 +390,53 @@ export class WorkspaceInitializer {
       ...(sfpmPath === '.' ? {} : {path: sfpmPath}),
     };
 
-    // Resolve packageId (0Ho) from packageAliases
-    const packageAlias = projectDef.packageAliases?.[packageName];
-    if (packageAlias && packageAlias.startsWith('0Ho')) {
-      sfpm.packageId = packageAlias;
+    // Copy packageId
+    if (pkgDef.packageId) {
+      sfpm.packageId = pkgDef.packageId;
     }
 
     // Optional fields
-    if (pkgDef.ancestorId) sfpm.ancestorId = pkgDef.ancestorId;
-    if (pkgDef.ancestorVersion) sfpm.ancestorVersion = pkgDef.ancestorVersion;
-    if (pkgDef.definitionFile) sfpm.definitionFile = pkgDef.definitionFile;
-    if (pkgDef.isOrgDependent) sfpm.isOrgDependent = pkgDef.isOrgDependent;
     if (pkgDef.packageOptions) sfpm.packageOptions = pkgDef.packageOptions;
 
-    // Resolve seedMetadata/unpackagedMetadata paths relative to package dir
-    if (pkgDef.seedMetadata) {
-      sfpm.seedMetadata = path.posix.relative(packageDir, pkgDef.seedMetadata) || pkgDef.seedMetadata;
+    // Resolve metadataDependencies paths relative to package dir
+    let metadataDependencies: {seed?: string; unpackaged?: string} | undefined;
+    if (pkgDef.metadataDependencies) {
+      const md: {seed?: string; unpackaged?: string} = {};
+      if (pkgDef.metadataDependencies.seed) {
+        md.seed = path.posix.relative(packageDir, pkgDef.metadataDependencies.seed) || pkgDef.metadataDependencies.seed;
+      }
+
+      if (pkgDef.metadataDependencies.unpackaged) {
+        md.unpackaged = path.posix.relative(packageDir, pkgDef.metadataDependencies.unpackaged) || pkgDef.metadataDependencies.unpackaged;
+      }
+
+      if (md.seed || md.unpackaged) {
+        metadataDependencies = md;
+      }
     }
 
-    if (pkgDef.unpackagedMetadata) {
-      sfpm.unpackagedMetadata = path.posix.relative(packageDir, pkgDef.unpackagedMetadata) || pkgDef.unpackagedMetadata;
-    }
-
-    // Build workspace dependencies from SF dependencies
+    // Build workspace dependencies from SFPM dependencies
     const dependencies: Record<string, string> = {};
-    const managedDeps: Record<string, string> = {};
 
-    // Collect project-internal package names so we can distinguish them from managed deps
-    const projectPackageNames = new Set(projectDef.packageDirectories
-    .map(p => p.package));
+    // Collect project-internal package names
+    const projectPackageNames = new Set(projectDef.packages
+    .map(p => p.name));
 
     if (pkgDef.dependencies) {
-      for (const dep of pkgDef.dependencies) {
-        if (projectPackageNames.has(dep.package)) {
-          // Internal workspace dependency — convert SF version to semver range
-          const depVersion = this.toWorkspaceDependencyVersion(dep.versionNumber);
-          dependencies[`${options.npmScope}/${dep.package}`] = depVersion;
-        } else {
-          const versionId = projectDef.packageAliases?.[dep.package];
-          if (!versionId) {
-            this.logger?.warn(`Dependency "${dep.package}" of package "${packageName}" not found in packageAliases. Skipping.`);
-            continue;
-          }
-
-          managedDeps[dep.package] = versionId;
+      for (const [depName, depVersion] of Object.entries(pkgDef.dependencies)) {
+        if (projectPackageNames.has(depName)) {
+          // Internal workspace dependency
+          dependencies[depName.includes('/') ? depName : `${options.npmScope}/${depName}`] = `workspace:^${depVersion.replace(/^[\^~]/, '')}`;
         }
       }
     }
 
     const pkgJson: WorkspacePackageJson = {
-      ...(pkgDef.versionDescription ? {description: pkgDef.versionDescription} : {}),
-      ...(Object.keys(managedDeps).length > 0 ? {managedDependencies: managedDeps} : {}),
-      name: `${options.npmScope}/${packageName}`,
+      ...(pkgDef.description ? {description: pkgDef.description} : {}),
+      ...(pkgDef.managedDependencies && Object.keys(pkgDef.managedDependencies).length > 0
+        ? {managedDependencies: pkgDef.managedDependencies} : {}),
+      ...(metadataDependencies ? {metadataDependencies} : {}),
+      name: packageName.includes('/') ? packageName : `${options.npmScope}/${packageName}`,
       private: true,
       scripts: {
         'sfpm:build': `sfpm build ${packageName} --turbo`,

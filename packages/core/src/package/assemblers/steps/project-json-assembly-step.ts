@@ -40,10 +40,10 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
       const packageDefinition = this.provider.resolveForPackage(this.packageName);
 
       if (options.versionNumber) {
-        packageDefinition.packageDirectories[0].versionNumber = toVersionFormat(options.versionNumber, 'salesforce');
+        packageDefinition.packages[0].version = toVersionFormat(options.versionNumber, 'salesforce');
       }
 
-      const pkg = packageDefinition.packageDirectories[0];
+      const pkg = packageDefinition.packages[0];
 
       output.projectDefinitionPath = await this.writeProjectDefinition(packageDefinition, pkg, output.stagingDirectory);
       output.componentCount = await this.countComponents(pkg.type || PackageType.Managed, output.stagingDirectory);
@@ -89,12 +89,14 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
   ): Promise<string> {
     const unpackagedMetadataDir = path.join(stagingDir, 'unpackagedMetadata');
     if (await fs.pathExists(unpackagedMetadataDir)) {
-      pkg.unpackagedMetadata = 'unpackagedMetadata';
+      if (!pkg.metadataDependencies) pkg.metadataDependencies = {} as any;
+      (pkg.metadataDependencies as any).unpackaged = 'unpackagedMetadata';
     }
 
     const seedMetadataDir = path.join(stagingDir, 'seedMetadata');
     if (await fs.pathExists(seedMetadataDir)) {
-      pkg.seedMetadata = 'seedMetadata';
+      if (!pkg.metadataDependencies) pkg.metadataDependencies = {} as any;
+      (pkg.metadataDependencies as any).seed = 'seedMetadata';
     }
 
     // Convert to SF format for sfdx-project.json output

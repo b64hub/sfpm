@@ -150,7 +150,7 @@ export default class PackageInstaller extends EventEmitter {
       logger: this.logger,
       operation: 'install',
       org: this.org,
-      packageAliases: projectDefinition.packageAliases ?? {},
+      packageAliases: {},
       packageName,
       packagePath,
       packageType,

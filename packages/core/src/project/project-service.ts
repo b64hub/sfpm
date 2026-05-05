@@ -2,15 +2,13 @@ import {SfProject} from '@salesforce/core';
 import path from 'node:path';
 
 import type {
-  ClassifiedDependencies,
-  PackageDependency,
   ProjectDefinitionProvider,
   ResolveForPackageOptions,
 } from './providers/project-definition-provider.js';
 
 import {SfpmConfig} from '../types/config.js';
 import {PackageType} from '../types/package.js';
-import {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {loadSfpmConfig} from './config-loader.js';
 import {toSalesforceProjectJson} from './package-json-adapter.js';
 import {ProjectGraph} from './project-graph.js';
@@ -41,30 +39,12 @@ export default class ProjectService {
   // Static factory / singleton
   // =========================================================================
 
-  public static async classifyDependencies(
-    packageName: string,
-    workingDirectory?: string,
-  ): Promise<ClassifiedDependencies> {
-    const service = await ProjectService.getInstance(workingDirectory);
-    return service.classifyDependencies(packageName);
-  }
-
   /**
    * Creates and initializes a new ProjectService instance from a directory path.
-   *
-   * Auto-detects the project mode:
-   * - **Workspace mode** (pnpm-workspace.yaml or package.json workspaces): builds the
-   *   project graph from workspace package.json files via WorkspaceProvider.
-   * - **Legacy mode**: builds the graph from sfdx-project.json via SfdxProjectProvider.
-   *
-   * You can also pass a custom ProjectDefinitionProvider to override auto-detection.
    */
   public static async create(projectPath?: string, provider?: ProjectDefinitionProvider): Promise<ProjectService> {
     const resolvedPath = projectPath ?? process.cwd();
 
-    // Resolve the workspace root first so that config loading and provider
-    // creation both use the correct directory. When Turborepo (or similar)
-    // runs from a package subdirectory, resolvedPath may not be the root.
     const projectRoot = ProjectService.findWorkspaceRoot(resolvedPath) ?? resolvedPath;
     const sfpmConfig = await loadSfpmConfig(projectRoot);
 
@@ -72,7 +52,6 @@ export default class ProjectService {
     const {definition} = definitionProvider.resolve();
     const graph = new ProjectGraph(definitionProvider);
 
-    // In workspace mode, write sfdx-project.json so @salesforce/core can load it.
     if (definitionProvider instanceof WorkspaceProvider) {
       WorkspaceProvider.ensureSfdxProject(projectRoot, definition);
     }
@@ -84,7 +63,6 @@ export default class ProjectService {
 
   /**
    * Creates a ProjectService instance from an existing SfProject.
-   * Note: This is synchronous and uses an empty SfpmConfig. Prefer `create()` for full config loading.
    */
   public static createFromProject(project: SfProject, sfpmConfig: SfpmConfig = {}): ProjectService {
     const provider = new SfdxProjectProvider(project);
@@ -113,7 +91,7 @@ export default class ProjectService {
     return service.getPackageDefinition(packageName);
   }
 
-  public static async getPackageDependencies(packageName: string, workingDirectory?: string): Promise<(ManagedPackageDefinition | PackageDefinition)[]> {
+  public static async getPackageDependencies(packageName: string, workingDirectory?: string): Promise<PackageDefinition[]> {
     const service = await ProjectService.getInstance(workingDirectory);
     return service.getProjectGraph().getTransitiveDependencies(packageName);
   }
@@ -140,7 +118,6 @@ export default class ProjectService {
   private static async detectProvider(projectDir: string, sfpmConfig: SfpmConfig): Promise<ProjectDefinitionProvider> {
     if (WorkspaceProvider.hasWorkspace(projectDir)) {
       return new WorkspaceProvider({
-        namespace: sfpmConfig.namespace,
         projectDir,
         sfdcLoginUrl: sfpmConfig.sfdcLoginUrl,
         sourceApiVersion: sfpmConfig.sourceApiVersion,
@@ -181,10 +158,6 @@ export default class ProjectService {
     return this.definitionProvider.projectDir;
   }
 
-  public classifyDependencies(packageName: string): ClassifiedDependencies {
-    return this.definitionProvider.classifyDependencies(packageName);
-  }
-
   // =========================================================================
   // Package queries (delegates to provider)
   // =========================================================================
@@ -207,12 +180,8 @@ export default class ProjectService {
     return this.definitionProvider;
   }
 
-  public getDependencies(packageName: string): PackageDependency[] {
+  public getDependencies(packageName: string): PackageDefinition[] {
     return this.definitionProvider.getDependencies(packageName);
-  }
-
-  public getManagedPackages(): ManagedPackageDefinition[] {
-    return this.definitionProvider.getManagedPackages();
   }
 
   public getPackageDefinition(packageName: string): PackageDefinition {
@@ -225,10 +194,6 @@ export default class ProjectService {
 
   public getPackageDefinitionByPath(packagePath: string): PackageDefinition {
     return this.definitionProvider.getPackageDefinitionByPath(packagePath);
-  }
-
-  public getPackageId(packageAlias: string): string | undefined {
-    return this.definitionProvider.getPackageId(packageAlias);
   }
 
   public getPackageType(packageName: string): PackageType {
@@ -260,9 +225,9 @@ export default class ProjectService {
   public async saveProjectDefinition(definition: ProjectDefinition): Promise<void> {
     const sfProjectJson = toSalesforceProjectJson(definition);
     const projectJson = this.sfProject.getSfProjectJson();
-    projectJson.set('packageDirectories', sfProjectJson.packageDirectories as unknown as ProjectDefinition['packageDirectories']);
-    if (sfProjectJson.packageAliases) {
-      projectJson.set('packageAliases', sfProjectJson.packageAliases as Record<string, string>);
+    projectJson.set('packageDirectories', (sfProjectJson as any).packageDirectories);
+    if ((sfProjectJson as any).packageAliases) {
+      projectJson.set('packageAliases', (sfProjectJson as any).packageAliases as Record<string, string>);
     }
 
     if (sfProjectJson.sourceApiVersion) {

@@ -28,8 +28,10 @@ export interface EnvAliasConfig {
 // Orchestration options
 export interface PackageOptions {
   [key: string]: any;
+    /** Whether this is the default package directory. */
+  default?: boolean;
   build?: BuildOptions;
-  deploy?: DeployOptions;
+  install?: InstallOptions;
   /**
    * Marks this package as environment-aliased.
    * When `true`, uses default config (union mode).
@@ -98,34 +100,18 @@ export interface PackageHookConfig {
  * Controls build-time and deploy-time behavior that is not hook-specific:
  * script assembly, optimized deployment, etc.
  */
-export interface DeployOptions {
+export interface InstallOptions {
   isTriggerAllTests?: boolean;
   optimize?: boolean;
   post?: {
     destructiveChanges?: string;
-    unpackagedMetadata?: {path: string};
+    unpackagedMetadata?: string;
   }
   pre?: {
     destructiveChanges?: string;
-    unpackagedMetadata?: {path: string};
+    unpackagedMetadata?: string;
   },
   testLevel?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Package dependency
-// ---------------------------------------------------------------------------
-
-/**
- * A single dependency reference within a package's dependency array.
- * Represents either an internal workspace dependency (with versionNumber)
- * or a managed external dependency (without versionNumber, resolved via packageAliases).
- */
-export interface PackageDependency {
-  /** Package name (scope-stripped for internal, full alias for managed). */
-  package: string;
-  /** Salesforce version number (e.g., "1.0.0.LATEST"). Absent for managed deps. */
-  versionNumber?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -140,76 +126,34 @@ export interface PackageDependency {
  * format (sfdx-project.json or workspace package.json) into this shape.
  */
 export interface PackageDefinition {
-  // -- Core identity --------------------------------------------------------
-
-  /** Salesforce package name (scope-stripped, e.g., "core-package"). */
-  package: string; 
+  /** Package description */
+  description?: string;
+  /** package name (including scope). */
+  name: string; 
+  /** Salesforce namespace (empty string for no namespace). */
+  namespace?: string;
   /** Relative path from project root to the source directory (e.g., "packages/core/force-app"). */
   path: string;
-  /** Salesforce version number (e.g., "1.2.0.NEXT"). */
-  versionNumber: string;
-
-  // -- Classification -------------------------------------------------------
-
-  /** Whether this is the default package directory. */
-  default?: boolean;
+  /** semver version number (e.g., "1.2.0"). */
+  version: string;
   /** Package type: unlocked, source, or data. Defaults to unlocked when unset. */
-  type?: PackageType;
-
-  // -- SFPM extensions ------------------------------------------------------
-
-  /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package"). */
-  npmName?: string;
+  type: PackageType;
   /** Salesforce Package2 ID (0Ho prefix). */
   packageId?: string;
   /** Per-package build, deploy, and hook configuration. */
   packageOptions?: PackageOptions;
 
-  // -- SF packaging fields --------------------------------------------------
-
-  /** Ancestor package version ID for unlocked packages. */
-  ancestorId?: string;
-  /** Ancestor version number for unlocked packages. */
-  ancestorVersion?: string;
-  /** Path to scratch org definition file. */
-  definitionFile?: string;
-  /** Whether this is an org-dependent unlocked package. */
-  isOrgDependent?: boolean;
-  /** Whether to scope profiles to this package directory only. */
-  scopeProfiles?: boolean;
-  /** Description for the package version. */
-  versionDescription?: string;
-
-  // -- Metadata paths -------------------------------------------------------
-
-  /** Relative path to the seed metadata directory. */
-  seedMetadata?: string;
-  /** Relative path to the unpackaged metadata directory. */
-  unpackagedMetadata?: string;
-
-  // -- Dependencies ---------------------------------------------------------
-
-  /** Package dependencies (both internal workspace and managed external). */
-  dependencies?: PackageDependency[];
+  /** Package dependencies with version constraints (e.g., { "core": "^1.0.0", "apex-utils": "2.2.0" }) */
+  dependencies?: {[packageName: string]: string};
+  /** Managed package dependencies with version Id (e.g., { "nebula-logger": "04tXXXXXXXXXXXX" }) */
+  managedDependencies?: {[packageName: string]: string};
+  /** Metadata dependencies with relative paths (e.g., { "seed": "path/to/seed", "unpackaged": "path/to/unpackaged" }) */
+  metadataDependencies?: {
+    seed: string;
+    unpackaged: string;
+  }
 }
 
-/**
- * Represents an external/managed package dependency that is not part of the
- * project's packageDirectories. These are packages (e.g. Nebula Logger) that
- * are referenced as dependencies but whose source is not in the project.
- *
- * Managed dependencies are identified by:
- * - Being listed in a package's `dependencies` array without a `versionNumber`
- * - Having a corresponding `packageAliases` entry that resolves to a
- *   subscriber package version ID (04t prefix)
- * - Having NO entry in `packageDirectories` (no local path)
- */
-export interface ManagedPackageDefinition {
-  /** The full package reference as it appears in dependencies and aliases (e.g. "Nebula Logger@4.16.0") */
-  package: string;
-  /** The subscriber package version ID (starts with 04t) resolved from packageAliases */
-  packageVersionId: string;
-}
 
 // ---------------------------------------------------------------------------
 // Project definition
@@ -223,11 +167,7 @@ export interface ManagedPackageDefinition {
  */
 export interface ProjectDefinition {
   /** The list of package directories in this project. */
-  packageDirectories: PackageDefinition[];
-  /** Map of package aliases to their IDs (0Ho Package2 IDs or 04t subscriber version IDs). */
-  packageAliases?: Record<string, string>;
-  /** Salesforce namespace (empty string for no namespace). */
-  namespace?: string;
+  packages: PackageDefinition[];
   /** Login URL for the Salesforce org. */
   sfdcLoginUrl?: string;
   /** Source API version (e.g., "63.0"). */
@@ -240,35 +180,31 @@ export interface ProjectDefinition {
 // Zod schemas (standalone — no @salesforce/core dependency)
 // ---------------------------------------------------------------------------
 
-export const PackageDependencySchema = z.object({
-  package: z.string(),
-  versionNumber: z.string().optional(),
-});
-
 export const PackageDefinitionSchema = z.object({
-  package: z.string(),
+  name: z.string(),
   path: z.string(),
-  versionNumber: z.string(),
-  default: z.boolean().optional(),
-  type: z.string().optional(),
-  npmName: z.string().optional(),
+  version: z.string(),
+  type: z.string(),
+  description: z.string().optional(),
+  namespace: z.string().optional(),
   packageId: z.string().optional(),
   packageOptions: z.object({
+    default: z.boolean().optional(),
     build: z.object({
       asyncValidation: z.boolean().optional(),
       skipValidation: z.boolean().optional(),
     }).passthrough().optional(),
-    deploy: z.object({
+    install: z.object({
       optimize: z.boolean().optional(),
       isTriggerAllTests: z.boolean().optional(),
       testLevel: z.string().optional(),
       post: z.object({
         destructiveChanges: z.string().optional(),
-        unpackagedMetadata: z.object({path: z.string()}).optional(),
+        unpackagedMetadata: z.string().optional(),
       }).optional(),
       pre: z.object({
         destructiveChanges: z.string().optional(),
-        unpackagedMetadata: z.object({path: z.string()}).optional(),
+        unpackagedMetadata: z.string().optional(),
       }).optional(),
     }).optional(),
     envAliased: z.union([
@@ -284,21 +220,16 @@ export const PackageDefinitionSchema = z.object({
     ignore: z.array(z.string()).optional(),
     skip: z.array(z.string()).optional(),
   }).passthrough().optional(),
-  ancestorId: z.string().optional(),
-  ancestorVersion: z.string().optional(),
-  definitionFile: z.string().optional(),
-  isOrgDependent: z.boolean().optional(),
-  scopeProfiles: z.boolean().optional(),
-  versionDescription: z.string().optional(),
-  seedMetadata: z.string().optional(),
-  unpackagedMetadata: z.string().optional(),
-  dependencies: z.array(PackageDependencySchema).optional(),
+  dependencies: z.record(z.string(), z.string()).optional(),
+  managedDependencies: z.record(z.string(), z.string()).optional(),
+  metadataDependencies: z.object({
+    seed: z.string(),
+    unpackaged: z.string(),
+  }).optional(),
 }).passthrough();
 
 export const ProjectDefinitionSchema = z.object({
-  packageDirectories: z.array(PackageDefinitionSchema),
-  packageAliases: z.record(z.string(), z.string()).optional(),
-  namespace: z.string().optional(),
+  packages: z.array(PackageDefinitionSchema),
   sfdcLoginUrl: z.string().optional(),
   sourceApiVersion: z.string().optional(),
   sourceBehaviorOptions: z.array(z.string()).optional(),

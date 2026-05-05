@@ -18,14 +18,14 @@ export class UnpackagedMetadataStep implements AssemblyStep {
 
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
-    const sourceDir = path.join(this.provider.projectDir, packageDefinition.path);
-    const destinationDir = path.join(output.stagingDirectory, packageDefinition.path);
 
-    if (!packageDefinition.unpackagedMetadata) {
+    const unpackagedPath = packageDefinition.metadataDependencies?.unpackaged;
+
+    if (!unpackagedPath) {
       return;
     }
 
-    const sourcePath = path.join(this.provider.projectDir, packageDefinition.unpackagedMetadata);
+    const sourcePath = path.join(this.provider.projectDir, unpackagedPath);
 
     try {
       if (await fs.pathExists(sourcePath)) {
@@ -33,7 +33,7 @@ export class UnpackagedMetadataStep implements AssemblyStep {
         await fs.ensureDir(destPath);
         await fs.copy(sourcePath, destPath);
       } else {
-        throw new Error(`unpackagedMetadata ${packageDefinition.unpackagedMetadata} does not exist`);
+        throw new Error(`unpackagedMetadata ${unpackagedPath} does not exist`);
       }
     } catch (error: any) {
       throw new Error(`[UnpackagedMetadataStep] ${error.message}`);

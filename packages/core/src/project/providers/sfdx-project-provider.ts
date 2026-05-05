@@ -15,25 +15,20 @@ import path from 'node:path';
 import {SfProject, type ProjectJson} from '@salesforce/core';
 
 import type {PackageType} from '../../types/package.js';
-import type {ManagedPackageDefinition, PackageDefinition, ProjectDefinition} from '../../types/project.js';
+import type {PackageDefinition, ProjectDefinition} from '../../types/project.js';
 import type {
-  ClassifiedDependencies,
-  PackageDependency,
   ProjectDefinitionProvider,
   ProjectDefinitionResult,
   ResolveForPackageOptions,
 } from './project-definition-provider.js';
 
-import {fromSalesforceProjectJson, toSalesforceProjectJson} from '../package-json-adapter.js';
+import {fromSalesforceProjectJson, stripScope, toSalesforceProjectJson} from '../package-json-adapter.js';
 import {
-  classifyDependencies,
   getAllPackageDefinitions,
   getAllPackageNames,
   getDependencies,
-  getManagedPackages,
   getPackageDefinition,
   getPackageDefinitionByPath,
-  getPackageId,
   getPackageType,
 } from './project-definition-provider.js';
 
@@ -50,12 +45,6 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
     this.projectDir = sfProject.getPath();
   }
 
-  // -- Resolution -----------------------------------------------------------
-
-  classifyDependencies(packageName: string): ClassifiedDependencies {
-    return classifyDependencies(this.resolve().definition, packageName);
-  }
-
   getAllPackageDefinitions(): PackageDefinition[] {
     return getAllPackageDefinitions(this.resolve().definition);
   }
@@ -66,12 +55,8 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
     return getAllPackageNames(this.resolve().definition);
   }
 
-  getDependencies(packageName: string): PackageDependency[] {
+  getDependencies(packageName: string): PackageDefinition[] {
     return getDependencies(this.resolve().definition, packageName);
-  }
-
-  getManagedPackages(): ManagedPackageDefinition[] {
-    return getManagedPackages(this.resolve().definition);
   }
 
   getPackageDefinition(packageName: string): PackageDefinition {
@@ -80,10 +65,6 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
 
   getPackageDefinitionByPath(packagePath: string): PackageDefinition {
     return getPackageDefinitionByPath(this.resolve().definition, packagePath);
-  }
-
-  getPackageId(packageAlias: string): string | undefined {
-    return getPackageId(this.resolve().definition, packageAlias);
   }
 
   getPackageType(packageName: string): PackageType {
@@ -109,14 +90,13 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
   /**
    * Resolve a single-package definition for staging and building.
    *
-   * Prunes the full project to just the target package, strips SFPM-only
-   * fields, and marks it as default.
+   * Prunes the full project to just the target package and marks it as default.
    */
   resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
     const {definition} = this.resolve();
     const pruned = structuredClone(definition);
 
-    const filtered = pruned.packageDirectories.filter(pkg => pkg.package === packageName);
+    const filtered = pruned.packages.filter(pkg => pkg.name === packageName);
 
     if (filtered.length === 0) {
       throw new Error(`Package "${packageName}" not found in sfdx-project.json`);
@@ -124,18 +104,12 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
 
     const pkg = filtered[0];
 
-    // Strip SFPM-specific properties for SF CLI
-    delete pkg.npmName;
-    delete pkg.packageOptions;
-    delete pkg.type;
-    delete pkg.packageId;
-
     if (options?.isOrgDependent && pkg.dependencies) {
       delete pkg.dependencies;
     }
 
-    pkg.default = true;
-    pruned.packageDirectories = [pkg];
+    pkg.packageOptions = {...pkg.packageOptions, default: true};
+    pruned.packages = [pkg];
 
     return pruned;
   }
@@ -144,6 +118,7 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
 
   /**
    * Update fields on a package's entry in sfdx-project.json.
+   * Deep-merges onto existing content to preserve user-added fields.
    */
   async updatePackageConfig(packageName: string, updates: Partial<PackageDefinition>): Promise<void> {
     const sfdxPath = path.join(this.projectDir, 'sfdx-project.json');
@@ -158,29 +133,13 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
 
     // Apply updates — convert SFPM field names to SF field names where needed
     if (updates.packageId !== undefined) {
-      // Also store in packageAliases
       raw.packageAliases = raw.packageAliases ?? {};
       raw.packageAliases[packageName] = updates.packageId;
     }
 
-    if (updates.versionNumber !== undefined) pkgDir.versionNumber = updates.versionNumber;
-    if (updates.ancestorId !== undefined) pkgDir.ancestorId = updates.ancestorId;
-    if (updates.ancestorVersion !== undefined) pkgDir.ancestorVersion = updates.ancestorVersion;
-    if (updates.definitionFile !== undefined) pkgDir.definitionFile = updates.definitionFile;
-    if (updates.versionDescription !== undefined) pkgDir.versionDescription = updates.versionDescription;
-    if (updates.isOrgDependent !== undefined) pkgDir.orgDependent = updates.isOrgDependent;
-
-    fs.writeFileSync(sfdxPath, JSON.stringify(raw, null, 2) + '\n', 'utf8');
-  }
-
-  /**
-   * Merge aliases into sfdx-project.json's packageAliases.
-   */
-  async updatePackageAliases(aliases: Record<string, string>): Promise<void> {
-    const sfdxPath = path.join(this.projectDir, 'sfdx-project.json');
-    const raw = JSON.parse(fs.readFileSync(sfdxPath, 'utf8'));
-
-    raw.packageAliases = {...(raw.packageAliases ?? {}), ...aliases};
+    if (updates.name !== undefined) pkgDir.package = stripScope(updates.name);
+    if (updates.version !== undefined) pkgDir.versionNumber = updates.version;
+    if (updates.description !== undefined) pkgDir.versionDescription = updates.description;
 
     fs.writeFileSync(sfdxPath, JSON.stringify(raw, null, 2) + '\n', 'utf8');
   }

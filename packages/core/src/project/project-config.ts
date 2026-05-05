@@ -2,31 +2,21 @@ import {
   SfProject,
 } from '@salesforce/core';
 
-import type {ClassifiedDependencies, PackageDependency} from './providers/project-definition-provider.js';
-
 import {
   Logger,
 } from '../types/logger.js'
 import {PackageType} from '../types/package.js';
 import {
-  ManagedPackageDefinition, PackageDefinition, ProjectDefinition, ProjectDefinitionSchema,
+  PackageDefinition, ProjectDefinition, ProjectDefinitionSchema,
 } from '../types/project.js';
 import {fromSalesforceProjectJson, toSalesforceProjectJson} from './package-json-adapter.js';
 import {
-  classifyDependencies,
   getAllPackageDefinitions,
   getAllPackageNames,
   getDependencies,
-  getManagedPackages,
   getPackageDefinition,
-  getPackageId,
   getPackageType,
 } from './providers/project-definition-provider.js';
-
-/**
- * @deprecated Import `ClassifiedDependencies` from `project-definition-provider.js` instead.
- */
-export type {ClassifiedDependencies} from './providers/project-definition-provider.js';
 
 /**
  * Configuration manager for sfdx-project.json.
@@ -63,33 +53,25 @@ export default class ProjectConfig {
     return this.getProjectDefinition().sourceApiVersion;
   }
 
-  public classifyDependencies(packageName: string): ClassifiedDependencies {
-    return classifyDependencies(this.getProjectDefinition(), packageName);
-  }
-
   /**
-   * Returns all package directories from the project.
+   * Returns all package definitions from the project.
    */
   public getAllPackageDirectories(): PackageDefinition[] {
     return getAllPackageDefinitions(this.getProjectDefinition());
   }
 
   /**
-   * Returns all unique package names from the 'package' field.
+   * Returns all unique package names.
    */
   public getAllPackageNames(): string[] {
     return getAllPackageNames(this.getProjectDefinition());
   }
 
   /**
-   * Returns the raw dependencies for a package.
+   * Returns resolved workspace dependencies for a package.
    */
-  public getDependencies(packageName: string): PackageDependency[] {
+  public getDependencies(packageName: string): PackageDefinition[] {
     return getDependencies(this.getProjectDefinition(), packageName);
-  }
-
-  public getManagedPackages(): ManagedPackageDefinition[] {
-    return getManagedPackages(this.getProjectDefinition());
   }
 
   public getPackageDefinition(packageName: string): PackageDefinition {
@@ -101,17 +83,13 @@ export default class ProjectConfig {
    * Uses SfProject's native getPackage() method for efficient lookup.
    */
   public getPackageDefinitionByPath(packagePath: string): PackageDefinition {
-    const pkg = this.project.getPackage(packagePath) as PackageDefinition;
+    const pkg = this.project.getPackage(packagePath) as unknown as PackageDefinition;
 
-    if (!pkg || !pkg.package) {
+    if (!pkg || !pkg.name) {
       throw new Error(`No package found with path: ${packagePath}`);
     }
 
     return pkg;
-  }
-
-  public getPackageId(packageAlias: string): string | undefined {
-    return getPackageId(this.getProjectDefinition(), packageAlias);
   }
 
   public getPackageType(packageName: string): PackageType {
@@ -145,7 +123,7 @@ export default class ProjectConfig {
 
     const pruned = structuredClone(definition) as ProjectDefinition;
 
-    const filteredPackages = pruned.packageDirectories.filter(pkg => pkg.package === packageName);
+    const filteredPackages = pruned.packages.filter(pkg => pkg.name === packageName);
 
     if (filteredPackages.length === 0) {
       throw new Error(`Package ${packageName} not found in project definition`);
@@ -155,8 +133,8 @@ export default class ProjectConfig {
 
     // Ensure the sole remaining package is marked as the default — Salesforce CLI
     // requires exactly one default directory when only one entry exists.
-    prunedPkg.default = true;
-    pruned.packageDirectories = [prunedPkg];
+    prunedPkg.packageOptions = {...prunedPkg.packageOptions, default: true};
+    pruned.packages = [prunedPkg];
 
     return pruned;
   }
@@ -174,7 +152,7 @@ export default class ProjectConfig {
 
     if (updatedDefinition) {
       const sfFormat = toSalesforceProjectJson(updatedDefinition);
-      projectJson.set('packageDirectories', sfFormat.packageDirectories as unknown as ProjectDefinition['packageDirectories']);
+      projectJson.set('packageDirectories', sfFormat.packageDirectories as unknown as ProjectDefinition['packages']);
       if (sfFormat.packageAliases) {
         projectJson.set('packageAliases', sfFormat.packageAliases as Record<string, string>);
       }
@@ -196,11 +174,8 @@ export default class ProjectConfig {
    * Prunes a package definition for Salesforce CLI compatibility
    */
   private pruneForSalesforce(pkg: PackageDefinition, isOrgDependent: boolean = false): PackageDefinition {
-    // Strip SFPM-specific properties that Salesforce CLI doesn't understand
     const pruned = {...pkg};
     delete pruned.packageOptions;
-    delete pruned.type;
-    delete pruned.npmName;
     delete pruned.packageId;
 
     if (isOrgDependent && pruned.dependencies) {
