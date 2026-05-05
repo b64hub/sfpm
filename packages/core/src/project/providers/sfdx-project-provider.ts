@@ -9,21 +9,18 @@
  * is detected.
  */
 
+import {type ProjectJson, SfProject} from '@salesforce/core';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import {SfProject, type ProjectJson} from '@salesforce/core';
-
 import type {PackageType} from '../../types/package.js';
-import type {PackageDefinition} from '../../types/project.js';
-import {type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
+import type {PackageDefinition, type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
 import type {
   ProjectDefinitionProvider,
   ProjectDefinitionResult,
   ResolveForPackageOptions,
 } from './project-definition-provider.js';
 
-import {fromSalesforceProjectJson, toSalesforceProjectJson} from './sfdx-project-adapter.js';
 import {stripScope} from '../../utils/scope-utils.js';
 import {
   getAllPackageDefinitions,
@@ -33,6 +30,7 @@ import {
   getPackageDefinitionByPath,
   getPackageType,
 } from './project-definition-provider.js';
+import {fromSalesforceProjectJson, toSalesforceProjectJson} from './sfdx-project-adapter.js';
 
 /**
  * Extension of the standard Salesforce Package Directory (packageDirectories entry).
@@ -111,29 +109,13 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
       delete pkg.dependencies;
     }
 
-    pkg.packageOptions = {...pkg.packageOptions, default: true};
+    pkg.default = true;
     pruned.packages = [pkg];
 
     return pruned;
   }
 
   // -- Write operations -----------------------------------------------------
-
-  /**
-   * Validate a ProjectDefinition against the Zod schema.
-   * Wraps ZodError into a user-friendly message.
-   */
-  private validate(definition: ProjectDefinition): ProjectDefinition {
-    const result = ProjectDefinitionSchema.safeParse(definition);
-    if (!result.success) {
-      const issues = result.error.issues
-        .map(i => `  - ${i.path.join('.')}: ${i.message}`)
-        .join('\n');
-      throw new Error(`Invalid project definition in sfdx-project.json:\n${issues}`);
-    }
-
-    return result.data as ProjectDefinition;
-  }
 
   /**
    * Update fields on a package's entry in sfdx-project.json.
@@ -171,5 +153,21 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
     }
 
     fs.writeFileSync(sfdxPath, JSON.stringify(raw, null, 2) + '\n', 'utf8');
+  }
+
+  /**
+   * Validate a ProjectDefinition against the Zod schema.
+   * Wraps ZodError into a user-friendly message.
+   */
+  private validate(definition: ProjectDefinition): ProjectDefinition {
+    const result = ProjectDefinitionSchema.safeParse(definition);
+    if (!result.success) {
+      const issues = result.error.issues
+      .map(i => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
+      throw new Error(`Invalid project definition in sfdx-project.json:\n${issues}`);
+    }
+
+    return result.data as ProjectDefinition;
   }
 }

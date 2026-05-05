@@ -15,7 +15,7 @@ function makeDefinition(overrides?: Partial<ProjectDefinition>): ProjectDefiniti
         managedDependencies: {'nebula-logger': '04tXXXXXXXXXXXXX'},
         name: '@myorg/core',
         packageId: '0HoAAAAAAAAAAAA',
-        packageOptions: {default: true},
+        default: true,
         path: 'packages/core/force-app',
         type: 'unlocked',
         version: '1.2.0',

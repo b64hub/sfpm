@@ -14,18 +14,15 @@ import path from 'node:path';
 
 import type {Logger} from '../../types/logger.js';
 import type {PackageType} from '../../types/package.js';
-import type {PackageDefinition} from '../../types/project.js';
-import {type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
-import type {WorkspacePackageJson} from './types/workspace.js';
+import type {PackageDefinition, type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
 import type {
   ProjectDefinitionProvider,
   ProjectDefinitionResult,
   ResolveForPackageOptions,
 } from './project-definition-provider.js';
+import type {WorkspacePackageJson} from './types/workspace.js';
 
 import {stripScope} from '../../utils/scope-utils.js';
-import {toSalesforceProjectJson} from './sfdx-project-adapter.js';
-import {toPackageDefinition} from './workspace-adapter.js';
 import {
   getAllPackageDefinitions,
   getAllPackageNames,
@@ -34,6 +31,8 @@ import {
   getPackageDefinitionByPath,
   getPackageType,
 } from './project-definition-provider.js';
+import {toSalesforceProjectJson} from './sfdx-project-adapter.js';
+import {toPackageDefinition} from './workspace-adapter.js';
 
 // ---------------------------------------------------------------------------
 // Options
@@ -173,10 +172,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
 
     // Mark first package as default
     if (packageDefinitions.length > 0) {
-      packageDefinitions[0].packageOptions = {
-        ...packageDefinitions[0].packageOptions,
-        default: true,
-      };
+      packageDefinitions[0].default = true;
     }
 
     // 5. Build ProjectDefinition
@@ -202,7 +198,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
    */
   resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
     const result = this.resolve();
-    const definition = result.definition;
+    const {definition} = result;
 
     // Find the target package
     const pkg = definition.packages.find(p => p.name === packageName || stripScope(p.name) === packageName);
@@ -213,7 +209,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     const singlePkg = structuredClone(pkg);
 
     // Mark as default
-    singlePkg.packageOptions = {...singlePkg.packageOptions, default: true};
+    singlePkg.default = true;
 
     // Strip dependencies if org-dependent
     if (options?.isOrgDependent && singlePkg.dependencies) {
@@ -222,11 +218,9 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
 
     // Filter dependencies to only include unlocked packages
     if (singlePkg.dependencies) {
-      const unlockedPackages = new Set(
-        definition.packages
-          .filter(p => p.type === 'unlocked' || !p.type)
-          .map(p => p.name),
-      );
+      const unlockedPackages = new Set(definition.packages
+      .filter(p => p.type === 'unlocked' || !p.type)
+      .map(p => p.name));
       const filteredDeps: Record<string, string> = {};
       for (const [depName, depVersion] of Object.entries(singlePkg.dependencies)) {
         if (unlockedPackages.has(depName)) {
@@ -283,26 +277,6 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
   // =========================================================================
 
   /**
-   * Validate a ProjectDefinition against the Zod schema.
-   * Logs warnings for validation issues but only throws for fatal errors.
-   */
-  private validate(definition: ProjectDefinition, warnings: string[]): ProjectDefinition {
-    const result = ProjectDefinitionSchema.safeParse(definition);
-    if (!result.success) {
-      const issues = result.error.issues
-        .map(i => `  - ${i.path.join('.')}: ${i.message}`)
-        .join('\n');
-      throw new Error(`Invalid project definition from workspace:\n${issues}`);
-    }
-
-    return result.data as ProjectDefinition;
-  }
-
-  // =========================================================================
-  // Workspace Discovery
-  // =========================================================================
-
-  /**
    * Collect directories containing package.json, optionally recursing into subdirectories.
    */
   private collectPackageDirs(absDir: string, relBase: string, dirs: string[], recursive: boolean): void {
@@ -327,6 +301,10 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       }
     }
   }
+
+  // =========================================================================
+  // Workspace Discovery
+  // =========================================================================
 
   /**
    * Discover workspace member directories from pnpm-workspace.yaml or
@@ -429,10 +407,6 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     return this.resolveGlobs(globs);
   }
 
-  // =========================================================================
-  // Package Loading
-  // =========================================================================
-
   private resolveGlobs(globs: string[]): string[] {
     const {projectDir} = this.options;
     const dirs: string[] = [];
@@ -452,5 +426,25 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     }
 
     return dirs;
+  }
+
+  // =========================================================================
+  // Package Loading
+  // =========================================================================
+
+  /**
+   * Validate a ProjectDefinition against the Zod schema.
+   * Logs warnings for validation issues but only throws for fatal errors.
+   */
+  private validate(definition: ProjectDefinition, warnings: string[]): ProjectDefinition {
+    const result = ProjectDefinitionSchema.safeParse(definition);
+    if (!result.success) {
+      const issues = result.error.issues
+      .map(i => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
+      throw new Error(`Invalid project definition from workspace:\n${issues}`);
+    }
+
+    return result.data as ProjectDefinition;
   }
 }

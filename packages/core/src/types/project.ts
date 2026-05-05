@@ -5,7 +5,6 @@ import {PackageType} from './package.js';
 /** Salesforce key prefix for subscriber package version IDs */
 export const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
 
-
 /**
  * Merge mode for env-aliased packages.
  * - `union`: env directory contents are merged on top of the default directory (env wins conflicts)
@@ -27,10 +26,8 @@ export interface EnvAliasConfig {
 // Orchestration options
 export interface PackageOptions {
   [key: string]: any;
-    /** Whether this is the default package directory. */
-  default?: boolean;
+  /** Whether this is the default package directory. */
   build?: BuildOptions;
-  install?: InstallOptions;
   /**
    * Marks this package as environment-aliased.
    * When `true`, uses default config (union mode).
@@ -57,6 +54,7 @@ export interface PackageOptions {
    */
   hooks?: Record<string, boolean | PackageHookConfig>;
   ignore?: string[];
+  install?: InstallOptions;
   skip?: string[];
   validate?: any;
 }
@@ -125,25 +123,12 @@ export interface InstallOptions {
  * format (sfdx-project.json or workspace package.json) into this shape.
  */
 export interface PackageDefinition {
-  /** Package description */
-  description?: string;
-  /** package name (including scope). */
-  name: string; 
-  /** Salesforce namespace (empty string for no namespace). */
-  namespace?: string;
-  /** Relative path from project root to the source directory (e.g., "packages/core/force-app"). */
-  path: string;
-  /** semver version number (e.g., "1.2.0"). */
-  version: string;
-  /** Package type: unlocked, source, or data. Defaults to unlocked when unset. */
-  type: PackageType;
-  /** Salesforce Package2 ID (0Ho prefix). */
-  packageId?: string;
-  /** Per-package build, deploy, and hook configuration. */
-  packageOptions?: PackageOptions;
-
+  /** Whether this package is the default package. */
+  default?: boolean;
   /** Package dependencies with version constraints (e.g., { "core": "^1.0.0", "apex-utils": "2.2.0" }) */
   dependencies?: {[packageName: string]: string};
+  /** Package description */
+  description?: string;
   /** Managed package dependencies with version Id (e.g., { "nebula-logger": "04tXXXXXXXXXXXX" }) */
   managedDependencies?: {[packageName: string]: string};
   /** Metadata dependencies with relative paths (e.g., { "seed": "path/to/seed", "unpackaged": "path/to/unpackaged" }) */
@@ -151,8 +136,22 @@ export interface PackageDefinition {
     seed: string;
     unpackaged: string;
   }
-}
+  /** package name (including scope). */
+  name: string;
+  /** Salesforce namespace (empty string for no namespace). */
+  namespace?: string;
+  /** Salesforce Package2 ID (0Ho prefix). */
+  packageId?: string;
+  /** Per-package build, deploy, and hook configuration. */
+  packageOptions?: PackageOptions;
 
+  /** Relative path from project root to the source directory (e.g., "packages/core/force-app"). */
+  path: string;
+  /** Package type: unlocked, source, or data. Defaults to unlocked when unset. */
+  type: PackageType;
+  /** semver version number (e.g., "1.2.0"). */
+  version: string;
+}
 
 // ---------------------------------------------------------------------------
 // Project definition
@@ -180,32 +179,22 @@ export interface ProjectDefinition {
 // ---------------------------------------------------------------------------
 
 export const PackageDefinitionSchema = z.object({
-  name: z.string(),
-  path: z.string(),
-  version: z.string(),
-  type: z.nativeEnum(PackageType),
+  default: z.boolean().optional(),
+  dependencies: z.record(z.string(), z.string()).optional(),
   description: z.string().optional(),
+  managedDependencies: z.record(z.string(), z.string()).optional(),
+  metadataDependencies: z.object({
+    seed: z.string(),
+    unpackaged: z.string(),
+  }).optional(),
+  name: z.string(),
   namespace: z.string().optional(),
   packageId: z.string().optional(),
   packageOptions: z.object({
-    default: z.boolean().optional(),
     build: z.object({
       asyncValidation: z.boolean().optional(),
       skipValidation: z.boolean().optional(),
     }).passthrough().optional(),
-    install: z.object({
-      optimize: z.boolean().optional(),
-      isTriggerAllTests: z.boolean().optional(),
-      testLevel: z.string().optional(),
-      post: z.object({
-        destructiveChanges: z.string().optional(),
-        unpackagedMetadata: z.string().optional(),
-      }).optional(),
-      pre: z.object({
-        destructiveChanges: z.string().optional(),
-        unpackagedMetadata: z.string().optional(),
-      }).optional(),
-    }).optional(),
     envAliased: z.union([
       z.boolean(),
       z.object({
@@ -217,14 +206,24 @@ export const PackageDefinitionSchema = z.object({
       z.union([z.boolean(), z.record(z.string(), z.unknown())]),
     ).optional(),
     ignore: z.array(z.string()).optional(),
+    install: z.object({
+      isTriggerAllTests: z.boolean().optional(),
+      optimize: z.boolean().optional(),
+      post: z.object({
+        destructiveChanges: z.string().optional(),
+        unpackagedMetadata: z.string().optional(),
+      }).optional(),
+      pre: z.object({
+        destructiveChanges: z.string().optional(),
+        unpackagedMetadata: z.string().optional(),
+      }).optional(),
+      testLevel: z.string().optional(),
+    }).optional(),
     skip: z.array(z.string()).optional(),
   }).passthrough().optional(),
-  dependencies: z.record(z.string(), z.string()).optional(),
-  managedDependencies: z.record(z.string(), z.string()).optional(),
-  metadataDependencies: z.object({
-    seed: z.string(),
-    unpackaged: z.string(),
-  }).optional(),
+  path: z.string(),
+  type: z.nativeEnum(PackageType),
+  version: z.string(),
 }).passthrough();
 
 export const ProjectDefinitionSchema = z.object({

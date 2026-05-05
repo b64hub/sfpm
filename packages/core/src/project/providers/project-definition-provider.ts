@@ -92,7 +92,7 @@ export interface ProjectDefinitionProvider {
    * In workspace mode this builds from the package's own package.json.
    * In legacy mode this prunes the full sfdx-project.json to the target package.
    *
-   * The returned definition has exactly one package entry (with `packageOptions.default: true`),
+   * The returned definition has exactly one package entry (with `default: true`),
    * and project-level settings.
    */
   resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition;

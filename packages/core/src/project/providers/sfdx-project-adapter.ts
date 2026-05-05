@@ -32,11 +32,9 @@ import {toSalesforceVersionWithToken} from '../../utils/version-utils.js';
 export function toSalesforceProjectJson(definition: ProjectDefinition): Record<string, unknown> {
   // Build set of unlocked package names — only these are real SF package
   // dependencies. Source/data packages are SFPM-only constructs.
-  const unlockedPackageNames = new Set(
-    definition.packages
-      .filter(pkg => pkg.type === 'unlocked' || !pkg.type)
-      .map(pkg => stripScope(pkg.name)),
-  );
+  const unlockedPackageNames = new Set(definition.packages
+  .filter(pkg => pkg.type === 'unlocked' || !pkg.type)
+  .map(pkg => stripScope(pkg.name)));
 
   const packageAliases: Record<string, string> = {};
   const packageDirectories: Record<string, unknown>[] = [];
@@ -51,7 +49,7 @@ export function toSalesforceProjectJson(definition: ProjectDefinition): Record<s
       versionNumber: sfVersion,
     };
 
-    if (pkgDef.packageOptions?.default) {
+    if (pkgDef.default) {
       sfPkg.default = true;
     }
 
@@ -155,101 +153,99 @@ export function fromSalesforceProjectJson(projectJson: Record<string, unknown>):
   if (!Array.isArray(projectJson.packageDirectories)) return result;
 
   // Build set of local package names for classifying dependencies
-  const localPackageNames = new Set(
-    (projectJson.packageDirectories as Record<string, unknown>[])
-      .filter(dir => typeof dir.package === 'string')
-      .map(dir => dir.package as string),
-  );
+  const localPackageNames = new Set((projectJson.packageDirectories as Record<string, unknown>[])
+  .filter(dir => typeof dir.package === 'string')
+  .map(dir => dir.package as string));
 
   result.packages = (projectJson.packageDirectories as Record<string, unknown>[])
-    .filter(dir => typeof dir.package === 'string' && typeof dir.versionNumber === 'string')
-    .map(dir => {
-      const sfName = dir.package as string;
-      const sfVersion = dir.versionNumber as string;
+  .filter(dir => typeof dir.package === 'string' && typeof dir.versionNumber === 'string')
+  .map(dir => {
+    const sfName = dir.package as string;
+    const sfVersion = dir.versionNumber as string;
 
-      // Convert SF 4-part version to semver
-      const versionParts = sfVersion.split('.');
-      const semverBase = versionParts.slice(0, 3).join('.');
-      const buildSegment = versionParts[3];
-      let version = semverBase;
-      if (buildSegment && buildSegment !== 'NEXT' && buildSegment !== '0') {
-        version = `${semverBase}-${buildSegment}`;
-      }
+    // Convert SF 4-part version to semver
+    const versionParts = sfVersion.split('.');
+    const semverBase = versionParts.slice(0, 3).join('.');
+    const buildSegment = versionParts[3];
+    let version = semverBase;
+    if (buildSegment && buildSegment !== 'NEXT' && buildSegment !== '0') {
+      version = `${semverBase}-${buildSegment}`;
+    }
 
-      const pkgDef: PackageDefinition = {
-        name: sfName,
-        path: dir.path as string,
-        type: (dir.type as PackageType) ?? 'unlocked',
-        version,
-      };
+    const pkgDef: PackageDefinition = {
+      name: sfName,
+      path: dir.path as string,
+      type: (dir.type as PackageType) ?? 'unlocked',
+      version,
+    };
 
-      if (dir.default) {
-        pkgDef.packageOptions = {...pkgDef.packageOptions, default: true};
-      }
+    if (dir.default) {
+      pkgDef.default = true;
+    }
 
-      if (dir.versionDescription) {
-        pkgDef.description = dir.versionDescription as string;
-      }
+    if (dir.versionDescription) {
+      pkgDef.description = dir.versionDescription as string;
+    }
 
-      if (dir.namespace) {
-        pkgDef.namespace = dir.namespace as string;
-      }
+    if (dir.namespace) {
+      pkgDef.namespace = dir.namespace as string;
+    }
 
-      if (dir.packageOptions) {
-        pkgDef.packageOptions = {...pkgDef.packageOptions, ...dir.packageOptions as Record<string, unknown>};
-      }
+    if (dir.packageOptions) {
+      pkgDef.packageOptions = {...pkgDef.packageOptions, ...dir.packageOptions as Record<string, unknown>};
+    }
 
-      // Look up packageId from packageAliases
-      const aliasId = packageAliases[sfName];
-      if (aliasId && !aliasId.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
-        pkgDef.packageId = aliasId;
-      }
+    // Look up packageId from packageAliases
+    const aliasId = packageAliases[sfName];
+    if (aliasId && !aliasId.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
+      pkgDef.packageId = aliasId;
+    }
 
-      // Convert dependencies array to records
-      if (Array.isArray(dir.dependencies)) {
-        const deps: Record<string, string> = {};
-        const managedDeps: Record<string, string> = {};
+    // Convert dependencies array to records
+    if (Array.isArray(dir.dependencies)) {
+      const deps: Record<string, string> = {};
+      const managedDeps: Record<string, string> = {};
 
-        for (const dep of dir.dependencies as Array<{package: string; versionNumber?: string}>) {
-          if (localPackageNames.has(dep.package)) {
-            // Local workspace dependency
-            deps[dep.package] = dep.versionNumber
-              ? `^${dep.versionNumber.split('.').slice(0, 3).join('.')}`
-              : '*';
-          } else {
-            // External/managed dependency — look up in packageAliases
-            const aliasValue = packageAliases[dep.package];
-            if (aliasValue?.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
-              managedDeps[dep.package] = aliasValue;
-            }
+      for (const dep of dir.dependencies as Array<{package: string; versionNumber?: string}>) {
+        if (localPackageNames.has(dep.package)) {
+          // Local workspace dependency
+          deps[dep.package] = dep.versionNumber
+            ? `^${dep.versionNumber.split('.').slice(0, 3).join('.')}`
+            : '*';
+        } else {
+          // External/managed dependency — look up in packageAliases
+          const aliasValue = packageAliases[dep.package];
+          if (aliasValue?.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
+            managedDeps[dep.package] = aliasValue;
           }
         }
-
-        if (Object.keys(deps).length > 0) {
-          pkgDef.dependencies = deps;
-        }
-
-        if (Object.keys(managedDeps).length > 0) {
-          pkgDef.managedDependencies = managedDeps;
-        }
       }
 
-      // Convert nested SF metadata paths to metadataDependencies
-      const md: {seed?: string; unpackaged?: string} = {};
-      if (dir.seedMetadata && typeof dir.seedMetadata === 'object' && 'path' in (dir.seedMetadata as Record<string, unknown>)) {
-        md.seed = (dir.seedMetadata as {path: string}).path;
+      if (Object.keys(deps).length > 0) {
+        pkgDef.dependencies = deps;
       }
 
-      if (dir.unpackagedMetadata && typeof dir.unpackagedMetadata === 'object' && 'path' in (dir.unpackagedMetadata as Record<string, unknown>)) {
-        md.unpackaged = (dir.unpackagedMetadata as {path: string}).path;
+      if (Object.keys(managedDeps).length > 0) {
+        pkgDef.managedDependencies = managedDeps;
       }
+    }
 
-      if (md.seed || md.unpackaged) {
-        pkgDef.metadataDependencies = md as {seed: string; unpackaged: string};
-      }
+    // Convert nested SF metadata paths to metadataDependencies
+    const md: {seed?: string; unpackaged?: string} = {};
+    if (dir.seedMetadata && typeof dir.seedMetadata === 'object' && 'path' in (dir.seedMetadata as Record<string, unknown>)) {
+      md.seed = (dir.seedMetadata as {path: string}).path;
+    }
 
-      return pkgDef;
-    });
+    if (dir.unpackagedMetadata && typeof dir.unpackagedMetadata === 'object' && 'path' in (dir.unpackagedMetadata as Record<string, unknown>)) {
+      md.unpackaged = (dir.unpackagedMetadata as {path: string}).path;
+    }
+
+    if (md.seed || md.unpackaged) {
+      pkgDef.metadataDependencies = md as {seed: string; unpackaged: string};
+    }
+
+    return pkgDef;
+  });
 
   return result;
 }

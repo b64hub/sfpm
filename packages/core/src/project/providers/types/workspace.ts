@@ -39,6 +39,7 @@ import type {PackageOptions} from '../../../types/project.js';
  * ```
  */
 export interface SfpmPackageConfig {
+  default?: boolean;
   /** Whether this is an org-dependent unlocked package. */
   isOrgDependent?: boolean;
   /**
