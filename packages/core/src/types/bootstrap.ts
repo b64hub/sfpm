@@ -55,21 +55,21 @@ export const BOOTSTRAP_PACKAGES: BootstrapPackageConfig[] = [
     dependencies: [],
     description: 'Core custom setting for artifact tracking (SfpmArtifact__c)',
     isOrgDependent: false,
-    name: 'sfpm-artifact',
+    name: '@b64/sfpm-artifact',
     path: 'packages/sfpm-artifact',
   },
   {
-    dependencies: ['sfpm-artifact'],
+    dependencies: ['@b64/sfpm-artifact'],
     description: 'Scratch org & sandbox pool management (org-dependent)',
     isOrgDependent: true,
-    name: 'sfpm-orgs',
+    name: '@b64/sfpm-orgs',
     path: 'packages/sfpm-orgs',
   },
   {
-    dependencies: ['sfpm-artifact'],
+    dependencies: ['@b64/sfpm-artifact'],
     description: 'Artifact history object & UI components',
     isOrgDependent: false,
-    name: 'sfpm-ui',
+    name: '@b64/sfpm-ui',
     path: 'packages/sfpm-ui',
   },
 ];
@@ -78,7 +78,7 @@ export const BOOTSTRAP_PACKAGES: BootstrapPackageConfig[] = [
 export function getPackagesForTier(tier: BootstrapTier): BootstrapPackageConfig[] {
   switch (tier) {
   case BootstrapTier.Core: {
-    return BOOTSTRAP_PACKAGES.filter(p => p.name === 'sfpm-artifact');
+    return BOOTSTRAP_PACKAGES.filter(p => p.name === '@b64/sfpm-artifact');
   }
 
   case BootstrapTier.Full: {
@@ -86,7 +86,7 @@ export function getPackagesForTier(tier: BootstrapTier): BootstrapPackageConfig[
   }
 
   case BootstrapTier.Pool: {
-    return BOOTSTRAP_PACKAGES.filter(p => p.name !== 'sfpm-ui');
+    return BOOTSTRAP_PACKAGES.filter(p => p.name !== '@b64/sfpm-ui');
   }
   }
 }

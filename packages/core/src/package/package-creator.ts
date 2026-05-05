@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import {PackageCreationResult} from '../types/bootstrap.js';
 import {Logger} from '../types/logger.js';
+import {stripScope} from '../utils/scope-utils.js';
 import {Package2, PackageService} from './package-service.js';
 
 /**
@@ -20,7 +21,7 @@ export interface PackageCreateConfig {
   description: string;
   /** Whether this is an org-dependent unlocked package. */
   isOrgDependent: boolean;
-  /** Package name as it appears in sfdx-project.json. */
+  /** Package name (may include npm scope). Scope is stripped for DevHub operations. */
   name: string;
   /** Relative path to the package directory. */
   path: string;
@@ -55,7 +56,8 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
    * Returns the new package ID.
    */
   async createPackage(config: PackageCreateConfig, projectDir: string): Promise<string> {
-    this.emit('package:create:start', {name: config.name});
+    const sfName = stripScope(config.name);
+    this.emit('package:create:start', {name: sfName});
 
     const sfProject = await SfProject.resolve(projectDir);
     const connection = this.org.getConnection();
@@ -63,7 +65,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
     const result = await SfPackage.create(connection, sfProject, {
       description: config.description,
       errorNotificationUsername: '',
-      name: config.name,
+      name: sfName,
       noNamespace: true,
       orgDependent: config.isOrgDependent,
       packageType: 'Unlocked',
@@ -71,8 +73,8 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
     });
 
     const packageId = result.Id;
-    this.logger?.info(`Created package '${config.name}' with Id ${packageId}`);
-    this.emit('package:create:complete', {name: config.name, packageId});
+    this.logger?.info(`Created package '${sfName}' with Id ${packageId}`);
+    this.emit('package:create:complete', {name: sfName, packageId});
 
     return packageId;
   }
@@ -102,24 +104,25 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
     // Packages must be processed sequentially — later packages may depend on earlier ones
     /* eslint-disable no-await-in-loop */
     for (const config of packages) {
-      const found = existing.get(config.name);
+      const sfName = stripScope(config.name);
+      const found = existing.get(sfName);
 
       if (found) {
-        this.logger?.info(`Package '${config.name}' already exists (${found.Id})`);
-        await this.updateProjectAliases(projectDir, config.name, found.Id);
-        results.push({created: false, name: config.name, packageId: found.Id});
+        this.logger?.info(`Package '${sfName}' already exists (${found.Id})`);
+        await this.updateProjectAliases(projectDir, sfName, found.Id);
+        results.push({created: false, name: sfName, packageId: found.Id});
         continue;
       }
 
-      const approved = await shouldCreate(config.name);
+      const approved = await shouldCreate(sfName);
       if (!approved) {
-        throw new Error(`Package '${config.name}' does not exist in the DevHub and creation was declined. `
+        throw new Error(`Package '${sfName}' does not exist in the DevHub and creation was declined. `
           + 'Cannot proceed with bootstrap.');
       }
 
       const packageId = await this.createPackage(config, projectDir);
-      await this.updateProjectAliases(projectDir, config.name, packageId);
-      results.push({created: true, name: config.name, packageId});
+      await this.updateProjectAliases(projectDir, sfName, packageId);
+      results.push({created: true, name: sfName, packageId});
     }
     /* eslint-enable no-await-in-loop */
 
@@ -131,12 +134,13 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
    * Returns a map of package name → Package2 record for matches found.
    */
   async queryExistingPackages(names: string[]): Promise<Map<string, Package2>> {
-    this.emit('package:query:start', {names});
+    const sfNames = names.map(stripScope);
+    this.emit('package:query:start', {names: sfNames});
 
     const service = new PackageService(this.org, this.logger);
     const allPackages = await service.listAllPackages();
 
-    const nameSet = new Set(names);
+    const nameSet = new Set(sfNames);
     const result = new Map<string, Package2>();
     for (const pkg of allPackages) {
       if (nameSet.has(pkg.Name)) {
@@ -145,7 +149,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
     }
 
     const existing = [...result.keys()];
-    const missing = names.filter(n => !result.has(n));
+    const missing = sfNames.filter(n => !result.has(n));
     this.emit('package:query:complete', {existing, missing});
 
     this.logger?.debug(`Found ${existing.length} existing package(s), ${missing.length} missing`);
