@@ -115,7 +115,7 @@ export * from './types/npm.js';
 export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
-export * from './types/workspace.js';
+export * from './project/providers/types/workspace.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
 export {getPipelineRunId} from './utils/pipeline.js';

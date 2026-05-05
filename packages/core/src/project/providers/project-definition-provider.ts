@@ -9,7 +9,7 @@
  * operations — the single abstraction for all project/workspace queries.
  */
 
-import type {WorkspacePackageJson} from '../../types/workspace.js';
+import type {WorkspacePackageJson} from './types/workspace.js';
 
 import {PackageType} from '../../types/package.js';
 import {

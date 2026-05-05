@@ -11,8 +11,8 @@
  * exclusively to the artifact's package.json by the build pipeline.
  */
 
-import type {PackageType} from './package.js';
-import type {PackageOptions} from './project.js';
+import type {PackageType} from '../../../types/package.js';
+import type {PackageOptions} from '../../../types/project.js';
 
 // ---------------------------------------------------------------------------
 // package.json `sfpm` field — static configuration (committed to repo)

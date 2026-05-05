@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import {EventEmitter} from 'node:events';
 import path from 'node:path';
 
-import type {WorkspacePackageJson} from '../types/workspace.js';
+import type {WorkspacePackageJson} from '../project/providers/types/workspace.js';
 
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
 import {ArtifactError} from '../types/errors.js';

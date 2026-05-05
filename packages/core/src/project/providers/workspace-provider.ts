@@ -15,7 +15,7 @@ import path from 'node:path';
 import type {Logger} from '../../types/logger.js';
 import type {PackageType} from '../../types/package.js';
 import type {PackageDefinition, ProjectDefinition} from '../../types/project.js';
-import type {WorkspacePackageJson} from '../../types/workspace.js';
+import type {WorkspacePackageJson} from './types/workspace.js';
 import type {
   ProjectDefinitionProvider,
   ProjectDefinitionResult,

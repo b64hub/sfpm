@@ -17,7 +17,7 @@ import path from 'node:path';
 
 import type {Logger} from '../types/logger.js';
 import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
-import type {SfpmPackageConfig, WorkspacePackageJson} from '../types/workspace.js';
+import type {SfpmPackageConfig, WorkspacePackageJson} from './providers/types/workspace.js';
 
 import {PackageType} from '../types/package.js';
 import {toVersionFormat} from '../utils/version-utils.js';

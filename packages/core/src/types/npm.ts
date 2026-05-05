@@ -9,7 +9,7 @@
  */
 
 import {PackageType, SfpmPackageMetadataBase} from './package.js';
-import {SfpmPackageConfig, SfpmPackageJson} from './workspace.js';
+import {SfpmPackageConfig, SfpmPackageJson} from '../project/providers/types/workspace.js';
 
 // ---------------------------------------------------------------------------
 // Artifact sfpm property

@@ -17,7 +17,7 @@ import path from 'node:path';
 
 import type {PackageType} from '../types/package.js';
 import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
-import type {WorkspacePackageJson} from '../types/workspace.js';
+import type {WorkspacePackageJson} from './providers/types/workspace.js';
 
 import {SUBSCRIBER_PKG_VERSION_ID_PREFIX} from '../types/project.js';
 import {toSalesforceVersionWithToken} from '../utils/version-utils.js';

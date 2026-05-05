@@ -19,7 +19,7 @@ import type {Logger} from '../types/logger.js';
 import type {
   WorkspaceSyncPackage,
   WorkspaceSyncResult,
-} from '../types/workspace.js';
+} from './providers/types/workspace.js';
 
 import {stripScope} from './package-json-adapter.js';
 import {WorkspaceProvider} from './providers/workspace-provider.js';

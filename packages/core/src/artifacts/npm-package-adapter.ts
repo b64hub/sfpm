@@ -1,4 +1,4 @@
-import type {WorkspacePackageJson} from '../types/workspace.js';
+import type {WorkspacePackageJson} from '../project/providers/types/workspace.js';
 
 import SfpmPackage from '../package/sfpm-package.js';
 /**
