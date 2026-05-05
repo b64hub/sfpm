@@ -6,6 +6,7 @@ import {
   ProjectDefinition,
   SUBSCRIBER_PKG_VERSION_ID_PREFIX,
 } from '../types/project.js';
+import {stripScope} from '../utils/scope-utils.js';
 
 export interface DependencyResolution {
   /** All packages that need to be installed (flattened) */
@@ -70,14 +71,14 @@ export class ProjectGraph {
   public detectCircularDependencies(packageNames: string[]): null | string[][] {
     // Validate all package names exist
     for (const name of packageNames) {
-      if (!this.nodes.has(name)) {
+      if (!this.resolveNode(name)) {
         throw new Error(`Package ${name} not found in project graph`);
       }
     }
 
     const nodeSet = new Set<PackageNode>();
     for (const name of packageNames) {
-      const node = this.nodes.get(name);
+      const node = this.resolveNode(name);
       if (node) {
         nodeSet.add(node);
       }
@@ -145,7 +146,7 @@ export class ProjectGraph {
   public getInstallationLevels(packageNames: string[]): PackageNode[][] {
     // Validate all package names exist
     for (const name of packageNames) {
-      if (!this.nodes.has(name)) {
+      if (!this.resolveNode(name)) {
         throw new Error(`Package ${name} not found in project graph`);
       }
     }
@@ -153,7 +154,7 @@ export class ProjectGraph {
     // Build a set of nodes we're working with
     const nodeSet = new Set<PackageNode>();
     for (const name of packageNames) {
-      const node = this.nodes.get(name);
+      const node = this.resolveNode(name);
       if (node) {
         nodeSet.add(node);
       }
@@ -213,7 +214,7 @@ export class ProjectGraph {
   }
 
   public getNode(packageName: string): PackageNode | undefined {
-    return this.nodes.get(packageName);
+    return this.resolveNode(packageName);
   }
 
   /**
@@ -221,7 +222,7 @@ export class ProjectGraph {
    * Does not include the package itself.
    */
   public getTransitiveDependencies(packageName: string): PackageDefinition[] {
-    const startNode = this.nodes.get(packageName);
+    const startNode = this.resolveNode(packageName);
     if (!startNode) {
       throw new Error(`Package ${packageName} not found in project graph`);
     }
@@ -255,7 +256,7 @@ export class ProjectGraph {
   public resolveDependencies(packageNames: string[]): DependencyResolution {
     // Validate all package names exist
     for (const name of packageNames) {
-      if (!this.nodes.has(name)) {
+      if (!this.resolveNode(name)) {
         throw new Error(`Package ${name} not found in project graph`);
       }
     }
@@ -312,7 +313,7 @@ export class ProjectGraph {
 
     // Start traversal from all requested packages
     for (const name of packageNames) {
-      const node = this.nodes.get(name);
+      const node = this.resolveNode(name);
       if (node) {
         traverse(node);
       }
@@ -326,7 +327,7 @@ export class ProjectGraph {
    * Returns the filtered list of PackageDefinitions for use by subsequent steps.
    */
   private createLocalNodes(projectDefinition: ProjectDefinition): PackageDefinition[] {
-    const packages = projectDefinition.packages;
+    const {packages} = projectDefinition;
 
     for (const pkg of packages) {
       if (this.nodes.has(pkg.name)) {
@@ -365,6 +366,21 @@ export class ProjectGraph {
   }
 
   /**
+   * Resolve a node by exact name, falling back to scope-stripped matching.
+   * e.g. 'sfpm-artifact' resolves to the node keyed as '@b64hub/sfpm-artifact'.
+   */
+  private resolveNode(name: string): PackageNode | undefined {
+    const exact = this.nodes.get(name);
+    if (exact) return exact;
+    const stripped = stripScope(name);
+    for (const [key, node] of this.nodes) {
+      if (stripScope(key) === stripped) return node;
+    }
+
+    return undefined;
+  }
+
+  /**
    * Wires dependency and dependent edges between nodes.
    * Handles both workspace dependencies (from `dependencies` record)
    * and managed dependencies (from `managedDependencies` record).
@@ -378,7 +394,7 @@ export class ProjectGraph {
       // Wire workspace dependencies
       if (def.dependencies) {
         for (const depName of Object.keys(def.dependencies)) {
-          const depNode = this.nodes.get(depName);
+          const depNode = this.resolveNode(depName);
           if (depNode) {
             node.dependencies.add(depNode);
             depNode.dependents.add(node);
@@ -389,7 +405,7 @@ export class ProjectGraph {
       // Wire managed dependencies
       if (def.managedDependencies) {
         for (const depName of Object.keys(def.managedDependencies)) {
-          const depNode = this.nodes.get(depName);
+          const depNode = this.resolveNode(depName);
           if (depNode) {
             node.dependencies.add(depNode);
             depNode.dependents.add(node);

@@ -14,13 +14,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type {PackageType} from '../../types/package.js';
-import type {PackageDefinition, type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
 import type {
   ProjectDefinitionProvider,
   ProjectDefinitionResult,
   ResolveForPackageOptions,
 } from './project-definition-provider.js';
 
+import {type PackageDefinition, type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
 import {stripScope} from '../../utils/scope-utils.js';
 import {
   getAllPackageDefinitions,
@@ -97,7 +97,7 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
     const {definition} = this.resolve();
     const pruned = structuredClone(definition);
 
-    const filtered = pruned.packages.filter(pkg => pkg.name === packageName);
+    const filtered = pruned.packages.filter(pkg => pkg.name === packageName || stripScope(pkg.name) === packageName);
 
     if (filtered.length === 0) {
       throw new Error(`Package "${packageName}" not found in sfdx-project.json`);

@@ -23,6 +23,7 @@ import {
 } from '../types/package.js';
 import {EnvAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
+import {stripScope} from '../utils/scope-utils.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {ENV_ALIAS_DEFAULT_DIR, EnvAliasResolution, EnvAliasResolver} from './env-alias-resolver.js';
@@ -100,7 +101,7 @@ export default abstract class SfpmPackage {
     return this._metadata.source?.commit;
   }
 
-  get dependencies(): {[packageName: string]: string} | undefined {
+  get dependencies(): undefined | {[packageName: string]: string} {
     return this.packageDefinition?.dependencies;
   }
 
@@ -804,9 +805,6 @@ export interface EnvAliasable {
   readonly envAliasConfig: EnvAliasConfig | undefined;
   /** The last env alias resolution, set by {@link resolveEnvAlias}. */
   readonly envAliasResolution: EnvAliasResolution | undefined;
-  /** Whether this package uses environment-aliased source directories. */
-  readonly isEnvAliased: boolean;
-
   /**
    * For env-aliased packages, returns the path to the `default/` subdirectory
    * within the package source. Used during build for analysis.
@@ -814,6 +812,9 @@ export interface EnvAliasable {
    * For non-env-aliased packages, returns the normal package source path.
    */
   getAnalysisSourcePath(): string;
+
+  /** Whether this package uses environment-aliased source directories. */
+  readonly isEnvAliased: boolean;
 
   /**
    * Resolve the env alias for a target org and return the resolution.
@@ -836,7 +837,7 @@ export interface EnvAliasable {
  * Type guard to check whether a package supports env aliasing.
  * Use this to safely cast an `SfpmPackage` to the `EnvAliasable` interface.
  */
-export function isEnvAliasable(pkg: SfpmPackage): pkg is SfpmPackage & EnvAliasable {
+export function isEnvAliasable(pkg: SfpmPackage): pkg is EnvAliasable & SfpmPackage {
   return pkg instanceof SfpmSourcePackage && 'isEnvAliased' in pkg;
 }
 
@@ -913,7 +914,7 @@ export class PackageFactory {
   createFromName(packageName: string): SfpmPackage {
     // First, try to find in packageDirectories (local packages)
     const allPackages = this.provider.getAllPackageDefinitions();
-    const packageDefinition = allPackages.find(p => p.name === packageName);
+    const packageDefinition = allPackages.find(p => p.name === packageName || stripScope(p.name) === packageName);
 
     if (!packageDefinition) {
       // Check if it's a managed dependency — if so, guide the caller
@@ -938,7 +939,7 @@ export class PackageFactory {
 
     // Resolve package ID from PackageDefinition or packageAliases for unlocked packages
     if (packageType === PackageType.Unlocked && sfpmPackage instanceof SfpmUnlockedPackage) {
-      const packageId = packageDefinition.packageId;
+      const {packageId} = packageDefinition;
       if (packageId) {
         sfpmPackage.packageId = packageId;
       }
@@ -984,7 +985,7 @@ export class PackageFactory {
    */
   isManagedPackage(packageName: string): boolean {
     const allPackages = this.provider.getAllPackageDefinitions();
-    if (allPackages.some(p => p.name === packageName)) {
+    if (allPackages.some(p => p.name === packageName || stripScope(p.name) === packageName)) {
       return false;
     }
 

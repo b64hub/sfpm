@@ -16,6 +16,7 @@ import {
   type PackageDefinition,
   type ProjectDefinition,
 } from '../../types/project.js';
+import {stripScope} from '../../utils/scope-utils.js';
 
 // ---------------------------------------------------------------------------
 // Options
@@ -124,7 +125,7 @@ export function getAllPackageNames(definition: ProjectDefinition): string[] {
 }
 
 export function getPackageDefinition(definition: ProjectDefinition, packageName: string): PackageDefinition {
-  const pkg = getAllPackageDefinitions(definition).find(p => p.name === packageName);
+  const pkg = getAllPackageDefinitions(definition).find(p => p.name === packageName || stripScope(p.name) === packageName);
   if (!pkg) {
     throw new Error(`Package ${packageName} not found in project definition`);
   }
