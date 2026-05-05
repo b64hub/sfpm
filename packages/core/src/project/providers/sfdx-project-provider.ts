@@ -15,7 +15,8 @@ import path from 'node:path';
 import {SfProject, type ProjectJson} from '@salesforce/core';
 
 import type {PackageType} from '../../types/package.js';
-import type {PackageDefinition, ProjectDefinition} from '../../types/project.js';
+import type {PackageDefinition} from '../../types/project.js';
+import {type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
 import type {
   ProjectDefinitionProvider,
   ProjectDefinitionResult,
@@ -85,7 +86,8 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
   resolve(): ProjectDefinitionResult {
     const raw = this.sfProject.getSfProjectJson().getContents() as unknown as Record<string, unknown>;
     const definition = fromSalesforceProjectJson(raw);
-    return {definition};
+    const validated = this.validate(definition);
+    return {definition: validated};
   }
 
   /**
@@ -118,6 +120,22 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
   // -- Write operations -----------------------------------------------------
 
   /**
+   * Validate a ProjectDefinition against the Zod schema.
+   * Wraps ZodError into a user-friendly message.
+   */
+  private validate(definition: ProjectDefinition): ProjectDefinition {
+    const result = ProjectDefinitionSchema.safeParse(definition);
+    if (!result.success) {
+      const issues = result.error.issues
+        .map(i => `  - ${i.path.join('.')}: ${i.message}`)
+        .join('\n');
+      throw new Error(`Invalid project definition in sfdx-project.json:\n${issues}`);
+    }
+
+    return result.data as ProjectDefinition;
+  }
+
+  /**
    * Update fields on a package's entry in sfdx-project.json.
    * Deep-merges onto existing content to preserve user-added fields.
    */
@@ -141,6 +159,16 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
     if (updates.name !== undefined) pkgDir.package = stripScope(updates.name);
     if (updates.version !== undefined) pkgDir.versionNumber = updates.version;
     if (updates.description !== undefined) pkgDir.versionDescription = updates.description;
+
+    // Update dependency versions in the SF dependencies array
+    if (updates.dependencies !== undefined && Array.isArray(pkgDir.dependencies)) {
+      for (const [depName, depVersion] of Object.entries(updates.dependencies)) {
+        const sfDep = pkgDir.dependencies.find((d: Record<string, unknown>) => d.package === depName);
+        if (sfDep) {
+          sfDep.versionNumber = `${depVersion}.LATEST`;
+        }
+      }
+    }
 
     fs.writeFileSync(sfdxPath, JSON.stringify(raw, null, 2) + '\n', 'utf8');
   }

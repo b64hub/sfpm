@@ -219,7 +219,7 @@ export class WorkspaceInitializer {
    */
   private inferPackageType(pkgDef: PackageDefinition): Exclude<PackageType, 'managed'> {
     if (pkgDef.type) return pkgDef.type as Exclude<PackageType, 'managed'>;
-    return PackageType.Source;
+    return PackageType.Unlocked;
   }
 
   // =========================================================================

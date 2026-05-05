@@ -14,7 +14,8 @@ import path from 'node:path';
 
 import type {Logger} from '../../types/logger.js';
 import type {PackageType} from '../../types/package.js';
-import type {PackageDefinition, ProjectDefinition} from '../../types/project.js';
+import type {PackageDefinition} from '../../types/project.js';
+import {type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
 import type {WorkspacePackageJson} from './types/workspace.js';
 import type {
   ProjectDefinitionProvider,
@@ -186,7 +187,10 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       ...(this.options.sourceBehaviorOptions?.length ? {sourceBehaviorOptions: this.options.sourceBehaviorOptions} : {}),
     };
 
-    this.cachedResult = {definition: projectDefinition, packages: sfpmPackages, warnings};
+    // 6. Validate against schema
+    const validated = this.validate(projectDefinition, warnings);
+
+    this.cachedResult = {definition: validated, packages: sfpmPackages, warnings};
     return this.cachedResult;
   }
 
@@ -263,12 +267,35 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     if (updates.version !== undefined) raw.version = updates.version;
     if (updates.description !== undefined) raw.description = updates.description;
     if (updates.packageId !== undefined) raw.sfpm.packageId = updates.packageId;
+    if (updates.dependencies !== undefined) {
+      raw.dependencies = {...raw.dependencies, ...updates.dependencies};
+    }
 
     fs.writeFileSync(pkgJsonPath, JSON.stringify(raw, null, 2) + '\n', 'utf8');
     this.logger?.debug(`Updated ${entry.packageDir}/package.json for package "${packageName}"`);
 
     // Invalidate cache so next resolve() picks up the new values
     this.cachedResult = undefined;
+  }
+
+  // =========================================================================
+  // Validation
+  // =========================================================================
+
+  /**
+   * Validate a ProjectDefinition against the Zod schema.
+   * Logs warnings for validation issues but only throws for fatal errors.
+   */
+  private validate(definition: ProjectDefinition, warnings: string[]): ProjectDefinition {
+    const result = ProjectDefinitionSchema.safeParse(definition);
+    if (!result.success) {
+      const issues = result.error.issues
+        .map(i => `  - ${i.path.join('.')}: ${i.message}`)
+        .join('\n');
+      throw new Error(`Invalid project definition from workspace:\n${issues}`);
+    }
+
+    return result.data as ProjectDefinition;
   }
 
   // =========================================================================
@@ -343,7 +370,13 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
         const content = fs.readFileSync(pkgJsonPath, 'utf8');
         const pkgJson = JSON.parse(content);
 
-        if (pkgJson.sfpm && typeof pkgJson.sfpm === 'object' && pkgJson.sfpm.packageType) {
+        if (pkgJson.sfpm && typeof pkgJson.sfpm === 'object') {
+          if (!pkgJson.sfpm.packageType) {
+            warnings.push(`Package at ${dir} has sfpm config but no "packageType" — skipping.`);
+            this.logger?.warn(`Package at ${dir} has sfpm config but no "packageType" field — skipping. Set sfpm.packageType in package.json.`);
+            continue;
+          }
+
           if (!pkgJson.name) {
             warnings.push(`Package at ${dir} has sfpm config but no "name" field — skipping.`);
             continue;

@@ -1,6 +1,6 @@
 import {z} from 'zod';
 
-import type {PackageType} from './package.js';
+import {PackageType} from './package.js';
 
 /** Salesforce key prefix for subscriber package version IDs */
 export const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
@@ -184,7 +184,7 @@ export const PackageDefinitionSchema = z.object({
   name: z.string(),
   path: z.string(),
   version: z.string(),
-  type: z.string(),
+  type: z.nativeEnum(PackageType),
   description: z.string().optional(),
   namespace: z.string().optional(),
   packageId: z.string().optional(),

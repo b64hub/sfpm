@@ -10,7 +10,6 @@ import {SfpmConfig} from '../types/config.js';
 import {PackageType} from '../types/package.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {loadSfpmConfig} from './config-loader.js';
-import {toSalesforceProjectJson} from './providers/sfdx-project-adapter.js';
 import {ProjectGraph} from './project-graph.js';
 import {SfdxProjectProvider} from './providers/sfdx-project-provider.js';
 import {WorkspaceProvider} from './providers/workspace-provider.js';
@@ -221,19 +220,26 @@ export default class ProjectService {
     return this.definitionProvider.resolveForPackage(packageName, options);
   }
 
-  /** Persists an updated ProjectDefinition to sfdx-project.json. */
+  /**
+   * Persists an updated ProjectDefinition via the active provider.
+   *
+   * Delegates per-package updates through the provider's `updatePackageConfig()`,
+   * ensuring the correct backing store is written (workspace package.json files
+   * in workspace mode, sfdx-project.json in legacy mode).
+   *
+   * After updating all packages, regenerates the synthetic sfdx-project.json
+   * in workspace mode so that @salesforce/core stays in sync.
+   */
   public async saveProjectDefinition(definition: ProjectDefinition): Promise<void> {
-    const sfProjectJson = toSalesforceProjectJson(definition);
-    const projectJson = this.sfProject.getSfProjectJson();
-    projectJson.set('packageDirectories', (sfProjectJson as any).packageDirectories);
-    if ((sfProjectJson as any).packageAliases) {
-      projectJson.set('packageAliases', (sfProjectJson as any).packageAliases as Record<string, string>);
+    for (const pkg of definition.packages) {
+      await this.definitionProvider.updatePackageConfig(pkg.name, pkg);
     }
 
-    if (sfProjectJson.sourceApiVersion) {
-      projectJson.set('sourceApiVersion', sfProjectJson.sourceApiVersion as string);
+    // In workspace mode, regenerate the synthetic sfdx-project.json so
+    // that @salesforce/core's SfProject stays in sync.
+    if (this.definitionProvider instanceof WorkspaceProvider) {
+      const {definition: resolved} = this.definitionProvider.resolve();
+      WorkspaceProvider.ensureSfdxProject(this.definitionProvider.projectDir, resolved);
     }
-
-    await projectJson.write();
   }
 }

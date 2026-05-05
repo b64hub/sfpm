@@ -97,7 +97,7 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
    * The caller is responsible for persisting the result.
    */
   getUpdatedDefinition(): ProjectDefinition {
-    const newConfig = {...this.definition};
+    const newConfig = structuredClone(this.definition);
     newConfig.packages = newConfig.packages.map(pkgDef => {
       const tracker = this.trackers.get(pkgDef.name);
       if (tracker && tracker.isUpdated) {
