@@ -31,15 +31,15 @@ export {
 
 export {
   type ActiveScratchOrgRecord,
-  type ScratchOrgInfoRecord,
   default as ScratchOrgProvider,
 } from './org/scratch/scratch-org-provider.js';
 export {
   DEFAULT_SCRATCH_ORG,
+  type PoolScratchOrgCreateResult,
   type ScratchOrg,
-  type ScratchOrgCreateOptions,
-  type ScratchOrgCreateRequest,
   type ScratchOrgCreateResult,
+  type ScratchOrgInfoRecord,
+  type ScratchOrgRequest,
 } from './org/scratch/types.js';
 
 export {default as AuthService} from './org/services/auth-service.js';

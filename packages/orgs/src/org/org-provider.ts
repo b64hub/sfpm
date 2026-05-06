@@ -1,6 +1,7 @@
+import type {ScratchOrgRequest} from '@salesforce/core';
+
 import type {PoolOrg, PoolOrgRecord, PoolOrgUsage} from './pool-org.js';
 import type {SandboxCreateOptions} from './sandbox/types.js';
-import type {ScratchOrgCreateOptions} from './scratch/types.js';
 import type {PasswordResult} from './types.js';
 
 /**
@@ -35,6 +36,16 @@ export interface PoolOrgClaimer {
  * manage pool metadata, and clean up the pool.
  */
 export interface PoolOrgProvisioner<TCreateOptions = OrgCreateOptions> {
+  /**
+   * Best-effort cleanup of orgs that were created but could not be registered in a pool.
+   *
+   * For scratch orgs, resolves `ActiveScratchOrg` records by username and deletes them.
+   * For sandboxes, deletes the `Sandbox_Pool_Org__c` tracking record.
+   *
+   * Implementations should not throw — failures are logged and swallowed.
+   */
+  cleanupOrgs?(orgs: PoolOrg[]): Promise<void>;
+
   /**
    * Create a new org (scratch org or sandbox).
    *
@@ -168,4 +179,4 @@ export type OrgProvider<TCreateOptions = OrgCreateOptions>
  * known at compile time. Concrete `OrgProvider<T>` implementations narrow
  * to their specific options type for compile-time safety.
  */
-export type OrgCreateOptions = SandboxCreateOptions | ScratchOrgCreateOptions;
+export type OrgCreateOptions = SandboxCreateOptions | ScratchOrgRequest;

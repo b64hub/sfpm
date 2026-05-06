@@ -214,12 +214,15 @@ describe('ScratchOrgProvider', () => {
           loginUrl: 'https://test.salesforce.com',
           orgId: '00D000000000001',
         },
+        authInfo: {
+          getSfdxAuthUrl: vi.fn().mockReturnValue('force://PlatformCLI::token@instance.salesforce.com'),
+        },
         username: 'test-1@scratch.org',
       });
 
       // Mock password setting: AuthInfo → Org → Connection → query → soap.setPassword
       const {AuthInfo, Connection, Org} = await import('@salesforce/core');
-      const mockAuthInfo = {getFields: vi.fn(), getSfdxAuthUrl: vi.fn().mockReturnValue('force://PlatformCLI::token@instance.salesforce.com')};
+      const mockAuthInfo = {getFields: vi.fn()};
       (AuthInfo.create as ReturnType<typeof vi.fn>).mockResolvedValue(mockAuthInfo);
       const mockConn = {
         query: vi.fn().mockResolvedValue({records: [{Id: '005000000000001'}]}),
@@ -231,8 +234,8 @@ describe('ScratchOrgProvider', () => {
 
       const result = await strategy.createOrg({
         alias: 'SO1',
-        definitionFile: 'config/scratch-def.json',
-        expiryDays: 7,
+        definitionfile: 'config/scratch-def.json',
+        durationDays: 7,
       });
 
       expect(result.orgType).toBe('scratch');

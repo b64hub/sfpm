@@ -197,7 +197,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    *
    * Queries all orgs matching the pool tag, optionally filtering to
    * only 'In_Progress' orgs or orgs owned by the current user. Each
-   * matching org with a valid `recordId` is deleted via the provider.
+   * matching org with a valid `orgId` is deleted via the provider.
    *
    * @param options - Tag, filter, and ownership options
    * @returns Summary of deleted orgs and any errors
@@ -360,7 +360,14 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     // 4. Fetch record IDs and register in pool
     const registeredOrgs = await this.registerInPool(validOrgs, config.tag);
 
-    // 5. Run preparation tasks on provisioned orgs
+    // 5. Clean up orgs that were created but couldn't be registered
+    const orphanedOrgs = validOrgs.filter(org => !org.recordId);
+    if (orphanedOrgs.length > 0) {
+      this.logger?.warn(`${orphanedOrgs.length} org(s) created but not registered — cleaning up`);
+      await this.cleanupOrphanedOrgs(orphanedOrgs);
+    }
+
+    // 6. Run preparation tasks on provisioned orgs
     let taskResults: OrgTaskSummary[] | undefined;
     if (this.tasks.length > 0) {
       taskResults = await this.runTasksOnOrgs(registeredOrgs, concurrency);
@@ -418,12 +425,22 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     return {
       alias,
-      definitionFile: config.scratch.definitionFile,
-      expiryDays: config.scratch.expiryDays,
-      noAncestors: config.scratch.noAncestors,
-      retries: config.scratch.maxRetries,
-      waitMinutes: config.scratch.waitMinutes,
+      definitionfile: config.scratch.definitionFile,
+      durationDays: config.scratch.expiryDays,
+      noancestors: config.scratch.noAncestors,
+      retry: config.scratch.maxRetries,
     };
+  }
+
+  private async cleanupOrphanedOrgs(orgs: PoolOrg[]): Promise<void> {
+    try {
+      if (this.provider.cleanupOrgs) {
+        await this.provider.cleanupOrgs(orgs);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn(`Failed to clean up ${orgs.length} orphaned org(s): ${message}`);
+    }
   }
 
   /**
@@ -468,6 +485,10 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     return allResults;
   }
+
+  // --------------------------------------------------------------------------
+  // Private helpers
+  // --------------------------------------------------------------------------
 
   /**
    * Create a single org and return the result.
@@ -517,10 +538,6 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       return {error: message, timedOut};
     }
   }
-
-  // --------------------------------------------------------------------------
-  // Private helpers
-  // --------------------------------------------------------------------------
 
   /**
    * Execute a single task, catching errors so one task can't crash
@@ -572,7 +589,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     const enrichedOrgs = await this.provider.getRecordIds(orgs);
 
     const records: PoolOrgRecord[] = enrichedOrgs
-    .filter(org => org.orgId)
+    .filter(org => org.recordId)
     .map(org => ({
       allocationStatus: AllocationStatus.InProgress as const,
       authUrl: org.auth.authUrl,

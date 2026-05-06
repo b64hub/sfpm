@@ -57,7 +57,7 @@ export default class PoolFill extends SfpmCommand {
         logger,
         poolType,
       });
-      spinner?.succeed('Connected to hub org');
+      spinner?.succeed('Connected to DevHub');
 
       const renderer = new PoolProgressRenderer({
         logger: {
@@ -68,9 +68,9 @@ export default class PoolFill extends SfpmCommand {
       });
       renderer.attachToManager(manager);
 
-      const validationSpinner = mode === 'interactive' ? ora('Validating hub prerequisites...').start() : undefined;
+      const validationSpinner = mode === 'interactive' ? ora('Validating DevHub prerequisites...').start() : undefined;
       await manager.validatePrerequisites();
-      validationSpinner?.succeed('Hub prerequisites validated');
+      validationSpinner?.succeed('DevHub prerequisites validated');
 
       const orgConfig = await this.loadOrgConfig(logger);
       const config = this.buildPoolConfig(flags, poolType, orgConfig);

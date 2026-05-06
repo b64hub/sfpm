@@ -2,7 +2,7 @@ import {PoolOrg} from '../index.js';
 
 export {DEFAULT_SCRATCH_ORG, type ScratchOrgDefaults} from './scratch/types.js';
 export type {
-  ScratchOrgCreateOptions as CreateScratchOrgOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult,
+  ScratchOrgCreateResult,
 } from './scratch/types.js';
 
 /**
