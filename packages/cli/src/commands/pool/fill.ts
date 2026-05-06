@@ -2,6 +2,7 @@ import {loadSfpmConfig, type Logger} from '@b64hub/sfpm-core';
 import {createPoolServices, type OrgConfig, type PoolConfig} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {Org, OrgTypes} from '@salesforce/core';
+import path from 'node:path';
 import ora from 'ora';
 
 import type {OutputMode} from '../../ui/renderer-utils.js';
@@ -95,6 +96,7 @@ export default class PoolFill extends SfpmCommand {
   }
 
   private buildPoolConfig(flags: Record<string, any>, poolType: OrgTypes, orgConfig?: OrgConfig): PoolConfig {
+    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
     const sizing = {
       batchSize: flags['batch-size'] as number | undefined,
       maxAllocation: flags.max as number,
@@ -110,7 +112,7 @@ export default class PoolFill extends SfpmCommand {
 
       return {
         sandbox: {
-          definitionFile,
+          definitionFile: path.resolve(projectDir, definitionFile),
           licenseType: sandboxDefaults?.licenseType ?? 'DEVELOPER',
           namePattern: (flags['sandbox-name-pattern'] as string | undefined) ?? sandboxDefaults?.namePattern ?? 'SB',
         },
@@ -129,7 +131,7 @@ export default class PoolFill extends SfpmCommand {
 
     return {
       scratch: {
-        definitionFile,
+        definitionFile: path.resolve(projectDir, definitionFile),
         expiryDays: (flags['expiry-days'] as number | undefined) ?? scratchDefaults?.expiryDays,
       },
       sizing,
@@ -140,7 +142,7 @@ export default class PoolFill extends SfpmCommand {
 
   private async loadOrgConfig(logger: Logger): Promise<OrgConfig | undefined> {
     try {
-      const sfpmConfig = await loadSfpmConfig(process.cwd(), logger);
+      const sfpmConfig = await loadSfpmConfig(process.env.SFPM_PROJECT_DIR || process.cwd(), logger);
       return sfpmConfig.orgs as OrgConfig | undefined;
     } catch {
       return undefined;

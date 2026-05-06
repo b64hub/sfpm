@@ -572,7 +572,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     const enrichedOrgs = await this.provider.getRecordIds(orgs);
 
     const records: PoolOrgRecord[] = enrichedOrgs
-    .filter(org => org.recordId)
+    .filter(org => org.orgId)
     .map(org => ({
       allocationStatus: AllocationStatus.InProgress as const,
       authUrl: org.auth.authUrl,
