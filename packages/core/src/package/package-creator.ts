@@ -1,9 +1,8 @@
 import {Org, SfProject} from '@salesforce/core';
 import {Package as SfPackage} from '@salesforce/packaging';
-import fs from 'fs-extra';
 import EventEmitter from 'node:events';
-import path from 'node:path';
 
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import {PackageCreationResult} from '../types/bootstrap.js';
 import {Logger} from '../types/logger.js';
 import {stripScope} from '../utils/scope-utils.js';
@@ -28,7 +27,6 @@ export interface PackageCreateConfig {
 }
 
 interface PackageCreatorEvents {
-  'package:alias:update': [data: {name: string; packageId: string}];
   'package:create:complete': [data: {name: string; packageId: string}];
   'package:create:start': [data: {name: string}];
   'package:query:complete': [data: {existing: string[]; missing: string[]}];
@@ -36,10 +34,11 @@ interface PackageCreatorEvents {
 }
 
 /**
- * Creates Package2 containers in a DevHub and updates sfdx-project.json aliases.
+ * Creates Package2 containers in a DevHub and persists the resulting
+ * packageId back through the ProjectDefinitionProvider.
  *
- * Used by the bootstrap command to ensure Package2 records exist before
- * building package versions.
+ * Agnostic to the backing store — the provider handles whether packageId
+ * is written to sfdx-project.json, workspace package.json, or both.
  */
 export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
   private logger?: Logger;
@@ -85,15 +84,17 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
    * For each package:
    * 1. If a matching Package2 already exists → reuse its ID
    * 2. If missing → call `shouldCreate` callback; if approved, create it
-   * 3. Update sfdx-project.json aliases in the cloned project directory
+   * 3. Persist the packageId via the ProjectDefinitionProvider
    *
    * @param packages - The bootstrap package configs to resolve
-   * @param projectDir - Path to the cloned bootstrap project
+   * @param provider - Provider to persist packageId updates
+   * @param projectDir - Path to the project (for SfProject resolution)
    * @param shouldCreate - Callback invoked for each missing package; return true to create
    * @returns Array of creation results (created or resolved)
    */
   async ensurePackages(
     packages: PackageCreateConfig[],
+    provider: ProjectDefinitionProvider,
     projectDir: string,
     shouldCreate: (name: string) => Promise<boolean>,
   ): Promise<PackageCreationResult[]> {
@@ -109,7 +110,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
 
       if (found) {
         this.logger?.info(`Package '${sfName}' already exists (${found.Id})`);
-        await this.updateProjectAliases(projectDir, sfName, found.Id);
+        await provider.updatePackageConfig(config.name, {packageId: found.Id});
         results.push({created: false, name: sfName, packageId: found.Id});
         continue;
       }
@@ -121,7 +122,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
       }
 
       const packageId = await this.createPackage(config, projectDir);
-      await this.updateProjectAliases(projectDir, sfName, packageId);
+      await provider.updatePackageConfig(config.name, {packageId});
       results.push({created: true, name: sfName, packageId});
     }
     /* eslint-enable no-await-in-loop */
@@ -154,21 +155,5 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
 
     this.logger?.debug(`Found ${existing.length} existing package(s), ${missing.length} missing`);
     return result;
-  }
-
-  /**
-   * Read sfdx-project.json from the given project directory, set or update
-   * the packageAliases entry for the given package, and write it back.
-   */
-  async updateProjectAliases(projectDir: string, packageName: string, packageId: string): Promise<void> {
-    const projectJsonPath = path.join(projectDir, 'sfdx-project.json');
-    const projectJson = await fs.readJson(projectJsonPath);
-
-    projectJson.packageAliases = projectJson.packageAliases || {};
-    projectJson.packageAliases[packageName] = packageId;
-
-    await fs.writeJson(projectJsonPath, projectJson, {spaces: 4});
-    this.emit('package:alias:update', {name: packageName, packageId});
-    this.logger?.debug(`Updated packageAliases: ${packageName} → ${packageId}`);
   }
 }

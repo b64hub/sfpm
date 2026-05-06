@@ -235,8 +235,19 @@ export default class ProjectService {
       await this.definitionProvider.updatePackageConfig(pkg.name, pkg);
     }
 
-    // In workspace mode, regenerate the synthetic sfdx-project.json so
-    // that @salesforce/core's SfProject stays in sync.
+    this.syncSfdxProject();
+  }
+
+  /**
+   * Regenerate the synthetic sfdx-project.json from the current provider state.
+   *
+   * In workspace mode, sfdx-project.json is derived from workspace package.json
+   * files. Call this after updating packageIds or other fields via the provider
+   * to keep @salesforce/core's SfProject in sync.
+   *
+   * No-op in legacy (sfdx-project.json) mode since the provider writes directly.
+   */
+  public syncSfdxProject(): void {
     if (this.definitionProvider instanceof WorkspaceProvider) {
       const {definition: resolved} = this.definitionProvider.resolve();
       WorkspaceProvider.ensureSfdxProject(this.definitionProvider.projectDir, resolved);

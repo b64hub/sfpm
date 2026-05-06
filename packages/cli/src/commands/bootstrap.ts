@@ -8,6 +8,7 @@ import {
   Logger,
   PackageCreator,
   PackageService,
+  type ProjectDefinitionProvider,
   ProjectService,
 } from '@b64hub/sfpm-core'
 import {confirm, select} from '@inquirer/prompts'
@@ -93,9 +94,15 @@ export default class Bootstrap extends SfpmCommand {
       const skipResult = await this.checkAndSkipIfInstalled(org, packageNames, tier, flags, ctx)
       if (skipResult) return skipResult
 
-      await this.ensurePackageContainers(org, selectedPackages, tmpDir, ctx)
-
+      // Create ProjectService first — this detects the provider and writes
+      // sfdx-project.json for workspace repos so SfProject can resolve it.
       const projectService = await ProjectService.create(tmpDir)
+      const provider = projectService.getDefinitionProvider()
+
+      await this.ensurePackageContainers(org, selectedPackages, provider, tmpDir, ctx)
+
+      // Re-sync sfdx-project.json after packageIds have been persisted
+      projectService.syncSfdxProject()
 
       const buildResult = await this.buildPackages(projectService, packageNames, tier, flags, ctx)
       if (!buildResult.success) return buildResult.result
@@ -295,11 +302,12 @@ export default class Bootstrap extends SfpmCommand {
   private async ensurePackageContainers(
     org: Org,
     selectedPackages: BootstrapPackageConfig[],
+    provider: ProjectDefinitionProvider,
     tmpDir: string,
     ctx: BootstrapContext,
   ): Promise<void> {
     const creator = new PackageCreator(org, ctx.logger)
-    await creator.ensurePackages(selectedPackages, tmpDir, async name => {
+    await creator.ensurePackages(selectedPackages, provider, tmpDir, async name => {
       if (!ctx.isInteractive) return true
       return confirm({
         default: true,
