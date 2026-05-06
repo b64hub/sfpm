@@ -21,7 +21,7 @@ import {
  * Raw ScratchOrgInfo record shape as returned from SOQL queries.
  *
  * Field names match the Salesforce `ScratchOrgInfo` SObject.
- * Custom fields (`Tag__c`, `Allocation_Status__c`, `Password__c`,
+ * Custom fields (`Tag__c`, `Allocation_Status__c`,
  * `Auth_Url__c`) are DevHub customizations required for pool operations.
  */
 export interface ScratchOrgInfoRecord {
@@ -132,6 +132,17 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
       scratchOrg.auth.password = passwordResult.password;
     }
 
+    // Generate SFDX auth URL for pool metadata (used by AuthService to login later)
+    try {
+      const authInfo = await AuthInfo.create({username: result.username});
+      const authUrl = authInfo.getSfdxAuthUrl();
+      if (authUrl) {
+        scratchOrg.auth.authUrl = authUrl;
+      }
+    } catch {
+      // Auth URL generation is best-effort; JWT fallback is available for scratch orgs
+    }
+
     return scratchOrg;
   }
 
@@ -153,7 +164,7 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     const conditions = [
       `Tag__c = '${escapedTag}'`,
       "Status = 'Active'",
-      String.raw`(Allocation_Status__c = 'Available' OR Allocation_Status__c = 'In Progress')`,
+      `(Allocation_Status__c = '${AllocationStatus.Available}' OR Allocation_Status__c = '${AllocationStatus.InProgress}')`,
     ];
 
     const username: string = this.hubOrg.getUsername()!;
@@ -205,22 +216,24 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
   async getRecordIds(orgs: PoolOrg[]): Promise<PoolOrg[]> {
     if (orgs.length === 0) return orgs;
 
+    const missingIds = orgs.filter(org => !org.recordId && org.orgId);
+    if (missingIds.length === 0) return orgs;
+
     const orgIdMap = new Map<string, PoolOrg>();
-    for (const org of orgs) {
-      if (org.orgId) {
-        const shortId = org.orgId.slice(0, 15);
-        orgIdMap.set(shortId, org);
-      }
+    for (const org of missingIds) {
+      orgIdMap.set(org.orgId, org);
     }
 
-    const idList = [...orgIdMap.keys()].map(id => `'${id}'`).join(',');
+    const idList = [...orgIdMap.keys()].map(id => `'${escapeSOQL(id)}'`).join(',');
     const query = soql`SELECT Id, ScratchOrg FROM ScratchOrgInfo WHERE ScratchOrg IN (${idList})`;
     const result = await this.conn.query<{Id: string; ScratchOrg: string}>(query);
 
     for (const record of result.records) {
-      const org = orgIdMap.get(record.ScratchOrg);
-      if (org) {
-        org.recordId = record.Id;
+      if (record.ScratchOrg) {
+        const org = orgIdMap.get(record.ScratchOrg);
+        if (org) {
+          org.recordId = record.Id;
+        }
       }
     }
 
@@ -263,12 +276,17 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
 
     const updates = records.map(r => ({
       Allocation_Status__c: r.allocationStatus, // eslint-disable-line camelcase -- Salesforce custom field
+      Auth_Url__c: r.authUrl, // eslint-disable-line camelcase -- Salesforce custom field
       Id: r.id,
-      Password__c: r.password, // eslint-disable-line camelcase -- Salesforce custom field
       Tag__c: r.poolTag, // eslint-disable-line camelcase -- Salesforce custom field
     }));
 
-    await this.conn.sobject('ScratchOrgInfo').update(updates);
+    const results = await this.conn.sobject('ScratchOrgInfo').update(updates);
+    const failures = (Array.isArray(results) ? results : [results]).filter(r => !r.success);
+    if (failures.length > 0 && failures.length === updates.length) {
+      const errors = failures.flatMap(f => (f as {errors?: {message: string}[]}).errors?.map(e => e.message) ?? ['unknown error']);
+      throw new OrgError('update', `Failed to update pool metadata on all ${failures.length} record(s): ${errors.join('; ')}`);
+    }
   }
 
   async validate(): Promise<void> {
@@ -293,6 +311,24 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
         `Allocation_Status__c is missing required picklist values: ${missing.join(', ')}. `
         + 'Update the picklist on ScratchOrgInfo in your DevHub.',
         {context: {existing: [...picklistValues], missing}},
+      );
+    }
+
+    const tagField = describe.fields.find(f => f.name === 'Tag__c');
+    if (!tagField) {
+      throw new OrgError(
+        'prerequisite',
+        'ScratchOrgInfo is missing the "Tag__c" custom field. '
+        + 'Deploy the sfpm pool custom fields to your DevHub before running pool operations.',
+      );
+    }
+
+    const authUrlField = describe.fields.find(f => f.name === 'Auth_Url__c');
+    if (!authUrlField) {
+      throw new OrgError(
+        'prerequisite',
+        'ScratchOrgInfo is missing the "Auth_Url__c" custom field. '
+        + 'Deploy the sfpm pool custom fields to your DevHub before running pool operations.',
       );
     }
   }

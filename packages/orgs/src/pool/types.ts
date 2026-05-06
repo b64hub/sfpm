@@ -235,7 +235,7 @@ export interface PoolFetchOptions {
  * Options for deleting orgs from a pool.
  */
 export interface PoolDeleteOptions {
-  /** Only delete orgs with 'In Progress' allocation status */
+  /** Only delete orgs with 'In_Progress' allocation status */
   inProgressOnly?: boolean;
   /** Only delete orgs owned by the current user */
   myPool?: boolean;

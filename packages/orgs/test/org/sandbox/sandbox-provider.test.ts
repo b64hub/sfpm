@@ -118,7 +118,7 @@ describe('SandboxProvider', () => {
           {value: 'Allocated'},
           {value: 'Assigned'},
           {value: 'Available'},
-          {value: 'In Progress'},
+          {value: 'In_Progress'},
           {value: 'Return'},
         ],
       },
@@ -232,7 +232,7 @@ describe('SandboxProvider', () => {
       // Verify pool record was created
       expect(mockPoolSobject.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          Allocation_Status__c: 'In Progress',
+          Allocation_Status__c: 'In_Progress',
           Org_Id__c: '00D999000000001',
         }),
       );
@@ -740,7 +740,7 @@ describe('SandboxProvider', () => {
           picklistValues: [
             {value: 'Allocated'},
             {value: 'Available'},
-            {value: 'In Progress'},
+            {value: 'In_Progress'},
           ],
         },
         {name: 'Auth_Url__c'},

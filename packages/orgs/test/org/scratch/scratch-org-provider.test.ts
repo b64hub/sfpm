@@ -131,16 +131,20 @@ describe('ScratchOrgProvider', () => {
   describe('validate', () => {
     it('should pass when Allocation_Status__c field has all required picklist values', async () => {
       mocks.sobject.describe.mockResolvedValue({
-        fields: [{
-          name: 'Allocation_Status__c',
-          picklistValues: [
-            {value: 'Allocated'},
-            {value: 'Assigned'},
-            {value: 'Available'},
-            {value: 'In Progress'},
-            {value: 'Return'},
-          ],
-        }],
+        fields: [
+          {
+            name: 'Allocation_Status__c',
+            picklistValues: [
+              {value: 'Allocated'},
+              {value: 'Assigned'},
+              {value: 'Available'},
+              {value: 'In_Progress'},
+              {value: 'Return'},
+            ],
+          },
+          {name: 'Tag__c'},
+          {name: 'Auth_Url__c'},
+        ],
       });
 
       await expect(strategy.validate()).resolves.not.toThrow();
@@ -155,10 +159,14 @@ describe('ScratchOrgProvider', () => {
 
     it('should throw when required picklist values are missing', async () => {
       mocks.sobject.describe.mockResolvedValue({
-        fields: [{
-          name: 'Allocation_Status__c',
-          picklistValues: [{value: 'Available'}],
-        }],
+        fields: [
+          {
+            name: 'Allocation_Status__c',
+            picklistValues: [{value: 'Available'}],
+          },
+          {name: 'Tag__c'},
+          {name: 'Auth_Url__c'},
+        ],
       });
 
       await expect(strategy.validate()).rejects.toThrow('missing required picklist values');
@@ -211,7 +219,7 @@ describe('ScratchOrgProvider', () => {
 
       // Mock password setting: AuthInfo → Org → Connection → query → soap.setPassword
       const {AuthInfo, Connection, Org} = await import('@salesforce/core');
-      const mockAuthInfo = {getFields: vi.fn()};
+      const mockAuthInfo = {getFields: vi.fn(), getSfdxAuthUrl: vi.fn().mockReturnValue('force://PlatformCLI::token@instance.salesforce.com')};
       (AuthInfo.create as ReturnType<typeof vi.fn>).mockResolvedValue(mockAuthInfo);
       const mockConn = {
         query: vi.fn().mockResolvedValue({records: [{Id: '005000000000001'}]}),
@@ -229,6 +237,7 @@ describe('ScratchOrgProvider', () => {
 
       expect(result.orgType).toBe('scratch');
       expect(result.auth.username).toBe('test-1@scratch.org');
+      expect(result.auth.authUrl).toBe('force://PlatformCLI::token@instance.salesforce.com');
       expect(result.orgId).toBe('00D000000000001');
       expect(mocks.org.scratchOrgCreate).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -353,13 +362,13 @@ describe('ScratchOrgProvider', () => {
       mocks.sobject.update.mockResolvedValue({success: true});
 
       await strategy.updatePoolMetadata([
-        {allocationStatus: 'Available', id: 'rec-1', password: 'pw123', poolTag: 'dev-pool'},
+        {allocationStatus: 'Available', authUrl: 'force://auth@test', id: 'rec-1', poolTag: 'dev-pool'},
       ]);
 
       expect(mocks.sobject.update).toHaveBeenCalledWith([{
         Allocation_Status__c: 'Available',
+        Auth_Url__c: 'force://auth@test',
         Id: 'rec-1',
-        Password__c: 'pw123',
         Tag__c: 'dev-pool',
       }]);
     });

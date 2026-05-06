@@ -196,7 +196,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * Delete scratch orgs from a pool.
    *
    * Queries all orgs matching the pool tag, optionally filtering to
-   * only 'In Progress' orgs or orgs owned by the current user. Each
+   * only 'In_Progress' orgs or orgs owned by the current user. Each
    * matching org with a valid `recordId` is deleted via the provider.
    *
    * @param options - Tag, filter, and ownership options
@@ -214,7 +214,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     // 2. Apply status filter
     if (inProgressOnly) {
-      orgs = orgs.filter(org => org.pool?.status === 'In Progress');
+      orgs = orgs.filter(org => org.pool?.status === AllocationStatus.InProgress);
     }
 
     if (orgs.length === 0) {
@@ -575,8 +575,8 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     .filter(org => org.recordId)
     .map(org => ({
       allocationStatus: AllocationStatus.InProgress as const,
+      authUrl: org.auth.authUrl,
       id: org.recordId!,
-      password: org.auth.password,
       poolTag: tag,
     }));
 

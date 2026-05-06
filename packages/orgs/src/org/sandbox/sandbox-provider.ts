@@ -265,7 +265,7 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     const escapedTag = escapeSOQL(tag);
     const conditions = [
       `Tag__c = '${escapedTag}'`,
-      String.raw`(Allocation_Status__c = 'Available' OR Allocation_Status__c = 'In Progress')`,
+      `(Allocation_Status__c = '${AllocationStatus.Available}' OR Allocation_Status__c = '${AllocationStatus.InProgress}')`,
     ];
 
     if (myPool) {
@@ -410,7 +410,12 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       Tag__c: r.poolTag, // eslint-disable-line camelcase -- Salesforce custom field
     }));
 
-    await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).update(updates);
+    const results = await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).update(updates);
+    const failures = (Array.isArray(results) ? results : [results]).filter(r => !r.success);
+    if (failures.length > 0 && failures.length === updates.length) {
+      const errors = failures.flatMap(f => (f as {errors?: {message: string}[]}).errors?.map(e => e.message) ?? ['unknown error']);
+      throw new OrgError('update', `Failed to update pool metadata on all ${failures.length} record(s): ${errors.join('; ')}`);
+    }
   }
 
   async validate(): Promise<void> {

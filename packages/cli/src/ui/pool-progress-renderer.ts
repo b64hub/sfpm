@@ -361,7 +361,7 @@ function formatStatus(status?: string): string {
   case 'Available': {return chalk.green('Available  ');
   }
 
-  case 'In Progress': {return chalk.yellow('In Progress');
+  case 'In_Progress': {return chalk.yellow('In Progress');
   }
 
   case 'Return': {return chalk.magenta('Return     ');

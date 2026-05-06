@@ -272,7 +272,7 @@ describe('PoolManager', () => {
 
       expect(provider.updatePoolMetadata).toHaveBeenCalledWith(expect.arrayContaining([
         expect.objectContaining({
-          allocationStatus: 'In Progress',
+          allocationStatus: 'In_Progress',
           id: 'rec-id',
           poolTag: 'test-pool',
         }),
@@ -541,7 +541,7 @@ describe('PoolManager', () => {
     });
 
     it('should filter by inProgressOnly', async () => {
-      const org1 = createScratchOrg({pool: {status: 'In Progress', tag: 'test-pool', timestamp: Date.now()}, recordId: 'r1', username: 'ip@scratch.org'});
+      const org1 = createScratchOrg({pool: {status: 'In_Progress', tag: 'test-pool', timestamp: Date.now()}, recordId: 'r1', username: 'ip@scratch.org'});
       const org2 = createScratchOrg({pool: {status: 'Available', tag: 'test-pool', timestamp: Date.now()}, recordId: 'r2', username: 'av@scratch.org'});
       provider.getOrgsByTag.mockResolvedValue([org1, org2]);
       provider.deleteOrgs.mockResolvedValue();
