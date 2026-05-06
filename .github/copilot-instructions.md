@@ -19,11 +19,14 @@ Error handling patterns and custom error types
 
 ### [architecture.instructions.md](./instructions/architecture.instructions.md)
 Core architecture patterns and best practices
-- Package structure and organization
+- Project definition system (providers, adapters, sync)
+- Canonical types (`PackageDefinition`, `ProjectDefinition`)
+- Provider pattern (`WorkspaceProvider` / `SfdxProjectProvider`)
+- Scope-aware lookups and name conventions
+- Project graph (DAG with managed stubs)
 - Strategy pattern for flexible behavior
 - Event emitter pattern for progress tracking
 - Service layer for external systems
-- Factory pattern for object creation
 - Dependency injection over globals
 
 ### [testing.instructions.md](./instructions/testing.instructions.md)
@@ -38,7 +41,8 @@ Testing patterns and best practices
 ### [artifacts.instructions.md](./instructions/artifacts.instructions.md)
 Artifact and package version management
 - Artifact directory structure
-- Version number patterns (`.NEXT` → `1.0.0-1`)
+- Semver-first version model (SF format is adapter concern)
+- Package identity and name conventions (scoped vs unscoped)
 - Reading metadata from zip files
 - Installation source type detection
 - Build process and hash-based skipping
@@ -93,6 +97,19 @@ When adding new patterns or making architectural decisions:
 - **Actions** (`packages/actions/`) - GitHub Actions integration, action.yml definitions
 - **Orgs** (`packages/orgs/`) - Scratch org pool management, DevHub operations
 
+**Project Definition System**
+- `ProjectDefinitionProvider` is the single abstraction for all project queries
+- `WorkspaceProvider` reads workspace `package.json` files (source of truth in workspace mode)
+- `SfdxProjectProvider` reads `sfdx-project.json` (legacy fallback)
+- Bidirectional adapters convert between canonical types and backing formats
+- All config updates flow through `provider.updatePackageConfig()` — never write files directly
+- `sfdx-project.json` is derived in workspace mode, synced via `ProjectService.syncSfdxProject()`
+
+**Package Names and Scopes**
+- Internal: always scoped npm names (`@b64/sfpm-artifact`)
+- Salesforce boundaries: scope stripped (`sfpm-artifact`) via `stripScope()`
+- All lookups are scope-aware (exact match with stripped-scope fallback)
+
 **Logging**
 - Environment-agnostic `Logger` interface in core
 - `StructuredLogger` extension for groups and annotations
@@ -107,7 +124,6 @@ When adding new patterns or making architectural decisions:
 **Extensibility**
 - Strategy pattern for behavior variants
 - Event emitters for progress and integration
-- Registry pattern for plugin-like extensions
 
 **Testing**
 - High coverage for core business logic
@@ -115,7 +131,8 @@ When adding new patterns or making architectural decisions:
 - Test both success and error paths
 
 **Type Safety**
-- Strong typing throughout
+- Strong typing throughout with Zod validation at provider boundaries
+- `PackageType` validated as `z.nativeEnum()`, not loose strings
 - No `any` except at external boundaries
 - Interfaces for extensibility
 

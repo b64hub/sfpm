@@ -7,14 +7,17 @@ applyTo: 'packages/core/src/**/*.ts'
 
 ### Core Directories
 
-- **artifacts/** - Artifact management (reading, writing, versioning)
-- **package/** - Package core logic (builders, installers, assemblers)
-- **project/** - Project configuration and management
+- **project/** - Project definition providers, adapters, graph, versioning
+  - **providers/** - `ProjectDefinitionProvider` interface + implementations
+  - **providers/types/** - Workspace type definitions (`SfpmPackageConfig`, `WorkspacePackageJson`)
+- **package/** - Package core logic (builders, installers, assemblers, creator)
+- **artifacts/** - Artifact management (reading, writing, npm adapter)
+- **orchestrator/** - Build and install orchestration
+- **types/** - Canonical type definitions (`PackageDefinition`, `ProjectDefinition`)
+- **utils/** - Scope utilities, version utilities, hashing
 - **git/** - Git integration
 - **apex/** - Apex parsing and analysis
 - **org/** - Salesforce org operations
-- **types/** - TypeScript type definitions and interfaces
-- **utils/** - Utility functions
 
 ### File Organization
 
@@ -22,7 +25,164 @@ Group related functionality:
 - Keep interfaces with implementations
 - Separate strategies into `strategies/` subdirectory
 - Keep assembly steps in `steps/` subdirectory
-- Use `types.ts` for local type definitions
+- Use `types.ts` or `types/` for local type definitions
+
+## Project Definition System
+
+### Source of Truth
+
+SFPM supports two project modes, each with a different source of truth:
+
+| Mode | Source of Truth | Provider | Detection |
+|------|----------------|----------|-----------|
+| **Workspace** | `package.json` files with `sfpm` config | `WorkspaceProvider` | `pnpm-workspace.yaml` or `package.json#workspaces` |
+| **Legacy** | `sfdx-project.json` | `SfdxProjectProvider` | Fallback when no workspace config found |
+
+Both modes produce the same canonical `ProjectDefinition` type. All downstream code works with `ProjectDefinition` — never with raw file formats.
+
+### Canonical Types
+
+```typescript
+// The universal package representation — fully decoupled from @salesforce/core
+interface PackageDefinition {
+  name: string;           // Scoped npm name (e.g. "@b64/sfpm-artifact")
+  path: string;           // Relative path from project root
+  version: string;        // Always semver (e.g. "1.2.0")
+  type: PackageType;      // 'unlocked' | 'source' | 'data'
+  default?: boolean;      // Whether this is the default package
+  packageId?: string;     // Salesforce Package2 ID (0Ho prefix)
+  dependencies?: Record<string, string>;         // Workspace deps with semver constraints
+  managedDependencies?: Record<string, string>;  // External deps with 04t version IDs
+  metadataDependencies?: { seed?: string; unpackaged?: string };
+  packageOptions?: PackageOptions;               // Build/deploy/hook config
+}
+
+interface ProjectDefinition {
+  packages: PackageDefinition[];
+  sfdcLoginUrl?: string;
+  sourceApiVersion?: string;
+  sourceBehaviorOptions?: string[];
+}
+```
+
+**Key decisions:**
+- `name` is always the scoped npm name — scope is stripped only at Salesforce boundaries
+- `version` is always semver — Salesforce format (`.NEXT`/`.0`) is adapter concern
+- `dependencies` uses `{ name: semverConstraint }` records, not Salesforce's `[{package, versionNumber}]` arrays
+- `default` lives directly on `PackageDefinition`, not inside `packageOptions`
+
+### Provider Architecture
+
+```
+ProjectService (singleton facade)
+  └── detects provider via hasWorkspace()
+        ├── WorkspaceProvider
+        │     ├── reads: package.json files with `sfpm` field
+        │     ├── adapter: workspace-adapter.ts (toPackageDefinition / toWorkspacePackageJson)
+        │     └── writes: package.json + derived sfdx-project.json
+        └── SfdxProjectProvider
+              ├── reads: sfdx-project.json via @salesforce/core
+              ├── adapter: sfdx-project-adapter.ts (fromSalesforceProjectJson / toSalesforceProjectJson)
+              └── writes: sfdx-project.json directly
+```
+
+#### ProjectDefinitionProvider Interface
+
+```typescript
+interface ProjectDefinitionProvider {
+  readonly projectDir: string;
+  resolve(): ProjectDefinitionResult;
+  resolveForPackage(packageName: string, options?): ProjectDefinition;
+  updatePackageConfig(packageName: string, updates: Partial<PackageDefinition>): Promise<void>;
+  // Query methods (all delegated to shared standalone functions)
+  getAllPackageDefinitions(): PackageDefinition[];
+  getAllPackageNames(): string[];
+  getPackageDefinition(packageName: string): PackageDefinition;
+  getDependencies(packageName: string): PackageDefinition[];
+  getPackageType(packageName: string): PackageType;
+  // ...
+}
+```
+
+Both providers delegate query methods to shared pure functions in `project-definition-provider.ts`, passing `this.resolve().definition`. This avoids duplicating lookup logic.
+
+#### Adapters (Bidirectional Converters)
+
+Adapters are pure functions that convert between SFPM canonical types and backing formats:
+
+| Adapter | Read direction | Write direction |
+|---------|---------------|-----------------|
+| `workspace-adapter.ts` | `WorkspacePackageJson → PackageDefinition` | `PackageDefinition → WorkspacePackageJson` |
+| `sfdx-project-adapter.ts` | `sfdx-project.json → ProjectDefinition` | `ProjectDefinition → sfdx-project.json` |
+
+**Key conversions in sfdx-project-adapter:**
+- `.name` ↔ `.package` (scope stripped via `stripScope()`)
+- `.version` (semver) ↔ `.versionNumber` (4-part SF format with `.NEXT`/`.0`)
+- `.dependencies` record ↔ `dependencies[]` array
+- `.packageId` + `.managedDependencies` ↔ `packageAliases`
+
+### sfdx-project.json Sync
+
+In workspace mode, `sfdx-project.json` is **derived** — not the source of truth. It's generated so `@salesforce/core`'s `SfProject` can resolve it. The sync process:
+
+1. `ProjectService.create()` calls `WorkspaceProvider.ensureSfdxProject()` on initial resolve
+2. `ProjectService.saveProjectDefinition()` re-syncs after updating packages
+3. `ProjectService.syncSfdxProject()` can be called explicitly after provider updates
+
+```typescript
+// After updating packageIds via provider, re-sync the derived file
+await provider.updatePackageConfig(name, { packageId });
+projectService.syncSfdxProject(); // regenerates sfdx-project.json
+```
+
+### Scope-Aware Lookups
+
+Package names use npm scopes (e.g. `@b64/sfpm-artifact`), but Salesforce knows packages by unscoped names. All internal lookups support both:
+
+```typescript
+// ProjectGraph.resolveNode() — tries exact match, falls back to scope-stripped
+// getPackageDefinition() — matches by name or stripScope(name)
+// resolveForPackage() — same fallback
+```
+
+Use `stripScope()` from `utils/scope-utils.ts` at Salesforce boundaries (DevHub Package2 names, sfdx-project.json `package` field, `packageAliases` keys).
+
+### Zod Validation
+
+Both providers validate resolved definitions against `PackageDefinitionSchema` / `ProjectDefinitionSchema`:
+- `PackageType` is validated as `z.nativeEnum(PackageType)` (not a loose string)
+- Schemas use `.passthrough()` to allow forward-compatible extension
+- Validation runs in `resolve()`, not at read time — invalid config fails early
+
+### Write Path
+
+All config updates flow through `provider.updatePackageConfig()`:
+
+```typescript
+// PackageCreator persisting a packageId
+await provider.updatePackageConfig(config.name, { packageId });
+
+// VersionManager saving bumped versions
+await projectService.saveProjectDefinition(updatedDefinition);
+// → iterates packages → provider.updatePackageConfig() each → syncSfdxProject()
+```
+
+- `WorkspaceProvider.updatePackageConfig()` → writes to `package.json`, invalidates cache
+- `SfdxProjectProvider.updatePackageConfig()` → writes to `sfdx-project.json`, maps SFPM field names
+- Never write to backing files directly — always go through the provider
+
+## Project Graph
+
+`ProjectGraph` builds a DAG of `PackageNode` entries from the project definition:
+
+```
+createLocalNodes() → createManagedNodes() → wireDependencyEdges()
+```
+
+- **Local nodes** are built from `ProjectDefinition.packages`
+- **Managed nodes** are stub entries created for `managedDependencies` entries with `04t` prefix IDs
+- **Edge wiring** resolves both `dependencies` and `managedDependencies` with scope-aware fallback
+- Provides: `getInstallationLevels()` (Kahn's algorithm), `getTransitiveDependencies()` (DFS), `detectCircularDependencies()` (color-marking DFS)
 
 ## Strategy Pattern
 
@@ -182,25 +342,15 @@ Used for object creation with complex initialization.
 - Centralized creation logic
 
 ```typescript
-export class PackageFactory {
-    constructor(private projectConfig: ProjectConfig) {}
+export class SfpmPackageFactory {
+    constructor(private provider: ProjectDefinitionProvider) {}
 
     public createFromName(packageName: string): SfpmPackage {
-        const packageConfig = this.projectConfig.getPackageConfig(packageName);
-        
-        if (!packageConfig) {
-            throw new Error(`Package not found: ${packageName}`);
-        }
-
-        // Create appropriate package type
-        switch (packageConfig.type) {
-            case PackageType.Unlocked:
-                return new SfpmUnlockedPackage(packageConfig, this.projectConfig);
-            case PackageType.Source:
-                return new SfpmSourcePackage(packageConfig, this.projectConfig);
-            default:
-                throw new Error(`Unsupported package type: ${packageConfig.type}`);
-        }
+        const allPackages = this.provider.getAllPackageDefinitions();
+        const definition = allPackages.find(
+            p => p.name === packageName || stripScope(p.name) === packageName
+        );
+        // Create appropriate package type based on definition.type
     }
 }
 ```
@@ -209,13 +359,11 @@ export class PackageFactory {
 
 Pass dependencies through constructors, not global singletons.
 
-### Pattern
-
 ```typescript
-// Good: Dependencies injected
+// Good: Dependencies injected via provider interface
 export class PackageInstaller {
     constructor(
-        private projectConfig: ProjectConfig,
+        private provider: ProjectDefinitionProvider,
         private options: InstallerOptions,
         private logger?: Logger
     ) {}
@@ -256,62 +404,6 @@ const [manifest, metadata] = await Promise.all([
     getManifest(),
     getMetadata()
 ]);
-```
-
-## Testing Patterns
-
-### Unit Test Structure
-
-```typescript
-describe('PackageInstaller', () => {
-    let installer: PackageInstaller;
-    let mockConfig: ProjectConfig;
-    let mockLogger: Logger;
-
-    beforeEach(() => {
-        // Setup mocks
-        mockConfig = { /* ... */ };
-        mockLogger = {
-            info: vi.fn(),
-            error: vi.fn(),
-            // ...
-        };
-        
-        installer = new PackageInstaller(mockConfig, {}, mockLogger);
-    });
-
-    describe('installPackage', () => {
-        it('should emit install:start event', async () => {
-            const startSpy = vi.fn();
-            installer.on('install:start', startSpy);
-            
-            await installer.install();
-            
-            expect(startSpy).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    packageName: 'test-package',
-                    timestamp: expect.any(Date)
-                })
-            );
-        });
-    });
-});
-```
-
-### Mock External Dependencies
-
-```typescript
-vi.mock('fs-extra', () => ({
-    readJson: vi.fn(),
-    writeJson: vi.fn(),
-    // ...
-}));
-
-vi.mock('@salesforce/core', () => ({
-    Org: {
-        create: vi.fn()
-    }
-}));
 ```
 
 ## Code Style Guidelines
