@@ -6,6 +6,7 @@ import type {
   PoolProvisionResult,
 } from '@b64hub/sfpm-orgs';
 
+import {printTable} from '@oclif/table';
 import chalk from 'chalk';
 import ora, {type Ora} from 'ora';
 
@@ -142,13 +143,26 @@ export class PoolProgressRenderer {
       return;
     }
 
-    for (const org of orgs) {
-      const status = formatStatus(org.pool?.status);
-      const expiry = org.expiry ? chalk.dim(` (expires ${new Date(org.expiry).toISOString().split('T')[0]})`) : '';
-      this.logger.log(`  ${status} ${chalk.white(org.auth.username ?? 'N/A')}${expiry}`);
-    }
-
-    this.logger.log('');
+    printTable({
+      borderStyle: 'headers-only-with-underline',
+      columns: [
+        {key: 'tag', name: 'Tag'},
+        {key: 'type', name: 'Type'},
+        {key: 'username', name: 'Username'},
+        {key: 'alias', name: 'Alias'},
+        {key: 'status', name: 'Status'},
+        {key: 'expiryDate', name: 'Expires'},
+      ],
+      data: orgs.map(org => ({
+        alias: org.auth.alias ?? '',
+        expiryDate: org.expiry ? new Date(org.expiry).toISOString().split('T')[0] : '',
+        loginURL: org.auth.loginUrl ?? '',
+        status: formatStatus(org.pool?.status),
+        tag: org.pool?.tag ?? '',
+        type: org.orgType ?? '',
+        username: org.auth.username ?? '',
+      })),
+    });
   }
 
   private handleAllocationComputed(payload: {currentAllocation: number; remaining: number; tag: string; toAllocate: number}): void {

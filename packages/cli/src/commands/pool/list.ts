@@ -81,38 +81,11 @@ export default class PoolList extends SfpmCommand {
           mode,
         });
         renderer.renderOrgList(orgs, flags.tag ?? 'all');
-
-        if (orgs.length > 0) {
-          this.renderTable(orgs);
-        }
       }
     } catch (error) {
       spinner?.fail('Failed to connect to devhub');
       throw error;
     }
-  }
-
-  private renderTable(orgs: PoolOrg[]): void {
-    printTable({
-      borderStyle: 'headers-only-with-underline',
-      columns: [
-        {key: 'tag', name: 'Tag'},
-        {key: 'type', name: 'Type'},
-        {key: 'username', name: 'Username'},
-        {key: 'alias', name: 'Alias'},
-        {key: 'status', name: 'Status'},
-        {key: 'expiryDate', name: 'Expires'},
-      ],
-      data: orgs.map(org => ({
-        alias: org.auth.alias ?? '',
-        expiryDate: org.expiry ? new Date(org.expiry).toISOString().split('T')[0] : '',
-        loginURL: org.auth.loginUrl ?? '',
-        status: org.pool?.status ?? '',
-        tag: org.pool?.tag ?? '',
-        type: org.orgType ?? '',
-        username: org.auth.username ?? '',
-      })),
-    });
   }
 }
 
