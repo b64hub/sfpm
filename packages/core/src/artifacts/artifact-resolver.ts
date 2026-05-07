@@ -6,7 +6,6 @@ import * as semver from 'semver';
 import {ArtifactManifest, ArtifactResolutionOptions, ResolvedArtifact} from '../types/artifact.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
-import {stripScope} from '../utils/scope-utils.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {ArtifactRepository} from './artifact-repository.js';
 import {RegistryClient} from './registry/index.js';
@@ -234,9 +233,9 @@ export class ArtifactResolver extends EventEmitter {
   /**
    * Emit resolve:complete event
    */
-  private emitComplete(packageName: string, version: string, source: 'local' | 'remote'): void {
+  private emitComplete(packageName: string, version: string, registry: 'local' | 'remote'): void {
     this.emit('resolve:complete', {
-      packageName, source, timestamp: new Date(), version,
+      packageName, registry, timestamp: new Date(), version,
     });
   }
 
@@ -426,13 +425,13 @@ export class ArtifactResolver extends EventEmitter {
   private async resolveOrDownload(
     packageName: string,
     manifest: ArtifactManifest | undefined,
-    resolved: {source: 'local' | 'remote'; version: string;},
+    resolved: {registry: 'local' | 'remote'; version: string;},
     includePrerelease: boolean,
   ): Promise<ResolvedArtifact> {
-    const {source, version} = resolved;
+    const {registry, version} = resolved;
 
-    // Source is 'local' - resolve from local storage
-    if (source === 'local') {
+    // Registry is 'local' - resolve from local storage
+    if (registry === 'local') {
       await this.repository.updateLastCheckedRemote(packageName);
       const result = this.resolveFromLocal(packageName, manifest!, version, includePrerelease);
       if (result) {
@@ -444,8 +443,8 @@ export class ArtifactResolver extends EventEmitter {
       this.logger?.warn(`Local artifact file missing for ${packageName}@${version}`);
     }
 
-    // Source is 'remote' or local file missing - try download
-    if (source === 'remote' || manifest?.versions[version]) {
+    // Registry is 'remote' or local file missing - try download
+    if (registry === 'remote' || manifest?.versions[version]) {
       try {
         const result = await this.download(packageName, version);
         this.emitComplete(packageName, result.version, 'remote');
@@ -464,7 +463,7 @@ export class ArtifactResolver extends EventEmitter {
     throw new ArtifactError(packageName, 'read', `No available artifact for version ${version}`, {
       context: {
         hasLocalVersions: manifest ? Object.keys(manifest.versions).length > 0 : false,
-        source,
+        registry,
       },
       version,
     });
@@ -490,11 +489,11 @@ export class ArtifactResolver extends EventEmitter {
       localVersions = manifest ? Object.keys(manifest.versions) : [];
     }
 
-    let resolvedVersion: {source: 'local' | 'remote'; version: string;};
+    let resolvedVersion: {registry: 'local' | 'remote'; version: string;};
 
     try {
       resolvedVersion = this.findBestVersion(localVersions, remoteVersions, requestedVersion, includePrerelease);
-      this.logger?.debug(`Best version for ${packageName}: ${resolvedVersion.version} (${resolvedVersion.source})`);
+      this.logger?.debug(`Best version for ${packageName}: ${resolvedVersion.version} (${resolvedVersion.registry})`);
     } catch (error) {
       this.logger?.warn(`Failed to find best version for ${packageName}@${requestedVersion}: ${error}`);
       throw new ArtifactError(packageName, 'resolve', `No matching version found for ${requestedVersion}`, {

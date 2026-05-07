@@ -1,6 +1,6 @@
 import {z} from 'zod';
 
-import {PackageType} from './package.js';
+import {PackageType, TestLevel} from './package.js';
 
 /** Salesforce key prefix for subscriber package version IDs */
 export const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
@@ -98,7 +98,6 @@ export interface PackageHookConfig {
  * script assembly, optimized deployment, etc.
  */
 export interface PackageInstallConfig {
-  isTriggerAllTests?: boolean;
   optimize?: boolean;
   post?: {
     destructiveChanges?: string;
@@ -108,7 +107,7 @@ export interface PackageInstallConfig {
     destructiveChanges?: string;
     unpackagedMetadata?: string;
   },
-  testLevel?: string;
+  testLevel?: TestLevel;
 }
 
 // ---------------------------------------------------------------------------

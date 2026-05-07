@@ -27,3 +27,9 @@ export function extractScope(name: string): string | undefined {
   const match = name.match(/^(@[^/]+)\//);
   return match ? match[1] : undefined;
 }
+
+export function splitPackageName(name: string): {name: string; scope?: string;} {
+  const scope = extractScope(name);
+  const unscopedName = stripScope(name);
+  return {name: unscopedName, scope};
+}
