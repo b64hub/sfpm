@@ -62,7 +62,7 @@ export default class PoolList extends SfpmCommand {
         devhub,
         poolType: flags.type as OrgTypes,
       });
-      spinner?.succeed('Connected to devhub');
+      spinner?.succeed(`Connected to ${chalk.cyan(devhubAlias)}`);
 
       const querySpinner = mode === 'interactive' ? ora(`Fetching orgs${flags.tag ? ` for pool "${flags.tag}"` : ''}...`).start() : undefined;
       const orgs = await manager.list(flags.tag, flags['my-pool']);

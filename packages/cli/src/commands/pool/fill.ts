@@ -2,6 +2,7 @@ import {loadSfpmConfig, type Logger} from '@b64hub/sfpm-core';
 import {createPoolServices, type OrgConfig, type PoolConfig} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
+import chalk from 'chalk';
 import path from 'node:path';
 import ora from 'ora';
 
@@ -78,7 +79,7 @@ export default class PoolFill extends SfpmCommand {
         logger,
         poolType,
       });
-      spinner?.succeed('Connected to DevHub');
+      spinner?.succeed(`Connected to ${chalk.cyan(devhubAlias)}`);
 
       const renderer = new PoolProgressRenderer({
         logger: {
@@ -91,7 +92,7 @@ export default class PoolFill extends SfpmCommand {
 
       const validationSpinner = mode === 'interactive' ? ora('Validating DevHub prerequisites...').start() : undefined;
       await manager.validatePrerequisites();
-      validationSpinner?.succeed('DevHub prerequisites validated');
+      validationSpinner?.succeed(`${chalk.cyan(devhubAlias)} prerequisites validated`);
 
       const orgConfig = await this.loadOrgConfig(logger);
       const config = this.buildPoolConfig(flags, poolType, orgConfig);
