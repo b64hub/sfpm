@@ -9,45 +9,52 @@ import type {ProjectDefinitionProvider} from '../project/providers/project-defin
 
 import {ArtifactService, InstallTarget} from '../artifacts/artifact-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
+import {ArtifactResolutionOptions} from '../types/artifact.js';
 import {HookContext} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
-import {InstallationMode, InstallationSource, PackageType} from '../types/package.js';
+import {
+  InstallationMode, InstallationSource, PackageType, type TestLevel,
+} from '../types/package.js';
 import {Installer, InstallerRegistry} from './installers/installer-registry.js';
 import {ManagedPackageRef} from './installers/types.js';
 import {PackageService} from './package-service.js';
-import SfpmPackage, {isEnvAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage} from './sfpm-package.js';
 // Import installers to trigger registration
 import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
 import './installers/managed-package-installer.js';
+import SfpmPackage, {
+  isEnvAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage,
+} from './sfpm-package.js';
 
 export interface InstallOptions {
+  artifactResolution?: ArtifactResolutionOptions;
+
+  deployment?: {
+    /**
+     * Salesforce test level for source deployments.
+     */
+    testLevel?: TestLevel;
+  };
   /** Force reinstall even if already installed with matching version/hash */
   force?: boolean;
-  /** Force refresh from npm registry (bypass TTL cache) */
-  forceRefresh?: boolean;
-  installationKey?: string;
-  /** Only use local artifacts, don't check npm registry */
-  localOnly?: boolean;
   /**
    * Set specific installation mode (mainly for unlocked packages, overrides auto-detection).
    */
   mode?: InstallationMode;
+
   /**
    * Where to install from: 'local' (project source) or 'artifact'.
    */
   source?: InstallationSource;
+
   targetOrg: string;
-  /**
-   * Salesforce test level for source deployments.
-   * Valid values: NoTestRun, RunSpecifiedTests, RunLocalTests, RunAllTestsInOrg
-   */
-  testLevel?: string;
   /**
    * When true, creates an `Sfpm_Artifact_History__c` record after each artifact upsert.
    * Read from `sfpmConfig.artifacts?.trackHistory` and passed through by the CLI/Actions layer.
    */
   trackHistory?: boolean;
+
+  versionInstall?: {installationKeys?: {[packageName: string]: string}};
 }
 
 export interface InstallResult {
@@ -326,7 +333,7 @@ export default class PackageInstaller extends EventEmitter {
 
       const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
         source: InstallationSource.Local,
-        testLevel: this.options.testLevel,
+        testLevel: this.options.deployment?.testLevel,
       });
       this.forwardInstallerEvents(installer, packageName);
 
@@ -454,8 +461,7 @@ export default class PackageInstaller extends EventEmitter {
       this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
     }
 
-    const {npmName} = sfpmPackage;
-    if (!npmName) {
+    if (!sfpmPackage.npmName) {
       throw new Error(`Package "${packageName}" has no npm name. `
         + 'In workspace mode, this is set from the package.json "name" field. '
         + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
@@ -470,9 +476,8 @@ export default class PackageInstaller extends EventEmitter {
       sfpmPackage.projectDirectory,
       sfpmPackage.packageName,
       {
-        forceRefresh: this.options.forceRefresh,
-        localOnly: this.options.localOnly,
-        npmName,
+        forceRefresh: this.options.artifactResolution?.forceRefresh,
+        localOnly: this.options.artifactResolution?.localOnly,
       },
     );
 
@@ -508,7 +513,7 @@ export default class PackageInstaller extends EventEmitter {
 
       const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
         source: this.options.source,
-        testLevel: this.options.testLevel,
+        testLevel: this.options.deployment?.testLevel,
       });
 
       // Forward sub-events (connection:*, deployment:*, version-install:*) from the

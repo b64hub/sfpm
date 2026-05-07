@@ -1,6 +1,14 @@
 import {PackageManifestObject} from '@salesforce/source-deploy-retrieve';
 
-import {InstallOptions} from './project.js';
+import {PackageInstallConfig} from './project.js';
+
+/**
+ * Salesforce test levels for metadata API deployments.
+ *
+ * Mirrors the `testLevel` values accepted by the Salesforce Metadata API
+ * and `@salesforce/source-deploy-retrieve`.
+ */
+export type TestLevel = 'NoTestRun' | 'RunAllTestsInOrg' | 'RunLocalTests' | 'RunRelevantTests' | 'RunSpecifiedTests';
 
 export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked'}
 
@@ -95,7 +103,7 @@ export interface SfpmPackageContent {
 export interface SfpmPackageOrchestration {
   build?: SfpmPackageBuildOptions;
   creationDetails?: {duration?: number; timestamp?: number};
-  install?: InstallOptions;
+  install?: PackageInstallConfig;
   installation?: {
     installationTime?: number;
     subDirectory?: string;

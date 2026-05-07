@@ -34,12 +34,24 @@ export interface PoolConfigBase {
     disableSourcePackageOverride?: boolean;
     /** Whether to enable source tracking in the org (default: false) */
     enableSourceTracking?: boolean;
-    /** Whether to install all packages or only changed ones (default: false) */
-    installAll?: boolean;
+    /**
+     * Deploy all packages except these (full npm names, e.g. `@scope/pkg`).
+     * Mutually exclusive with `include`. When neither is set, all packages are deployed.
+     */
+    exclude?: string[];
+    /**
+     * Only deploy these packages (full npm names, e.g. `@scope/pkg`).
+     * Mutually exclusive with `exclude`. When neither is set, all packages are deployed.
+     */
+    include?: string[];
     /** Encryption keys for protected packages (comma-separated) */
-    keys?: string;
+    installationKeys?: {[packageName: string]: string};
+    /** Skip updating Sfpm_Artifact__c custom setting after deployment (default: false) */
+    skipArtifactUpdate?: boolean;
     /** Continue pool provisioning even if deployment fails (default: false) */
     succeedOnDeploymentErrors?: boolean;
+    /** Apex test level for deployments (default: NoTestRun) */
+    testLevel?: string;
   };
 
   /** Enable Vlocity/OmniStudio support (default: false) */
@@ -64,20 +76,6 @@ export interface PoolConfigBase {
     ipRangesToBeRelaxed?: string[];
     /** Relax all IP range restrictions (default: false) */
     relaxAllIPRanges?: boolean;
-  };
-
-  /** Release config file for pool-based releases */
-  releaseConfigFile?: string;
-
-  /** Retry the full provisioning flow on failure (default: false) */
-  retryOnFailure?: boolean;
-
-  /** Legacy script hooks (prefer sfpm.config.ts hooks instead) */
-  scripts?: {
-    /** Script to run after package deployment into the scratch org */
-    postDeploymentScriptPath?: string;
-    /** Script to run before dependency installation */
-    preDependencyInstallationScriptPath?: string;
   };
 
   /** Pool sizing constraints */

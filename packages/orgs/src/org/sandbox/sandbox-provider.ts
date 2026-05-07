@@ -282,16 +282,23 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     return this.enrichPoolRecords(poolResult.records);
   }
 
-  async getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
+  async getOrgsByTag(tag?: string, myPool?: boolean): Promise<PoolOrg[]> {
     await this.pruneStalePoolRecords();
 
-    const conditions = [`Tag__c = '${escapeSOQL(tag)}'`];
+    const conditions: string[] = [];
+
+    if (tag) {
+      conditions.push(`Tag__c = '${escapeSOQL(tag)}'`);
+    } else {
+      conditions.push('Tag__c != null');
+    }
 
     if (myPool) {
       conditions.push(`CreatedById = '${escapeSOQL(this.hubUsername)}'`);
     }
 
-    const poolQuery = soql`SELECT ${SANDBOX_POOL_ORG_FIELDS.join(', ')} FROM ${SANDBOX_POOL_ORG_OBJECT} WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const poolQuery = soql`SELECT ${SANDBOX_POOL_ORG_FIELDS.join(', ')} FROM ${SANDBOX_POOL_ORG_OBJECT} ${whereClause} ORDER BY CreatedDate DESC`;
     const poolResult = await this.conn.query<SandboxPoolOrgRecord>(poolQuery);
 
     if (poolResult.records.length === 0) return [];

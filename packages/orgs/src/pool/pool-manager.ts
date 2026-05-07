@@ -289,8 +289,8 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * @param myPool - When true, only return orgs created by the current user
    * @returns All pool orgs with metadata populated
    */
-  public async list(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
-    this.logger?.info(`Listing orgs for pool "${tag}"...`);
+  public async list(tag?: string, myPool?: boolean): Promise<PoolOrg[]> {
+    this.logger?.info(`Listing orgs for pool${tag ? ` "${tag}"` : ''}...`);
     return this.provider.getOrgsByTag(tag, myPool);
   }
 
@@ -373,12 +373,15 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       taskResults = await this.runTasksOnOrgs(registeredOrgs, concurrency);
     }
 
+    // 7. Mark successfully prepared orgs as Available
+    const availableOrgs = await this.markOrgsAvailable(registeredOrgs, config.tag, taskResults);
+
     const elapsedMs = Date.now() - startTime;
     const result: PoolProvisionResult = {
       elapsedMs,
       errors,
-      failed: allocation.toAllocate - registeredOrgs.length,
-      succeeded: registeredOrgs,
+      failed: allocation.toAllocate - availableOrgs.length,
+      succeeded: availableOrgs,
       tag: config.tag,
       taskResults,
     };
@@ -582,6 +585,51 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   // --------------------------------------------------------------------------
 
   /**
+   * Transition orgs from In_Progress to Available after tasks complete.
+   *
+   * When tasks are configured, only orgs where all tasks succeeded are
+   * marked Available. Orgs with failed tasks remain In_Progress (visible
+   * in `pool list` but not claimable by `getAvailableByTag`).
+   *
+   * When no tasks are configured, all orgs are marked Available.
+   */
+  private async markOrgsAvailable(
+    orgs: PoolOrg[],
+    tag: string,
+    taskResults?: OrgTaskSummary[],
+  ): Promise<PoolOrg[]> {
+    // Determine which orgs succeeded
+    let successfulOrgs: PoolOrg[];
+    if (taskResults) {
+      const succeededUsernames = new Set(taskResults.filter(r => r.success).map(r => r.username));
+      successfulOrgs = orgs.filter(org => succeededUsernames.has(org.auth.username));
+    } else {
+      successfulOrgs = orgs;
+    }
+
+    if (successfulOrgs.length === 0) {
+      this.logger?.warn('No orgs to mark as Available — all tasks failed');
+      return [];
+    }
+
+    const records: PoolOrgRecord[] = successfulOrgs
+    .filter(org => org.recordId)
+    .map(org => ({
+      allocationStatus: AllocationStatus.Available as const,
+      authUrl: org.auth.authUrl,
+      id: org.recordId!,
+      poolTag: tag,
+    }));
+
+    if (records.length > 0) {
+      await this.provider.updatePoolMetadata(records);
+      this.logger?.info(`Marked ${records.length} org(s) as Available in pool "${tag}"`);
+    }
+
+    return successfulOrgs;
+  }
+
+  /**
    * Fetch record IDs from the DevHub and update pool metadata.
    */
   private async registerInPool(orgs: PoolOrg[], tag: string): Promise<PoolOrg[]> {
@@ -599,7 +647,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     if (records.length > 0) {
       await this.provider.updatePoolMetadata(records);
-      this.logger?.debug(`Registered ${records.length} org(s) in pool "${tag}"`);
+      this.logger?.debug(`Registered ${records.length} org(s) in pool "${tag}" as In_Progress`);
     }
 
     return enrichedOrgs.filter(org => org.recordId);

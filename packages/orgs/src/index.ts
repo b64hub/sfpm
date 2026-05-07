@@ -65,6 +65,8 @@ export {
   type PoolProvisionResult,
 } from './pool/pool-manager.js';
 
+export {DeploymentTask, type DeploymentTaskOptions} from './pool/tasks/deployment-task.js';
+
 // Pool-layer types
 export {
   DEFAULT_POOL_SIZING,

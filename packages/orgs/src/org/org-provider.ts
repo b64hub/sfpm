@@ -76,7 +76,7 @@ export interface PoolOrgProvisioner<TCreateOptions = OrgCreateOptions> {
    * @param myPool - When true, only return orgs created by the current user
    * @returns All pool orgs with metadata populated
    */
-  getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]>;
+  getOrgsByTag(tag?: string, myPool?: boolean): Promise<PoolOrg[]>;
 
   /** Fetch the hub record IDs for a list of orgs (by orgId) */
   getRecordIds(orgs: PoolOrg[]): Promise<PoolOrg[]>;

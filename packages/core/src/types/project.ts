@@ -54,7 +54,7 @@ export interface PackageOptions {
    */
   hooks?: Record<string, boolean | PackageHookConfig>;
   ignore?: string[];
-  install?: InstallOptions;
+  install?: PackageInstallConfig;
   skip?: string[];
   validate?: any;
 }
@@ -97,7 +97,7 @@ export interface PackageHookConfig {
  * Controls build-time and deploy-time behavior that is not hook-specific:
  * script assembly, optimized deployment, etc.
  */
-export interface InstallOptions {
+export interface PackageInstallConfig {
   isTriggerAllTests?: boolean;
   optimize?: boolean;
   post?: {

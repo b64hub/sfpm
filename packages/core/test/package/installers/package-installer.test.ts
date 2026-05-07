@@ -187,7 +187,11 @@ describe('PackageInstaller', () => {
             expect(mockInstallerConstructor).toHaveBeenCalledWith(
                 'testOrg',
                 mockPackage,
-                mockLogger
+                mockLogger,
+                expect.objectContaining({
+                    source: undefined,
+                    testLevel: undefined,
+                }),
             );
         });
 

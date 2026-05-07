@@ -187,16 +187,22 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgRequest
     return result.records.map(r => mapToScratchOrg(r));
   }
 
-  async getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
-    let query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Allocation_Status__c = 'Active'`;
+  async getOrgsByTag(tag?: string, myPool?: boolean): Promise<PoolOrg[]> {
+    const conditions = ["Status = 'Active'"];
+
+    if (tag) {
+      conditions.push(`Tag__c = '${escapeSOQL(tag)}'`);
+    } else {
+      conditions.push('Tag__c != null');
+    }
 
     const username: string = this.hubOrg.getUsername()!;
 
     if (myPool) {
-      query += ` AND CreatedById = '${escapeSOQL(username)}'`;
+      conditions.push(`CreatedById = '${escapeSOQL(username)}'`);
     }
 
-    query += ' ORDER BY CreatedDate DESC';
+    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
 
     const result = await this.conn.query<ScratchOrgInfoRecord>(query);
     const orgs = result.records.map(r => mapToScratchOrg(r));

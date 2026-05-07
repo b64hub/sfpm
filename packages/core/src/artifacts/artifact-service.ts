@@ -2,7 +2,7 @@ import {Connection, Org} from '@salesforce/core';
 
 import SfpmPackage from '../package/sfpm-package.js';
 import {
-  ArtifactResolveOptions, ResolvedArtifact,
+  ArtifactResolutionOptions, ResolvedArtifact,
 } from '../types/artifact.js';
 import {Logger} from '../types/logger.js';
 import {InstalledArtifact} from '../types/package.js';
@@ -281,30 +281,22 @@ export class ArtifactService {
    * including support for scoped registries (e.g., @myorg packages).
    *
    * @param projectDirectory - Root project directory for artifact storage
-   * @param packageName - Name of the package to resolve (SFPM package name, not npm name)
-   * @param options - Resolution options (version, forceRefresh, npmName, etc.)
+   * @param packageName - Fully scoped name of the package to resolve
+   * @param options - Resolution options (version, forceRefresh, etc.)
    * @returns InstallTarget with resolved artifact and install decision
    */
   public async resolveInstallTarget(
     projectDirectory: string,
     packageName: string,
-    options?: ArtifactResolveOptions & {
-      localOnly?: boolean;
-      /** Full npm-scoped package name for registry lookup (e.g., "@myorg/core-package") */
-      npmName?: string;
-    },
+    options?: ArtifactResolutionOptions,
   ): Promise<InstallTarget> {
-    // Use provided npm name, or fall back to bare package name for local-only resolution
-    const npmPackageName = options?.npmName ?? packageName;
-
     // 1. Create resolver for this specific package (handles scoped registries)
-    const resolver = await ArtifactResolver.createForPackage(
+    const resolver = await ArtifactResolver.create(
       projectDirectory,
-      npmPackageName,
-      this.logger,
       {
         localOnly: options?.localOnly,
       },
+      this.logger,
     );
 
     // Note: We still use the SFPM package name for local artifact resolution

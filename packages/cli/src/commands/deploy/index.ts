@@ -1,5 +1,5 @@
 import {
-  InstallationSource, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger, ProjectService,
+  InstallationSource, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
 import EventEmitter from 'node:events'
@@ -81,10 +81,10 @@ export default class Deploy extends SfpmCommand {
     }
 
     const installOptions = {
+      deployment: flags['test-level'] ? {testLevel: flags['test-level'] as TestLevel} : undefined,
       force: flags.force,
       source: InstallationSource.Local,
       targetOrg: flags['target-org'],
-      testLevel: flags['test-level'],
     }
 
     const renderer = new InstallProgressRenderer({
@@ -142,10 +142,10 @@ export default class Deploy extends SfpmCommand {
       projectConfig,
       projectGraph,
       {
+        deployment: flags['test-level'] ? {testLevel: flags['test-level'] as TestLevel} : undefined,
         force: flags.force,
         includeDependencies: !flags['no-dependencies'],
         targetOrg: flags['target-org'],
-        testLevel: flags['test-level'],
       },
       logger,
       lifecycle,

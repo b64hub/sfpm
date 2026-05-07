@@ -20,7 +20,7 @@ export default class PoolList extends SfpmCommand {
     json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
     'my-pool': Flags.boolean({description: 'only show orgs created by the current user'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
-    tag: Flags.string({char: 't', description: 'pool tag to query', required: true}),
+    tag: Flags.string({char: 't', description: 'pool tag to query (omit to list all pools)'}),
     'target-dev-hub': Flags.string({char: 'v', description: 'target hub org username or alias', required: true}),
     type: Flags.string({
       default: OrgTypes.Scratch,
@@ -43,13 +43,13 @@ export default class PoolList extends SfpmCommand {
       });
       spinner?.succeed('Connected to devhub');
 
-      const querySpinner = mode === 'interactive' ? ora(`Fetching orgs for pool "${flags.tag}"...`).start() : undefined;
+      const querySpinner = mode === 'interactive' ? ora(`Fetching orgs${flags.tag ? ` for pool "${flags.tag}"` : ''}...`).start() : undefined;
       const orgs = await manager.list(flags.tag, flags['my-pool']);
       querySpinner?.succeed(`Found ${orgs.length} org(s)`);
 
       if (flags.json) {
         this.logJson({
-          data: orgs, success: true, tag: flags.tag, total: orgs.length,
+          data: orgs, success: true, tag: flags.tag ?? 'all', total: orgs.length,
         });
         return;
       }
@@ -59,7 +59,7 @@ export default class PoolList extends SfpmCommand {
           logger: {error: (msg: Error | string) => this.error(msg), log: (msg: string) => this.log(msg)},
           mode,
         });
-        renderer.renderOrgList(orgs, flags.tag);
+        renderer.renderOrgList(orgs, flags.tag ?? 'all');
 
         if (orgs.length > 0) {
           this.renderTable(orgs);
@@ -75,6 +75,7 @@ export default class PoolList extends SfpmCommand {
     printTable({
       borderStyle: 'headers-only-with-underline',
       columns: [
+        {key: 'tag', name: 'Tag'},
         {key: 'username', name: 'Username'},
         {key: 'alias', name: 'Alias'},
         {key: 'status', name: 'Status'},
@@ -86,6 +87,7 @@ export default class PoolList extends SfpmCommand {
         expiryDate: org.expiry ? new Date(org.expiry).toISOString().split('T')[0] : '',
         loginURL: org.auth.loginUrl ?? '',
         status: org.pool?.status ?? '',
+        tag: org.pool?.tag ?? '',
         username: org.auth.username ?? '',
       })),
     });
