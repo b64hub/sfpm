@@ -14,7 +14,7 @@ import type {
 } from './renderer-utils.js';
 
 import {infoBox, successBox} from './boxes.js';
-import {formatDuration} from './renderer-utils.js';
+import {formatDuration, terminalLink} from './renderer-utils.js';
 
 export type {OutputMode} from './renderer-utils.js';
 
@@ -116,11 +116,14 @@ export class PoolProgressRenderer {
   public renderFetchedOrg(org: PoolOrg, frontDoorUrl?: string): void {
     if (!this.isInteractive()) return;
 
+    const loginUrl = frontDoorUrl ?? org.auth.loginUrl;
+    const loginDisplay = loginUrl ? terminalLink('Open', loginUrl) : undefined;
+
     this.logger.log('');
     this.logger.log(successBox('Fetched Org', {
       ...(org.auth.alias ? {Alias: org.auth.alias} : {}),
       ...(org.expiry ? {Expires: new Date(org.expiry).toISOString().split('T')[0]} : {}),
-      ...(frontDoorUrl ? {'Login URL': frontDoorUrl} : org.auth.loginUrl ? {'Login URL': org.auth.loginUrl} : {}),
+      ...(loginDisplay ? {'Login URL': loginDisplay} : {}),
       ...(org.orgId ? {'Org ID': org.orgId} : {}),
       ...(org.auth.password ? {Password: org.auth.password} : {}),
       Type: org.orgType ?? 'scratch',

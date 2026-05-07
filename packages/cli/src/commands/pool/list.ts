@@ -102,7 +102,6 @@ export default class PoolList extends SfpmCommand {
         {key: 'alias', name: 'Alias'},
         {key: 'status', name: 'Status'},
         {key: 'expiryDate', name: 'Expires'},
-        {key: 'loginURL', name: 'Login URL'},
       ],
       data: orgs.map(org => ({
         alias: org.auth.alias ?? '',

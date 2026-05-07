@@ -48,8 +48,6 @@ export default class PoolFetch extends SfpmCommand {
     const {flags} = await this.parse(PoolFetch);
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
-    const spinner = mode === 'interactive' ? ora('Connecting to DevHub...').start() : undefined;
-
     const logger = {
       debug: (msg: string) => this.debug(msg),
       error: (msg: string) => this.error(msg),
@@ -69,6 +67,8 @@ export default class PoolFetch extends SfpmCommand {
       this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1});
     }
 
+    const spinner = mode === 'interactive' ? ora(`Connecting to ${devhubAlias}...`).start() : undefined;
+
     const devhub = await Org.create({aliasOrUsername: devhubAlias});
 
     try {
@@ -77,7 +77,7 @@ export default class PoolFetch extends SfpmCommand {
         logger,
         poolType: flags.type,
       });
-      spinner?.succeed('Connected to devhub org');
+      spinner?.succeed(`Connected to ${devhubAlias}`);
 
       const renderer = new PoolProgressRenderer({
         logger: {
@@ -139,7 +139,7 @@ export default class PoolFetch extends SfpmCommand {
         this.log(chalk.green(`Org details sent to ${flags['send-to']}`));
       }
     } catch (error) {
-      spinner?.fail('Failed');
+      spinner?.fail(`Failed to connect to ${devhubAlias}`);
 
       if (flags.json) {
         this.logJson({error: (error as Error).message, success: false});
