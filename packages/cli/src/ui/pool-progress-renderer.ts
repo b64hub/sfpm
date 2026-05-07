@@ -123,7 +123,7 @@ export class PoolProgressRenderer {
     this.logger.log('');
     this.logger.log(successBox('Fetched Org', {
       ...(org.auth.alias ? {Alias: org.auth.alias} : {}),
-      ...(org.expiry ? {Expires: new Date(org.expiry).toISOString().split('T')[0]} : {}),
+      ...(org.expiry ? {Expires: formatExpiry(org.expiry)} : {}),
       ...(loginDisplay ? {'Login URL': loginDisplay} : {}),
       ...(org.orgId ? {'Org ID': org.orgId} : {}),
       ...(org.auth.password ? {Password: org.auth.password} : {}),
@@ -143,6 +143,7 @@ export class PoolProgressRenderer {
       return;
     }
 
+    this.logger.log('\n');
     printTable({
       borderStyle: 'headers-only-with-underline',
       columns: [
@@ -155,7 +156,7 @@ export class PoolProgressRenderer {
       ],
       data: orgs.map(org => ({
         alias: org.auth.alias ?? '',
-        expiryDate: org.expiry ? new Date(org.expiry).toISOString().split('T')[0] : '',
+        expiryDate: org.expiry ? formatExpiry(org.expiry) : '',
         loginURL: org.auth.loginUrl ?? '',
         status: formatStatus(org.pool?.status),
         tag: org.pool?.tag ?? '',
@@ -367,6 +368,17 @@ export class PoolProgressRenderer {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+function formatExpiry(expiry: number): string {
+  const expiryDate = new Date(expiry);
+  const now = new Date();
+  const diffMs = expiryDate.getTime() - now.getTime();
+  const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const dateStr = expiryDate.toISOString().split('T')[0];
+
+  if (daysLeft <= 0) return chalk.red(`Expired ${chalk.dim(dateStr)}`);
+  return `${daysLeft}d ${chalk.dim(dateStr)}`;
+}
 
 function formatStatus(status?: string): string {
   switch (status) {

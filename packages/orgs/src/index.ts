@@ -22,9 +22,8 @@ export {
   DEFAULT_SANDBOX,
   type Sandbox,
   type SandboxCreateOptions,
-  type SandboxCreateRequest,
-  type SandboxCreateResult,
   type SandboxDefaults,
+  type SandboxDefinition,
   type SandboxLicenseType,
   type SandboxPoolInfo,
 } from './org/sandbox/types.js';

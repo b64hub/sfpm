@@ -80,6 +80,11 @@ vi.mock('../../../src/utils/password-generator.js', () => ({
   default: vi.fn().mockResolvedValue('MockPass123!'),
 }));
 
+const mockReadFile = vi.fn();
+vi.mock('node:fs/promises', () => ({
+  readFile: (...args: unknown[]) => mockReadFile(...args),
+}));
+
 import SandboxProvider from '../../../src/org/sandbox/sandbox-provider.js';
 
 // ============================================================================
@@ -203,10 +208,10 @@ describe('SandboxProvider', () => {
 
   describe('createOrg', () => {
     it('should create a new sandbox via SDK and insert a pool record', async () => {
-      // Mock the Group query for getGroupId
-      mockConnection.query.mockResolvedValue({
-        records: [{Id: '0GR000000000001'}],
-      });
+      mockReadFile.mockResolvedValue(JSON.stringify({
+        licenseType: 'DEVELOPER',
+        sandboxName: 'SB',
+      }));
       mockHubOrg.createSandbox.mockResolvedValue({
         SandboxOrganization: '00D999000000001',
       });
@@ -214,9 +219,8 @@ describe('SandboxProvider', () => {
 
       const provider = createProvider();
       const result = await provider.createOrg({
-        alias: 'SB1',
-        licenseType: 'DEVELOPER',
-        sandboxName: 'SB1',
+        alias: 'SO1',
+        definitionFile: '/tmp/sandbox-def.json',
       });
 
       expect(mockHubOrg.createSandbox).toHaveBeenCalledWith(
@@ -240,9 +244,10 @@ describe('SandboxProvider', () => {
     });
 
     it('should clone from source sandbox when sourceSandboxName is provided', async () => {
-      mockConnection.query.mockResolvedValue({
-        records: [{Id: '0GR000000000001'}],
-      });
+      mockReadFile.mockResolvedValue(JSON.stringify({
+        sandboxName: 'SB',
+        sourceSandboxName: 'DevTemplate',
+      }));
       mockHubOrg.cloneSandbox.mockResolvedValue({
         SandboxOrganization: '00D999000000002',
       });
@@ -250,9 +255,8 @@ describe('SandboxProvider', () => {
 
       const provider = createProvider();
       await provider.createOrg({
-        alias: 'SB2',
-        sandboxName: 'SB2',
-        sourceSandboxName: 'DevTemplate',
+        alias: 'SO2',
+        definitionFile: '/tmp/sandbox-def.json',
       });
 
       expect(mockHubOrg.cloneSandbox).toHaveBeenCalledWith(
@@ -263,7 +267,12 @@ describe('SandboxProvider', () => {
       expect(mockHubOrg.createSandbox).not.toHaveBeenCalled();
     });
 
-    it('should pass activationUserGroupName to resolve group ID', async () => {
+    it('should resolve activationUserGroupName to group ID', async () => {
+      mockReadFile.mockResolvedValue(JSON.stringify({
+        activationUserGroupName: 'My_Group',
+        licenseType: 'DEVELOPER',
+        sandboxName: 'SB',
+      }));
       mockConnection.query.mockResolvedValue({
         records: [{Id: '0GR000000000001'}],
       });
@@ -274,15 +283,37 @@ describe('SandboxProvider', () => {
 
       const provider = createProvider();
       await provider.createOrg({
-        activationUserGroupName: 'My_Group',
-        alias: 'SB3',
-        sandboxName: 'SB3',
+        alias: 'SO3',
+        definitionFile: '/tmp/sandbox-def.json',
       });
 
       expect(mockHubOrg.createSandbox).toHaveBeenCalledWith(
         expect.objectContaining({
           ActivationUserGroupId: '0GR000000000001',
         }),
+        expect.any(Object),
+      );
+    });
+
+    it('should use namePattern when provided to override definition sandboxName', async () => {
+      mockReadFile.mockResolvedValue(JSON.stringify({
+        licenseType: 'DEVELOPER',
+        sandboxName: 'SB',
+      }));
+      mockHubOrg.createSandbox.mockResolvedValue({
+        SandboxOrganization: '00D999000000004',
+      });
+      mockPoolSobject.create.mockResolvedValue({id: 'a01000000000004', success: true});
+
+      const provider = createProvider();
+      await provider.createOrg({
+        alias: 'SO1',
+        definitionFile: '/tmp/sandbox-def.json',
+        namePattern: 'DEV',
+      });
+
+      expect(mockHubOrg.createSandbox).toHaveBeenCalledWith(
+        expect.objectContaining({SandboxName: 'DEV1'}),
         expect.any(Object),
       );
     });
@@ -516,30 +547,34 @@ describe('SandboxProvider', () => {
   // --------------------------------------------------------------------------
 
   describe('getRemainingCapacity', () => {
-    it('should aggregate sandbox limits from the org limits API', async () => {
-      mockConnection.request.mockResolvedValue({
-        DailyApiRequests: {Max: 1000, Remaining: 900},
-        DeveloperProSandbox: {Max: 10, Remaining: 5},
-        DeveloperSandbox: {Max: 20, Remaining: 8},
-        FullSandbox: {Max: 5, Remaining: 2},
-      });
+    it('should compute remaining from TenantUsageEntitlement minus active sandboxes', async () => {
+      mockConnection.query
+        .mockResolvedValueOnce({records: [{CurrentAmountAllowed: 10, Setting: 'Sandbox'}, {CurrentAmountAllowed: 5, Setting: 'Sandbox2'}], totalSize: 2})
+        .mockResolvedValueOnce({totalSize: 3});
 
       const provider = createProvider();
       const capacity = await provider.getRemainingCapacity();
 
-      // 5 + 8 + 2 = 15 (all sandbox-related keys)
-      expect(capacity).toBe(15);
+      // (10 + 5) - 3 = 12
+      expect(capacity).toBe(12);
     });
 
-    it('should return 0 when no sandbox limits are present', async () => {
-      mockConnection.request.mockResolvedValue({
-        DailyApiRequests: {Max: 1000, Remaining: 900},
-      });
+    it('should return MAX_SAFE_INTEGER when no entitlements are found', async () => {
+      mockConnection.query.mockResolvedValue({records: [], totalSize: 0});
 
       const provider = createProvider();
       const capacity = await provider.getRemainingCapacity();
 
-      expect(capacity).toBe(0);
+      expect(capacity).toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it('should return MAX_SAFE_INTEGER when query fails', async () => {
+      mockConnection.query.mockRejectedValue(new Error('INVALID_TYPE'));
+
+      const provider = createProvider();
+      const capacity = await provider.getRemainingCapacity();
+
+      expect(capacity).toBe(Number.MAX_SAFE_INTEGER);
     });
   });
 

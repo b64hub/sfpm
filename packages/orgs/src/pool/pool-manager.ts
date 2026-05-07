@@ -400,7 +400,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * @throws {OrgError} When prerequisites are not met
    */
   public async validatePrerequisites(): Promise<void> {
-    this.logger?.debug('Validating DevHub prerequisites...');
+    this.logger?.debug('Validating devhub prerequisites...');
     await this.provider.validate();
     this.logger?.debug('Prerequisites validated');
   }
@@ -434,14 +434,9 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   private buildCreateOptions(config: PoolConfig, alias: string): OrgCreateOptions {
     if (config.type === OrgTypes.Sandbox) {
       return {
-        activationUserGroupName: config.sandbox.groupName,
         alias,
-        apexClassId: config.sandbox.apexClassId,
-        autoActivate: config.sandbox.autoActivate,
-        licenseType: config.sandbox.licenseType,
-        retries: config.sandbox.maxRetries,
-        sandboxName: `${config.sandbox.namePattern}${alias.replaceAll(/\D/g, '')}`,
-        sourceSandboxName: config.sandbox.sourceSandboxName,
+        definitionFile: config.sandbox.definitionFile,
+        namePattern: config.sandbox.namePattern,
         waitMinutes: config.sandbox.waitMinutes,
       };
     }

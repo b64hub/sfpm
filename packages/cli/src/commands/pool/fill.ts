@@ -15,7 +15,7 @@ export default class PoolFill extends SfpmCommand {
   static override description = 'fill a pool with orgs'
   static override examples = [
     '<%= config.bin %> pool fill --tag dev-pool --max 10 -d config/project-scratch-def.json -v my-devhub',
-    '<%= config.bin %> pool fill --tag sb-pool --max 5 --type sandbox -d config/sandbox-def.json --sandbox-name-pattern SB -v my-prod-org',
+    '<%= config.bin %> pool fill --tag sb-pool --max 5 --type sandbox -d config/sandbox-def.json -v my-prod-org',
     '<%= config.bin %> pool fill --tag dev-pool --max 10 -d config/project-scratch-def.json -v my-devhub --json',
   ]
   static override flags = {
@@ -24,8 +24,8 @@ export default class PoolFill extends SfpmCommand {
     'expiry-days': Flags.integer({description: 'scratch org expiry in days (default: 7)', min: 1}),
     json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
     max: Flags.integer({description: 'maximum number of orgs to allocate', min: 1, required: true}),
+    'name-pattern': Flags.string({description: 'override sandbox name prefix from definition file (e.g., SB → SB1, SB2, ...)'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
-    'sandbox-name-pattern': Flags.string({description: 'sandbox name prefix (e.g., SB → SB1, SB2, ...)'}),
     tag: Flags.string({char: 't', description: 'pool tag', required: true}),
     'target-dev-hub': Flags.string({
       char: 'v',
@@ -51,8 +51,6 @@ export default class PoolFill extends SfpmCommand {
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
     const poolType = flags.type as OrgTypes;
 
-    const spinner = mode === 'interactive' ? ora('Connecting to hub org...').start() : undefined;
-
     const logger = {
       debug: (msg: string) => this.debug(msg),
       error: (msg: string) => this.error(msg),
@@ -62,24 +60,25 @@ export default class PoolFill extends SfpmCommand {
       warn: (msg: string) => this.warn(msg),
     };
 
+    let devhubAlias = flags['target-dev-hub'];
+    if (!devhubAlias) {
+      const configAggregator = await ConfigAggregator.create();
+      devhubAlias = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
+    }
+
+    const devhubSpinner = mode === 'interactive' ? ora(`Connecting to ${chalk.cyan(devhubAlias)}...`).start() : undefined;
+
+    if (!devhubAlias) {
+      this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1});
+    }
+
     try {
-      let devhubAlias = flags['target-dev-hub'];
-      if (!devhubAlias) {
-        const configAggregator = await ConfigAggregator.create();
-        devhubAlias = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
-      }
-
-      if (!devhubAlias) {
-        this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1});
-      }
-
       const devhub = await Org.create({aliasOrUsername: devhubAlias});
       const {manager} = createPoolServices({
         devhub,
         logger,
         poolType,
       });
-      spinner?.succeed(`Connected to ${chalk.cyan(devhubAlias)}`);
 
       const renderer = new PoolProgressRenderer({
         logger: {
@@ -90,9 +89,9 @@ export default class PoolFill extends SfpmCommand {
       });
       renderer.attachToManager(manager);
 
-      const validationSpinner = mode === 'interactive' ? ora('Validating DevHub prerequisites...').start() : undefined;
+      if (devhubSpinner) devhubSpinner.text = 'Validating prerequisites...';
       await manager.validatePrerequisites();
-      validationSpinner?.succeed(`${chalk.cyan(devhubAlias)} prerequisites validated`);
+      devhubSpinner?.succeed(`${chalk.cyan(devhubAlias)} connected`);
 
       const orgConfig = await this.loadOrgConfig(logger);
       const config = this.buildPoolConfig(flags, poolType, orgConfig);
@@ -107,7 +106,7 @@ export default class PoolFill extends SfpmCommand {
         this.error(`Pool provisioning failed: ${result.errors.join(', ')}`, {exit: 1});
       }
     } catch (error) {
-      spinner?.fail('Failed');
+      devhubSpinner?.fail('Failed');
 
       if (flags.json) {
         this.logJson({error: (error as Error).message, success: false});
@@ -120,7 +119,7 @@ export default class PoolFill extends SfpmCommand {
   private buildPoolConfig(flags: Record<string, any>, poolType: OrgTypes, orgConfig?: OrgConfig): PoolConfig {
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
     const sizing = {
-      batchSize: flags['batch-size'] as number | undefined,
+      batchSize: (flags['batch-size'] as number | undefined) ?? 5,
       maxAllocation: flags.max as number,
     };
 
@@ -135,8 +134,7 @@ export default class PoolFill extends SfpmCommand {
       return {
         sandbox: {
           definitionFile: path.resolve(projectDir, definitionFile),
-          licenseType: sandboxDefaults?.licenseType ?? 'DEVELOPER',
-          namePattern: (flags['sandbox-name-pattern'] as string | undefined) ?? sandboxDefaults?.namePattern ?? 'SB',
+          namePattern: (flags['name-pattern'] as string | undefined) ?? sandboxDefaults?.namePattern,
         },
         sizing,
         tag: flags.tag as string,

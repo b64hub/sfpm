@@ -112,15 +112,18 @@ export interface ScratchOrgPoolConfig extends PoolConfigBase {
 /**
  * Pool configuration for sandbox pools.
  *
+ * Sandbox creation settings (licenseType, apexClassId, etc.) live in
+ * the sandbox definition file. This config only holds pool operation
+ * concerns: definition file path, naming override, and timeouts.
+ *
  * @example
  * ```typescript
  * const pool: SandboxPoolConfig = {
  *   type: 'sandbox',
  *   tag: 'sb-pool',
  *   sandbox: {
+ *     definitionFile: 'config/sandbox-def.json',
  *     namePattern: 'SB',
- *     licenseType: 'DEVELOPER',
- *     groupId: '0GR000000000001',
  *   },
  *   sizing: { maxAllocation: 5, batchSize: 2 },
  * };
