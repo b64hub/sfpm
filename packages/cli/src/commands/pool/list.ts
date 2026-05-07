@@ -97,6 +97,7 @@ export default class PoolList extends SfpmCommand {
       borderStyle: 'headers-only-with-underline',
       columns: [
         {key: 'tag', name: 'Tag'},
+        {key: 'type', name: 'Type'},
         {key: 'username', name: 'Username'},
         {key: 'alias', name: 'Alias'},
         {key: 'status', name: 'Status'},
@@ -109,6 +110,7 @@ export default class PoolList extends SfpmCommand {
         loginURL: org.auth.loginUrl ?? '',
         status: org.pool?.status ?? '',
         tag: org.pool?.tag ?? '',
+        type: org.orgType ?? '',
         username: org.auth.username ?? '',
       })),
     });

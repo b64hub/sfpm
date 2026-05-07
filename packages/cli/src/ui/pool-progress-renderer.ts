@@ -113,14 +113,17 @@ export class PoolProgressRenderer {
   /**
    * Render a fetched org summary box.
    */
-  public renderFetchedOrg(org: PoolOrg): void {
+  public renderFetchedOrg(org: PoolOrg, frontDoorUrl?: string): void {
     if (!this.isInteractive()) return;
 
     this.logger.log('');
-    this.logger.log(successBox('Scratch Org', {
+    this.logger.log(successBox('Fetched Org', {
       ...(org.auth.alias ? {Alias: org.auth.alias} : {}),
-      ...(org.auth.loginUrl ? {'Login URL': org.auth.loginUrl} : {}),
+      ...(org.expiry ? {Expires: new Date(org.expiry).toISOString().split('T')[0]} : {}),
+      ...(frontDoorUrl ? {'Login URL': frontDoorUrl} : org.auth.loginUrl ? {'Login URL': org.auth.loginUrl} : {}),
+      ...(org.orgId ? {'Org ID': org.orgId} : {}),
       ...(org.auth.password ? {Password: org.auth.password} : {}),
+      Type: org.orgType ?? 'scratch',
       Username: org.auth.username ?? 'N/A',
     }));
   }

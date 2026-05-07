@@ -1,6 +1,8 @@
-import {createPoolServices} from '@b64hub/sfpm-orgs';
+import {createPoolServices, setAlias} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
-import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
+import {
+  AuthInfo, ConfigAggregator, Org, OrgTypes,
+} from '@salesforce/core';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -13,12 +15,14 @@ export default class PoolFetch extends SfpmCommand {
   static override description = 'fetch an org from a pool'
   static override examples = [
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub',
+    '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --alias my-scratch',
     '<%= config.bin %> pool fetch --tag sb-pool --type sandbox -v my-prod-org',
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --send-to user@example.com',
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --all --limit 5',
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --json',
   ]
   static override flags = {
+    alias: Flags.string({char: 'a', description: 'set a local alias for the fetched org'}),
     json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
     limit: Flags.integer({description: 'max orgs to return when using --all', min: 1}),
     'my-pool': Flags.boolean({description: 'only fetch from orgs created by the current user'}),
@@ -104,12 +108,32 @@ export default class PoolFetch extends SfpmCommand {
 
       const org = await fetcher.fetch(fetchOptions);
 
+      // Set alias if requested
+      if (flags.alias && org.auth.username) {
+        await setAlias(org.auth.username, flags.alias);
+        org.auth.alias = flags.alias;
+      }
+
+      // Build frontdoor login URL with access token
+      let frontDoorUrl: string | undefined;
+      if (!flags['send-to'] && org.auth.username) {
+        try {
+          const authInfo = await AuthInfo.create({username: org.auth.username});
+          const fields = authInfo.getFields(true);
+          if (fields.accessToken && fields.instanceUrl) {
+            frontDoorUrl = `${fields.instanceUrl}/secur/frontdoor.jsp?sid=${fields.accessToken}`;
+          }
+        } catch {
+          // Access token not available — skip frontdoor URL
+        }
+      }
+
       if (flags.json) {
-        this.logJson({data: org, success: true, tag: flags.tag});
+        this.logJson({data: {...org, frontDoorUrl}, success: true, tag: flags.tag});
         return;
       }
 
-      renderer.renderFetchedOrg(org);
+      renderer.renderFetchedOrg(org, frontDoorUrl);
 
       if (flags['send-to']) {
         this.log(chalk.green(`Org details sent to ${flags['send-to']}`));
