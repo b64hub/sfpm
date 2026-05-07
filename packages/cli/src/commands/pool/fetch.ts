@@ -1,6 +1,6 @@
 import {createPoolServices} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
-import {Org, OrgTypes} from '@salesforce/core';
+import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -26,7 +26,18 @@ export default class PoolFetch extends SfpmCommand {
     'send-to': Flags.string({description: 'email org details to this address instead of local login'}),
     'source-tracking': Flags.boolean({default: false, description: 'enable source tracking after fetch'}),
     tag: Flags.string({char: 't', description: 'pool tag to fetch from', required: true}),
-    'target-dev-hub': Flags.string({char: 'v', description: 'target hub org username or alias', required: true}),
+    'target-dev-hub': Flags.string({
+      char: 'v',
+      async defaultHelp() {
+        try {
+          const configAggregator = await ConfigAggregator.create();
+          return configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
+        } catch {
+
+        }
+      },
+      description: 'target hub org username or alias',
+    }),
   }
 
   public async execute(): Promise<void> {
@@ -44,7 +55,17 @@ export default class PoolFetch extends SfpmCommand {
       warn: (msg: string) => this.warn(msg),
     };
 
-    const devhub = await Org.create({aliasOrUsername: flags['target-dev-hub']});
+    let devhubAlias = flags['target-dev-hub'];
+    if (!devhubAlias) {
+      const configAggregator = await ConfigAggregator.create();
+      devhubAlias = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
+    }
+
+    if (!devhubAlias) {
+      this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1});
+    }
+
+    const devhub = await Org.create({aliasOrUsername: devhubAlias});
 
     try {
       const {authenticator, devhubService, fetcher} = await createPoolServices({

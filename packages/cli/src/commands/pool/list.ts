@@ -1,7 +1,7 @@
 import {createPoolServices, type PoolOrg} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {printTable} from '@oclif/table';
-import {Org, OrgTypes} from '@salesforce/core';
+import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -21,7 +21,18 @@ export default class PoolList extends SfpmCommand {
     'my-pool': Flags.boolean({description: 'only show orgs created by the current user'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     tag: Flags.string({char: 't', description: 'pool tag to query (omit to list all pools)'}),
-    'target-dev-hub': Flags.string({char: 'v', description: 'target hub org username or alias', required: true}),
+    'target-dev-hub': Flags.string({
+      char: 'v',
+      async defaultHelp() {
+        try {
+          const configAggregator = await ConfigAggregator.create();
+          return configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
+        } catch {
+
+        }
+      },
+      description: 'target hub org username or alias',
+    }),
     type: Flags.string({
       default: OrgTypes.Scratch,
       description: 'pool type: scratch or sandbox',
@@ -36,7 +47,17 @@ export default class PoolList extends SfpmCommand {
     const spinner = mode === 'interactive' ? ora('Connecting to devhub...').start() : undefined;
 
     try {
-      const devhub = await Org.create({aliasOrUsername: flags['target-dev-hub']});
+      let devhubAlias = flags['target-dev-hub'];
+      if (!devhubAlias) {
+        const configAggregator = await ConfigAggregator.create();
+        devhubAlias = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
+      }
+
+      if (!devhubAlias) {
+        this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1});
+      }
+
+      const devhub = await Org.create({aliasOrUsername: devhubAlias});
       const {manager} = createPoolServices({
         devhub,
         poolType: flags.type as OrgTypes,

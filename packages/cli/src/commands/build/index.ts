@@ -43,7 +43,19 @@ export default class Build extends SfpmCommand {
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'skip-validation': Flags.boolean({description: 'skip validation'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
-    'target-dev-hub': Flags.string({char: 'v', description: 'target dev hub username', env: 'SF_DEV_HUB'}),
+    'target-dev-hub': Flags.string({
+      char: 'v',
+      async defaultHelp() {
+        try {
+          const configAggregator = await ConfigAggregator.create();
+          return configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
+        } catch {
+
+        }
+      },
+      description: 'target dev hub username',
+      env: 'SF_DEV_HUB',
+    }),
     turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies --skip-validation)'}),
     wait: Flags.integer({
       char: 'w', default: 120, description: 'timeout in minutes for package version creation', min: 1,
