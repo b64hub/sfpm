@@ -25,6 +25,11 @@ vi.mock('../../src/pool/pool-fetcher.js', () => ({
 vi.mock('../../src/pool/pool-manager.js', () => ({
   default: vi.fn(function () { /* noop */ }),
 }));
+vi.mock('../../src/pool/tasks/artifact-package-install-task.js', () => ({
+  ArtifactPackageInstallTask: vi.fn(function (this: Record<string, unknown>) {
+    this.name = 'install-artifact-package';
+  }),
+}));
 
 import type {Org} from '@salesforce/core';
 import {OrgTypes} from '@salesforce/core';
@@ -36,6 +41,7 @@ import DevHubService from '../../src/org/services/devhub-service.js';
 import PoolFetcher from '../../src/pool/pool-fetcher.js';
 import {createPoolServices} from '../../src/pool/pool-factory.js';
 import PoolManager from '../../src/pool/pool-manager.js';
+import {ArtifactPackageInstallTask} from '../../src/pool/tasks/artifact-package-install-task.js';
 
 function createMockOrg(overrides: Partial<Record<string, unknown>> = {}): Org {
   return {
@@ -95,15 +101,45 @@ describe('createPoolServices', () => {
     );
   });
 
-  it('should pass tasks to PoolManager', () => {
+  it('should prepend ArtifactPackageInstallTask for scratch pools with tasks', () => {
     const devhub = createMockOrg();
-    const tasks = [{name: 'prepare', run: vi.fn()}];
+    const tasks = [{name: 'deploy', run: vi.fn()}];
 
     createPoolServices({devhub, tasks: tasks as never});
 
+    expect(ArtifactPackageInstallTask).toHaveBeenCalledWith({devhub});
     expect(PoolManager).toHaveBeenCalledWith(
-      expect.objectContaining({tasks}),
+      expect.objectContaining({
+        tasks: expect.arrayContaining([
+          expect.objectContaining({name: 'install-artifact-package'}),
+        ]),
+      }),
     );
+    // Artifact task should come before user tasks
+    const managerCall = vi.mocked(PoolManager).mock.calls[0][0] as {tasks: Array<{name: string}>};
+    expect(managerCall.tasks[0].name).toBe('install-artifact-package');
+    expect(managerCall.tasks).toHaveLength(2);
+  });
+
+  it('should not prepend ArtifactPackageInstallTask for sandbox pools', () => {
+    const devhub = createMockOrg();
+    const tasks = [{name: 'deploy', run: vi.fn()}];
+
+    createPoolServices({devhub, poolType: OrgTypes.Sandbox, tasks: tasks as never});
+
+    expect(ArtifactPackageInstallTask).not.toHaveBeenCalled();
+    const managerCall = vi.mocked(PoolManager).mock.calls[0][0] as {tasks: Array<{name: string}>};
+    expect(managerCall.tasks).toHaveLength(1);
+  });
+
+  it('should not prepend ArtifactPackageInstallTask when no tasks provided', () => {
+    const devhub = createMockOrg();
+
+    createPoolServices({devhub});
+
+    expect(ArtifactPackageInstallTask).not.toHaveBeenCalled();
+    const managerCall = vi.mocked(PoolManager).mock.calls[0][0] as {tasks: Array<{name: string}>};
+    expect(managerCall.tasks).toHaveLength(0);
   });
 
   it('should pass provider to PoolFetcher', () => {

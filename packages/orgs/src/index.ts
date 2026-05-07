@@ -65,6 +65,7 @@ export {
   type PoolProvisionResult,
 } from './pool/pool-manager.js';
 
+export {ArtifactPackageInstallTask, type ArtifactPackageInstallTaskOptions} from './pool/tasks/artifact-package-install-task.js';
 export {DeploymentTask, type DeploymentTaskOptions} from './pool/tasks/deployment-task.js';
 
 // Pool-layer types

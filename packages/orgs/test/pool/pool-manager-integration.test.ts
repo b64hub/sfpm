@@ -488,6 +488,55 @@ describe('PoolManager', () => {
 
       expect(loggerFactory.dispose).toHaveBeenCalled();
     });
+
+    it('should run all org tasks concurrently', async () => {
+      // 4 orgs: with unbounded concurrency, all 4 should run in parallel
+      const orgs = [
+        createScratchOrg({username: 'org1@scratch.org'}),
+        createScratchOrg({username: 'org2@scratch.org'}),
+        createScratchOrg({username: 'org3@scratch.org'}),
+        createScratchOrg({username: 'org4@scratch.org'}),
+      ];
+
+      let callIndex = 0;
+      provider.createOrg.mockImplementation(() => Promise.resolve(orgs[callIndex++]));
+
+      const activeSet = new Set<string>();
+      let maxConcurrent = 0;
+
+      const task: PoolOrgTask = {
+        continueOnError: false,
+        execute: vi.fn().mockImplementation(async (org: any) => {
+          const username = org.auth.username;
+          activeSet.add(username);
+          maxConcurrent = Math.max(maxConcurrent, activeSet.size);
+          await new Promise(resolve => { setTimeout(resolve, 10); });
+          activeSet.delete(username);
+          return {success: true};
+        }),
+        name: 'deploy',
+      };
+
+      const manager = new PoolManager({
+        provider: provider as any,
+        tasks: [task],
+      });
+
+      const config = createPoolConfig({sizing: {batchSize: 2, maxAllocation: 4}});
+      const result = await manager.provision(config);
+
+      // All 4 orgs should have run tasks
+      expect(task.execute).toHaveBeenCalledTimes(4);
+      expect(result.taskResults).toHaveLength(4);
+
+      // All orgs should run concurrently (no batching for tasks)
+      expect(maxConcurrent).toBe(4);
+
+      // Results should preserve org order
+      expect(result.taskResults!.map(r => r.username)).toEqual([
+        'org1@scratch.org', 'org2@scratch.org', 'org3@scratch.org', 'org4@scratch.org',
+      ]);
+    });
   });
 
   // ==========================================================================

@@ -370,7 +370,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     // 6. Run preparation tasks on provisioned orgs
     let taskResults: OrgTaskSummary[] | undefined;
     if (this.tasks.length > 0) {
-      taskResults = await this.runTasksOnOrgs(registeredOrgs, concurrency);
+      taskResults = await this.runTasksOnOrgs(registeredOrgs);
     }
 
     // 7. Mark successfully prepared orgs as Available
@@ -403,6 +403,26 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     this.logger?.debug('Validating DevHub prerequisites...');
     await this.provider.validate();
     this.logger?.debug('Prerequisites validated');
+  }
+
+  /**
+   * Build batch definitions for org creation.
+   * @param count The total number of orgs to create.
+   * @param concurrency The maximum number of orgs to create concurrently.
+   * @returns An array of batches, each containing org aliases and their indices.
+   */
+  private buildBatchDefinitions(count: number, concurrency: number): Array<{alias: string; index: number;}[]> {
+    const batches: Array<{alias: string; index: number;}[]> = [];
+    for (let batchStart = 0; batchStart < count; batchStart += concurrency) {
+      const batchEnd = Math.min(batchStart + concurrency, count);
+      const batch = Array.from({length: batchEnd - batchStart}, (_, i) => ({
+        alias: `SO${batchStart + i + 1}`,
+        index: batchStart + i,
+      }));
+      batches.push(batch);
+    }
+
+    return batches;
   }
 
   /**
@@ -462,18 +482,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     count: number,
     concurrency: number,
   ): Promise<OrgProvisionResult[]> {
-    // Build all batch definitions up front
-    const batches: Array<{alias: string; index: number;}[]> = [];
-    for (let batchStart = 0; batchStart < count; batchStart += concurrency) {
-      const batchEnd = Math.min(batchStart + concurrency, count);
-      const batch = Array.from({length: batchEnd - batchStart}, (_, i) => ({
-        alias: `SO${batchStart + i + 1}`,
-        index: batchStart + i,
-      }));
-      batches.push(batch);
-    }
-
-    // Process batches sequentially, each batch runs in parallel
+    const batches: Array<{alias: string; index: number;}[]> = this.buildBatchDefinitions(count, concurrency);
     const allResults: OrgProvisionResult[] = [];
 
     for (const batch of batches) {
@@ -658,24 +667,18 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    *
    * Each org gets a scoped logger from the `PoolOrgLoggerFactory`.
    * Tasks run sequentially per org (order matters — deploy before
-   * scripts), but multiple orgs are processed in parallel up to
+   * scripts), but multiple orgs are processed concurrently up to
    * `concurrency`.
+   *
+   * Uses a worker-pool pattern: `concurrency` workers pull orgs from
+   * a shared queue. As soon as one org finishes, the next starts —
+   * unlike the org-creation phase which uses rigid sequential batches
+   * (required by Salesforce API limits), task execution benefits from
+   * filling slots immediately.
    */
-  private async runTasksOnOrgs(
-    orgs: PoolOrg[],
-    concurrency: number,
-  ): Promise<OrgTaskSummary[]> {
+  private async runTasksOnOrgs(orgs: PoolOrg[]): Promise<OrgTaskSummary[]> {
     this.logger?.info(`Running ${this.tasks.length} task(s) on ${orgs.length} org(s)...`);
-
-    const summaries: OrgTaskSummary[] = [];
-
-    // Process orgs in batches (same pattern as org creation)
-    for (let i = 0; i < orgs.length; i += concurrency) {
-      const batch = orgs.slice(i, i + concurrency);
-      // eslint-disable-next-line no-await-in-loop -- intentional sequential batching for API rate limits
-      const batchResults = await Promise.all(batch.map(org => this.runTasksOnSingleOrg(org)));
-      summaries.push(...batchResults);
-    }
+    const summaries = await Promise.all(orgs.map(org => this.runTasksOnSingleOrg(org)));
 
     // Clean up logger factory resources
     if (this.loggerFactory?.dispose) {
@@ -841,7 +844,7 @@ export function computeOrgAllocation(
 // ============================================================================
 
 /** Silent logger used when no logger or factory is provided. */
-const noop = (): void => {};
+const noop = (): void => { };
 const noopLogger: Logger = {
   debug: noop,
   error: noop,
