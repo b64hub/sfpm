@@ -142,8 +142,6 @@ export class PoolProgressRenderer {
       return;
     }
 
-    this.logger.log(`\nFound ${orgs.length} org(s) in pool "${tag}":\n`);
-
     for (const org of orgs) {
       const status = formatStatus(org.pool?.status);
       const expiry = org.expiry ? chalk.dim(` (expires ${new Date(org.expiry).toISOString().split('T')[0]})`) : '';

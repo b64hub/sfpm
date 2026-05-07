@@ -66,7 +66,7 @@ export default class PoolList extends SfpmCommand {
 
       const querySpinner = mode === 'interactive' ? ora(`Fetching orgs${flags.tag ? ` for pool "${flags.tag}"` : ''}...`).start() : undefined;
       const orgs = await manager.list(flags.tag, flags['my-pool']);
-      querySpinner?.succeed(`Found ${orgs.length} org(s)`);
+      querySpinner?.succeed(`Found ${orgs.length} org(s) ${flags.tag ? `in pool "${flags.tag}"` : ''}`);
 
       if (flags.json) {
         this.logJson({
