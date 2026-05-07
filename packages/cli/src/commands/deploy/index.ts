@@ -8,6 +8,7 @@ import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
+import {resolvePackageInputs} from '../../utils/package-resolver.js'
 
 export default class Deploy extends SfpmCommand {
   static override args = {
@@ -62,6 +63,9 @@ export default class Deploy extends SfpmCommand {
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();
 
+    // Resolve user input (scoped or unscoped) to canonical scoped package names
+    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: flags.json})
+
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
     const logger: Logger = {
@@ -113,14 +117,14 @@ export default class Deploy extends SfpmCommand {
 
       try {
         const context = await task.setup()
-        const result = await task.processSinglePackage(packages[0], 0, context, emitter)
+        const result = await task.processSinglePackage(resolvedPackages[0], 0, context, emitter)
 
         if (flags.json) {
           this.logJson(result)
         }
 
         if (!result.success) {
-          this.error(`Deploy failed for: ${packages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 2})
+          this.error(`Deploy failed for: ${resolvedPackages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 2})
         }
       } catch (error) {
         renderer.handleError(error as Error)
@@ -154,7 +158,7 @@ export default class Deploy extends SfpmCommand {
     renderer.attachTo(orchestrator as any)
 
     try {
-      const result = await orchestrator.installAll(packages)
+      const result = await orchestrator.installAll(resolvedPackages)
 
       if (flags.json) {
         this.logJson(result)

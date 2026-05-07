@@ -155,8 +155,11 @@ export interface SfpmPackageMetadataBase {
   [key: string]: any;
   apiVersion?: string;
   orchestration: SfpmPackageOrchestration;
+  // package name without npm scope. This is used for user-facing messages and Salesforce operations, but should not be used as a unique identifier since it is not guaranteed to be unique across scopes.
   packageName: string;
   packageType: Omit<PackageType, 'managed'>;
+  // npm scope of the package, if present. This is not guaranteed to be unique across packages, and should not be used as an identifier on its own. It is primarily for informational purposes and to reconstruct the fully qualified package name when needed. For Salesforce operations, the scope is stripped and only the unscoped package name is used.
+  readonly scope: string;
   source: SfpmPackageSource;
   versionNumber?: string;
 }

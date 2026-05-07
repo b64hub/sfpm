@@ -34,7 +34,7 @@ function createUnlockedPackageJson(overrides?: Partial<NpmPackageJson>): NpmPack
       isOrgDependent: false,
       orchestration: {
         build: {installationKeyBypass: true},
-        install: {isTriggerAllTests: true},
+        install: {testLevel: 'RunLocalTests'},
       },
       packageId: '0HoJz00000001SLKAY',
       packageName: 'sfpm-artifact',
@@ -120,7 +120,7 @@ describe('npm-package-adapter', () => {
 
       expect(metadata.orchestration).toEqual({
         build: {installationKeyBypass: true},
-        install: {isTriggerAllTests: true},
+        install: {testLevel: 'RunLocalTests'},
       });
     });
 

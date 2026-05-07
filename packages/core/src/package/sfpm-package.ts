@@ -4,7 +4,7 @@ import {
   get, merge, omit, set,
 } from 'lodash-es';
 import fs from 'node:fs';
-import path from 'node:path';
+import path, {join} from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {Logger} from '../types/logger.js';
@@ -19,11 +19,12 @@ import {
   SfpmPackageOrchestration,
   SfpmUnlockedPackageBuildOptions,
   SfpmUnlockedPackageMetadata,
+  type TestLevel,
   VersionFormat,
 } from '../types/package.js';
 import {EnvAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
-import {stripScope} from '../utils/scope-utils.js';
+import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {ENV_ALIAS_DEFAULT_DIR, EnvAliasResolution, EnvAliasResolver} from './env-alias-resolver.js';
@@ -67,6 +68,7 @@ const PROFILE_SUPPORTED_METADATA_TYPES = new Set([
 export default abstract class SfpmPackage {
   protected _metadata: SfpmPackageMetadataBase;
   protected _packageDefinition?: PackageDefinition;
+  protected _scope?: string;
   public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
   public projectDefinition?: ProjectDefinition;
   public projectDirectory: string;
@@ -75,8 +77,8 @@ export default abstract class SfpmPackage {
   constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadataBase>) {
     this.projectDirectory = projectDirectory;
     this._metadata = {
-      packageName,
-      packageType: '',
+      packageName: stripScope(packageName),
+      scope: extractScope(packageName),
       ...metadata?.identity,
       orchestration: {...metadata?.orchestration},
       source: {...metadata?.source},
@@ -109,17 +111,9 @@ export default abstract class SfpmPackage {
     return this._metadata;
   }
 
+  /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package") */
   get name(): string {
-    return this._metadata.packageName;
-  }
-
-  set name(val: string) {
-    this._metadata.packageName = val;
-  }
-
-  /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package"). Undefined in legacy mode. */
-  get npmName(): string | undefined {
-    return this._packageDefinition?.name;
+    return joinPackageName(this.packageName, this.scope);
   }
 
   get packageDefinition(): PackageDefinition | undefined {
@@ -152,6 +146,10 @@ export default abstract class SfpmPackage {
 
   set packageName(val: string) {
     this._metadata.packageName = val;
+  }
+
+  get scope(): string {
+    return this._metadata.scope;
   }
 
   get sourceHash(): string | undefined {
@@ -359,22 +357,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     return (this._metadata.content?.testCoverage || 0) > TEST_COVERAGE_THRESHOLD;
   }
 
-  private get isOptimizedDeployment(): boolean {
-    return (this.type === PackageType.Source && this.packageDefinition?.packageOptions?.deploy?.optimize) || false;
-  }
-
-  get isTriggerAllTests(): boolean {
-    return this._metadata.orchestration?.install?.isTriggerAllTests || !this.isOptimizedDeployment || this.hasApex;
-  }
-
-  set isTriggerAllTests(val: boolean) {
-    if (!this._metadata.orchestration.install) {
-      this._metadata.orchestration.install = {};
-    }
-
-    this._metadata.orchestration.install.isTriggerAllTests = val;
-  }
-
   get permissionSetGroups(): SourceComponent[] {
     return this.getComponentSet()
     .getSourceComponents()
@@ -417,6 +399,18 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
 
   set testCoverage(coverage: number) {
     this._metadata.content.testCoverage = coverage;
+  }
+
+  get testLevel(): TestLevel | undefined {
+    return this._metadata.orchestration?.install?.testLevel;
+  }
+
+  set testLevel(level: TestLevel) {
+    if (!this._metadata.orchestration.install) {
+      this._metadata.orchestration.install = {};
+    }
+
+    this._metadata.orchestration.install.testLevel = level;
   }
 
   get testSuites(): string[] {
@@ -535,7 +529,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
         },
         install: {
           ...orchestration.install,
-          isTriggerAllTests: this.isTriggerAllTests,
         },
       },
       packageName: this.name || content.payload?.Package?.fullName,
@@ -717,12 +710,14 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
         dataDirectory: this.packageDefinition?.path || '',
         fileCount,
       },
+      name: this.name,
       orchestration: {
         build: this.packageDefinition?.packageOptions?.build as any,
         install: this.packageDefinition?.packageOptions?.install as any,
       },
-      packageName: this.name,
+      packageName: this.packageName,
       packageType: PackageType.Data,
+      scope: this.scope,
       source: this._metadata.source,
       versionNumber: this.version,
     };

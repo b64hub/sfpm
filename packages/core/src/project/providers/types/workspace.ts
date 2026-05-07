@@ -33,7 +33,7 @@ import type {PackageOptions} from '../../../types/project.js';
  *   "sfpm": {
  *     "packageType": "unlocked",
  *     "path": "force-app",
- *     "packageOptions": { "install": { "isTriggerAllTests": true } }
+ *     "packageOptions": { "install": { "testLevel": "RunLocalTests" } }
  *   }
  * }
  * ```

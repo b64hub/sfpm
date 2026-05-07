@@ -120,7 +120,7 @@ export * from './types/project.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
 export {getPipelineRunId} from './utils/pipeline.js';
-export {stripScope} from './utils/scope-utils.js';
+export {resolvePackageName, stripScope} from './utils/scope-utils.js';
 export {escapeSOQL, soql} from './utils/soql.js';
 export {
   formatVersion, getVersionSuffix, stripBuildSegment, toSalesforceVersionWithToken, toVersionFormat,

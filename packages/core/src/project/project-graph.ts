@@ -36,9 +36,7 @@ export class PackageNode {
     this.definition = def;
     this.isManaged = def.type === PackageType.Managed;
 
-    if (this.isManaged && def.managedDependencies) {
-      // For managed stub nodes, the packageVersionId is stored in managedDependencies
-      // with the package's own name as key
+    if (this.isManaged) {
       this.packageVersionId = def.packageId;
     }
 

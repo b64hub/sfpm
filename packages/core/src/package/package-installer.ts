@@ -170,7 +170,7 @@ export default class PackageInstaller extends EventEmitter {
 
   private emitComplete(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
     this.emit('install:complete', {
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       source: installTarget.resolved.source,
       success: true,
@@ -183,7 +183,7 @@ export default class PackageInstaller extends EventEmitter {
   private emitError(sfpmPackage: SfpmPackage, error: Error): void {
     this.emit('install:error', {
       error: error instanceof Error ? error.message : String(error),
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       targetOrg: this.options.targetOrg,
       timestamp: new Date(),
@@ -241,7 +241,7 @@ export default class PackageInstaller extends EventEmitter {
 
   private emitSkip(sfpmPackage: SfpmPackage, reason: string): void {
     this.emit('install:skip', {
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       reason,
       targetOrg: this.options.targetOrg,
@@ -253,7 +253,7 @@ export default class PackageInstaller extends EventEmitter {
   private emitStart(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
     this.emit('install:start', {
       installReason: installTarget.installReason,
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       source: installTarget.resolved.source,
       targetOrg: this.options.targetOrg,
@@ -314,7 +314,7 @@ export default class PackageInstaller extends EventEmitter {
     this.logger?.info(`Deploying ${packageName} from local source`);
     this.emit('install:start', {
       installReason: 'source deploy',
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       source: InstallationSource.Local,
       targetOrg: this.options.targetOrg,
@@ -341,7 +341,7 @@ export default class PackageInstaller extends EventEmitter {
       const execResult = await installer.exec();
 
       this.emit('install:complete', {
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         packageType: sfpmPackage.type as PackageType,
         source: InstallationSource.Local,
         success: true,
@@ -461,7 +461,7 @@ export default class PackageInstaller extends EventEmitter {
       this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
     }
 
-    if (!sfpmPackage.npmName) {
+    if (!packageName) {
       throw new Error(`Package "${packageName}" has no npm name. `
         + 'In workspace mode, this is set from the package.json "name" field. '
         + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
@@ -474,11 +474,8 @@ export default class PackageInstaller extends EventEmitter {
 
     const installTarget = await artifactService.resolveInstallTarget(
       sfpmPackage.projectDirectory,
-      sfpmPackage.packageName,
-      {
-        forceRefresh: this.options.artifactResolution?.forceRefresh,
-        localOnly: this.options.artifactResolution?.localOnly,
-      },
+      packageName,
+      this.options.artifactResolution,
     );
 
     this.updatePackageFromTarget(sfpmPackage, installTarget);
@@ -565,11 +562,11 @@ export default class PackageInstaller extends EventEmitter {
     if (!isEnvAliasable(sfpmPackage) || !sfpmPackage.isEnvAliased) return;
 
     const resolution = await sfpmPackage.resolveEnvAlias(this.options.targetOrg, this.logger);
-    this.logger?.info(`Env alias resolved for ${sfpmPackage.packageName}: alias='${resolution.resolvedAlias}', matched=${resolution.matched}`);
+    this.logger?.info(`Env alias resolved for ${sfpmPackage.name}: alias='${resolution.resolvedAlias}', matched=${resolution.matched}`);
 
     // Create a staging root where path.join(stagingRoot, packageDefinition.path)
     // contains the resolved env-specific metadata
-    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.packageName);
+    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.name);
     const stagingRoot = path.join(os.tmpdir(), 'sfpm-env-alias', sfpmPackage.name, resolution.resolvedAlias);
     const stagingPackagePath = path.join(stagingRoot, packageDefinition.path);
 
@@ -601,7 +598,7 @@ export default class PackageInstaller extends EventEmitter {
     }
 
     const root = sfpmPackage.workingDirectory ?? this.provider.projectDir;
-    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.packageName);
+    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.name);
     return path.join(root, packageDefinition.path);
   }
 

@@ -206,7 +206,6 @@ export const PackageDefinitionSchema = z.object({
     ).optional(),
     ignore: z.array(z.string()).optional(),
     install: z.object({
-      isTriggerAllTests: z.boolean().optional(),
       optimize: z.boolean().optional(),
       post: z.object({
         destructiveChanges: z.string().optional(),

@@ -7,6 +7,7 @@ import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
+import {resolvePackageInputs} from '../../utils/package-resolver.js'
 
 export default class DeployArtifact extends SfpmCommand {
   static override args = {
@@ -47,6 +48,9 @@ export default class DeployArtifact extends SfpmCommand {
     const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();
+
+    // Resolve user input (scoped or unscoped) to canonical scoped package names
+    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: flags.json})
 
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
@@ -94,7 +98,7 @@ export default class DeployArtifact extends SfpmCommand {
     renderer.attachTo(orchestrator as any)
 
     try {
-      const result = await orchestrator.installAll(packages)
+      const result = await orchestrator.installAll(resolvedPackages)
 
       if (flags.json) {
         this.logJson(result)

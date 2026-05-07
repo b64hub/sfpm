@@ -75,7 +75,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     // Emit build start event
     this.emit('build:start', {
       buildNumber: this.options.buildNumber,
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       timestamp: new Date(),
       version: sfpmPackage.version,
@@ -96,7 +96,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       // each build produces a unique, ever-increasing version.
       const autoBuildNumber = getPipelineRunId() ?? String(Math.floor(Date.now() / 1000));
       sfpmPackage.setBuildNumber(autoBuildNumber);
-      this.logger?.debug(`Auto-assigned build number ${autoBuildNumber} for ${sfpmPackage.packageName}`);
+      this.logger?.debug(`Auto-assigned build number ${autoBuildNumber} for ${sfpmPackage.name}`);
     }
 
     if (this.options.orgDefinitionPath) {
@@ -125,7 +125,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       // Skip empty packages before running analyzers or builder
       if (await this.isPackageEmpty(sfpmPackage)) {
         this.emit('build:skipped', {
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           packageType: sfpmPackage.type as PackageType,
           reason: 'empty-package',
           timestamp: new Date(),
@@ -140,7 +140,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         const error = new Error('Package must be staged for build');
         this.emit('build:error', {
           error,
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           phase: 'staging',
           timestamp: new Date(),
         });
@@ -153,7 +153,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         const error = new Error(`No builder registered for package type: ${sfpmPackage.type}`);
         this.emit('build:error', {
           error,
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           phase: 'build',
           timestamp: new Date(),
         });
@@ -188,7 +188,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       // Emit build complete
       this.emit('build:complete', {
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         packageVersionId: 'packageVersionId' in sfpmPackage ? (sfpmPackage.packageVersionId as string) : undefined,
         success: true,
         timestamp: new Date(),
@@ -208,7 +208,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
     this.emit('analyzers:start', {
       analyzerCount: enabledAnalyzers.length,
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       timestamp: new Date(),
     });
 
@@ -219,7 +219,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
         this.emit('analyzer:start', {
           analyzerName,
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           timestamp: new Date(),
         });
 
@@ -230,7 +230,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
           this.emit('analyzer:complete', {
             analyzerName,
             findings: metadataContribution,
-            packageName: sfpmPackage.packageName,
+            packageName: sfpmPackage.name,
             timestamp: new Date(),
           });
 
@@ -240,7 +240,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
             analyzerName,
             error: error instanceof Error ? error.message : String(error),
             findings: {},
-            packageName: sfpmPackage.packageName,
+            packageName: sfpmPackage.name,
             timestamp: new Date(),
           });
 
@@ -254,13 +254,13 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       this.emit('analyzers:complete', {
         completedCount: enabledAnalyzers.length,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         timestamp: new Date(),
       });
     } catch (error: any) {
       this.emit('build:error', {
         error,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         phase: 'analysis',
         timestamp: new Date(),
       });
@@ -270,14 +270,14 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
   public async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
     this.emit('stage:start', {
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       stagingDirectory: sfpmPackage.workingDirectory,
       timestamp: new Date(),
     });
 
     try {
       const assemblyOutput = await new PackageAssembler(
-        sfpmPackage.packageName,
+        sfpmPackage.name,
         this.provider,
         {
           destructiveManifestPath: this.options.destructiveManifestPath,
@@ -292,14 +292,14 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       this.emit('stage:complete', {
         componentCount: assemblyOutput.componentCount || 0,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         stagingDirectory: assemblyOutput.stagingDirectory,
         timestamp: new Date(),
       });
     } catch (error: any) {
       this.emit('build:error', {
         error,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         phase: 'staging',
         timestamp: new Date(),
       });
@@ -358,7 +358,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   ): Promise<void> {
     this.emit('connection:start', {
       orgType: 'devhub',
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       timestamp: new Date(),
       username: devhubUsername,
     });
@@ -367,14 +367,14 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       await builderInstance.connect(devhubUsername);
 
       this.emit('connection:complete', {
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         timestamp: new Date(),
         username: devhubUsername,
       });
     } catch (error: any) {
       this.emit('build:error', {
         error,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         phase: 'connection',
         timestamp: new Date(),
       });
@@ -385,7 +385,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<any> {
     this.emit('builder:start', {
       builderName,
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       timestamp: new Date(),
     });
@@ -402,7 +402,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       this.emit('builder:complete', {
         builderName,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         packageType: sfpmPackage.type as PackageType,
         timestamp: new Date(),
       });
@@ -414,7 +414,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         this.emit('build:skipped', {
           artifactPath: error.artifactPath,
           latestVersion: error.latestVersion,
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           packageType: sfpmPackage.type as PackageType,
           reason: 'no-changes',
           sourceHash: error.sourceHash,
@@ -427,7 +427,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       // Handle actual build errors
       this.emit('build:error', {
         error,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         phase: 'build',
         timestamp: new Date(),
       });
@@ -450,7 +450,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       const taskName = task.constructor.name;
 
       this.emit('task:start', {
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         taskName,
         taskType,
         timestamp: new Date(),
@@ -461,7 +461,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         await task.exec();
 
         this.emit('task:complete', {
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           success: true,
           taskName,
           taskType,
@@ -471,7 +471,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         const success = error instanceof Error && (error as any).code === 'BUILD_NOT_REQUIRED';
 
         this.emit('task:complete', {
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           success,
           taskName,
           taskType,

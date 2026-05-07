@@ -16,7 +16,7 @@ import {PnpmRegistryClient} from './registry/pnpm-registry-client.js';
  */
 export interface ArtifactResolverEvents {
   'resolve:cache-hit': {packageName: string; timestamp: Date; version: string;};
-  'resolve:complete': {packageName: string; source: 'local' | 'npm'; timestamp: Date; version: string;};
+  'resolve:complete': {packageName: string; registry: 'local' | 'remote'; timestamp: Date; version: string;};
   'resolve:download:complete': {artifactPath: string; packageName: string; timestamp: Date; version: string;};
   'resolve:download:start': {packageName: string; timestamp: Date; version: string;};
   'resolve:error': {error: string; packageName: string; timestamp: Date};
@@ -309,7 +309,7 @@ export class ArtifactResolver extends EventEmitter {
     remoteVersions: string[],
     requestedVersion: string | undefined,
     includePrerelease: boolean = true,
-  ): {source: 'local' | 'remote'; version: string;} {
+  ): {registry: 'local' | 'remote'; version: string;} {
     if (localVersions.length === 0 && remoteVersions.length === 0) {
       throw new Error('No versions available locally or remotely');
     }
@@ -322,9 +322,9 @@ export class ArtifactResolver extends EventEmitter {
     }
 
     // Prefer local if available, otherwise it must be remote
-    const source = localVersions.includes(bestVersion) ? 'local' : 'remote';
+    const registry = localVersions.includes(bestVersion) ? 'local' : 'remote';
 
-    return {source, version: bestVersion};
+    return {registry, version: bestVersion};
   }
 
   /**
