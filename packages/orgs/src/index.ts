@@ -42,10 +42,6 @@ export {
 export {default as AuthService} from './org/services/auth-service.js';
 export {default as DevHubService} from './org/services/devhub-service.js';
 
-export {
-  ORG_PHASES, type OrgPhase, PREPARE_PHASE, VALIDATE_PHASE,
-} from './phases.js';
-
 export {createPoolServices, type CreatePoolServicesOptions, type PoolServices} from './pool/pool-factory.js';
 
 export {default as PoolFetcher, type PoolFetcherEvents} from './pool/pool-fetcher.js';
@@ -62,8 +58,8 @@ export {
   type PoolProvisionResult,
 } from './pool/pool-manager.js';
 
-export {ArtifactPackageInstallTask, type ArtifactPackageInstallTaskOptions} from './pool/tasks/artifact-package-install-task.js';
 export {DeploymentTask, type DeploymentTaskOptions} from './pool/tasks/deployment-task.js';
+export {ArtifactPackageInstallTask, type ArtifactPackageInstallTaskOptions} from './pool/tasks/sfpm-package-install-task.js';
 
 // Pool-layer types
 export {

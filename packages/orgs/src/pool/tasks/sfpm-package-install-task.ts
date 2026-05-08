@@ -160,7 +160,7 @@ export class ArtifactPackageInstallTask implements PoolOrgTask {
       sfpmPackage.Id,
       undefined,
       false,
-      true, // isReleased only
+      true,
     );
 
     if (versions.length === 0) {
