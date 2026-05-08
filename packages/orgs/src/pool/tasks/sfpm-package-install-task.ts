@@ -13,9 +13,9 @@ import type {PoolOrgTask, PoolOrgTaskResult} from '../types.js';
 const SFPM_PACKAGE_NAME = 'sfpm-artifact';
 
 /**
- * Options for the {@link ArtifactPackageInstallTask}.
+ * Options for the {@link SfpmPackageInstallTask}.
  */
-export interface ArtifactPackageInstallTaskOptions {
+export interface SfpmPackageInstallTaskOptions {
   /** Whether to continue provisioning if the install fails. Defaults to false. */
   continueOnError?: boolean;
   /** The resolved DevHub `Org` instance, used to query Package2Version. */
@@ -41,12 +41,12 @@ export interface ArtifactPackageInstallTaskOptions {
  * This task is only relevant for scratch orgs. Sandboxes inherit
  * installed packages from their source org.
  */
-export class ArtifactPackageInstallTask implements PoolOrgTask {
+export class SfpmPackageInstallTask implements PoolOrgTask {
   public readonly continueOnError: boolean;
-  public readonly name = 'install-artifact-package';
+  public readonly name = 'install-sfpm-package';
   private readonly devhub: Org;
 
-  constructor(options: ArtifactPackageInstallTaskOptions) {
+  constructor(options: SfpmPackageInstallTaskOptions) {
     this.devhub = options.devhub;
     this.continueOnError = options.continueOnError ?? false;
   }
