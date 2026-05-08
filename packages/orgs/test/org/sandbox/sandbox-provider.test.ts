@@ -2,7 +2,7 @@ import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
-import {OrgError} from '../../../src/org/types.js';
+import {AllocationStatus, OrgError} from '../../../src/org/types.js';
 
 // ---------------------------------------------------------------------------
 // Mock @salesforce/core before imports
@@ -632,7 +632,7 @@ describe('SandboxProvider', () => {
       const provider = createProvider();
 
       await provider.updatePoolMetadata([
-        {allocationStatus: 'Available', authUrl: 'force://url', id: 'rec-1', poolTag: 'sb-pool'},
+        {allocationStatus: AllocationStatus.Available, authUrl: 'force://url', id: 'rec-1', poolTag: 'sb-pool'},
       ]);
 
       expect(mockConnection.sobject).toHaveBeenCalledWith('Sandbox_Pool_Org__c');
