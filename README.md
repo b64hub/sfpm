@@ -12,6 +12,7 @@
 _by developers, for developers_
 
 [![tests](https://github.com/b64hub/sfpm/actions/workflows/test.yml/badge.svg)](https://github.com/b64hub/sfpm/actions/workflows/test.yml)
+[![npm](https://img.shields.io/npm/v/@b64hub/sfpm-cli)](https://www.npmjs.com/package/@b64hub/sfpm-cli)
 ![node](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/b64hub/sfpm/main/package.json&label=node&query=$.engines.node&color=brightgreen)
 ![pnpm](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/b64hub/sfpm/main/package.json&label=pnpm&query=$.engines.pnpm&color=F69220)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -58,7 +59,28 @@ This is a pnpm + Turborepo monorepo:
 
 ## Installation
 
-### From source
+Install the CLI globally with the package manager of your choice. **pnpm is recommended** — it matches the rest of the project's tooling — but npm and yarn work too.
+
+```bash
+# pnpm (recommended)
+pnpm add -g @b64hub/sfpm-cli
+
+# npm
+npm install -g @b64hub/sfpm-cli
+
+# yarn
+yarn global add @b64hub/sfpm-cli
+```
+
+Verify it's working:
+
+```bash
+sfpm --version
+```
+
+> **Note:** the "do not use npm or yarn" rule in [Requirements](#requirements) applies to the workspace itself (resolving `workspace:^` dependencies). For installing the published CLI as an end user, any package manager that talks to the npm registry is fine.
+
+### From source (for contributors)
 
 ```bash
 git clone https://github.com/b64hub/sfpm.git
