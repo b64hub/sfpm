@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 
 import type {OrgProvider} from '../org-provider.js';
 import type {PoolOrg, PoolOrgRecord, PoolOrgUsage} from '../pool-org.js';
-import type {Sandbox, SandboxCreateOptions, SandboxDefinition} from './types.js';
+import type {Sandbox, SandboxCreateOptions} from './types.js';
 
 import {generatePassword} from '../../index.js';
 import {AllocationStatus, OrgError, PasswordResult} from '../types.js';
@@ -151,40 +151,46 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   }
 
   async createOrg(options: SandboxCreateOptions): Promise<PoolOrg> {
-    const definition = await this.readDefinitionFile(options.definitionFile);
+    const defContents = await this.readDefinitionFile(options.definitionFile);
     const waitMinutes = options.waitMinutes ?? DEFAULT_SANDBOX.waitMinutes;
 
-    // Resolve sandbox name: namePattern override > definition.sandboxName
-    const baseName = options.namePattern ?? definition.sandboxName;
+    // Resolve sandbox name: namePattern override > definition sandboxName
+    const baseName = options.namePattern ?? (defContents.SandboxName as string);
     const index = options.alias.replaceAll(/\D/g, '');
     const sandboxName = `${baseName}${index}`;
 
-    // Build the SandboxRequest from the definition file
-    const sandboxRequest: SandboxRequest = {
-      SandboxName: sandboxName,
-    };
+    // Override SandboxName with the generated pool name
+    defContents.SandboxName = sandboxName;
 
-    if (definition.licenseType) sandboxRequest.LicenseType = definition.licenseType;
-    if (definition.apexClassId) sandboxRequest.ApexClassId = definition.apexClassId;
-    if (definition.description) sandboxRequest.Description = definition.description;
-    if (definition.features) sandboxRequest.Features = definition.features;
-
-    // Resolve activation user group — name needs a lookup, ID is used directly
-    if (definition.activationUserGroupId) {
-      sandboxRequest.ActivationUserGroupId = definition.activationUserGroupId;
-    } else if (definition.activationUserGroupName) {
-      sandboxRequest.ActivationUserGroupId = await this.getGroupId(definition.activationUserGroupName);
+    // Resolve human-readable name fields → Salesforce IDs
+    if (defContents.ApexClassName) {
+      defContents.ApexClassId = await this.resolveApexClassId(defContents.ApexClassName as string);
+      delete defContents.ApexClassName;
     }
+
+    if (defContents.ActivationUserGroupName) {
+      defContents.ActivationUserGroupId = await this.getGroupId(defContents.ActivationUserGroupName as string);
+      delete defContents.ActivationUserGroupName;
+    }
+
+    // Extract clone source fields (handled separately by cloneSandbox)
+    const sourceSandboxName = defContents.SourceSandboxName as string | undefined;
+    const sourceId = defContents.SourceId as string | undefined;
+    delete defContents.SourceSandboxName;
+    delete defContents.SourceId;
+
+    // Pass remaining definition properties straight through as the SandboxRequest
+    const sandboxRequest = defContents as SandboxRequest;
 
     let processResult;
 
-    if (definition.sourceSandboxName) {
-      processResult = await this.hubOrg.cloneSandbox(sandboxRequest, definition.sourceSandboxName, {
+    if (sourceSandboxName) {
+      processResult = await this.hubOrg.cloneSandbox(sandboxRequest, sourceSandboxName, {
         interval: Duration.seconds(30),
         wait: Duration.minutes(waitMinutes),
       });
-    } else if (definition.sourceId) {
-      processResult = await this.hubOrg.cloneSandbox(sandboxRequest, definition.sourceId, {
+    } else if (sourceId) {
+      processResult = await this.hubOrg.cloneSandbox(sandboxRequest, sourceId, {
         interval: Duration.seconds(30),
         wait: Duration.minutes(waitMinutes),
       });
@@ -664,15 +670,33 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     }
   }
 
-  /** Read and parse a sandbox definition JSON file. */
-  private async readDefinitionFile(filePath: string): Promise<SandboxDefinition> {
+  /**
+   * Read a sandbox definition JSON file and capitalize keys to match
+   * the Salesforce API field names (e.g., `sandboxName` → `SandboxName`).
+   *
+   * Returns a mutable record so the caller can override/remove fields
+   * before passing it to the SDK.
+   */
+  private async readDefinitionFile(filePath: string): Promise<Record<string, unknown>> {
     try {
       const content = await readFile(filePath, 'utf8');
-      return JSON.parse(content) as SandboxDefinition;
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key.charAt(0).toUpperCase() + key.slice(1), value]));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new OrgError('prerequisite', `Failed to read sandbox definition file "${filePath}": ${message}`);
     }
+  }
+
+  /** Resolve an Apex class name to its Salesforce ID. */
+  private async resolveApexClassId(className: string): Promise<string> {
+    const result = await this.conn.query<{Id: string}>(soql`SELECT Id FROM ApexClass WHERE Name = '${escapeSOQL(className)}'`);
+
+    if (result.records.length === 0) {
+      throw new OrgError('prerequisite', `No Apex class found with name "${className}"`);
+    }
+
+    return result.records[0].Id;
   }
 
   /**

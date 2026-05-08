@@ -29,33 +29,6 @@ export interface Sandbox extends PoolOrg {
 export type SandboxLicenseType = SandboxInfo['LicenseType'];
 
 /**
- * Sandbox definition file schema.
- *
- * Matches the JSON structure defined in the Salesforce CLI sandbox
- * definition file spec. This is the source of truth for how a sandbox
- * is configured — pool operations only add naming and lifecycle concerns.
- *
- * @see https://developer.salesforce.com/docs/atlas.en-us.sfdx_dev.meta/sfdx_dev/sfdx_dev_sandbox_definition.htm
- */
-export interface SandboxDefinition {
-  activationUserGroupId?: string;
-  activationUserGroupName?: string;
-  apexClassId?: string;
-  apexClassName?: string;
-  autoActivate?: boolean;
-  copyArchivedActivities?: boolean;
-  copyChatter?: boolean;
-  description?: string;
-  features?: string;
-  historyDays?: number;
-  licenseType?: SandboxLicenseType;
-  sandboxName: string;
-  sourceId?: string;
-  sourceSandboxName?: string;
-  templateId?: string;
-}
-
-/**
  * Pool-level sandbox defaults used when provisioning sandboxes.
  *
  * Sandbox creation settings (licenseType, apexClassId, groupName, etc.)
