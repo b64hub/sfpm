@@ -5,6 +5,15 @@ import {OrgTypes} from '@salesforce/core';
 import type {PoolOrg} from '../org/pool-org.js';
 
 /**
+ * Config-friendly pool type — accepts plain strings so users
+ * don't need to import `OrgTypes` from `@salesforce/core`.
+ *
+ * Internally the core always compares against `OrgTypes` enum values,
+ * which are identical at runtime (`OrgTypes.Scratch === 'scratch'`).
+ */
+export type PoolType = 'sandbox' | 'scratch' | OrgTypes;
+
+/**
  * Pool sizing configuration — how many orgs to maintain.
  *
  * `minAllocation` and `maxAllocation` define the target range.
@@ -52,7 +61,7 @@ export interface PoolConfigBase {
   sizing: PoolSize;
   /** Use an existing snapshot pool as a base (pool tag) */
   snapshotPool?: string;
-  type: OrgTypes;
+  type: PoolType;
   /** Max minutes to wait for org creation (default: 30) */
   waitMinutes?: number;
 }
@@ -75,7 +84,7 @@ export interface ScratchOrgPoolConfig extends PoolConfigBase {
   expiryDays?: number;
   /** Whether to exclude ancestor package versions (default: false) */
   noAncestors?: boolean;
-  type: OrgTypes.Scratch;
+  type: 'scratch' | OrgTypes.Scratch;
 }
 
 /**
@@ -105,7 +114,7 @@ export interface SandboxPoolConfig extends PoolConfigBase {
    * sandbox name prefix (alphanumeric, max 10 chars).
    */
   namePattern?: string;
-  type: OrgTypes.Sandbox;
+  type: 'sandbox' | OrgTypes.Sandbox;
 }
 
 /**

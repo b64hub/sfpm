@@ -78,6 +78,7 @@ export {
   type PoolOrgTaskResult,
   type PoolProvisioningState,
   type PoolSize,
+  type PoolType,
   type PostClaimAction,
   type SandboxPoolConfig,
   type ScratchOrgPoolConfig,
