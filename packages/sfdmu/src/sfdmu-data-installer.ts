@@ -8,7 +8,7 @@ import {
   RegisterInstaller,
   SfpmDataPackage,
   type SfpmPackage,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 
 import SfdmuImportStrategy from './strategies/sfdmu-import-strategy.js';
 

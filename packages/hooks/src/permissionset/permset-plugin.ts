@@ -1,6 +1,6 @@
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 
-import {HookContext, LifecycleHooks, resolveHookConfig} from '@b64/sfpm-core';
+import {HookContext, LifecycleHooks, resolveHookConfig} from '@b64hub/sfpm-core';
 import {Connection, Org} from '@salesforce/core';
 
 import type {PermissionSetHooksOptions} from './types.js';
@@ -51,8 +51,8 @@ interface PermSetHookOverrides {
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { permissionSetHooks } from '@b64/sfpm-hooks';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { permissionSetHooks } from '@b64hub/sfpm-hooks';
  *
  * export default defineConfig({
  *   hooks: [

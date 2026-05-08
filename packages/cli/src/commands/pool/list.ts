@@ -1,4 +1,4 @@
-import {createPoolServices, type PoolOrg} from '@b64/sfpm-orgs';
+import {createPoolServices, type PoolOrg} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {printTable} from '@oclif/table';
 import {Org, type OrgTypes} from '@salesforce/core';

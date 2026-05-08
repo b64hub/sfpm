@@ -5,7 +5,7 @@ applyTo: 'packages/actions/src/**/*.ts'
 
 ## Package Overview
 
-`@b64/sfpm-actions` provides GitHub Action wrappers around core SFPM functionality. It is a thin integration layer — all business logic lives in `@b64/sfpm-core` and `@b64/sfpm-orgs`.
+`@b64hub/sfpm-actions` provides GitHub Action wrappers around core SFPM functionality. It is a thin integration layer — all business logic lives in `@b64hub/sfpm-core` and `@b64hub/sfpm-orgs`.
 
 ### Package Structure
 

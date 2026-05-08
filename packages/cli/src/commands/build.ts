@@ -2,7 +2,7 @@ import {
   BuildOrchestrationTask, BuildOrchestrator, BuildStateStore,
   type CreateCompleteEvent, LifecycleEngine, type LocalBuildState,
   type LocalPackageBuildState, Logger, ProjectService,
-} from '@b64/sfpm-core'
+} from '@b64hub/sfpm-core'
 import {
   Args, Flags,
 } from '@oclif/core'
@@ -12,7 +12,7 @@ import EventEmitter from 'node:events'
 import path from 'node:path'
 import {fileURLToPath} from 'node:url'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
-import '@b64/sfpm-sfdmu'
+import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../sfpm-command.js'
 import {BuildProgressRenderer, OutputMode} from '../ui/build-progress-renderer.js'

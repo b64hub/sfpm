@@ -1,4 +1,4 @@
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 
 import {Connection} from '@salesforce/core';
 
@@ -22,7 +22,7 @@ import {PROFILE_SECTION_TO_METADATA_TYPE} from './types.js';
  *
  * @example
  * ```typescript
- * import { OrgMetadataResolver } from '@b64/sfpm-hooks';
+ * import { OrgMetadataResolver } from '@b64hub/sfpm-hooks';
  * import { Connection } from '@salesforce/core';
  *
  * const resolver = new OrgMetadataResolver(connection, logger);

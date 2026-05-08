@@ -2,7 +2,7 @@ import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
-import type {HookContext} from '@b64/sfpm-core';
+import type {HookContext} from '@b64hub/sfpm-core';
 
 import {lwcTypescriptHooks} from '../../src/lwc/lwc-typescript-plugin.js';
 

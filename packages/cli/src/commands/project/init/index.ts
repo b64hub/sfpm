@@ -1,4 +1,4 @@
-import {Git, ProjectService} from '@b64/sfpm-core'
+import {Git, ProjectService} from '@b64hub/sfpm-core'
 import {Flags} from '@oclif/core'
 import chalk from 'chalk'
 import fs from 'fs-extra'

@@ -136,7 +136,7 @@ export interface HookRegistration {
  *
  * @example
  * ```typescript
- * import { LifecycleHooks } from '@b64/sfpm-core';
+ * import { LifecycleHooks } from '@b64hub/sfpm-core';
  *
  * export function profileHooks(options?: ProfileOptions): LifecycleHooks {
  *   return {

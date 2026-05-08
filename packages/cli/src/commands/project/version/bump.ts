@@ -2,7 +2,7 @@ import {
   AllPackagesStrategy, GitDiffStrategy, GitService, OrgDiffStrategy, type OrgPackageVersionFetcher, PackageService,
   ProjectService, SfpmCore, SinglePackageStrategy, type UpdateStrategy, type VersionBumpType,
   type VersionManager, type VersionUpdateResult,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 import {Flags} from '@oclif/core'
 import {Org} from '@salesforce/core';
 import boxen from 'boxen';

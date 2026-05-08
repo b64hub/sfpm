@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 
 import {Connection, Org} from '@salesforce/core';
-import type {HookContext} from '@b64/sfpm-core';
+import type {HookContext} from '@b64hub/sfpm-core';
 
 import {profileHooks} from '../../src/profiles/profile-plugin.js';
 import {parseProfileXml} from '../../src/profiles/profile-xml.js';

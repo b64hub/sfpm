@@ -24,7 +24,7 @@ import type {
   StageStartEvent,
   TaskCompleteEvent,
   TaskStartEvent,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 
 import chalk from 'chalk';
 import ora, {Ora} from 'ora';

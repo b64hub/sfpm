@@ -4,7 +4,7 @@ import {
   type PoolConfig,
   type PoolProvisionResult,
   type SandboxLicenseType,
-} from '@b64/sfpm-orgs';
+} from '@b64hub/sfpm-orgs';
 import {Org, OrgTypes} from '@salesforce/core';
 
 import {createGitHubActionsLogger} from './logger.js';

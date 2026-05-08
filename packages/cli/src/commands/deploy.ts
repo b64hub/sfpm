@@ -1,10 +1,10 @@
 import {
   InstallationSource, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger, ProjectService,
-} from '@b64/sfpm-core'
+} from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
 import EventEmitter from 'node:events'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
-import '@b64/sfpm-sfdmu'
+import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../sfpm-command.js'
 import {InstallProgressRenderer, OutputMode} from '../ui/install-progress-renderer.js'

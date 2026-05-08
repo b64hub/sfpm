@@ -1,4 +1,4 @@
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 import type {Connection} from '@salesforce/core';
 
 import {ComponentSet} from '@salesforce/source-deploy-retrieve';

@@ -153,7 +153,7 @@ try {
 For JSON mode, use `toJSON()` method or `errorToJSON()` utility:
 
 ```typescript
-import { errorToJSON, DisplayableError } from '@b64/sfpm-core';
+import { errorToJSON, DisplayableError } from '@b64hub/sfpm-core';
 
 if (flags.json) {
     this.logJson({

@@ -1,5 +1,5 @@
 {
-  "name": "@b64/sfpm-core",
+  "name": "@b64hub/sfpm-core",
   "version": "0.1.0",
   "description": "sfpm core library",
   "type": "module",

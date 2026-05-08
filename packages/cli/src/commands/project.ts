@@ -1,6 +1,6 @@
 import {
   PackageDefinition, PackageNode, PackageType, ProjectService,
-} from '@b64/sfpm-core'
+} from '@b64hub/sfpm-core'
 import {Flags} from '@oclif/core'
 import boxen from 'boxen'
 import chalk from 'chalk'

@@ -8,7 +8,7 @@ import {
   type Logger,
   type PackageType,
   ProjectService,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 
 import {BuildCacheService, type CachedBuildState, type PackageBuildState} from './build-cache.js';
 import {createGitHubActionsLogger} from './logger.js';

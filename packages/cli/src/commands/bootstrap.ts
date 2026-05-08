@@ -8,7 +8,7 @@ import {
   PackageCreator,
   PackageService,
   ProjectService,
-} from '@b64/sfpm-core'
+} from '@b64hub/sfpm-core'
 import {confirm, select} from '@inquirer/prompts'
 import {Flags} from '@oclif/core'
 import {Org} from '@salesforce/core'

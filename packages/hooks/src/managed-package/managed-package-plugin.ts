@@ -1,8 +1,8 @@
 import type {
   HookContext, LifecycleHooks, Logger,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 
-import {ManagedPackageRef} from '@b64/sfpm-core';
+import {ManagedPackageRef} from '@b64hub/sfpm-core';
 import {Connection, Org} from '@salesforce/core';
 
 const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
@@ -27,8 +27,8 @@ export interface ManagedPackageHooksOptions {
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { managedPackageHooks } from '@b64/sfpm-hooks';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { managedPackageHooks } from '@b64hub/sfpm-hooks';
  *
  * export default defineConfig({
  *   hooks: [

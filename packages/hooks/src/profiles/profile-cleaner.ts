@@ -1,4 +1,4 @@
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 
 import {existsSync} from 'node:fs';
 import {readdir} from 'node:fs/promises';

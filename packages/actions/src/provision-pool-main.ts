@@ -1,4 +1,4 @@
-import type {SandboxLicenseType} from '@b64/sfpm-orgs';
+import type {SandboxLicenseType} from '@b64hub/sfpm-orgs';
 
 import * as core from '@actions/core';
 import {OrgTypes} from '@salesforce/core';

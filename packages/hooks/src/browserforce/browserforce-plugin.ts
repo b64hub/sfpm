@@ -1,4 +1,4 @@
-import {HookContext, LifecycleHooks} from '@b64/sfpm-core';
+import {HookContext, LifecycleHooks} from '@b64hub/sfpm-core';
 
 import type {BrowserforceHooksOptions} from './types.js';
 
@@ -21,8 +21,8 @@ import type {BrowserforceHooksOptions} from './types.js';
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { browserforceHooks } from '@b64/sfpm-hooks';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { browserforceHooks } from '@b64hub/sfpm-hooks';
  *
  * export default defineConfig({
  *   hooks: [

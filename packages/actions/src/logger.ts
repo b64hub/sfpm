@@ -1,5 +1,5 @@
 import * as core from '@actions/core';
-import type {AnnotationProperties, StructuredLogger} from '@b64/sfpm-core';
+import type {AnnotationProperties, StructuredLogger} from '@b64hub/sfpm-core';
 
 // ============================================================================
 // GitHub Actions Logger
@@ -15,7 +15,7 @@ import type {AnnotationProperties, StructuredLogger} from '@b64/sfpm-core';
  *
  * @example
  * ```typescript
- * import {createGitHubActionsLogger} from '@b64/sfpm-actions';
+ * import {createGitHubActionsLogger} from '@b64hub/sfpm-actions';
  *
  * const logger = createGitHubActionsLogger();
  * const service = new InstallOrchestrator(config, graph, options, logger);

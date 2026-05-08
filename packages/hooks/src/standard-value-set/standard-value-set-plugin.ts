@@ -2,7 +2,7 @@ import type {Connection} from '@salesforce/core';
 
 import {
   HookContext, LifecycleHooks, type Logger, PackageType,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 import {existsSync} from 'node:fs';
 import {join} from 'node:path';
@@ -49,8 +49,8 @@ interface SvsCapablePackage {
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { standardValueSetHooks } from '@b64/sfpm-hooks';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { standardValueSetHooks } from '@b64hub/sfpm-hooks';
  *
  * export default defineConfig({
  *   hooks: [

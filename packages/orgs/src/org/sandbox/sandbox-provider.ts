@@ -1,4 +1,4 @@
-import {escapeSOQL, soql} from '@b64/sfpm-core';
+import {escapeSOQL, soql} from '@b64hub/sfpm-core';
 import {Org, OrgTypes} from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
 

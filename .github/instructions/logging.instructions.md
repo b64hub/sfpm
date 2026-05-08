@@ -5,7 +5,7 @@ applyTo: 'packages/core/src/**/*.ts,packages/cli/src/**/*.ts,packages/actions/sr
 
 ## Logging Philosophy
 
-SFPM uses an **environment-agnostic Logger interface** defined in `@b64/sfpm-core`. All core business logic depends only on this interface — never on a concrete logger implementation. The environment (CLI, GitHub Actions, tests, scripts) provides the appropriate implementation via dependency injection.
+SFPM uses an **environment-agnostic Logger interface** defined in `@b64hub/sfpm-core`. All core business logic depends only on this interface — never on a concrete logger implementation. The environment (CLI, GitHub Actions, tests, scripts) provides the appropriate implementation via dependency injection.
 
 **Key principle**: Core packages log structured messages. The _environment_ decides _how_ those messages appear.
 
@@ -43,7 +43,7 @@ interface StructuredLogger extends Logger {
 Use `isStructuredLogger()` before calling extended methods:
 
 ```typescript
-import { isStructuredLogger } from '@b64/sfpm-core';
+import { isStructuredLogger } from '@b64hub/sfpm-core';
 
 if (isStructuredLogger(logger)) {
     logger.group('Deployment');
@@ -80,7 +80,7 @@ import { cliLogger } from '../cli/logger.js';  // ❌ Couples to environment
 Use the `noopLogger` sentinel to avoid `?.` chains:
 
 ```typescript
-import { noopLogger, type Logger } from '@b64/sfpm-core';
+import { noopLogger, type Logger } from '@b64hub/sfpm-core';
 
 const log = this.logger ?? noopLogger;
 log.info('No optional chaining needed');
@@ -108,7 +108,7 @@ const logger: Logger = {
 Uses `@actions/core` for native Actions integration:
 
 ```typescript
-import { createGitHubActionsLogger } from '@b64/sfpm-actions';
+import { createGitHubActionsLogger } from '@b64hub/sfpm-actions';
 
 const logger = createGitHubActionsLogger({ prefix: 'validate-pr' });
 ```
@@ -123,7 +123,7 @@ The `GitHubActionsLogger` implements `StructuredLogger`:
 Use the built-in factory for simple Node.js scripts:
 
 ```typescript
-import { createConsoleLogger } from '@b64/sfpm-core';
+import { createConsoleLogger } from '@b64hub/sfpm-core';
 
 const logger = createConsoleLogger({ level: 'debug' });
 ```
@@ -204,7 +204,7 @@ In practice, renderers subscribe to events from core services and use their own 
 
 ```typescript
 // packages/my-env/src/logger.ts
-import type { StructuredLogger } from '@b64/sfpm-core';
+import type { StructuredLogger } from '@b64hub/sfpm-core';
 
 export class MyEnvLogger implements StructuredLogger {
     log(message: string): void { /* ... */ }

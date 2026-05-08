@@ -87,7 +87,7 @@ The core installation operations (source deployment and version installation) ar
 ## Usage Example
 
 ```typescript
-import { PackageInstaller, ProjectConfig } from '@b64/sfpm-core';
+import { PackageInstaller, ProjectConfig } from '@b64hub/sfpm-core';
 
 const projectConfig = await ProjectConfig.load('/path/to/project');
 

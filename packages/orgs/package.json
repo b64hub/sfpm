@@ -1,5 +1,5 @@
 {
-  "name": "@b64/sfpm-orgs",
+  "name": "@b64hub/sfpm-orgs",
   "version": "0.1.0",
   "description": "Org management, pool provisioning, and validation/prepare lifecycle phases for SFPM",
   "type": "module",
@@ -17,7 +17,7 @@
   "author": "b64",
   "license": "MIT",
   "dependencies": {
-    "@b64/sfpm-core": "workspace:^0.1.0",
+    "@b64hub/sfpm-core": "workspace:^0.1.0",
     "@salesforce/core": "^8.24.2",
     "@salesforce/kit": "^3.0.0"
   },
