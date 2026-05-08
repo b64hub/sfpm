@@ -77,7 +77,6 @@ export class PoolProgressRenderer {
       'pool:delete:complete': {description: 'Delete complete', handler: this.handleDeleteComplete.bind(this)},
       'pool:delete:start': {description: 'Delete started', handler: this.handleDeleteStart.bind(this)},
       'pool:org:created': {description: 'Org created', handler: this.handleOrgCreated.bind(this)},
-      'pool:org:deleted': {description: 'Org deleted', handler: this.handleOrgDeleted.bind(this)},
       'pool:org:discarded': {description: 'Org discarded', handler: this.handleOrgDiscarded.bind(this)},
       'pool:org:failed': {description: 'Org failed', handler: this.handleOrgFailed.bind(this)},
       'pool:org:validated': {description: 'Org validated', handler: this.handleOrgValidated.bind(this)},
@@ -182,7 +181,7 @@ export class PoolProgressRenderer {
 
   private handleDeleteComplete(payload: PoolDeleteResult): void {
     this.logEvent('pool:delete:complete', payload);
-    this.spinner?.stop();
+    this.spinner?.succeed(`Deleted ${payload.deleted.length} org(s) from pool "${payload.tag}"`);
 
     if (!this.isInteractive()) return;
 
@@ -257,15 +256,6 @@ export class PoolProgressRenderer {
   // --------------------------------------------------------------------------
   // Task event handlers
   // --------------------------------------------------------------------------
-
-  private handleOrgDeleted(payload: {timestamp: Date; username: string}): void {
-    this.logEvent('pool:org:deleted', payload);
-
-    if (!this.isInteractive()) return;
-
-    this.spinner?.succeed(chalk.green(`Deleted ${payload.username}`));
-    this.spinner = ora('Deleting...').start();
-  }
 
   private handleOrgDiscarded(payload: {reason: string; timestamp: Date; username: string}): void {
     this.logEvent('pool:org:discarded', payload);

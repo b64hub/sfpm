@@ -13,7 +13,6 @@ import AuthService from '../org/services/auth-service.js';
 import DevHubService from '../org/services/devhub-service.js';
 import PoolFetcher from './pool-fetcher.js';
 import PoolManager from './pool-manager.js';
-import {ArtifactPackageInstallTask} from './tasks/artifact-package-install-task.js';
 
 /**
  * Result from `createPoolServices()`. Provides the wired-up pool
@@ -75,11 +74,11 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
   const {devhub, logger, poolType = OrgTypes.Scratch, tasks} = options;
 
   if (!devhub.getUsername()) {
-    throw new Error('Hub org must be authenticated and have a username');
+    throw new Error('org must be authenticated and have a username');
   }
 
   if (!devhub.isDevHubOrg()) {
-    throw new Error('Hub org must be a DevHub');
+    throw new Error('org must be a DevHub');
   }
 
   const devhubService = new DevHubService(devhub, logger);
@@ -94,18 +93,7 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
     jwtConfig.clientId ? jwtConfig : undefined,
   );
 
-  // For scratch org pools, prepend the artifact package install task
-  // so Sfpm_Artifact__c is available before deployment tasks run.
-  // Sandboxes inherit installed packages from their source org.
-  const resolvedTasks: PoolOrgTask[] = [];
-  if (poolType === OrgTypes.Scratch && tasks && tasks.length > 0) {
-    resolvedTasks.push(new ArtifactPackageInstallTask({devhub}));
-  }
-
-  if (tasks) {
-    resolvedTasks.push(...tasks);
-  }
-
+  const resolvedTasks: PoolOrgTask[] = tasks ?? [];
   const manager = new PoolManager({
     logger,
     provider,

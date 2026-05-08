@@ -1,14 +1,15 @@
 import {loadSfpmConfig, type Logger} from '@b64hub/sfpm-core';
-import {createPoolServices, type PoolConfig} from '@b64hub/sfpm-orgs';
+import {
+  ArtifactPackageInstallTask, createPoolServices, DeploymentTask, type PoolConfig, type PoolOrgTask,
+} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
-import chalk from 'chalk';
 import path from 'node:path';
-import ora from 'ora';
 
 import type {OutputMode} from '../../ui/renderer-utils.js';
 
 import SfpmCommand from '../../sfpm-command.js';
+import {connectDevHub} from '../../ui/connect-devhub.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
 
 export default class PoolFill extends SfpmCommand {
@@ -58,28 +59,32 @@ export default class PoolFill extends SfpmCommand {
       warn: (msg: string) => this.warn(msg),
     };
 
-    let devhubAlias = flags['target-dev-hub'];
-    if (!devhubAlias) {
-      const configAggregator = await ConfigAggregator.create();
-      devhubAlias = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
-    }
-
-    const devhubSpinner = mode === 'interactive' ? ora(`Connecting to ${chalk.cyan(devhubAlias)}...`).start() : undefined;
-
-    if (!devhubAlias) {
-      this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1});
-    }
-
     try {
-      const devhub = await Org.create({aliasOrUsername: devhubAlias});
-
       const orgConfig = await this.loadOrgConfig(logger);
       const config = this.buildPoolConfig(flags, orgConfig);
+      const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
 
-      const {manager} = createPoolServices({
-        devhub,
-        logger,
-        poolType: config.type as OrgTypes,
+      let manager: Awaited<ReturnType<typeof createPoolServices>>['manager'];
+
+      const {devhub} = await connectDevHub({
+        alias: flags['target-dev-hub'],
+        mode,
+        validate: [
+          {
+            label: 'Validating prerequisites...',
+            run: async hub => {
+              const tasks = this.buildTasks(config, hub, projectDir);
+              const services = createPoolServices({
+                devhub: hub,
+                logger,
+                poolType: config.type as OrgTypes,
+                tasks,
+              });
+              manager = services.manager;
+              await manager.validatePrerequisites();
+            },
+          },
+        ],
       });
 
       const renderer = new PoolProgressRenderer({
@@ -89,13 +94,9 @@ export default class PoolFill extends SfpmCommand {
         },
         mode,
       });
-      renderer.attachToManager(manager);
+      renderer.attachToManager(manager!);
 
-      if (devhubSpinner) devhubSpinner.text = 'Validating prerequisites...';
-      await manager.validatePrerequisites();
-      devhubSpinner?.succeed(`${chalk.cyan(devhubAlias)} connected`);
-
-      const result = await manager.provision(flags.tag as string, config);
+      const result = await manager!.provision(flags.tag as string, config);
 
       if (flags.json) {
         this.logJson({...result, events: renderer.getJsonOutput().events, success: result.failed === 0});
@@ -106,8 +107,6 @@ export default class PoolFill extends SfpmCommand {
         this.error(`Pool provisioning failed: ${result.errors.join(', ')}`, {exit: 1});
       }
     } catch (error) {
-      devhubSpinner?.fail('Failed');
-
       if (flags.json) {
         this.logJson({error: (error as Error).message, success: false});
       }
@@ -161,6 +160,26 @@ export default class PoolFill extends SfpmCommand {
       sizing,
       type: OrgTypes.Scratch,
     } as PoolConfig;
+  }
+
+  private buildTasks(config: PoolConfig, devhub: Org, projectDir: string): PoolOrgTask[] {
+    const tasks: PoolOrgTask[] = [];
+    const isScratch = config.type === OrgTypes.Scratch;
+
+    // Scratch orgs need the artifact tracking package installed first
+    if (isScratch) {
+      tasks.push(new ArtifactPackageInstallTask({devhub}));
+    }
+
+    // Deploy packages to the provisioned org
+    tasks.push(new DeploymentTask({
+      continueOnError: config.deployment?.continueOnError,
+      projectDirectory: projectDir,
+      skipArtifactUpdate: config.deployment?.skipArtifactUpdate,
+      testLevel: config.deployment?.testLevel,
+    }));
+
+    return tasks;
   }
 
   private async loadOrgConfig(logger: Logger): Promise<undefined | {[tag: string]: PoolConfig}> {

@@ -1,11 +1,11 @@
 import {createPoolServices, type PoolOrg} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {printTable} from '@oclif/table';
-import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
-import chalk from 'chalk';
+import {ConfigAggregator, OrgTypes} from '@salesforce/core';
 import ora from 'ora';
 
 import SfpmCommand from '../../sfpm-command.js';
+import {connectDevHub} from '../../ui/connect-devhub.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
 
 export default class PoolList extends SfpmCommand {
@@ -44,25 +44,16 @@ export default class PoolList extends SfpmCommand {
     const {flags} = await this.parse(PoolList);
     const mode = flags.json ? 'json' as const : flags.quiet ? 'quiet' as const : 'interactive' as const;
 
-    const spinner = mode === 'interactive' ? ora('Connecting to devhub...').start() : undefined;
-
     try {
-      let devhubAlias = flags['target-dev-hub'];
-      if (!devhubAlias) {
-        const configAggregator = await ConfigAggregator.create();
-        devhubAlias = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
-      }
+      const {devhub} = await connectDevHub({
+        alias: flags['target-dev-hub'],
+        mode,
+      });
 
-      if (!devhubAlias) {
-        this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1});
-      }
-
-      const devhub = await Org.create({aliasOrUsername: devhubAlias});
       const {manager} = createPoolServices({
         devhub,
         poolType: flags.type as OrgTypes,
       });
-      spinner?.succeed(`Connected to ${chalk.cyan(devhubAlias)}`);
 
       const querySpinner = mode === 'interactive' ? ora(`Fetching orgs${flags.tag ? ` for pool "${flags.tag}"` : ''}...`).start() : undefined;
       const orgs = await manager.list(flags.tag, flags['my-pool']);
@@ -83,7 +74,11 @@ export default class PoolList extends SfpmCommand {
         renderer.renderOrgList(orgs, flags.tag ?? 'all');
       }
     } catch (error) {
-      spinner?.fail('Failed to connect to devhub');
+      if (flags.json) {
+        this.logJson({error: (error as Error).message, success: false});
+        return;
+      }
+
       throw error;
     }
   }

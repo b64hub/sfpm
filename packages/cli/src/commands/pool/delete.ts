@@ -1,11 +1,11 @@
 import {createPoolServices} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
-import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
-import ora from 'ora';
+import {ConfigAggregator, OrgTypes} from '@salesforce/core';
 
 import type {OutputMode} from '../../ui/renderer-utils.js';
 
 import SfpmCommand from '../../sfpm-command.js';
+import {connectDevHub} from '../../ui/connect-devhub.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
 
 export default class PoolDelete extends SfpmCommand {
@@ -46,8 +46,6 @@ export default class PoolDelete extends SfpmCommand {
     const {flags} = await this.parse(PoolDelete);
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
-    const spinner = mode === 'interactive' ? ora('Connecting to DevHub...').start() : undefined;
-
     const logger = {
       debug: (msg: string) => this.debug(msg),
       error: (msg: string) => this.error(msg),
@@ -58,23 +56,16 @@ export default class PoolDelete extends SfpmCommand {
     };
 
     try {
-      let devhubAlias = flags['target-dev-hub'];
-      if (!devhubAlias) {
-        const configAggregator = await ConfigAggregator.create();
-        devhubAlias = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
-      }
+      const {devhub} = await connectDevHub({
+        alias: flags['target-dev-hub'],
+        mode,
+      });
 
-      if (!devhubAlias) {
-        this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1});
-      }
-
-      const devhub = await Org.create({aliasOrUsername: devhubAlias});
       const {manager} = createPoolServices({
         devhub,
         logger,
         poolType: flags.type as OrgTypes,
       });
-      spinner?.succeed('Connected to hub org');
 
       const renderer = new PoolProgressRenderer({
         logger: {
@@ -100,8 +91,6 @@ export default class PoolDelete extends SfpmCommand {
 
       // Interactive summary already rendered by the renderer via events
     } catch (error) {
-      spinner?.fail('Failed');
-
       if (flags.json) {
         this.logJson({error: (error as Error).message, success: false});
       }
