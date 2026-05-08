@@ -32,6 +32,7 @@ import {
   errorBox, infoBox, successBox,
 } from '../ui/boxes.js'
 import {BuildProgressRenderer, OutputMode} from '../ui/build-progress-renderer.js'
+import {connectDevHub} from '../ui/connect-devhub.js'
 import {InstallProgressRenderer} from '../ui/install-progress-renderer.js'
 
 const BOOTSTRAP_REPO = 'https://github.com/b64hub/sfpm-bootstrap'
@@ -104,7 +105,22 @@ export default class Bootstrap extends SfpmCommand {
     const tmpDir = await this.cloneRepo(ctx.isInteractive)
 
     try {
-      const org = await this.connectToOrg(ctx.targetOrg, ctx.isInteractive)
+      const {devhub: org} = await connectDevHub({
+        alias: ctx.targetOrg,
+        mode: ctx.mode,
+        validate: [
+          {
+            label: 'Verifying DevHub status...',
+            async run(devhub) {
+              if (!await devhub.determineIfDevHubOrg()) {
+                throw new Error(`The target org '${ctx.targetOrg}' is not a DevHub. `
+                  + 'Bootstrap requires a DevHub org to create and build packages. '
+                  + 'Enable DevHub in Setup > Dev Hub or use a different org.')
+              }
+            },
+          },
+        ],
+      })
 
       // ── 1. Resolve per-package status ──────────────────────────────
       const statuses = await this.resolvePackageStatuses(org, selectedPackages, flags.force ?? false, ctx)
@@ -145,16 +161,16 @@ export default class Bootstrap extends SfpmCommand {
         if (!buildResult.success) {
           for (const name of buildNames) {
             const failed = buildResult.failedPackages?.includes(name)
-            results.push({
-              action: 'build',
-              error: failed ? 'Build failed' : undefined,
-              packageName: name,
-              skipped: false,
-              success: !failed,
-            })
+            if (failed) {
+              results.push({
+                action: 'build',
+                error: 'Build failed',
+                packageName: name,
+                skipped: false,
+                success: false,
+              })
+            }
           }
-
-          return this.finalizeResult(results, tier, flags, ctx)
         }
       }
 
@@ -220,7 +236,9 @@ export default class Bootstrap extends SfpmCommand {
     const buildOrchestrator = new BuildOrchestrator(
       projectService.getDefinitionProvider(),
       projectService.getProjectGraph(),
-      {devhubUsername: ctx.targetOrg, force, includeDependencies: true},
+      {
+        codeCoverage: true, devhubUsername: ctx.targetOrg, force, includeDependencies: true,
+      },
       ctx.logger,
       projectService.getDefinitionProvider().projectDir,
     )
@@ -276,37 +294,6 @@ export default class Bootstrap extends SfpmCommand {
     }
 
     return tmpDir
-  }
-
-  private async connectToOrg(username: string, isInteractive: boolean): Promise<Org> {
-    let spinner: Ora | undefined
-    if (isInteractive) {
-      spinner = ora(`Connecting to ${username}...`).start()
-    }
-
-    try {
-      const org = await Org.create({aliasOrUsername: username})
-
-      if (!await org.determineIfDevHubOrg()) {
-        spinner?.fail(`${username} is not a DevHub`)
-        throw new Error(`The target org '${username}' is not a DevHub. `
-          + 'Bootstrap requires a DevHub org to create and build packages. '
-          + 'Enable DevHub in Setup > Dev Hub or use a different org.')
-      }
-
-      spinner?.succeed(`Connected to ${username} (DevHub)`)
-      return org
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('not a DevHub')) {
-        throw error
-      }
-
-      spinner?.fail(`Failed to connect to ${username}`)
-      throw new Error(
-        `Unable to connect to org '${username}'. Ensure the org is authenticated via 'sf org login'.`,
-        {cause: error instanceof Error ? error : undefined},
-      )
-    }
   }
 
   // ====================================================================

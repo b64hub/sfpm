@@ -102,7 +102,7 @@ describe('UnlockedPackageBuilder', () => {
             orchestration: {
                 build: {
                     waitTime: 60,
-                    isCoverageEnabled: true,
+                    codeCoverage: true,
                     installationKey: '123',
                     isSkipValidation: true,
                     isAsyncValidation: true,
@@ -226,7 +226,7 @@ describe('UnlockedPackageBuilder', () => {
             orchestration: {
                 build: {
                     waitTime: 60,
-                    isCoverageEnabled: true,
+                    codeCoverage: true,
                     installationKey: '123',
                     isSkipValidation: true,
                     isAsyncValidation: false // Sync

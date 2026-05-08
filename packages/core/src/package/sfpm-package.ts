@@ -523,8 +523,8 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
         ...orchestration,
         // Persist only build properties that describe artifact state, not runtime parameters
         build: {
-          ...(this._metadata.orchestration?.build?.isCoverageEnabled !== undefined && {
-            isCoverageEnabled: this._metadata.orchestration.build.isCoverageEnabled,
+          ...(this._metadata.orchestration?.build?.codeCoverage !== undefined && {
+            codeCoverage: this._metadata.orchestration.build.codeCoverage,
           }),
         },
         install: {
@@ -773,6 +773,10 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
 
     if (options.isAsyncValidation !== undefined) {
       set(this.metadata, 'orchestration.build.isAsyncValidation', options.isAsyncValidation);
+    }
+
+    if (options.codeCoverage !== undefined) {
+      set(this.metadata, 'orchestration.build.codeCoverage', options.codeCoverage);
     }
   }
 

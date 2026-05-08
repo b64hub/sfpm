@@ -21,6 +21,8 @@ import SfpmPackage, {PackageFactory} from './sfpm-package.js';
 
 export interface BuildOptions {
   buildNumber?: string;
+  /** Enable code coverage calculation during package version creation (required for promotion) */
+  codeCoverage?: boolean;
   destructiveManifestPath?: string;
   devhubUsername?: string;
   /** Force build even if no source changes detected */
@@ -112,6 +114,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
     // Apply orchestration options - each package type handles its own options
     sfpmPackage.setOrchestrationOptions({
+      codeCoverage: this.options.codeCoverage,
       installationkey: this.options.installationKey,
       installationkeybypass: this.options.installationKeyBypass,
       isAsyncValidation: this.options.isAsyncValidation,

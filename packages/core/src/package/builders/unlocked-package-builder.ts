@@ -5,8 +5,8 @@ import fs from 'fs-extra';
 import EventEmitter from 'node:events';
 import path from 'node:path';
 
-import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
 import ProjectService from '../../project/project-service.js';
+import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
 import {UnlockedBuildEvents} from '../../types/events.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, SfpmUnlockedPackageBuildOptions} from '../../types/package.js';
@@ -132,7 +132,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     try {
       const packageVersionCreateOptions: Record<string, unknown> = {
         asyncvalidation: buildOptions?.isAsyncValidation ?? false,
-        codecoverage: buildOptions?.isCoverageEnabled ?? false,
+        codecoverage: buildOptions?.codeCoverage ?? false,
         connection: this.devhubOrg!.getConnection(),
         installationkey: buildOptions?.installationKey,
         installationkeybypass: buildOptions?.installationKey ? undefined : true,
@@ -196,7 +196,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
         throw new Error(`Package creation failed or timed out.\n${result.Error?.join('\n')}`);
       }
 
-      if (buildOptions?.isCoverageEnabled && !this.sfpmPackage.isOrgDependent && !buildOptions?.isAsyncValidation && !result.HasPassedCodeCoverageCheck) {
+      if (buildOptions?.codeCoverage && !this.sfpmPackage.isOrgDependent && !buildOptions?.isAsyncValidation && !result.HasPassedCodeCoverageCheck) {
         throw new Error('This package has not meet the minimum coverage requirement of 75%');
       }
     } catch (error: any) {

@@ -113,7 +113,7 @@ export interface SfpmPackageOrchestration {
 }
 
 export interface SfpmPackageBuildOptions {
-  isCoverageEnabled?: boolean;
+  codeCoverage?: boolean;
 }
 
 export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions {
