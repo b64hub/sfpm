@@ -70,6 +70,40 @@ export const BOOTSTRAP_PACKAGES: BootstrapPackageConfig[] = [
   },
 ]
 
+/** Input state for the per-package decision function. */
+export interface PackageResolveState {
+  force: boolean;
+  hasPackage: boolean;
+  hasReleasedVersions: boolean;
+  hasUnreleasedVersions: boolean;
+  installedVersion?: string;
+  latestVersion?: string;
+}
+
+/**
+ * Pure decision function: given DevHub + target org state, determine the action.
+ *
+ * Decision table:
+ *   --force                        → build
+ *   No Package2 in DevHub          → build
+ *   No versions at all             → build
+ *   Unreleased version only        → promote
+ *   Released, not installed        → install
+ *   Released, older installed      → install
+ *   Released, same version         → skip
+ */
+export function resolveAction(state: PackageResolveState): BootstrapAction {
+  if (state.force) return 'build'
+  if (!state.hasPackage) return 'build'
+  if (!state.hasReleasedVersions) {
+    return state.hasUnreleasedVersions ? 'promote' : 'build'
+  }
+
+  if (!state.installedVersion) return 'install'
+  if (state.installedVersion === state.latestVersion) return 'skip'
+  return 'install'
+}
+
 /** Resolve which packages to include for a given tier. */
 export function getPackagesForTier(tier: BootstrapTier): BootstrapPackageConfig[] {
   switch (tier) {

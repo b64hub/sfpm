@@ -26,6 +26,7 @@ import {
   type BootstrapResult,
   BootstrapTier,
   getPackagesForTier,
+  resolveAction,
 } from '../types/bootstrap.js'
 import {
   errorBox, infoBox, successBox,
@@ -593,70 +594,50 @@ export default class Bootstrap extends SfpmCommand {
       // Find the Package2 in the DevHub
       const devhubPkg = allDevHubPackages.find(p => p.Name === unscopedName)
       if (!devhubPkg) {
-        // Package doesn't exist in DevHub yet — needs full build
-        statuses.push({action: 'build', name: pkg.name})
+        statuses.push({
+          action: resolveAction({
+            force, hasPackage: false, hasReleasedVersions: false, hasUnreleasedVersions: false,
+          }), name: pkg.name,
+        })
         continue
       }
 
-      // Get the latest released version from the DevHub
+      // Get released versions
       // eslint-disable-next-line no-await-in-loop
       const releasedVersions = await devhubService.getPackage2VersionById(devhubPkg.Id, undefined, false, true)
+      // Get all versions (to detect unreleased)
+      const allVersions = releasedVersions.length === 0
+        ? await devhubService.getPackage2VersionById(devhubPkg.Id) // eslint-disable-line no-await-in-loop
+        : releasedVersions
 
-      if (releasedVersions.length === 0) {
-        // No released versions — check for unreleased (built but not promoted)
-        const allVersions = await devhubService.getPackage2VersionById(devhubPkg.Id) // eslint-disable-line no-await-in-loop
-        if (allVersions.length > 0) {
-          // Unreleased version exists — just promote + install
-          const latest = allVersions[0]
-          const latestVersion = `${latest.MajorVersion}.${latest.MinorVersion}.${latest.PatchVersion}.${latest.BuildNumber}`
-          statuses.push({
-            action: 'promote',
-            latestReleasedVersion: latestVersion,
-            name: pkg.name,
-            subscriberVersionId: latest.SubscriberPackageVersionId,
-          })
-        } else {
-          // No versions at all — needs full build
-          statuses.push({action: 'build', name: pkg.name})
-        }
+      const latestReleased = releasedVersions[0]
+      const latestVersion = latestReleased
+        ? `${latestReleased.MajorVersion}.${latestReleased.MinorVersion}.${latestReleased.PatchVersion}.${latestReleased.BuildNumber}`
+        : undefined
 
-        continue
-      }
-
-      const latestReleased = releasedVersions[0] // Already sorted descending
-      const latestVersion = `${latestReleased.MajorVersion}.${latestReleased.MinorVersion}.${latestReleased.PatchVersion}.${latestReleased.BuildNumber}`
-
-      // Check what's installed in the target org
       const installedPkg = installedByName.get(unscopedName)
-      if (!installedPkg) {
-        // Released version exists but not installed — just install
-        statuses.push({
-          action: 'install',
-          latestReleasedVersion: latestVersion,
-          name: pkg.name,
-          subscriberVersionId: latestReleased.SubscriberPackageVersionId,
-        })
-        continue
-      }
 
-      // Compare versions
-      if (installedPkg.versionNumber === latestVersion) {
-        statuses.push({
-          action: 'skip',
-          installedVersion: installedPkg.versionNumber,
-          latestReleasedVersion: latestVersion,
-          name: pkg.name,
-        })
-      } else {
-        // Different version installed — install the latest released
-        statuses.push({
-          action: 'install',
-          installedVersion: installedPkg.versionNumber,
-          latestReleasedVersion: latestVersion,
-          name: pkg.name,
-          subscriberVersionId: latestReleased.SubscriberPackageVersionId,
-        })
-      }
+      const action = resolveAction({
+        force,
+        hasPackage: true,
+        hasReleasedVersions: releasedVersions.length > 0,
+        hasUnreleasedVersions: allVersions.length > 0 && releasedVersions.length === 0,
+        installedVersion: installedPkg?.versionNumber,
+        latestVersion,
+      })
+
+      const latest = latestReleased ?? allVersions[0]
+      const versionStr = latest
+        ? `${latest.MajorVersion}.${latest.MinorVersion}.${latest.PatchVersion}.${latest.BuildNumber}`
+        : undefined
+
+      statuses.push({
+        action,
+        installedVersion: installedPkg?.versionNumber,
+        latestReleasedVersion: versionStr,
+        name: pkg.name,
+        subscriberVersionId: latest?.SubscriberPackageVersionId,
+      })
     }
 
     const skipped = statuses.filter(s => s.action === 'skip').length

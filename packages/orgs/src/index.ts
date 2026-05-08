@@ -59,7 +59,7 @@ export {
 } from './pool/pool-manager.js';
 
 export {DeploymentTask, type DeploymentTaskOptions} from './pool/tasks/deployment-task.js';
-export {ArtifactPackageInstallTask, type ArtifactPackageInstallTaskOptions} from './pool/tasks/sfpm-package-install-task.js';
+export {SfpmPackageInstallTask as ArtifactPackageInstallTask, type SfpmPackageInstallTaskOptions as ArtifactPackageInstallTaskOptions} from './pool/tasks/sfpm-package-install-task.js';
 
 // Pool-layer types
 export {
