@@ -70,7 +70,7 @@ vi.mock('@salesforce/kit', () => ({
   },
 }));
 
-vi.mock('@b64/sfpm-core', () => ({
+vi.mock('@b64hub/sfpm-core', () => ({
   escapeSOQL: (v: string) => v,
   soql: (strings: TemplateStringsArray, ...values: unknown[]) =>
     strings.reduce((acc, str, i) => acc + str + (values[i] ?? ''), ''),

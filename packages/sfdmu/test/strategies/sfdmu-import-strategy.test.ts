@@ -9,8 +9,8 @@ vi.mock('node:child_process', () => ({
   execSync: vi.fn(),
 }));
 
-// Mock @b64/sfpm-core
-vi.mock('@b64/sfpm-core', () => ({
+// Mock @b64hub/sfpm-core
+vi.mock('@b64hub/sfpm-core', () => ({
   InstallationError: class extends Error {
     constructor(pkg: string, org: string, msg: string, opts?: any) {
       super(msg);
@@ -21,7 +21,7 @@ vi.mock('@b64/sfpm-core', () => ({
 }));
 
 import SfdmuImportStrategy from '../../src/strategies/sfdmu-import-strategy.js';
-import type {DataDeployable} from '@b64/sfpm-core';
+import type {DataDeployable} from '@b64hub/sfpm-core';
 
 const mockedExecSync = vi.mocked(execSync);
 

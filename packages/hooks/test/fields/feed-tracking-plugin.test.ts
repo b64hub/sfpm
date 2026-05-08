@@ -2,7 +2,7 @@ import {
   describe, expect, it, vi,
 } from 'vitest';
 
-import type {HookContext} from '@b64/sfpm-core';
+import type {HookContext} from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 
 import {feedTrackingHooks} from '../../src/fields/feed-tracking-plugin.js';

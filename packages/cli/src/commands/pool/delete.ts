@@ -1,4 +1,4 @@
-import {createPoolServices} from '@b64/sfpm-orgs';
+import {createPoolServices} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {Org, OrgTypes} from '@salesforce/core';
 import ora from 'ora';

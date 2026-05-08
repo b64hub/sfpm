@@ -1,6 +1,6 @@
 import {
   HookContext, LifecycleHooks, type Logger,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 
 import type {FieldHistoryTrackingHooksOptions} from './types.js';
@@ -45,8 +45,8 @@ interface FhtCapablePackage {
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { fieldHistoryTrackingHooks } from '@b64/sfpm-hooks';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { fieldHistoryTrackingHooks } from '@b64hub/sfpm-hooks';
  *
  * export default defineConfig({
  *   hooks: [

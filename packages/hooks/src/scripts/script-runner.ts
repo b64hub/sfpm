@@ -1,4 +1,4 @@
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 
 import {spawn} from 'node:child_process';
 import {existsSync} from 'node:fs';

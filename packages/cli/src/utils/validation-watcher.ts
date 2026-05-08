@@ -13,7 +13,7 @@ import {
   type LocalBuildState,
   type LocalValidationResult,
   ValidationPoller,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 
 import {sendNotification} from './notifier.js';

@@ -3,8 +3,8 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 
-// Mock @b64/sfpm-core to avoid full dependency resolution in unit tests
-vi.mock('@b64/sfpm-core', () => {
+// Mock @b64hub/sfpm-core to avoid full dependency resolution in unit tests
+vi.mock('@b64hub/sfpm-core', () => {
   class MockSfpmPackage {
     _metadata: any = {identity: {packageName: '', packageType: 'data'}, source: {}, content: {}, orchestration: {}, validation: {}};
     packageName: string;
@@ -57,7 +57,7 @@ vi.mock('@b64/sfpm-core', () => {
 });
 
 import SfdmuDataBuilder from '../../src/sfdmu-data-builder.js';
-import {SfpmDataPackage} from '@b64/sfpm-core';
+import {SfpmDataPackage} from '@b64hub/sfpm-core';
 
 describe('SfdmuDataBuilder', () => {
   let tmpDir: string;

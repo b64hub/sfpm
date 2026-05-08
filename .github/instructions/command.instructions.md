@@ -434,7 +434,7 @@ See [testing.instructions.md](./testing.instructions.md) for full testing patter
 describe('Build Command', () => {
   it('should build package with correct flags', async () => {
     // Mock core services
-    vi.mock('@b64/sfpm-core', () => ({
+    vi.mock('@b64hub/sfpm-core', () => ({
       PackageBuilder: vi.fn(() => ({
         buildPackage: vi.fn(),
         on: vi.fn(),

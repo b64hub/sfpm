@@ -1,6 +1,6 @@
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 
-import {HookContext, LifecycleHooks} from '@b64/sfpm-core';
+import {HookContext, LifecycleHooks} from '@b64hub/sfpm-core';
 import {spawn} from 'node:child_process';
 import {
   existsSync, readdirSync, statSync, unlinkSync,
@@ -33,8 +33,8 @@ interface LwcCapablePackage {
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { lwcTypescriptHooks } from '@b64/sfpm-hooks';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { lwcTypescriptHooks } from '@b64hub/sfpm-hooks';
  *
  * export default defineConfig({
  *   hooks: [

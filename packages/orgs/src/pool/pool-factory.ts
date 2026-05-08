@@ -1,4 +1,4 @@
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 
 import {Org, OrgTypes} from '@salesforce/core';
 
@@ -56,7 +56,7 @@ export interface CreatePoolServicesOptions {
  * @example
  * ```ts
  * import { Org } from '@salesforce/core';
- * import { createPoolServices } from '@b64/sfpm-orgs';
+ * import { createPoolServices } from '@b64hub/sfpm-orgs';
  *
  * // Scratch org pool (default)
  * const devhub = await Org.create({ aliasOrUsername: 'my-devhub' });

@@ -8,7 +8,7 @@ import {
   RegisterBuilder,
   SfpmDataPackage,
   type SfpmPackage,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 import fs from 'fs-extra';
 import EventEmitter from 'node:events';
 import path from 'node:path';

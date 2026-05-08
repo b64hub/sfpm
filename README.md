@@ -42,8 +42,8 @@ This is a pnpm + Turborepo monorepo:
 
 | Package                                 | Purpose                                                                          |
 | --------------------------------------- | -------------------------------------------------------------------------------- |
-| [`@b64/sfpm-cli`](packages/cli/)        | The `sfpm` CLI (oclif).                                                          |
-| [`@b64/sfpm-core`](packages/core/)      | Build/install orchestrators, artifact registry, lifecycle engine, project model. |
+| [`@b64hub/sfpm-cli`](packages/cli/)        | The `sfpm` CLI (oclif).                                                          |
+| [`@b64hub/sfpm-core`](packages/core/)      | Build/install orchestrators, artifact registry, lifecycle engine, project model. |
 | [`packages/actions`](packages/actions/) | GitHub Actions wrapping the same flows for CI.                                   |
 | [`packages/hooks`](packages/hooks/)     | Pre/post-deploy hooks for tricky metadata.                                       |
 | [`packages/orgs`](packages/orgs/)       | Scratch org and pool management.                                                 |
@@ -68,7 +68,7 @@ pnpm build
 # Run via the local binary
 node packages/cli/bin/run.js --help
 # Or link it for global use
-pnpm --filter @b64/sfpm-cli link --global
+pnpm --filter @b64hub/sfpm-cli link --global
 ```
 
 ## Quick start
@@ -129,7 +129,7 @@ SFPM reads project configuration from `sfpm.config.{ts,js,mjs}` at the project r
 
 ```ts
 // sfpm.config.ts
-import { defineConfig } from '@b64/sfpm-core';
+import { defineConfig } from '@b64hub/sfpm-core';
 
 export default defineConfig({
   namespace: 'myns',

@@ -1,5 +1,5 @@
 {
-  "name": "@b64/sfpm-hooks",
+  "name": "@b64hub/sfpm-hooks",
   "version": "0.1.0",
   "description": "Common hooks for Salesforce Package management",
   "type": "module",
@@ -17,7 +17,7 @@
   "author": "b64",
   "license": "MIT",
   "dependencies": {
-    "@b64/sfpm-core": "workspace:^0.1.0",
+    "@b64hub/sfpm-core": "workspace:^0.1.0",
     "@salesforce/core": "^8.25.0",
     "@salesforce/source-deploy-retrieve": "^12.31.7",
     "fast-xml-parser": "^5.3.3"

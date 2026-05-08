@@ -1,7 +1,7 @@
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 import type {EventEmitter} from 'node:events';
 
-import {isStructuredLogger} from '@b64/sfpm-core';
+import {isStructuredLogger} from '@b64hub/sfpm-core';
 
 // ============================================================================
 // Types

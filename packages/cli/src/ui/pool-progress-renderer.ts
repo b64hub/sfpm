@@ -4,7 +4,7 @@ import type {
   PoolManager,
   PoolOrg,
   PoolProvisionResult,
-} from '@b64/sfpm-orgs';
+} from '@b64hub/sfpm-orgs';
 
 import chalk from 'chalk';
 import ora, {type Ora} from 'ora';

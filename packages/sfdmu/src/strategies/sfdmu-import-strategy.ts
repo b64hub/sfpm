@@ -3,8 +3,8 @@ import EventEmitter from 'node:events';
 import fs from 'fs-extra';
 import path from 'path';
 
-import type {DataDeployable, Logger} from '@b64/sfpm-core';
-import {InstallationError} from '@b64/sfpm-core';
+import type {DataDeployable, Logger} from '@b64hub/sfpm-core';
+import {InstallationError} from '@b64hub/sfpm-core';
 
 import type {SfdmuExportJson, SfdmuRunOptions, SfdmuRunResult} from '../types.js';
 

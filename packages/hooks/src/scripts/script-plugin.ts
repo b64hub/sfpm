@@ -1,4 +1,4 @@
-import {HookContext, LifecycleHooks, resolveHookConfig} from '@b64/sfpm-core';
+import {HookContext, LifecycleHooks, resolveHookConfig} from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 
 import type {ScriptDefinition, ScriptHooksOptions, ScriptType} from './types.js';
@@ -73,8 +73,8 @@ function resolveScriptType(script: ScriptDefinition): ScriptType {
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { scriptHooks } from '@b64/sfpm-hooks';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { scriptHooks } from '@b64hub/sfpm-hooks';
  *
  * export default defineConfig({
  *   hooks: [

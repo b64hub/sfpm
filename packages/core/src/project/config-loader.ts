@@ -7,7 +7,7 @@ import {SfpmConfig} from '../types/config.js';
 import {Logger} from '../types/logger.js';
 
 /**
- * Resolve this package's own entry point so jiti can alias `@b64/sfpm-core`
+ * Resolve this package's own entry point so jiti can alias `@b64hub/sfpm-core`
  * even when the target project hasn't installed it (e.g. bootstrap temp dirs).
  */
 const CORE_ENTRY_POINT = fileURLToPath(new URL('../index.js', import.meta.url));
@@ -61,11 +61,11 @@ export async function loadSfpmConfig(
   try {
     // Use configPath as the resolution base so that imports in the config file
     // resolve from the target project's node_modules, not from the sfpm monorepo.
-    // Alias @b64/sfpm-core to this package so config files can always import it,
+    // Alias @b64hub/sfpm-core to this package so config files can always import it,
     // even when the project hasn't installed it (e.g. cloned bootstrap repos).
     const jiti = createJiti(configPath, {
       alias: {
-        '@b64/sfpm-core': CORE_ENTRY_POINT,
+        '@b64hub/sfpm-core': CORE_ENTRY_POINT,
       },
       fsCache: true,
       interopDefault: true,

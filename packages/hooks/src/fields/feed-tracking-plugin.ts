@@ -1,6 +1,6 @@
 import {
   HookContext, LifecycleHooks, type Logger,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 
 import type {FeedTrackingHooksOptions} from './types.js';
@@ -45,8 +45,8 @@ interface FtCapablePackage {
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { feedTrackingHooks } from '@b64/sfpm-hooks';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { feedTrackingHooks } from '@b64hub/sfpm-hooks';
  *
  * export default defineConfig({
  *   hooks: [

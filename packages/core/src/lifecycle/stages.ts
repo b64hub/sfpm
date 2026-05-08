@@ -11,7 +11,7 @@
  *
  * @example
  * ```typescript
- * import { LifecycleEngine, Stages } from '@b64/sfpm-core';
+ * import { LifecycleEngine, Stages } from '@b64hub/sfpm-core';
  *
  * const lifecycle = new LifecycleEngine({ stage: Stages.VALIDATE });
  * ```

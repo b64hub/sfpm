@@ -2,8 +2,8 @@ import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
-import type {HookContext} from '@b64/sfpm-core';
-import {resolveHookConfig} from '@b64/sfpm-core';
+import type {HookContext} from '@b64hub/sfpm-core';
+import {resolveHookConfig} from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 
 import {scriptHooks} from '../../src/scripts/script-plugin.js';
@@ -12,8 +12,8 @@ import {scriptHooks} from '../../src/scripts/script-plugin.js';
 // Mocks
 // ============================================================================
 
-vi.mock('@b64/sfpm-core', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@b64/sfpm-core')>();
+vi.mock('@b64hub/sfpm-core', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@b64hub/sfpm-core')>();
   return {
     ...original,
     resolveHookConfig: vi.fn().mockReturnValue({config: {}, enabled: true}),

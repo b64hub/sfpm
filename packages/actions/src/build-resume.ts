@@ -4,7 +4,7 @@ import {
   isStructuredLogger,
   type PackageValidationResult,
   ValidationPoller,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 
 import {BuildCacheService, type PackageBuildState} from './build-cache.js';
@@ -36,7 +36,7 @@ export interface BuildResumeResult {
   success: boolean;
 }
 
-export type {PackageValidationResult} from '@b64/sfpm-core';
+export type {PackageValidationResult} from '@b64hub/sfpm-core';
 
 // ============================================================================
 // Build Resume Pipeline

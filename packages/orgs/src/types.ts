@@ -11,8 +11,8 @@ import { PoolConfig } from "./pool/types.js";
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { defineOrgConfig } from '@b64/sfpm-orgs';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { defineOrgConfig } from '@b64hub/sfpm-orgs';
  *
  * export default defineConfig({
  *   hooks: [],
@@ -45,7 +45,7 @@ export interface OrgConfig {
  *
  * @example
  * ```typescript
- * import { defineOrgConfig } from '@b64/sfpm-orgs';
+ * import { defineOrgConfig } from '@b64hub/sfpm-orgs';
  *
  * const orgs = defineOrgConfig({
  *   scratchOrg: { definitionFile: 'config/project-scratch-def.json' },

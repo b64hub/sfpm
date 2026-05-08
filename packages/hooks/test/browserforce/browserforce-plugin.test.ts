@@ -2,7 +2,7 @@ import {
   describe, expect, it, vi,
 } from 'vitest';
 
-import type {HookContext} from '@b64/sfpm-core';
+import type {HookContext} from '@b64hub/sfpm-core';
 
 import {browserforceHooks} from '../../src/browserforce/browserforce-plugin.js';
 

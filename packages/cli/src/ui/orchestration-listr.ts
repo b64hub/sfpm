@@ -1,4 +1,4 @@
-import type {OrchestrationLevelStartEvent} from '@b64/sfpm-core';
+import type {OrchestrationLevelStartEvent} from '@b64hub/sfpm-core';
 
 import chalk from 'chalk';
 import {Listr} from 'listr2';

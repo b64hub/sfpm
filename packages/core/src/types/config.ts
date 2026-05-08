@@ -10,7 +10,7 @@ import {LifecycleHooks} from './lifecycle.js';
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
+ * import { defineConfig } from '@b64hub/sfpm-core';
  *
  * export default defineConfig({
  *   artifacts: {
@@ -63,9 +63,9 @@ export interface IgnoreFilesConfig {
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { defineOrgConfig } from '@b64/sfpm-orgs';
- * import { profileHooks } from '@b64/sfpm-hooks';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { defineOrgConfig } from '@b64hub/sfpm-orgs';
+ * import { profileHooks } from '@b64hub/sfpm-hooks';
  *
  * export default defineConfig({
  *   hooks: [
@@ -80,7 +80,7 @@ export interface IgnoreFilesConfig {
 export interface SfpmConfig {
   /**
    * Module-specific configuration sections.
-   * Modules like `@b64/sfpm-orgs` register their config under a named key
+   * Modules like `@b64hub/sfpm-orgs` register their config under a named key
    * (e.g., `orgs`). Use the module's `define*Config()` helper for type safety.
    */
   [key: string]: unknown;
@@ -169,7 +169,7 @@ export interface SfpmConfig {
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
+ * import { defineConfig } from '@b64hub/sfpm-core';
  *
  * export default defineConfig({
  *   hooks: [],

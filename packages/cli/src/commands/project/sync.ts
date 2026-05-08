@@ -1,4 +1,4 @@
-import {loadSfpmConfig, Logger, WorkspaceSync} from '@b64/sfpm-core'
+import {loadSfpmConfig, Logger, WorkspaceSync} from '@b64hub/sfpm-core'
 import {Flags} from '@oclif/core'
 import chalk from 'chalk'
 import ora from 'ora'

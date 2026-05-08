@@ -1,6 +1,6 @@
 import {
   HookContext, LifecycleHooks, type Logger, PackageType,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 import {Connection, Org} from '@salesforce/core';
 
 import type {FlowActivationHooksOptions, PackageFlowEntry} from './types.js';
@@ -54,8 +54,8 @@ interface FlowCapablePackage {
  * @example
  * ```typescript
  * // sfpm.config.ts
- * import { defineConfig } from '@b64/sfpm-core';
- * import { flowActivationHooks } from '@b64/sfpm-hooks';
+ * import { defineConfig } from '@b64hub/sfpm-core';
+ * import { flowActivationHooks } from '@b64hub/sfpm-hooks';
  *
  * export default defineConfig({
  *   hooks: [

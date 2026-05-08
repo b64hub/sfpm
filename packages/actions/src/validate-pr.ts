@@ -6,11 +6,11 @@ import {
   LifecycleEngine,
   type Logger,
   ProjectService,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 import {
   createPoolServices,
   PoolOrg,
-} from '@b64/sfpm-orgs';
+} from '@b64hub/sfpm-orgs';
 import {AuthInfo, Org} from '@salesforce/core';
 
 import {createGitHubActionsLogger} from './logger.js';

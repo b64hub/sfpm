@@ -1,7 +1,7 @@
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 import type {Connection} from '@salesforce/core';
 
-import {escapeSOQL} from '@b64/sfpm-core';
+import {escapeSOQL} from '@b64hub/sfpm-core';
 
 import type {
   PicklistFieldData,

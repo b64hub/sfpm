@@ -9,8 +9,8 @@ vi.mock('@salesforce/core', () => ({
   },
 }));
 
-// Mock @b64/sfpm-core
-vi.mock('@b64/sfpm-core', () => {
+// Mock @b64hub/sfpm-core
+vi.mock('@b64hub/sfpm-core', () => {
   class MockSfpmPackage {
     _metadata: any = {identity: {packageName: '', packageType: 'data'}, source: {}, content: {}, orchestration: {}, validation: {}};
     packageName: string;
@@ -59,7 +59,7 @@ vi.mock('@b64/sfpm-core', () => {
 });
 
 import SfdmuDataInstaller from '../../src/sfdmu-data-installer.js';
-import {SfpmDataPackage} from '@b64/sfpm-core';
+import {SfpmDataPackage} from '@b64hub/sfpm-core';
 
 describe('SfdmuDataInstaller', () => {
   let dataPackage: any;

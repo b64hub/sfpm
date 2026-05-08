@@ -1,4 +1,4 @@
-import {type Logger, WorkspaceInitializer} from '@b64/sfpm-core'
+import {type Logger, WorkspaceInitializer} from '@b64hub/sfpm-core'
 import {
   checkbox, confirm, input, select,
 } from '@inquirer/prompts'

@@ -39,7 +39,7 @@ export interface SourceDeployable {
  * A package that can be installed via data loading tools (e.g. SFDMU).
  *
  * Core is intentionally content-agnostic — it only exposes the directory
- * containing the data files. Concrete adapters (like @b64/sfpm-sfdmu)
+ * containing the data files. Concrete adapters (like @b64hub/sfpm-sfdmu)
  * interpret the directory contents (export.json, CSVs, etc.).
  */
 export interface DataDeployable {

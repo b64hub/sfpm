@@ -1,6 +1,6 @@
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 
-import {escapeSOQL, soql} from '@b64/sfpm-core';
+import {escapeSOQL, soql} from '@b64hub/sfpm-core';
 import {type Org} from '@salesforce/core';
 import {group} from 'node:console';
 import {EventEmitter} from 'node:events';
@@ -35,7 +35,7 @@ export interface SendEmailOptions {
  * @example
  * ```ts
  * import { Org } from '@salesforce/core';
- * import { DevHubService } from '@b64/sfpm-orgs';
+ * import { DevHubService } from '@b64hub/sfpm-orgs';
  *
  * const org = await Org.create({ aliasOrUsername: 'my-devhub' });
  * const hub = new DevHubService(org);

@@ -1,4 +1,4 @@
-import {BuildStateStore, type LocalBuildState, ValidationPoller} from '@b64/sfpm-core'
+import {BuildStateStore, type LocalBuildState, ValidationPoller} from '@b64hub/sfpm-core'
 import {Flags} from '@oclif/core'
 import {Org} from '@salesforce/core'
 import chalk from 'chalk'
