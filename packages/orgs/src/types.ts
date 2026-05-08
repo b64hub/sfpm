@@ -1,4 +1,7 @@
-import type {SandboxPoolConfig, ScratchOrgPoolConfig} from './pool/types.js';
+import type {PoolConfig, SandboxPoolConfig, ScratchOrgPoolConfig} from './pool/types.js';
+
+import {DEFAULT_SANDBOX} from './org/sandbox/types.js';
+import {DEFAULT_SCRATCH_ORG} from './org/scratch/types.js';
 
 /**
  * Pool config as written in `sfpm.config.ts`.
@@ -68,7 +71,15 @@ export interface OrgConfig {
 }
 
 /**
- * Identity function for type-safe org configuration authoring.
+ * Enrich org configuration with domain defaults and resolve pool entries.
+ *
+ * 1. Merges `DEFAULT_SCRATCH_ORG` / `DEFAULT_SANDBOX` into the global
+ *    `scratch` / `sandbox` sections.
+ * 2. For each pool entry, merges: domain defaults → global type defaults
+ *    → pool-specific overrides — producing a fully resolved `PoolConfig`.
+ *
+ * The returned config can be passed directly to `PoolManager.provision()`
+ * without any further merging by callers.
  *
  * @example
  * ```typescript
@@ -85,8 +96,27 @@ export interface OrgConfig {
  *     },
  *   },
  * });
+ *
+ * // orgs.pools.dev.definitionFile === 'config/project-scratch-def.json'
+ * // orgs.pools.dev.expiryDays === 7  (from DEFAULT_SCRATCH_ORG)
  * ```
  */
-export function defineOrgConfig(config: OrgConfig): OrgConfig {
-  return config;
+export function defineOrgConfig(config: OrgConfig): {[tag: string]: PoolConfig} {
+  const scratch: ScratchOrgDefaults = {...DEFAULT_SCRATCH_ORG, ...config.scratch};
+  const sandbox: SandboxDefaults = {...DEFAULT_SANDBOX, ...config.sandbox};
+
+  const pools: {[tag: string]: PoolConfig} = {};
+  for (const [tag, pool] of Object.entries(config.pools ?? {})) {
+    const isSandbox = pool.type === 'sandbox';
+    const typeDefaults = isSandbox ? sandbox : scratch;
+
+    pools[tag] = {
+      ...typeDefaults,
+      ...pool,
+      definitionFile: pool.definitionFile ?? typeDefaults.definitionFile!,
+      sizing: {...typeDefaults.sizing, ...pool.sizing},
+    } as PoolConfig;
+  }
+
+  return pools;
 }

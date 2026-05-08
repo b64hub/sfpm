@@ -1,5 +1,5 @@
 import {loadSfpmConfig, type Logger} from '@b64hub/sfpm-core';
-import {createPoolServices, type OrgConfig, type PoolConfig} from '@b64hub/sfpm-orgs';
+import {createPoolServices, type PoolConfig} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
 import chalk from 'chalk';
@@ -40,8 +40,7 @@ export default class PoolFill extends SfpmCommand {
       description: 'target hub org username or alias',
     }),
     type: Flags.string({
-      default: OrgTypes.Scratch,
-      description: 'pool type: scratch or sandbox',
+      description: 'pool type: scratch or sandbox (inferred from config if omitted)',
       options: [OrgTypes.Scratch, OrgTypes.Sandbox],
     }),
   }
@@ -49,7 +48,6 @@ export default class PoolFill extends SfpmCommand {
   public async execute(): Promise<void> {
     const {flags} = await this.parse(PoolFill);
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
-    const poolType = flags.type as OrgTypes;
 
     const logger = {
       debug: (msg: string) => this.debug(msg),
@@ -74,10 +72,14 @@ export default class PoolFill extends SfpmCommand {
 
     try {
       const devhub = await Org.create({aliasOrUsername: devhubAlias});
+
+      const orgConfig = await this.loadOrgConfig(logger);
+      const config = this.buildPoolConfig(flags, orgConfig);
+
       const {manager} = createPoolServices({
         devhub,
         logger,
-        poolType,
+        poolType: config.type as OrgTypes,
       });
 
       const renderer = new PoolProgressRenderer({
@@ -93,8 +95,6 @@ export default class PoolFill extends SfpmCommand {
       await manager.validatePrerequisites();
       devhubSpinner?.succeed(`${chalk.cyan(devhubAlias)} connected`);
 
-      const orgConfig = await this.loadOrgConfig(logger);
-      const config = this.buildPoolConfig(flags, poolType, orgConfig);
       const result = await manager.provision(flags.tag as string, config);
 
       if (flags.json) {
@@ -116,51 +116,57 @@ export default class PoolFill extends SfpmCommand {
     }
   }
 
-  private buildPoolConfig(flags: Record<string, any>, poolType: OrgTypes, orgConfig?: OrgConfig): PoolConfig {
+  private buildPoolConfig(flags: Record<string, any>, orgConfig?: {[tag: string]: PoolConfig}): PoolConfig {
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
     const tag = flags.tag as string;
 
-    // Try to find pool config from orgConfig by tag
-    const poolDefaults = orgConfig?.pools && !Array.isArray(orgConfig.pools)
-      ? orgConfig.pools[tag]
-      : undefined;
+    // Resolved pool config from defineOrgConfig (already merged with defaults)
+    const poolConfig = orgConfig?.[tag];
 
-    const max = (flags.max as number | undefined) ?? poolDefaults?.sizing?.max;
+    if (!poolConfig && !flags.type) {
+      throw new Error(`No pool config found for tag "${tag}". Provide pool configuration in sfpm.config.ts or use CLI flags.`);
+    }
+
+    // Flag overrides take precedence over resolved config
+    const type = (flags.type as string | undefined) ?? poolConfig?.type ?? 'scratch';
+    const definitionFile = (flags['definition-file'] as string | undefined) ?? poolConfig?.definitionFile;
+    if (!definitionFile) {
+      throw new Error('--definition-file is required (or configure definitionFile in pool/scratch/sandbox config)');
+    }
+
+    const max = (flags.max as number | undefined) ?? poolConfig?.sizing?.max;
     if (!max) {
       throw new Error('--max is required (or configure sizing.max in pool config)');
     }
 
-    const definitionFile = (flags['definition-file'] as string | undefined) ?? poolDefaults?.definitionFile;
-    if (!definitionFile) {
-      throw new Error('--definition-file is required (or configure definitionFile in pool config)');
-    }
-
     const sizing = {
-      batch: (flags['batch-size'] as number | undefined) ?? poolDefaults?.sizing?.batch ?? 5,
+      batch: (flags['batch-size'] as number | undefined) ?? poolConfig?.sizing?.batch ?? 5,
       max,
     };
 
-    if (poolType === OrgTypes.Sandbox) {
+    if (type === 'sandbox') {
       return {
+        ...poolConfig,
         definitionFile: path.resolve(projectDir, definitionFile),
-        namePattern: (flags['name-pattern'] as string | undefined) ?? (poolDefaults as any)?.namePattern,
+        namePattern: (flags['name-pattern'] as string | undefined) ?? (poolConfig as any)?.namePattern,
         sizing,
         type: OrgTypes.Sandbox,
-      };
+      } as PoolConfig;
     }
 
     return {
+      ...poolConfig,
       definitionFile: path.resolve(projectDir, definitionFile),
-      expiryDays: (flags['expiry-days'] as number | undefined) ?? (poolDefaults as any)?.expiryDays,
+      expiryDays: (flags['expiry-days'] as number | undefined) ?? (poolConfig as any)?.expiryDays,
       sizing,
       type: OrgTypes.Scratch,
-    };
+    } as PoolConfig;
   }
 
-  private async loadOrgConfig(logger: Logger): Promise<OrgConfig | undefined> {
+  private async loadOrgConfig(logger: Logger): Promise<undefined | {[tag: string]: PoolConfig}> {
     try {
       const sfpmConfig = await loadSfpmConfig(process.env.SFPM_PROJECT_DIR || process.cwd(), logger);
-      return sfpmConfig.orgs as OrgConfig | undefined;
+      return sfpmConfig.orgs as undefined | {[tag: string]: PoolConfig};
     } catch {
       return undefined;
     }
