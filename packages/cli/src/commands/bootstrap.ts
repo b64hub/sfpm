@@ -468,7 +468,8 @@ export default class Bootstrap extends SfpmCommand {
     const devhubService = new PackageService(org, ctx.logger)
     const results: Array<{error?: string; name: string; success: boolean}> = []
 
-    // Intentionally sequential — each package may depend on prior ones
+    // Pre-fetch all packages once to avoid repeated API calls
+    const allPackages = await devhubService.listAllPackages()
 
     for (const name of packageNames) {
       const unscopedName = stripScope(name)
@@ -478,8 +479,6 @@ export default class Bootstrap extends SfpmCommand {
       }
 
       try {
-        // Find the Package2 in the DevHub
-        const allPackages = await devhubService.listAllPackages() // eslint-disable-line no-await-in-loop
         const pkg = allPackages.find(p => p.Name === unscopedName)
         if (!pkg) {
           const error = `Package "${unscopedName}" not found in DevHub`
