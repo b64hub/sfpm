@@ -151,7 +151,7 @@ describe('createPoolServices', () => {
     const devhub = createMockOrg({getUsername: vi.fn().mockReturnValue(undefined)});
 
     expect(() => createPoolServices({devhub})).toThrow(
-      'Hub org must be authenticated and have a username',
+      'org must be authenticated and have a username',
     );
   });
 
@@ -159,7 +159,7 @@ describe('createPoolServices', () => {
     const devhub = createMockOrg({isDevHubOrg: vi.fn().mockReturnValue(false)});
 
     expect(() => createPoolServices({devhub})).toThrow(
-      'Hub org must be a DevHub',
+      'org must be a DevHub',
     );
   });
 });
