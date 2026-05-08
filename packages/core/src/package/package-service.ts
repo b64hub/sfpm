@@ -1,4 +1,5 @@
 import {Org} from '@salesforce/core';
+import {PackageVersion} from '@salesforce/packaging';
 import semver from 'semver';
 
 import {Logger} from '../types/logger.js';
@@ -320,6 +321,26 @@ export class PackageService {
   public async preloadInstalled2GPPackages(): Promise<void> {
     this.installed2GPCache = await this.queryInstalledSubscriberPackages();
     this.logger?.debug(`Preloaded ${this.installed2GPCache.length} installed 2GP package(s) into cache`);
+  }
+
+  /**
+   * Promote a package version to released state.
+   *
+   * Uses the `@salesforce/packaging` SDK to set `IsReleased = true` on the
+   * `Package2Version` record. Accepts a subscriber package version ID (04t)
+   * or package version ID (05i).
+   *
+   * @param idOrAlias - A 04t subscriber version ID, 05i package version ID, or alias
+   */
+  public async promoteVersion(idOrAlias: string): Promise<void> {
+    const pv = new PackageVersion({
+      connection: this.getOrg().getConnection(),
+      idOrAlias,
+    });
+    const result = await pv.promote();
+    if (!result.success) {
+      throw new Error(`Failed to promote package version ${idOrAlias}: ${JSON.stringify(result.errors)}`);
+    }
   }
 
   /**

@@ -1,4 +1,4 @@
-import {PackageCreateConfig} from '../package/package-creator.js';
+import {type PackageCreateConfig} from '@b64/sfpm-core'
 
 /**
  * Bootstrap tiers determine which packages are installed into the target org.
@@ -19,14 +19,18 @@ export interface BootstrapPackageConfig extends PackageCreateConfig {
   dependencies: string[];
 }
 
-/** Result of attempting to create or resolve a single Package2 container in the DevHub. */
-export interface PackageCreationResult {
-  /** Whether the package was freshly created (false = already existed). */
-  created: boolean;
-  /** The Package2 name. */
-  name: string;
-  /** The Package2 Id (0Ho prefix). */
-  packageId: string;
+/** Per-package action determined by the idempotent status check. */
+export type BootstrapAction = 'build' | 'install' | 'promote' | 'skip'
+
+/** Per-package outcome within a bootstrap run. */
+export interface BootstrapPackageResult {
+  action: BootstrapAction;
+  error?: string;
+  packageName: string;
+  promoted?: boolean;
+  skipped: boolean;
+  success: boolean;
+  version?: string;
 }
 
 /** Overall result of the bootstrap operation. */
@@ -39,14 +43,6 @@ export interface BootstrapResult {
   targetOrg: string;
   /** Selected tier. */
   tier: BootstrapTier;
-}
-
-/** Per-package outcome within a bootstrap run. */
-export interface BootstrapPackageResult {
-  error?: string;
-  packageName: string;
-  skipped: boolean;
-  success: boolean;
 }
 
 /** The canonical package configs for the bootstrap repo. */
@@ -72,21 +68,21 @@ export const BOOTSTRAP_PACKAGES: BootstrapPackageConfig[] = [
     name: '@b64/sfpm-ui',
     path: 'packages/sfpm-ui',
   },
-];
+]
 
 /** Resolve which packages to include for a given tier. */
 export function getPackagesForTier(tier: BootstrapTier): BootstrapPackageConfig[] {
   switch (tier) {
   case BootstrapTier.Core: {
-    return BOOTSTRAP_PACKAGES.filter(p => p.name === '@b64/sfpm-artifact');
+    return BOOTSTRAP_PACKAGES.filter(p => p.name === '@b64/sfpm-artifact')
   }
 
   case BootstrapTier.Full: {
-    return [...BOOTSTRAP_PACKAGES];
+    return [...BOOTSTRAP_PACKAGES]
   }
 
   case BootstrapTier.Pool: {
-    return BOOTSTRAP_PACKAGES.filter(p => p.name !== '@b64/sfpm-ui');
+    return BOOTSTRAP_PACKAGES.filter(p => p.name !== '@b64/sfpm-ui')
   }
   }
 }

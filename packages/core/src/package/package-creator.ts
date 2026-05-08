@@ -3,10 +3,22 @@ import {Package as SfPackage} from '@salesforce/packaging';
 import EventEmitter from 'node:events';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
-import {PackageCreationResult} from '../types/bootstrap.js';
+
 import {Logger} from '../types/logger.js';
 import {stripScope} from '../utils/scope-utils.js';
 import {Package2, PackageService} from './package-service.js';
+
+/**
+ * Result of attempting to create or resolve a single Package2 container in the DevHub.
+ */
+export interface PackageCreationResult {
+  /** Whether the package was freshly created (false = already existed). */
+  created: boolean;
+  /** The Package2 name. */
+  name: string;
+  /** The Package2 Id (0Ho prefix). */
+  packageId: string;
+}
 
 /**
  * Configuration for creating a Package2 container in a DevHub.
@@ -135,7 +147,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
    * Returns a map of package name → Package2 record for matches found.
    */
   async queryExistingPackages(names: string[]): Promise<Map<string, Package2>> {
-    const sfNames = names.map(stripScope);
+    const sfNames = names.map(n => stripScope(n));
     this.emit('package:query:start', {names: sfNames});
 
     const service = new PackageService(this.org, this.logger);

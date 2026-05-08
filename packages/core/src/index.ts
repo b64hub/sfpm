@@ -76,7 +76,7 @@ export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
 export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
-export {type PackageCreateConfig, PackageCreator} from './package/package-creator.js';
+export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
 export {
@@ -106,7 +106,6 @@ export {
 } from './project/workspace-init.js';
 export {WorkspaceSync, type WorkspaceSyncOptions} from './project/workspace-sync.js';
 export * from './types/artifact.js';
-export * from './types/bootstrap.js';
 export * from './types/build-state.js';
 export * from './types/config.js';
 export * from './types/errors.js';

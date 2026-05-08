@@ -1,15 +1,12 @@
 import {
-  BootstrapPackageConfig,
-  BootstrapResult,
-  BootstrapTier,
   BuildOrchestrator,
-  getPackagesForTier,
   InstallOrchestrator,
   Logger,
   PackageCreator,
   PackageService,
   type ProjectDefinitionProvider,
   ProjectService,
+  stripScope,
 } from '@b64hub/sfpm-core'
 import {confirm, select} from '@inquirer/prompts'
 import {Flags} from '@oclif/core'
@@ -23,7 +20,15 @@ import ora, {type Ora} from 'ora'
 
 import SfpmCommand from '../sfpm-command.js'
 import {
-  errorBox, infoBox, successBox, warningBox,
+  type BootstrapAction,
+  type BootstrapPackageConfig,
+  type BootstrapPackageResult,
+  type BootstrapResult,
+  BootstrapTier,
+  getPackagesForTier,
+} from '../types/bootstrap.js'
+import {
+  errorBox, infoBox, successBox,
 } from '../ui/boxes.js'
 import {BuildProgressRenderer, OutputMode} from '../ui/build-progress-renderer.js'
 import {InstallProgressRenderer} from '../ui/install-progress-renderer.js'
@@ -34,6 +39,15 @@ const TIER_DESCRIPTIONS: Record<BootstrapTier, string> = {
   [BootstrapTier.Core]: 'sfpm-artifact only -- artifact tracking custom setting',
   [BootstrapTier.Full]: 'All packages -- adds artifact history & UI components',
   [BootstrapTier.Pool]: 'sfpm-artifact + sfpm-orgs -- adds scratch org & sandbox pooling',
+}
+
+/** Per-package status determined before the pipeline runs. */
+interface PackageStatus {
+  action: BootstrapAction;
+  installedVersion?: string;
+  latestReleasedVersion?: string;
+  name: string;
+  subscriberVersionId?: string;
 }
 
 interface BootstrapContext {
@@ -52,7 +66,7 @@ export default class Bootstrap extends SfpmCommand {
     '<%= config.bin %> <%= command.id %> -o my-prod-org --force',
   ]
   static override flags = {
-    force: Flags.boolean({char: 'f', description: 'force re-install even if packages are already installed'}),
+    force: Flags.boolean({char: 'f', description: 'force rebuild, re-promote, and re-install all packages'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'target-org': Flags.string({char: 'o', description: 'target org username (must also be a DevHub)', required: true}),
@@ -91,31 +105,98 @@ export default class Bootstrap extends SfpmCommand {
     try {
       const org = await this.connectToOrg(ctx.targetOrg, ctx.isInteractive)
 
-      const skipResult = await this.checkAndSkipIfInstalled(org, packageNames, tier, flags, ctx)
-      if (skipResult) return skipResult
+      // ── 1. Resolve per-package status ──────────────────────────────
+      const statuses = await this.resolvePackageStatuses(org, selectedPackages, flags.force ?? false, ctx)
 
-      // Create ProjectService first — this detects the provider and writes
-      // sfdx-project.json for workspace repos so SfProject can resolve it.
-      const projectService = await ProjectService.create(tmpDir)
-      const provider = projectService.getDefinitionProvider()
-
-      await this.ensurePackageContainers(org, selectedPackages, provider, tmpDir, ctx)
-
-      // Re-sync sfdx-project.json after packageIds have been persisted
-      projectService.syncSfdxProject()
-
-      const buildResult = await this.buildPackages(projectService, packageNames, tier, flags, ctx)
-      if (!buildResult.success) return buildResult.result
-
-      const result = await this.installPackages(projectService, packageNames, tier, flags, ctx)
-
-      if (flags.json) {
-        this.logJson(result)
-        return result
+      // If everything is up-to-date, short-circuit
+      if (statuses.every(s => s.action === 'skip')) {
+        return this.handleAllUpToDate(statuses, tier, flags, ctx)
       }
 
-      this.renderFinalResult(result, packageNames, tier, ctx)
-      return result
+      if (ctx.isInteractive) {
+        this.logPackageStatuses(statuses)
+      }
+
+      // ── 2. Setup project for packages that need building ──────────
+      const needsBuild = statuses.filter(s => s.action === 'build')
+      const needsPromote = statuses.filter(s => s.action === 'promote')
+      const needsInstall = statuses.filter(s => s.action === 'install' || s.action === 'build' || s.action === 'promote')
+      const results: BootstrapPackageResult[] = statuses
+      .filter(s => s.action === 'skip')
+      .map(s => ({
+        action: 'skip' as const, packageName: s.name, skipped: true, success: true, version: s.installedVersion,
+      }))
+
+      let projectService: ProjectService | undefined
+
+      if (needsBuild.length > 0) {
+        projectService = await ProjectService.create(tmpDir)
+        const provider = projectService.getDefinitionProvider()
+        await this.ensurePackageContainers(org, {
+          ctx, packages: selectedPackages, provider, tmpDir,
+        })
+        projectService.syncSfdxProject()
+
+        // ── 3. Build packages that need it ─────────────────────────
+        const buildNames = needsBuild.map(s => s.name)
+        const buildResult = await this.buildPackages(projectService, buildNames, flags.force ?? false, ctx)
+
+        if (!buildResult.success) {
+          for (const name of buildNames) {
+            const failed = buildResult.failedPackages?.includes(name)
+            results.push({
+              action: 'build',
+              error: failed ? 'Build failed' : undefined,
+              packageName: name,
+              skipped: false,
+              success: !failed,
+            })
+          }
+
+          return this.finalizeResult(results, tier, flags, ctx)
+        }
+      }
+
+      // ── 4. Promote unpromoted versions (newly built + previously built but not promoted) ──
+      const promoteNames = [
+        ...needsBuild.map(s => s.name),
+        ...needsPromote.map(s => s.name),
+      ]
+      if (promoteNames.length > 0) {
+        const promoteResults = await this.promotePackages(org, promoteNames, ctx)
+        for (const pr of promoteResults) {
+          if (!pr.success) {
+            results.push({
+              action: 'promote',
+              error: pr.error,
+              packageName: pr.name,
+              promoted: false,
+              skipped: false,
+              success: false,
+            })
+          }
+        }
+      }
+
+      // ── 5. Install packages that need it ─────────────────────────
+      // Only install packages that haven't already failed
+      const failedNames = new Set(results.filter(r => !r.success).map(r => r.packageName))
+      const installNames = needsInstall
+      .map(s => s.name)
+      .filter(name => !failedNames.has(name))
+
+      if (installNames.length > 0) {
+        if (!projectService) {
+          projectService = await ProjectService.create(tmpDir)
+        }
+
+        const installResults = await this.installPackages(projectService, installNames, flags, ctx)
+        for (const ir of installResults) {
+          results.push(ir)
+        }
+      }
+
+      return this.finalizeResult(results, tier, flags, ctx)
     } finally {
       await this.cleanup(tmpDir, ctx.isInteractive)
     }
@@ -128,10 +209,9 @@ export default class Bootstrap extends SfpmCommand {
   private async buildPackages(
     projectService: ProjectService,
     packageNames: string[],
-    tier: BootstrapTier,
-    flags: {force?: boolean; json?: boolean; 'target-org': string},
+    force: boolean,
     ctx: BootstrapContext,
-  ): Promise<{result?: BootstrapResult; success: boolean}> {
+  ): Promise<{failedPackages?: string[]; success: boolean}> {
     if (ctx.isInteractive) {
       this.log(chalk.bold('\nBuilding packages...\n'))
     }
@@ -139,7 +219,7 @@ export default class Bootstrap extends SfpmCommand {
     const buildOrchestrator = new BuildOrchestrator(
       projectService.getDefinitionProvider(),
       projectService.getProjectGraph(),
-      {devhubUsername: ctx.targetOrg, force: true, includeDependencies: true},
+      {devhubUsername: ctx.targetOrg, force, includeDependencies: true},
       ctx.logger,
       projectService.getDefinitionProvider().projectDir,
     )
@@ -151,70 +231,14 @@ export default class Bootstrap extends SfpmCommand {
       },
       mode: ctx.mode,
     })
-    buildRenderer.attachTo(buildOrchestrator as any)
+    buildRenderer.attachTo(buildOrchestrator as unknown as Parameters<typeof buildRenderer.attachTo>[0])
 
     const buildResult = await buildOrchestrator.buildAll(packageNames)
 
-    if (!buildResult.success) {
-      const failedNames = buildResult.failedPackages.join(', ')
-
-      if (flags.json) {
-        const result: BootstrapResult = {
-          packages: buildResult.results.map(p => ({
-            error: p.error, packageName: p.packageName, skipped: p.skipped, success: p.success,
-          })),
-          success: false,
-          targetOrg: ctx.targetOrg,
-          tier,
-        }
-        this.logJson(result)
-        return {result, success: false}
-      }
-
-      this.error(`Build failed for: ${failedNames}`, {exit: 1})
+    return {
+      failedPackages: buildResult.failedPackages,
+      success: buildResult.success,
     }
-
-    return {success: true}
-  }
-
-  private async checkAndSkipIfInstalled(
-    org: Org,
-    packageNames: string[],
-    tier: BootstrapTier,
-    flags: {force?: boolean; json?: boolean; 'target-org': string},
-    ctx: BootstrapContext,
-  ): Promise<BootstrapResult | void> {
-    if (flags.force) return
-
-    const alreadyInstalled = await this.checkInstalledPackages(org, packageNames, ctx.logger)
-    if (alreadyInstalled.length === 0) return
-
-    if (ctx.isInteractive) {
-      this.log(warningBox('Already Installed', {
-        Hint: 'Use --force to re-install',
-        Packages: alreadyInstalled.join(', '),
-      }))
-    }
-
-    if (flags.json) {
-      const result: BootstrapResult = {
-        packages: alreadyInstalled.map(name => ({
-          packageName: name, skipped: true, success: true,
-        })),
-        success: true,
-        targetOrg: ctx.targetOrg,
-        tier,
-      }
-      this.logJson(result)
-      return result
-    }
-  }
-
-  private async checkInstalledPackages(org: Org, packageNames: string[], logger: Logger): Promise<string[]> {
-    const service = new PackageService(org, logger)
-    const installed = await service.getAllInstalled2GPPackages()
-    const installedNames = new Set(installed.map(p => p.name))
-    return packageNames.filter(name => installedNames.has(name))
   }
 
   private async cleanup(tmpDir: string, isInteractive: boolean): Promise<void> {
@@ -253,10 +277,6 @@ export default class Bootstrap extends SfpmCommand {
     return tmpDir
   }
 
-  // ====================================================================
-  // Private helpers
-  // ====================================================================
-
   private async connectToOrg(username: string, isInteractive: boolean): Promise<Org> {
     let spinner: Ora | undefined
     if (isInteractive) {
@@ -288,6 +308,10 @@ export default class Bootstrap extends SfpmCommand {
     }
   }
 
+  // ====================================================================
+  // Private helpers
+  // ====================================================================
+
   private createLogger(): Logger {
     return {
       debug: (msg: string) => this.debug(msg),
@@ -301,14 +325,11 @@ export default class Bootstrap extends SfpmCommand {
 
   private async ensurePackageContainers(
     org: Org,
-    selectedPackages: BootstrapPackageConfig[],
-    provider: ProjectDefinitionProvider,
-    tmpDir: string,
-    ctx: BootstrapContext,
+    options: {ctx: BootstrapContext; packages: BootstrapPackageConfig[]; provider: ProjectDefinitionProvider; tmpDir: string},
   ): Promise<void> {
-    const creator = new PackageCreator(org, ctx.logger)
-    await creator.ensurePackages(selectedPackages, provider, tmpDir, async name => {
-      if (!ctx.isInteractive) return true
+    const creator = new PackageCreator(org, options.ctx.logger)
+    await creator.ensurePackages(options.packages, options.provider, options.tmpDir, async name => {
+      if (!options.ctx.isInteractive) return true
       return confirm({
         default: true,
         message: `Package '${name}' does not exist in the DevHub. Create it?`,
@@ -316,13 +337,68 @@ export default class Bootstrap extends SfpmCommand {
     })
   }
 
+  private finalizeResult(
+    results: BootstrapPackageResult[],
+    tier: BootstrapTier,
+    flags: {force?: boolean; json?: boolean; 'target-org': string},
+    ctx: BootstrapContext,
+  ): BootstrapResult | void {
+    const result: BootstrapResult = {
+      packages: results,
+      success: results.every(r => r.success),
+      targetOrg: ctx.targetOrg,
+      tier,
+    }
+
+    if (flags.json) {
+      this.logJson(result)
+      return result
+    }
+
+    this.renderFinalResult(result, ctx)
+    return result
+  }
+
+  private handleAllUpToDate(
+    statuses: PackageStatus[],
+    tier: BootstrapTier,
+    flags: {force?: boolean; json?: boolean; 'target-org': string},
+    ctx: BootstrapContext,
+  ): BootstrapResult | void {
+    const result: BootstrapResult = {
+      packages: statuses.map(s => ({
+        action: 'skip' as const,
+        packageName: s.name,
+        skipped: true,
+        success: true,
+        version: s.installedVersion,
+      })),
+      success: true,
+      targetOrg: ctx.targetOrg,
+      tier,
+    }
+
+    if (ctx.isInteractive) {
+      this.log(successBox('All packages up-to-date', {
+        Hint: 'Use --force to rebuild and re-install',
+        Packages: statuses.map(s => `${stripScope(s.name)} (${s.installedVersion})`).join(', '),
+        'Target Org': ctx.targetOrg,
+      }))
+    }
+
+    if (flags.json) {
+      this.logJson(result)
+    }
+
+    return result
+  }
+
   private async installPackages(
     projectService: ProjectService,
     packageNames: string[],
-    tier: BootstrapTier,
     flags: {force?: boolean; 'target-org': string},
     ctx: BootstrapContext,
-  ): Promise<BootstrapResult> {
+  ): Promise<BootstrapPackageResult[]> {
     if (ctx.isInteractive) {
       this.log(chalk.bold('\nInstalling packages...\n'))
     }
@@ -349,43 +425,247 @@ export default class Bootstrap extends SfpmCommand {
       mode: ctx.mode,
       targetOrg: ctx.targetOrg,
     })
-    installRenderer.attachTo(installOrchestrator as any)
+    installRenderer.attachTo(installOrchestrator as unknown as Parameters<typeof installRenderer.attachTo>[0])
 
     const installResult = await installOrchestrator.installAll(packageNames)
 
-    return {
-      packages: installResult.results.map(p => ({
-        error: p.error, packageName: p.packageName, skipped: p.skipped, success: p.success,
-      })),
-      success: installResult.success,
-      targetOrg: ctx.targetOrg,
-      tier,
+    return installResult.results.map(p => ({
+      action: 'install' as BootstrapAction,
+      error: p.error,
+      packageName: p.packageName,
+      skipped: p.skipped,
+      success: p.success,
+    }))
+  }
+
+  private logPackageStatuses(statuses: PackageStatus[]): void {
+    const lines: string[] = []
+    for (const s of statuses) {
+      const name = stripScope(s.name)
+      switch (s.action) {
+      case 'build': {
+        lines.push(chalk.yellow(`  [build]   ${name}`))
+        break
+      }
+
+      case 'install': {
+        lines.push(chalk.blue(`  [install] ${name} (${s.latestReleasedVersion})`))
+        break
+      }
+
+      case 'promote': {
+        lines.push(chalk.magenta(`  [promote] ${name} (${s.latestReleasedVersion})`))
+        break
+      }
+
+      case 'skip': {
+        lines.push(chalk.dim(`  [skip]    ${name} (${s.installedVersion})`))
+        break
+      }
+      }
+    }
+
+    this.log(`\n${lines.join('\n')}\n`)
+  }
+
+  private async promotePackages(
+    org: Org,
+    packageNames: string[],
+    ctx: BootstrapContext,
+  ): Promise<Array<{error?: string; name: string; success: boolean}>> {
+    if (ctx.isInteractive) {
+      this.log(chalk.bold('\nPromoting package versions...\n'))
+    }
+
+    const devhubService = new PackageService(org, ctx.logger)
+    const results: Array<{error?: string; name: string; success: boolean}> = []
+
+    // Intentionally sequential — each package may depend on prior ones
+
+    for (const name of packageNames) {
+      const unscopedName = stripScope(name)
+      let spinner: Ora | undefined
+      if (ctx.isInteractive) {
+        spinner = ora(`Promoting ${unscopedName}...`).start()
+      }
+
+      try {
+        // Find the Package2 in the DevHub
+        const allPackages = await devhubService.listAllPackages() // eslint-disable-line no-await-in-loop
+        const pkg = allPackages.find(p => p.Name === unscopedName)
+        if (!pkg) {
+          const error = `Package "${unscopedName}" not found in DevHub`
+          spinner?.fail(error)
+          results.push({error, name, success: false})
+          continue
+        }
+
+        // Get the latest non-released version (the one we just built)
+        const versions = await devhubService.getPackage2VersionById(pkg.Id) // eslint-disable-line no-await-in-loop
+        const unpromoted = versions.find(v => !v.IsReleased)
+
+        if (!unpromoted) {
+          // All versions are already promoted — nothing to do
+          spinner?.succeed(`${unscopedName} -- already promoted`)
+          results.push({name, success: true})
+          continue
+        }
+
+        await devhubService.promoteVersion(unpromoted.SubscriberPackageVersionId) // eslint-disable-line no-await-in-loop
+        spinner?.succeed(`${unscopedName} -- promoted (${unpromoted.SubscriberPackageVersionId})`)
+        results.push({name, success: true})
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        spinner?.fail(`${unscopedName} -- promote failed: ${message}`)
+        results.push({error: message, name, success: false})
+        // Continue with next package — promotion can be retried on re-run
+      }
+    }
+
+    return results
+  }
+
+  private renderFinalResult(result: BootstrapResult, ctx: BootstrapContext): void {
+    if (!ctx.isInteractive) return
+
+    if (result.success) {
+      const details: Record<string, string> = {
+        'Target Org': ctx.targetOrg,
+        Tier: result.tier,
+      }
+
+      const installed = result.packages.filter(p => !p.skipped)
+      if (installed.length > 0) {
+        details.Installed = installed.map(p => p.packageName).join(', ')
+      }
+
+      const skipped = result.packages.filter(p => p.skipped)
+      if (skipped.length > 0) {
+        details.Skipped = skipped.map(p => p.packageName).join(', ')
+      }
+
+      this.log(successBox('Bootstrap Complete', details))
+    } else {
+      const failed = result.packages.filter(p => !p.success)
+      this.log(errorBox('Bootstrap Failed', {
+        'Failed Packages': failed.map(p => `${p.packageName}: ${p.error ?? 'unknown error'}`).join('\n'),
+        Hint: 'Re-run the command to retry failed packages',
+        'Target Org': ctx.targetOrg,
+      }))
     }
   }
 
-  private renderFinalResult(
-    result: BootstrapResult,
-    packageNames: string[],
-    tier: BootstrapTier,
+  /**
+   * Resolve per-package action by comparing DevHub versions to what's installed.
+   *
+   * - skip:    installed version >= latest released version
+   * - install: a released version exists that's newer than what's installed
+   * - promote: an unreleased version exists (built but not promoted)
+   * - build:   no version exists at all, or --force is set
+   */
+  private async resolvePackageStatuses(
+    org: Org,
+    selectedPackages: BootstrapPackageConfig[],
+    force: boolean,
     ctx: BootstrapContext,
-  ): void {
-    if (result.success) {
-      this.log(successBox('Bootstrap Complete', {
-        Packages: packageNames.join(', '),
-        'Target Org': ctx.targetOrg,
-        Tier: tier,
-      }))
-    } else {
-      const failedNames = result.packages
-      .filter(p => !p.success)
-      .map(p => p.packageName)
-      .join(', ')
-      this.log(errorBox('Bootstrap Failed', {
-        'Failed Packages': failedNames,
-        'Target Org': ctx.targetOrg,
-      }))
-      this.error(`Install failed for: ${failedNames}`, {exit: 2})
+  ): Promise<PackageStatus[]> {
+    let spinner: Ora | undefined
+    if (ctx.isInteractive) {
+      spinner = ora('Checking package versions...').start()
     }
+
+    const devhubService = new PackageService(org, ctx.logger)
+    const installed = await devhubService.getAllInstalled2GPPackages()
+    const installedByName = new Map(installed.map(p => [p.name, p]))
+    const allDevHubPackages = await devhubService.listAllPackages()
+
+    const statuses: PackageStatus[] = []
+
+    // Sequential: each package queried individually from DevHub
+    for (const pkg of selectedPackages) {
+      const unscopedName = stripScope(pkg.name)
+
+      if (force) {
+        statuses.push({action: 'build', name: pkg.name})
+        continue
+      }
+
+      // Find the Package2 in the DevHub
+      const devhubPkg = allDevHubPackages.find(p => p.Name === unscopedName)
+      if (!devhubPkg) {
+        // Package doesn't exist in DevHub yet — needs full build
+        statuses.push({action: 'build', name: pkg.name})
+        continue
+      }
+
+      // Get the latest released version from the DevHub
+      // eslint-disable-next-line no-await-in-loop
+      const releasedVersions = await devhubService.getPackage2VersionById(devhubPkg.Id, undefined, false, true)
+
+      if (releasedVersions.length === 0) {
+        // No released versions — check for unreleased (built but not promoted)
+        const allVersions = await devhubService.getPackage2VersionById(devhubPkg.Id) // eslint-disable-line no-await-in-loop
+        if (allVersions.length > 0) {
+          // Unreleased version exists — just promote + install
+          const latest = allVersions[0]
+          const latestVersion = `${latest.MajorVersion}.${latest.MinorVersion}.${latest.PatchVersion}.${latest.BuildNumber}`
+          statuses.push({
+            action: 'promote',
+            latestReleasedVersion: latestVersion,
+            name: pkg.name,
+            subscriberVersionId: latest.SubscriberPackageVersionId,
+          })
+        } else {
+          // No versions at all — needs full build
+          statuses.push({action: 'build', name: pkg.name})
+        }
+
+        continue
+      }
+
+      const latestReleased = releasedVersions[0] // Already sorted descending
+      const latestVersion = `${latestReleased.MajorVersion}.${latestReleased.MinorVersion}.${latestReleased.PatchVersion}.${latestReleased.BuildNumber}`
+
+      // Check what's installed in the target org
+      const installedPkg = installedByName.get(unscopedName)
+      if (!installedPkg) {
+        // Released version exists but not installed — just install
+        statuses.push({
+          action: 'install',
+          latestReleasedVersion: latestVersion,
+          name: pkg.name,
+          subscriberVersionId: latestReleased.SubscriberPackageVersionId,
+        })
+        continue
+      }
+
+      // Compare versions
+      if (installedPkg.versionNumber === latestVersion) {
+        statuses.push({
+          action: 'skip',
+          installedVersion: installedPkg.versionNumber,
+          latestReleasedVersion: latestVersion,
+          name: pkg.name,
+        })
+      } else {
+        // Different version installed — install the latest released
+        statuses.push({
+          action: 'install',
+          installedVersion: installedPkg.versionNumber,
+          latestReleasedVersion: latestVersion,
+          name: pkg.name,
+          subscriberVersionId: latestReleased.SubscriberPackageVersionId,
+        })
+      }
+    }
+
+    const skipped = statuses.filter(s => s.action === 'skip').length
+    const builds = statuses.filter(s => s.action === 'build').length
+    const promotes = statuses.filter(s => s.action === 'promote').length
+    const installs = statuses.filter(s => s.action === 'install').length
+    spinner?.succeed(`Version check complete: ${skipped} up-to-date, ${builds} need build, ${promotes} need promote, ${installs} need install`)
+
+    return statuses
   }
 
   private async resolveTier(flagValue: BootstrapTier | undefined, isInteractive: boolean): Promise<BootstrapTier> {
