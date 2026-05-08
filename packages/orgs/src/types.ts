@@ -1,6 +1,4 @@
-import {SandboxDefaults} from './org/sandbox/types.js';
-import {ScratchOrgDefaults} from './org/scratch/types.js';
-import {PoolConfig} from './pool/types.js';
+import type {NetworkSettings, SandboxPoolConfig, ScratchOrgPoolConfig} from './pool/types.js';
 
 /**
  * Org-level configuration that plugs into `sfpm.config.ts`.
@@ -17,27 +15,23 @@ import {PoolConfig} from './pool/types.js';
  * export default defineConfig({
  *   hooks: [],
  *   orgs: defineOrgConfig({
- *     scratch: {
- *       definitionFile: 'config/project-scratch-def.json',
- *       expiryDays: 7,
- *     },
- *     pool: {
- *       tag: 'dev-pool',
- *       sizing: { maxAllocation: 10, minAllocation: 2 },
+ *     pools: {
+ *       'dev-pool': {
+ *         type: 'scratch',
+ *         definitionFile: 'config/project-scratch-def.json',
+ *         sizing: { max: 10, min: 2 },
+ *       },
  *     },
  *   }),
  * });
  * ```
  */
-export interface OrgConfig {
+export interface OrgConfig<T extends SandboxPoolConfig | ScratchOrgPoolConfig = SandboxPoolConfig | ScratchOrgPoolConfig> {
   /** Default network settings applied to all provisioned orgs */
-  network?: PoolConfig['network'];
+  network?: NetworkSettings;
 
-  /** Pool configuration(s). A single pool or an array of named pools. */
-  pool?: PoolConfig | PoolConfig[];
-
-  sandbox?: Partial<SandboxDefaults>;
-  scratch?: Partial<ScratchOrgDefaults>;
+  /** Pool configuration(s) keyed by tag. */
+  pools?: {[tag: string]: T};
 }
 
 /**
@@ -48,8 +42,13 @@ export interface OrgConfig {
  * import { defineOrgConfig } from '@b64hub/sfpm-orgs';
  *
  * const orgs = defineOrgConfig({
- *   scratch: { definitionFile: 'config/project-scratch-def.json' },
- *   pool: { tag: 'dev', sizing: { maxAllocation: 10 } },
+ *   pools: {
+ *     'dev-pool': {
+ *       type: 'scratch',
+ *       definitionFile: 'config/project-scratch-def.json',
+ *       sizing: { max: 10 },
+ *     },
+ *   },
  * });
  * ```
  */

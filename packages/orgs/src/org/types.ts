@@ -1,6 +1,6 @@
 import {PoolOrg} from '../index.js';
 
-export {DEFAULT_SCRATCH_ORG, type ScratchOrgDefaults} from './scratch/types.js';
+export {DEFAULT_SCRATCH_ORG} from './scratch/types.js';
 export type {
   ScratchOrgCreateResult,
 } from './scratch/types.js';

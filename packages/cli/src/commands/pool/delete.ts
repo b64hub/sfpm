@@ -85,10 +85,9 @@ export default class PoolDelete extends SfpmCommand {
       });
       renderer.attachToManager(manager);
 
-      const result = await manager.delete({
+      const result = await manager.delete(flags.tag, {
         inProgressOnly: flags['in-progress-only'],
         myPool: flags['my-pool'],
-        tag: flags.tag,
       });
 
       if (flags.json) {

@@ -22,7 +22,6 @@ export {
   DEFAULT_SANDBOX,
   type Sandbox,
   type SandboxCreateOptions,
-  type SandboxDefaults,
   type SandboxLicenseType,
   type SandboxPoolInfo,
 } from './org/sandbox/types.js';
@@ -78,7 +77,7 @@ export {
   type PoolOrgTask,
   type PoolOrgTaskResult,
   type PoolProvisioningState,
-  type PoolSizingConfig,
+  type PoolSize,
   type PostClaimAction,
   type SandboxPoolConfig,
   type ScratchOrgPoolConfig,

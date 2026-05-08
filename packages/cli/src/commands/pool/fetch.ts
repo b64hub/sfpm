@@ -103,10 +103,9 @@ export default class PoolFetch extends SfpmCommand {
       const fetchOptions = {
         myPool: flags['my-pool'],
         postClaimActions,
-        tag: flags.tag,
       };
 
-      const org = await fetcher.fetch(fetchOptions);
+      const org = await fetcher.fetch(flags.tag, fetchOptions);
 
       // Set alias if requested
       if (flags.alias && org.auth.username) {

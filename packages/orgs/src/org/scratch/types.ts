@@ -40,27 +40,8 @@ export type PoolScratchOrgCreateResult = Omit<ScratchOrgCreateResult, 'scratchOr
   scratchOrgInfo?: ScratchOrgInfoRecord;
 };
 
-/**
- * Scratch org creation defaults used when provisioning orgs for a pool.
- *
- * These settings control how individual scratch orgs are created.
- * They can be overridden per-invocation via `CreateScratchOrgOptions`.
- */
-export interface ScratchOrgDefaults {
-  /** Path to the scratch org definition file (e.g., `config/project-scratch-def.json`) */
-  definitionFile: string;
-  /** Number of days until scratch orgs expire (default: 7) */
-  expiryDays?: number;
-  /** Max retries on transient creation failures (default: 3) */
-  maxRetries?: number;
-  /** Whether to exclude ancestor package versions (default: false) */
-  noAncestors?: boolean;
-  /** Max minutes to wait for org creation (default: 6) */
-  waitMinutes?: number;
-}
-
 /** Default scratch org creation settings. */
-export const DEFAULT_SCRATCH_ORG: Required<Pick<ScratchOrgDefaults, 'expiryDays' | 'maxRetries' | 'noAncestors' | 'waitMinutes'>> = {
+export const DEFAULT_SCRATCH_ORG = {
   expiryDays: 7,
   maxRetries: 3,
   noAncestors: false,

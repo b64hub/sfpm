@@ -74,7 +74,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      const result = await fetcher.fetch({tag: 'test-pool'});
+      const result = await fetcher.fetch('test-pool');
 
       expect(orgSource.claimOrg).toHaveBeenCalledWith('a00000000000001');
       expect(result.auth.username).toBe('claimed@scratch.org');
@@ -91,7 +91,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      const result = await fetcher.fetch({tag: 'test-pool'});
+      const result = await fetcher.fetch('test-pool');
 
       expect(orgSource.claimOrg).toHaveBeenCalledTimes(2);
       expect(result.auth.username).toBe('available@scratch.org');
@@ -102,7 +102,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      await expect(fetcher.fetch({tag: 'empty-pool'})).rejects.toThrow('No orgs available for pool "empty-pool"');
+      await expect(fetcher.fetch('empty-pool')).rejects.toThrow('No orgs available for pool "empty-pool"');
     });
 
     it('should throw when all claim attempts fail', async () => {
@@ -112,7 +112,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      await expect(fetcher.fetch({tag: 'test-pool'})).rejects.toThrow('No org could be claimed');
+      await expect(fetcher.fetch('test-pool')).rejects.toThrow('No org could be claimed');
     });
 
     it('should run postClaimActions after claiming', async () => {
@@ -122,11 +122,10 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      await fetcher.fetch({
+      await fetcher.fetch('test-pool', {
         postClaimActions: [
           (o) => authenticator.login(o),
         ],
-        tag: 'test-pool',
       });
 
       expect(authenticator.login).toHaveBeenCalledWith(expect.objectContaining({
@@ -141,12 +140,11 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      await fetcher.fetch({
+      await fetcher.fetch('test-pool', {
         postClaimActions: [
           (o) => authenticator.login(o),
           (o) => authenticator.enableSourceTracking(o),
         ],
-        tag: 'test-pool',
       });
 
       expect(authenticator.login).toHaveBeenCalledWith(expect.objectContaining({auth: expect.objectContaining({username: org.auth.username})}));
@@ -162,7 +160,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      await fetcher.fetch({postClaimActions: [shareAction], tag: 'test-pool'});
+      await fetcher.fetch('test-pool', {postClaimActions: [shareAction]});
 
       expect(shareAction).toHaveBeenCalledWith(
         expect.objectContaining({auth: expect.objectContaining({username: org.auth.username})}),
@@ -175,7 +173,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      await expect(fetcher.fetch({myPool: true, tag: 'test-pool'})).rejects.toThrow();
+      await expect(fetcher.fetch('test-pool', {myPool: true})).rejects.toThrow();
 
       expect(orgSource.getAvailableByTag).toHaveBeenCalledWith('test-pool', true);
     });
@@ -192,7 +190,7 @@ describe('PoolFetcher', () => {
       fetcher.on('pool:fetch:claimed', () => events.push('claimed'));
       fetcher.on('pool:fetch:complete', () => events.push('complete'));
 
-      await fetcher.fetch({tag: 'test-pool'});
+      await fetcher.fetch('test-pool');
 
       expect(events).toEqual(['start', 'claimed', 'complete']);
     });
@@ -210,7 +208,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      const result = await fetcher.fetchAll({tag: 'test-pool'});
+      const result = await fetcher.fetchAll('test-pool');
 
       expect(orgSource.claimOrg).not.toHaveBeenCalled();
       expect(result).toHaveLength(2);
@@ -223,7 +221,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      const result = await fetcher.fetchAll({limit: 3, tag: 'test-pool'});
+      const result = await fetcher.fetchAll('test-pool', {limit: 3});
 
       expect(result).toHaveLength(3);
     });
@@ -235,7 +233,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      const result = await fetcher.fetchAll({tag: 'test-pool'});
+      const result = await fetcher.fetchAll('test-pool');
 
       expect(result[0].auth.alias).toBe('SO1');
       expect(result[1].auth.alias).toBe('SO2');
@@ -247,7 +245,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      const result = await fetcher.fetchAll({tag: 'test-pool'});
+      const result = await fetcher.fetchAll('test-pool');
 
       expect(result).toHaveLength(1);
     });
@@ -257,7 +255,7 @@ describe('PoolFetcher', () => {
 
       const fetcher = new PoolFetcher(orgSource as any);
 
-      await expect(fetcher.fetchAll({tag: 'empty-pool'})).rejects.toThrow('No orgs available for pool "empty-pool"');
+      await expect(fetcher.fetchAll('empty-pool')).rejects.toThrow('No orgs available for pool "empty-pool"');
     });
 
     it('should emit start and complete events', async () => {
@@ -270,7 +268,7 @@ describe('PoolFetcher', () => {
       fetcher.on('pool:fetch:start', () => events.push('start'));
       fetcher.on('pool:fetch:complete', () => events.push('complete'));
 
-      await fetcher.fetchAll({tag: 'test-pool'});
+      await fetcher.fetchAll('test-pool');
 
       expect(events).toEqual(['start', 'complete']);
     });

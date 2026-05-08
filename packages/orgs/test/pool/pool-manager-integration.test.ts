@@ -1,15 +1,15 @@
 import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest';
+import {OrgTypes} from '@salesforce/core';
 
 import type {
-  PoolConfig, PoolDeleteOptions, PoolOrgTask, PoolOrgTaskResult,
+  PoolConfig, PoolOrgTask, PoolOrgTaskResult,
 } from '../../src/pool/types.js';
 
 import type {OrgProvider} from '../../src/org/org-provider.js';
 
 import PoolManager from '../../src/pool/pool-manager.js';
-import { OrgTypes } from '@salesforce/core';
 
 // ============================================================================
 // Test Helpers
@@ -35,21 +35,18 @@ function createMockProvider(): {[K in keyof OrgProvider]: ReturnType<typeof vi.f
   };
 }
 
-function createPoolConfig(overrides?: Partial<PoolConfig>): PoolConfig {
+function createPoolConfig(overrides?: Partial<PoolConfig> & {tag?: string}): PoolConfig {
   return {
-    scratch: {
-      definitionFile: 'config/project-scratch-def.json',
-      expiryDays: 7,
-      ...('scratch' in (overrides ?? {}) ? (overrides as any).scratch : {}),
-    },
+    definitionFile: 'config/project-scratch-def.json',
+    expiryDays: 7,
     sizing: {
-      batchSize: 2,
-      maxAllocation: 5,
+      batch: 2,
+      max: 5,
       ...overrides?.sizing,
     },
-    tag: overrides?.tag ?? 'test-pool',
     type: OrgTypes.Scratch,
-  };
+    ...overrides,
+  } as PoolConfig;
 }
 
 function createScratchOrg(overrides?: Record<string, unknown>) {
@@ -97,9 +94,9 @@ describe('PoolManager', () => {
       provider.getActiveCountByTag.mockResolvedValue(3);
 
       const manager = new PoolManager({provider: provider as any});
-      const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 10}});
+      const config = createPoolConfig({sizing: {batch: 5, max: 10}});
 
-      const result = await manager.computeAllocation(config);
+      const result = await manager.computeAllocation('test-pool', config);
 
       expect(provider.getRemainingCapacity).toHaveBeenCalled();
       expect(provider.getActiveCountByTag).toHaveBeenCalledWith('test-pool');
@@ -116,7 +113,7 @@ describe('PoolManager', () => {
       const events: any[] = [];
       manager.on('pool:allocation:computed', e => events.push(e));
 
-      await manager.computeAllocation(createPoolConfig());
+      await manager.computeAllocation('test-pool', createPoolConfig());
 
       expect(events).toHaveLength(1);
       expect(events[0].tag).toBe('test-pool');
@@ -134,7 +131,7 @@ describe('PoolManager', () => {
       provider.getActiveCountByTag.mockResolvedValue(5); // maxAllocation = 5
 
       const manager = new PoolManager({provider: provider as any});
-      const result = await manager.provision(createPoolConfig());
+      const result = await manager.provision('test-pool', createPoolConfig());
 
       expect(result.succeeded).toEqual([]);
       expect(result.failed).toBe(0);
@@ -147,7 +144,7 @@ describe('PoolManager', () => {
       provider.getActiveCountByTag.mockResolvedValue(0);
 
       const manager = new PoolManager({provider: provider as any});
-      const result = await manager.provision(createPoolConfig());
+      const result = await manager.provision('test-pool', createPoolConfig());
 
       expect(result.succeeded).toEqual([]);
       expect(result.errors).toHaveLength(1);
@@ -170,8 +167,8 @@ describe('PoolManager', () => {
       provider.updatePoolMetadata.mockResolvedValue(undefined);
 
       const manager = new PoolManager({provider: provider as any});
-      const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 2}});
-      const result = await manager.provision(config);
+      const config = createPoolConfig({sizing: {batch: 5, max: 2}});
+      const result = await manager.provision('test-pool', config);
 
       expect(provider.createOrg).toHaveBeenCalledTimes(2);
       expect(provider.isOrgActive).toHaveBeenCalledTimes(2);
@@ -193,8 +190,8 @@ describe('PoolManager', () => {
       provider.updatePoolMetadata.mockResolvedValue(undefined);
 
       const manager = new PoolManager({provider: provider as any});
-      const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 2}});
-      const result = await manager.provision(config);
+      const config = createPoolConfig({sizing: {batch: 5, max: 2}});
+      const result = await manager.provision('test-pool', config);
 
       expect(result.succeeded).toHaveLength(1);
       expect(result.failed).toBe(1);
@@ -209,9 +206,9 @@ describe('PoolManager', () => {
       provider.createOrg.mockRejectedValue(new Error('API limit'));
 
       const manager = new PoolManager({provider: provider as any});
-      const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 2}});
+      const config = createPoolConfig({sizing: {batch: 5, max: 2}});
 
-      await expect(manager.provision(config)).rejects.toThrow('All scratch org provisioning attempts failed');
+      await expect(manager.provision('test-pool', config)).rejects.toThrow('All scratch org provisioning attempts failed');
     });
 
     it('should discard orgs that fail validation', async () => {
@@ -233,8 +230,8 @@ describe('PoolManager', () => {
       provider.updatePoolMetadata.mockResolvedValue(undefined);
 
       const manager = new PoolManager({provider: provider as any});
-      const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 2}});
-      const result = await manager.provision(config);
+      const config = createPoolConfig({sizing: {batch: 5, max: 2}});
+      const result = await manager.provision('test-pool', config);
 
       expect(result.succeeded).toHaveLength(1);
       expect(result.succeeded[0].auth.username).toBe('active@scratch.org');
@@ -248,9 +245,9 @@ describe('PoolManager', () => {
       provider.isOrgActive.mockResolvedValue(false);
 
       const manager = new PoolManager({provider: provider as any});
-      const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}});
+      const config = createPoolConfig({sizing: {batch: 5, max: 1}});
 
-      await expect(manager.provision(config)).rejects.toThrow('All provisioned orgs were found to be inactive');
+      await expect(manager.provision('test-pool', config)).rejects.toThrow('All provisioned orgs were found to be inactive');
     });
 
     it('should register orgs in pool with correct metadata', async () => {
@@ -268,8 +265,8 @@ describe('PoolManager', () => {
       provider.updatePoolMetadata.mockResolvedValue(undefined);
 
       const manager = new PoolManager({provider: provider as any});
-      const config = createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}});
-      await manager.provision(config);
+      const config = createPoolConfig({sizing: {batch: 5, max: 1}});
+      await manager.provision('test-pool', config);
 
       expect(provider.updatePoolMetadata).toHaveBeenCalledWith(expect.arrayContaining([
         expect.objectContaining({
@@ -295,7 +292,7 @@ describe('PoolManager', () => {
       manager.on('pool:provision:start', () => events.push('start'));
       manager.on('pool:provision:complete', () => events.push('complete'));
 
-      await manager.provision(createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}}));
+      await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
       expect(events).toEqual(['start', 'complete']);
     });
@@ -316,8 +313,8 @@ describe('PoolManager', () => {
 
       const manager = new PoolManager({provider: provider as any});
       // 4 orgs with batchSize 2 = 2 batches
-      const config = createPoolConfig({sizing: {batchSize: 2, maxAllocation: 4}});
-      await manager.provision(config);
+      const config = createPoolConfig({sizing: {batch: 2, max: 4}});
+      await manager.provision('test-pool', config);
 
       expect(provider.createOrg).toHaveBeenCalledTimes(4);
     });
@@ -346,7 +343,7 @@ describe('PoolManager', () => {
         tasks: [task],
       });
 
-      const result = await manager.provision(createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}}));
+      const result = await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
       expect(task.execute).toHaveBeenCalledTimes(1);
       expect(result.taskResults).toHaveLength(1);
@@ -380,7 +377,7 @@ describe('PoolManager', () => {
         tasks: [task1, task2],
       });
 
-      await manager.provision(createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}}));
+      await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
       expect(executionOrder).toEqual(['task1', 'task2']);
     });
@@ -397,7 +394,7 @@ describe('PoolManager', () => {
         tasks: [failTask, skipTask],
       });
 
-      const result = await manager.provision(createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}}));
+      const result = await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
       expect(failTask.execute).toHaveBeenCalled();
       expect(skipTask.execute).not.toHaveBeenCalled();
@@ -421,7 +418,7 @@ describe('PoolManager', () => {
         tasks: [failTask, nextTask],
       });
 
-      const result = await manager.provision(createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}}));
+      const result = await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
       expect(nextTask.execute).toHaveBeenCalled();
       expect(result.taskResults![0].success).toBe(false); // overall org fails (first task failed)
@@ -442,7 +439,7 @@ describe('PoolManager', () => {
         tasks: [crashingTask],
       });
 
-      const result = await manager.provision(createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}}));
+      const result = await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
       // Should not throw; error is captured in task results
       expect(result.taskResults![0].success).toBe(false);
@@ -463,7 +460,7 @@ describe('PoolManager', () => {
       manager.on('pool:task:start', () => taskEvents.push('start'));
       manager.on('pool:task:complete', () => taskEvents.push('complete'));
 
-      await manager.provision(createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}}));
+      await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
       expect(taskEvents).toEqual(['start', 'complete']);
     });
@@ -485,7 +482,7 @@ describe('PoolManager', () => {
         tasks: [createMockTask('deploy')],
       });
 
-      await manager.provision(createPoolConfig({sizing: {batchSize: 5, maxAllocation: 1}}));
+      await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
       expect(loggerFactory.dispose).toHaveBeenCalled();
     });
@@ -523,8 +520,8 @@ describe('PoolManager', () => {
         tasks: [task],
       });
 
-      const config = createPoolConfig({sizing: {batchSize: 2, maxAllocation: 4}});
-      const result = await manager.provision(config);
+      const config = createPoolConfig({sizing: {batch: 2, max: 4}});
+      const result = await manager.provision('test-pool', config);
 
       // All 4 orgs should have run tasks
       expect(task.execute).toHaveBeenCalledTimes(4);
@@ -552,7 +549,7 @@ describe('PoolManager', () => {
         provider: provider as any,
       });
 
-      const result = await manager.delete({tag: 'empty-pool'});
+      const result = await manager.delete('empty-pool');
 
       expect(result.deleted).toEqual([]);
       expect(result.errors).toEqual([]);
@@ -569,7 +566,7 @@ describe('PoolManager', () => {
         provider: provider as any,
       });
 
-      const result = await manager.delete({tag: 'test-pool'});
+      const result = await manager.delete('test-pool');
 
       expect(provider.deleteOrgs).toHaveBeenCalledTimes(2);
       expect(result.deleted).toHaveLength(2);
@@ -583,7 +580,7 @@ describe('PoolManager', () => {
         provider: provider as any,
       });
 
-      const result = await manager.delete({tag: 'test-pool'});
+      const result = await manager.delete('test-pool');
 
       expect(provider.deleteOrgs).not.toHaveBeenCalled();
       expect(result.errors).toHaveLength(1);
@@ -600,7 +597,7 @@ describe('PoolManager', () => {
         provider: provider as any,
       });
 
-      const result = await manager.delete({inProgressOnly: true, tag: 'test-pool'});
+      const result = await manager.delete('test-pool', {inProgressOnly: true});
 
       expect(provider.deleteOrgs).toHaveBeenCalledTimes(1);
       expect(result.deleted).toHaveLength(1);
@@ -619,7 +616,7 @@ describe('PoolManager', () => {
         provider: provider as any,
       });
 
-      const result = await manager.delete({tag: 'test-pool'});
+      const result = await manager.delete('test-pool');
 
       expect(result.deleted).toHaveLength(1);
       expect(result.errors).toHaveLength(1);
@@ -633,7 +630,7 @@ describe('PoolManager', () => {
         provider: provider as any,
       });
 
-      await manager.delete({myPool: true, tag: 'test-pool'});
+      await manager.delete('test-pool', {myPool: true});
 
       expect(provider.getOrgsByTag).toHaveBeenCalledWith('test-pool', true);
     });
@@ -652,7 +649,7 @@ describe('PoolManager', () => {
       manager.on('pool:delete:complete', () => events.push('complete'));
       manager.on('pool:org:deleted', () => events.push('deleted'));
 
-      await manager.delete({tag: 'test-pool'});
+      await manager.delete('test-pool');
 
       expect(events).toEqual(['start', 'deleted', 'complete']);
     });

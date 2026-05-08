@@ -102,7 +102,7 @@ export async function provisionPool(options: ProvisionPoolOptions): Promise<Prov
   // 4. Build config and provision
   // ------------------------------------------------------------------
   const config = buildPoolConfig(options, poolType);
-  const provisionResult = await manager.provision(config);
+  const provisionResult = await manager.provision(options.tag, config);
 
   renderer.printSummary();
 
@@ -138,38 +138,27 @@ export async function provisionPool(options: ProvisionPoolOptions): Promise<Prov
 
 function buildPoolConfig(options: ProvisionPoolOptions, poolType: OrgTypes): PoolConfig {
   const sizing = {
-    batchSize: options.batchSize,
-    maxAllocation: options.maxAllocation,
+    batch: options.batchSize,
+    max: options.maxAllocation,
   };
 
-  if (poolType === OrgTypes.Sandbox) {
-    if (!options.definitionFile) {
-      throw new Error('definition-file is required for sandbox pools');
-    }
+  if (!options.definitionFile) {
+    throw new Error('definition-file is required');
+  }
 
+  if (poolType === OrgTypes.Sandbox) {
     return {
-      sandbox: {
-        definitionFile: options.definitionFile,
-        licenseType: 'DEVELOPER',
-        namePattern: options.sandboxNamePattern ?? 'SB',
-      },
+      definitionFile: options.definitionFile,
+      namePattern: options.sandboxNamePattern ?? 'SB',
       sizing,
-      tag: options.tag,
       type: OrgTypes.Sandbox,
     };
   }
 
-  if (!options.definitionFile) {
-    throw new Error('definition-file is required for scratch org pools');
-  }
-
   return {
-    scratch: {
-      definitionFile: options.definitionFile,
-      expiryDays: options.expiryDays,
-    },
+    definitionFile: options.definitionFile,
+    expiryDays: options.expiryDays,
     sizing,
-    tag: options.tag,
     type: OrgTypes.Scratch,
   };
 }

@@ -23,7 +23,7 @@ export default class PoolFill extends SfpmCommand {
     'definition-file': Flags.string({char: 'd', description: 'org definition file (scratch org or sandbox)'}),
     'expiry-days': Flags.integer({description: 'scratch org expiry in days (default: 7)', min: 1}),
     json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
-    max: Flags.integer({description: 'maximum number of orgs to allocate', min: 1, required: true}),
+    max: Flags.integer({description: 'maximum number of orgs to allocate (overrides config)', min: 1}),
     'name-pattern': Flags.string({description: 'override sandbox name prefix from definition file (e.g., SB → SB1, SB2, ...)'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     tag: Flags.string({char: 't', description: 'pool tag', required: true}),
@@ -95,7 +95,7 @@ export default class PoolFill extends SfpmCommand {
 
       const orgConfig = await this.loadOrgConfig(logger);
       const config = this.buildPoolConfig(flags, poolType, orgConfig);
-      const result = await manager.provision(config);
+      const result = await manager.provision(flags.tag as string, config);
 
       if (flags.json) {
         this.logJson({...result, events: renderer.getJsonOutput().events, success: result.failed === 0});
@@ -118,44 +118,41 @@ export default class PoolFill extends SfpmCommand {
 
   private buildPoolConfig(flags: Record<string, any>, poolType: OrgTypes, orgConfig?: OrgConfig): PoolConfig {
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const tag = flags.tag as string;
+
+    // Try to find pool config from orgConfig by tag
+    const poolDefaults = orgConfig?.pools && !Array.isArray(orgConfig.pools)
+      ? orgConfig.pools[tag]
+      : undefined;
+
+    const max = (flags.max as number | undefined) ?? poolDefaults?.sizing?.max;
+    if (!max) {
+      throw new Error('--max is required (or configure sizing.max in pool config)');
+    }
+
+    const definitionFile = (flags['definition-file'] as string | undefined) ?? poolDefaults?.definitionFile;
+    if (!definitionFile) {
+      throw new Error('--definition-file is required (or configure definitionFile in pool config)');
+    }
+
     const sizing = {
-      batchSize: (flags['batch-size'] as number | undefined) ?? 5,
-      maxAllocation: flags.max as number,
+      batch: (flags['batch-size'] as number | undefined) ?? poolDefaults?.sizing?.batch ?? 5,
+      max,
     };
 
     if (poolType === OrgTypes.Sandbox) {
-      const sandboxDefaults = orgConfig?.sandbox;
-      const definitionFile = (flags['definition-file'] as string | undefined) ?? sandboxDefaults?.definitionFile;
-
-      if (!definitionFile) {
-        throw new Error('--definition-file is required for sandbox pools');
-      }
-
       return {
-        sandbox: {
-          definitionFile: path.resolve(projectDir, definitionFile),
-          namePattern: (flags['name-pattern'] as string | undefined) ?? sandboxDefaults?.namePattern,
-        },
+        definitionFile: path.resolve(projectDir, definitionFile),
+        namePattern: (flags['name-pattern'] as string | undefined) ?? (poolDefaults as any)?.namePattern,
         sizing,
-        tag: flags.tag as string,
         type: OrgTypes.Sandbox,
       };
     }
 
-    const scratchDefaults = orgConfig?.scratch;
-    const definitionFile = (flags['definition-file'] as string | undefined) ?? scratchDefaults?.definitionFile;
-
-    if (!definitionFile) {
-      throw new Error('--definition-file is required for scratch org pools');
-    }
-
     return {
-      scratch: {
-        definitionFile: path.resolve(projectDir, definitionFile),
-        expiryDays: (flags['expiry-days'] as number | undefined) ?? scratchDefaults?.expiryDays,
-      },
+      definitionFile: path.resolve(projectDir, definitionFile),
+      expiryDays: (flags['expiry-days'] as number | undefined) ?? (poolDefaults as any)?.expiryDays,
       sizing,
-      tag: flags.tag as string,
       type: OrgTypes.Scratch,
     };
   }
