@@ -1,4 +1,28 @@
-import type {NetworkSettings, SandboxPoolConfig, ScratchOrgPoolConfig} from './pool/types.js';
+import type {SandboxPoolConfig, ScratchOrgPoolConfig} from './pool/types.js';
+
+/**
+ * Pool config as written in `sfpm.config.ts`.
+ *
+ * `definitionFile` is optional here because it can be inherited from
+ * the global `scratch` / `sandbox` defaults on `OrgConfig`.
+ */
+export type PoolConfigInput
+  = | Omit<SandboxPoolConfig, 'definitionFile'> & {definitionFile?: string}
+    | Omit<ScratchOrgPoolConfig, 'definitionFile'> & {definitionFile?: string};
+
+/**
+ * Global defaults for scratch org pools (shared across all scratch pools).
+ *
+ * `type` is omitted — it's implied by the property name.
+ */
+export type ScratchOrgDefaults = Omit<Partial<ScratchOrgPoolConfig>, 'type'>;
+
+/**
+ * Global defaults for sandbox pools (shared across all sandbox pools).
+ *
+ * `type` is omitted — it's implied by the property name.
+ */
+export type SandboxDefaults = Omit<Partial<SandboxPoolConfig>, 'type'>;
 
 /**
  * Org-level configuration that plugs into `sfpm.config.ts`.
@@ -15,10 +39,16 @@ import type {NetworkSettings, SandboxPoolConfig, ScratchOrgPoolConfig} from './p
  * export default defineConfig({
  *   hooks: [],
  *   orgs: defineOrgConfig({
+ *     scratch: {
+ *       definitionFile: 'config/project-scratch-def.json',
+ *       expiryDays: 7,
+ *     },
+ *     sandbox: {
+ *       definitionFile: 'config/sandbox-def.json',
+ *     },
  *     pools: {
- *       'dev-pool': {
+ *       dev: {
  *         type: 'scratch',
- *         definitionFile: 'config/project-scratch-def.json',
  *         sizing: { max: 10, min: 2 },
  *       },
  *     },
@@ -26,12 +56,15 @@ import type {NetworkSettings, SandboxPoolConfig, ScratchOrgPoolConfig} from './p
  * });
  * ```
  */
-export interface OrgConfig<T extends SandboxPoolConfig | ScratchOrgPoolConfig = SandboxPoolConfig | ScratchOrgPoolConfig> {
-  /** Default network settings applied to all provisioned orgs */
-  network?: NetworkSettings;
-
+export interface OrgConfig {
   /** Pool configuration(s) keyed by tag. */
-  pools?: {[tag: string]: T};
+  pools?: {[tag: string]: PoolConfigInput};
+
+  /** Global defaults for sandbox pools (type omitted — implied) */
+  sandbox?: SandboxDefaults;
+
+  /** Global defaults for scratch org pools (type omitted — implied) */
+  scratch?: ScratchOrgDefaults;
 }
 
 /**
@@ -42,10 +75,12 @@ export interface OrgConfig<T extends SandboxPoolConfig | ScratchOrgPoolConfig = 
  * import { defineOrgConfig } from '@b64hub/sfpm-orgs';
  *
  * const orgs = defineOrgConfig({
+ *   scratch: {
+ *     definitionFile: 'config/project-scratch-def.json',
+ *   },
  *   pools: {
- *     'dev-pool': {
+ *     dev: {
  *       type: 'scratch',
- *       definitionFile: 'config/project-scratch-def.json',
  *       sizing: { max: 10 },
  *     },
  *   },

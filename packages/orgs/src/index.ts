@@ -85,7 +85,13 @@ export {
 } from './pool/types.js';
 
 // Config
-export {defineOrgConfig, type OrgConfig} from './types.js';
+export {
+  defineOrgConfig,
+  type OrgConfig,
+  type PoolConfigInput,
+  type SandboxDefaults,
+  type ScratchOrgDefaults,
+} from './types.js';
 
 // Utilities
 export {default as generatePassword} from './utils/password-generator.js';
