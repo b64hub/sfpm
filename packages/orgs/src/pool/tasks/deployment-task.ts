@@ -19,12 +19,12 @@ export interface DeploymentTaskOptions {
   exclude?: string[];
   /** Only deploy these packages (full npm names). Takes precedence over `exclude`. */
   include?: string[];
-  /** Root project directory (contains sfdx-project.json or workspace package.json) */
-  projectDirectory: string;
   /** Skip updating Sfpm_Artifact__c after deployment */
   skipArtifactUpdate?: boolean;
   /** Apex test level (default: NoTestRun) */
   testLevel?: string;
+  /** Root project directory (contains sfdx-project.json or workspace package.json) */
+  workingDirectory: string;
 }
 
 /**
@@ -45,7 +45,7 @@ export class DeploymentTask implements PoolOrgTask {
 
   constructor(options: DeploymentTaskOptions) {
     this.options = options;
-    this.continueOnError = options.continueOnError ?? false;
+    this.continueOnError = options.continueOnError ?? true;
   }
 
   async execute(org: PoolOrg, logger: Logger): Promise<PoolOrgTaskResult> {
@@ -55,7 +55,7 @@ export class DeploymentTask implements PoolOrgTask {
       return {error: 'Org has no username', success: false};
     }
 
-    const projectService = await ProjectService.getInstance(this.options.projectDirectory);
+    const projectService = await ProjectService.getInstance(this.options.workingDirectory);
     const provider = projectService.getDefinitionProvider();
     const graph = projectService.getProjectGraph();
 
