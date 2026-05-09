@@ -14,13 +14,13 @@ import type {PoolOrgTask, PoolOrgTaskResult} from '../types.js';
  */
 export interface DeploymentTaskOptions {
   /** Whether to continue provisioning if deployment fails */
-  continueOnError?: boolean;
+  continueOnError: boolean;
   /** Deploy all packages except these (full npm names) */
   exclude?: string[];
   /** Only deploy these packages (full npm names). Takes precedence over `exclude`. */
   include?: string[];
   /** Skip updating Sfpm_Artifact__c after deployment */
-  skipArtifactUpdate?: boolean;
+  skipArtifactUpdate: boolean;
   /** Apex test level (default: NoTestRun) */
   testLevel?: string;
   /** Root project directory (contains sfdx-project.json or workspace package.json) */
@@ -45,7 +45,7 @@ export class DeploymentTask implements PoolOrgTask {
 
   constructor(options: DeploymentTaskOptions) {
     this.options = options;
-    this.continueOnError = options.continueOnError ?? true;
+    this.continueOnError = options.continueOnError;
   }
 
   async execute(org: PoolOrg, logger: Logger): Promise<PoolOrgTaskResult> {
@@ -73,7 +73,6 @@ export class DeploymentTask implements PoolOrgTask {
       force: true,
       mode: InstallationMode.SourceDeploy,
       targetOrg: username,
-      trackHistory: !this.options.skipArtifactUpdate,
     }, logger);
 
     const result = await orchestrator.installAll(packages);
