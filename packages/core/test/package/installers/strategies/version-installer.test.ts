@@ -23,6 +23,7 @@ describe('VersionInstaller', () => {
 
   beforeEach(() => {
     mockLogger = {
+      debug: vi.fn(),
       error: vi.fn(),
       info: vi.fn(),
     };
@@ -143,7 +144,7 @@ describe('VersionInstaller', () => {
       await expect(strategy.install(mockInstallable, 'targetOrg')).rejects.toThrow('Package installation failed:\nInstallation failed\nDependency not met');
     });
 
-    it('should handle installation timeout', async () => {
+    it('should handle installation timeout and report in-progress status', async () => {
       mockConnection.tooling.retrieve.mockResolvedValue({Status: 'IN_PROGRESS'});
 
       // Use fake timers to avoid waiting
@@ -153,7 +154,8 @@ describe('VersionInstaller', () => {
 
       // Fast-forward past the timeout, then assert — order matters to avoid
       // an unhandled rejection: attach the rejection handler first.
-      const assertion = expect(installPromise).rejects.toThrow('Package installation timed out');
+      // After timeout, verify-after-failure re-queries and gets IN_PROGRESS → "still in progress"
+      const assertion = expect(installPromise).rejects.toThrow('still in progress');
       await vi.advanceTimersByTimeAsync(600_000); // 10 minutes
       await assertion;
 
@@ -178,6 +180,84 @@ describe('VersionInstaller', () => {
       vi.useRealTimers();
 
       expect(mockConnection.tooling.retrieve).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  describe('handleInstallFailure', () => {
+    let mockInstallable: VersionInstallable;
+    let mockOrg: any;
+    let mockConnection: any;
+
+    beforeEach(() => {
+      mockInstallable = {
+        installationKey: 'test-key',
+        packageName: 'test-package',
+        packageVersionId: '04t1234567890',
+        versionNumber: '1.0.0.1',
+      };
+
+      mockConnection = {
+        tooling: {
+          create: vi.fn().mockResolvedValue({
+            id: 'requestId123',
+            success: true,
+          }),
+          retrieve: vi.fn(),
+        },
+      };
+
+      mockOrg = {
+        getConnection: vi.fn().mockReturnValue(mockConnection),
+      };
+
+      vi.mocked(Org.create).mockResolvedValue(mockOrg as any);
+    });
+
+    it('should recover when server-side install succeeded despite client error', async () => {
+      // First retrieve call throws (connection drop during polling)
+      mockConnection.tooling.retrieve
+        .mockRejectedValueOnce(new Error('socket hang up'))
+        // Verify-after-failure reconnects and retrieves → SUCCESS
+        .mockResolvedValueOnce({Status: 'SUCCESS'});
+
+      const result = await strategy.install(mockInstallable, 'targetOrg');
+
+      expect(result.deployId).toBe('requestId123');
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('succeeded server-side'),
+      );
+    });
+
+    it('should throw with server errors when server-side install failed', async () => {
+      mockConnection.tooling.retrieve
+        .mockRejectedValueOnce(new Error('socket hang up'))
+        .mockResolvedValueOnce({
+          Errors: {errors: [{message: 'Apex compilation failed'}]},
+          Status: 'ERROR',
+        });
+
+      await expect(strategy.install(mockInstallable, 'targetOrg'))
+        .rejects.toThrow('Package installation failed:\nApex compilation failed');
+    });
+
+    it('should throw with request ID when install is still in progress', async () => {
+      mockConnection.tooling.retrieve
+        .mockRejectedValueOnce(new Error('socket hang up'))
+        .mockResolvedValueOnce({Status: 'IN_PROGRESS'});
+
+      const error = await strategy.install(mockInstallable, 'targetOrg').catch((e: Error) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect(error!.message).toContain('still in progress');
+      expect(error!.message).toContain('requestId123');
+    });
+
+    it('should throw original error when verify query also fails', async () => {
+      mockConnection.tooling.retrieve
+        .mockRejectedValueOnce(new Error('socket hang up'))
+        .mockRejectedValueOnce(new Error('connection refused'));
+
+      await expect(strategy.install(mockInstallable, 'targetOrg'))
+        .rejects.toThrow('socket hang up');
     });
   });
 });

@@ -23,6 +23,7 @@ describe('SourceDeployer', () => {
 
   beforeEach(() => {
     mockLogger = {
+      debug: vi.fn(),
       error: vi.fn(),
       info: vi.fn(),
     };
@@ -39,6 +40,7 @@ describe('SourceDeployer', () => {
 
     beforeEach(() => {
       mockDeploy = {
+        id: 'deploy123',
         onUpdate: vi.fn(),
         pollStatus: vi.fn().mockResolvedValue({
           response: {
@@ -124,6 +126,98 @@ describe('SourceDeployer', () => {
       });
 
       await expect(strategy.install(mockDeployable, 'targetOrg')).rejects.toThrow('Source deployment failed:\nUnknown deployment error');
+    });
+  });
+
+  describe('handleDeployFailure', () => {
+    let mockDeployable: SourceDeployable;
+    let mockOrg: any;
+    let mockConnection: any;
+    let mockDeploy: any;
+    let mockComponentSet: any;
+
+    beforeEach(() => {
+      mockDeploy = {
+        id: 'deploy123',
+        onUpdate: vi.fn(),
+        pollStatus: vi.fn(),
+      };
+
+      mockComponentSet = {
+        deploy: vi.fn().mockResolvedValue(mockDeploy),
+        size: 10,
+      };
+
+      mockDeployable = {
+        componentSet: mockComponentSet as any,
+        packageName: 'test-package',
+        versionNumber: '1.0.0.1',
+      };
+
+      mockConnection = {
+        metadata: {
+          checkDeployStatus: vi.fn(),
+        },
+      };
+
+      mockOrg = {
+        getConnection: vi.fn().mockReturnValue(mockConnection),
+      };
+
+      vi.mocked(Org.create).mockResolvedValue(mockOrg as any);
+    });
+
+    it('should recover when server-side deploy succeeded despite client error', async () => {
+      mockDeploy.pollStatus.mockRejectedValue(new Error('socket hang up'));
+      mockConnection.metadata.checkDeployStatus.mockResolvedValue({
+        done: true,
+        success: true,
+      });
+
+      const result = await strategy.install(mockDeployable, 'targetOrg');
+
+      expect(result.deployId).toBe('deploy123');
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.stringContaining('succeeded server-side'),
+      );
+    });
+
+    it('should throw with component errors when server-side deploy failed', async () => {
+      mockDeploy.pollStatus.mockRejectedValue(new Error('socket hang up'));
+      mockConnection.metadata.checkDeployStatus.mockResolvedValue({
+        details: {
+          componentFailures: [{fullName: 'MyClass', problem: 'Compile error'}],
+        },
+        done: true,
+        success: false,
+      });
+
+      await expect(strategy.install(mockDeployable, 'targetOrg'))
+        .rejects.toThrow('Source deployment failed:\nMyClass: Compile error');
+    });
+
+    it('should throw with deploy ID when deployment is still in progress', async () => {
+      mockDeploy.pollStatus.mockRejectedValue(new Error('socket hang up'));
+      mockConnection.metadata.checkDeployStatus.mockResolvedValue({
+        done: false,
+        status: 'InProgress',
+        success: false,
+      });
+
+      const error = await strategy.install(mockDeployable, 'targetOrg').catch((e: Error) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect(error!.message).toContain('still in progress');
+      expect(error!.message).toContain('deploy123');
+    });
+
+    it('should throw original error when verify query also fails', async () => {
+      mockDeploy.pollStatus.mockRejectedValue(new Error('socket hang up'));
+      mockConnection.metadata.checkDeployStatus.mockRejectedValue(
+        new Error('connection refused'),
+      );
+
+      await expect(strategy.install(mockDeployable, 'targetOrg'))
+        .rejects.toThrow('socket hang up');
     });
   });
 });
