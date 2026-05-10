@@ -400,7 +400,6 @@ export default class Bootstrap extends SfpmCommand {
         force: flags.force,
         includeDependencies: true,
         targetOrg: ctx.targetOrg,
-        trackHistory: sfpmConfig.artifacts?.trackHistory,
       },
       ctx.logger,
     )

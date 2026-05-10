@@ -29,6 +29,7 @@ vi.mock('../../../src/artifacts/artifact-service.js', () => ({
                 },
             }),
             upsertArtifact: vi.fn().mockResolvedValue(undefined),
+            createHistoryRecord: vi.fn().mockResolvedValue(undefined),
         }),
     },
 }));

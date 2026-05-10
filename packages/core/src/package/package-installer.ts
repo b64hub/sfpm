@@ -27,7 +27,18 @@ import SfpmPackage, {
 } from './sfpm-package.js';
 
 export interface InstallOptions {
-  artifactResolution?: ArtifactResolutionOptions;
+  artifact?: {
+    resolution?: Omit<ArtifactResolutionOptions, 'version'>;
+    /**
+     * Whether to update artifact records in the target org after installation.
+     * When true (default), upserts `Sfpm_Artifact__c` and creates an
+     * `Sfpm_Artifact_History__c` record (gracefully skipped if the object
+     * is not deployed to the org).
+     *
+     * @default true
+     */
+    update?: boolean;
+  }
 
   deployment?: {
     /**
@@ -41,18 +52,12 @@ export interface InstallOptions {
    * Set specific installation mode (mainly for unlocked packages, overrides auto-detection).
    */
   mode?: InstallationMode;
-
   /**
    * Where to install from: 'local' (project source) or 'artifact'.
    */
   source?: InstallationSource;
 
   targetOrg: string;
-  /**
-   * When true, creates an `Sfpm_Artifact_History__c` record after each artifact upsert.
-   * Read from `sfpmConfig.artifacts?.trackHistory` and passed through by the CLI/Actions layer.
-   */
-  trackHistory?: boolean;
 
   versionInstall?: {installationKeys?: {[packageName: string]: string}};
 }
@@ -475,7 +480,7 @@ export default class PackageInstaller extends EventEmitter {
     const installTarget = await artifactService.resolveInstallTarget(
       sfpmPackage.projectDirectory,
       packageName,
-      this.options.artifactResolution,
+      this.options.artifact?.resolution,
     );
 
     this.updatePackageFromTarget(sfpmPackage, installTarget);
@@ -520,10 +525,8 @@ export default class PackageInstaller extends EventEmitter {
       await installer.connect(this.options.targetOrg);
       const execResult = await installer.exec();
 
-      await artifactService.upsertArtifact(sfpmPackage);
-
-      // Create history record when opt-in tracking is enabled
-      if (this.options.trackHistory) {
+      if (this.options.artifact?.update !== false) {
+        await artifactService.upsertArtifact(sfpmPackage);
         await artifactService.createHistoryRecord(sfpmPackage, {
           deployId: execResult.deployId,
         });

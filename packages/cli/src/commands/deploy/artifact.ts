@@ -88,7 +88,6 @@ export default class DeployArtifact extends SfpmCommand {
         mode: InstallationMode.SourceDeploy,
         source: InstallationSource.Artifact,
         targetOrg: flags['target-org'],
-        trackHistory: sfpmConfig.artifacts?.trackHistory,
         versionInstall: flags['installation-key'] ? {installationKeys: {'*': flags['installation-key']}} : undefined,
       },
       logger,

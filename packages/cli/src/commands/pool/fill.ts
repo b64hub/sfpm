@@ -174,7 +174,6 @@ export default class PoolFill extends SfpmCommand {
     // Deploy packages to the provisioned org
     tasks.push(new DeploymentTask({
       continueOnError: config.deployment?.continueOnError ?? true,
-      skipArtifactUpdate: config.deployment?.skipArtifactUpdate ?? false,
       testLevel: config.deployment?.testLevel,
       workingDirectory: projectDir,
     }));

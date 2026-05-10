@@ -19,8 +19,6 @@ export interface DeploymentTaskOptions {
   exclude?: string[];
   /** Only deploy these packages (full npm names). Takes precedence over `exclude`. */
   include?: string[];
-  /** Skip updating Sfpm_Artifact__c after deployment */
-  skipArtifactUpdate: boolean;
   /** Apex test level (default: NoTestRun) */
   testLevel?: string;
   /** Root project directory (contains sfdx-project.json or workspace package.json) */

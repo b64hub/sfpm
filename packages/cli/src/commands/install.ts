@@ -91,7 +91,6 @@ export default class Install extends SfpmCommand {
       deployment: flags['test-level'] ? {testLevel: flags['test-level'] as TestLevel} : undefined,
       force: flags.force,
       targetOrg: flags['target-org'],
-      trackHistory: sfpmConfig.artifacts?.trackHistory,
       versionInstall: flags['installation-key'] ? {installationKeys: {'*': flags['installation-key']}} : undefined,
     }
 

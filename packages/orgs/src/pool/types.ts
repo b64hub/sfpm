@@ -48,8 +48,6 @@ export interface PoolConfigBase {
     continueOnError?: boolean;
     /** Whether to enable source tracking in the org (default: false) */
     enableSourceTracking?: boolean;
-    /** Skip updating Sfpm_Artifact__c custom setting after deployment (default: false) */
-    skipArtifactUpdate?: boolean;
     /** Apex test level for deployments (default: NoTestRun) */
     testLevel?: string;
   };
@@ -61,6 +59,7 @@ export interface PoolConfigBase {
   sizing: PoolSize;
   /** Use an existing snapshot pool as a base (pool tag) */
   snapshotPool?: string;
+  /** Pool type (scratch or sandbox) */
   type: PoolType;
   /** Max minutes to wait for org creation (default: 30) */
   waitMinutes?: number;
