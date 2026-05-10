@@ -377,6 +377,14 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     // 7. Mark successfully prepared orgs as Available
     const availableOrgs = await this.markOrgsAvailable(registeredOrgs, tag, taskResults);
 
+    // 8. Clean up orgs where tasks failed (stuck In_Progress)
+    if (taskResults) {
+      const failedOrgs = registeredOrgs.filter(org => !availableOrgs.includes(org) && org.recordId);
+      if (failedOrgs.length > 0) {
+        await this.cleanupFailedOrgs(failedOrgs, tag);
+      }
+    }
+
     const elapsedMs = Date.now() - startTime;
     const result: PoolProvisionResult = {
       elapsedMs,
@@ -449,6 +457,27 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       noancestors: config.noAncestors,
       retry: config.maxRetries,
     };
+  }
+
+  private async cleanupFailedOrgs(orgs: PoolOrg[], tag: string): Promise<void> {
+    this.logger?.info(`Cleaning up ${orgs.length} org(s) that failed tasks in pool "${tag}"`);
+
+    for (const org of orgs) {
+      try {
+        // eslint-disable-next-line no-await-in-loop -- sequential deletion avoids overwhelming the DevHub API
+        await this.provider.deleteOrgs([org.recordId!]);
+
+        this.emit('pool:org:deleted', {
+          timestamp: new Date(),
+          username: org.auth.username!,
+        });
+
+        this.logger?.debug(`Deleted failed org ${org.auth.username}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger?.warn(`Failed to delete org ${org.auth.username ?? org.recordId}: ${message}`);
+      }
+    }
   }
 
   private async cleanupOrphanedOrgs(orgs: PoolOrg[]): Promise<void> {
