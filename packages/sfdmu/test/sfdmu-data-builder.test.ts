@@ -126,15 +126,48 @@ describe('SfdmuDataBuilder', () => {
     await fs.writeFile(path.join(dataDir, 'export.json'), JSON.stringify({objects: []}));
 
     const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
-    await expect(builder.exec()).rejects.toThrow('must not be empty');
+    await expect(builder.exec()).rejects.toThrow('non-empty');
   });
 
-  it('should throw when export.json has no objects key', async () => {
+  it('should throw when export.json has no objects or objectSets key', async () => {
     const dataDir = path.join(tmpDir, 'data');
     await fs.writeFile(path.join(dataDir, 'export.json'), JSON.stringify({foo: 'bar'}));
 
     const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
-    await expect(builder.exec()).rejects.toThrow('must contain an "objects" array');
+    await expect(builder.exec()).rejects.toThrow('non-empty');
+  });
+
+  it('should succeed when export.json uses objectSets format', async () => {
+    const dataDir = path.join(tmpDir, 'data');
+    await fs.writeFile(
+      path.join(dataDir, 'export.json'),
+      JSON.stringify({
+        objectSets: [
+          {
+            objects: [
+              {query: 'SELECT Id FROM Account', operation: 'Upsert', externalId: 'Id'},
+              {query: 'SELECT Id FROM Contact', operation: 'Upsert', externalId: 'Id'},
+            ],
+          },
+          {
+            objects: [
+              {query: 'SELECT Id FROM Product2', operation: 'Upsert', externalId: 'Name'},
+            ],
+          },
+        ],
+      }),
+    );
+
+    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
+    await expect(builder.exec()).resolves.not.toThrow();
+  });
+
+  it('should throw when objectSets contains empty objects arrays', async () => {
+    const dataDir = path.join(tmpDir, 'data');
+    await fs.writeFile(path.join(dataDir, 'export.json'), JSON.stringify({objectSets: [{objects: []}]}));
+
+    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
+    await expect(builder.exec()).rejects.toThrow('non-empty');
   });
 
   it('should emit task events during validation', async () => {

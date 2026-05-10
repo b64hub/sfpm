@@ -214,6 +214,39 @@ describe('fromSalesforceProjectJson', () => {
     const result = fromSalesforceProjectJson({});
     expect(result.packages).toEqual([]);
   });
+
+  it('classifies dependency as managed when it has a 04t alias even if it appears in packageDirectories', () => {
+    const sfJson = {
+      packageAliases: {
+        core: '0HoAAAAAAAAAAAA',
+        'managed-pkg': '04tManagedPkgXXX',
+      },
+      packageDirectories: [
+        {
+          dependencies: [
+            {package: 'managed-pkg', versionNumber: '2.0.0.LATEST'},
+          ],
+          package: 'core',
+          path: 'packages/core/force-app',
+          type: 'unlocked',
+          versionNumber: '1.0.0.NEXT',
+        },
+        {
+          package: 'managed-pkg',
+          path: 'packages/managed-pkg',
+          type: 'unlocked',
+          versionNumber: '2.0.0.0',
+        },
+      ],
+    };
+
+    const result = fromSalesforceProjectJson(sfJson);
+    const core = result.packages.find(p => p.name === 'core')!;
+
+    // Should be classified as managed, not local
+    expect(core.managedDependencies).toEqual({'managed-pkg': '04tManagedPkgXXX'});
+    expect(core.dependencies).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
