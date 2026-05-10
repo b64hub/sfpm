@@ -76,7 +76,7 @@ export function toPackageDefinition(
     }
 
     if (md.seed || md.unpackaged) {
-      definition.metadataDependencies = md as {seed: string; unpackaged: string};
+      definition.metadataDependencies = md;
     }
   }
 
@@ -114,7 +114,7 @@ export function toWorkspacePackageJson(
   projectDef: ProjectDefinition,
 ): WorkspacePackageJson {
   const packageName = pkgDef.name;
-  const version = pkgDef.version;
+  const {version} = pkgDef;
 
   const sfpm: SfpmPackageConfig = {
     packageType,
@@ -161,7 +161,8 @@ export function toWorkspacePackageJson(
   const pkgJson: WorkspacePackageJson = {
     ...(pkgDef.description ? {description: pkgDef.description} : {}),
     ...(pkgDef.managedDependencies && Object.keys(pkgDef.managedDependencies).length > 0
-      ? {managedDependencies: pkgDef.managedDependencies} : {}),
+      ? {managedDependencies: pkgDef.managedDependencies}
+      : {}),
     name: packageName.includes('/') ? packageName : `${options.npmScope}/${packageName}`,
     private: true,
     scripts: {

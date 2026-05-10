@@ -132,8 +132,8 @@ export interface PackageDefinition {
   managedDependencies?: {[packageName: string]: string};
   /** Metadata dependencies with relative paths (e.g., { "seed": "path/to/seed", "unpackaged": "path/to/unpackaged" }) */
   metadataDependencies?: {
-    seed: string;
-    unpackaged: string;
+    seed?: string;
+    unpackaged?: string;
   }
   /** package name (including scope). */
   name: string;
@@ -183,8 +183,8 @@ export const PackageDefinitionSchema = z.object({
   description: z.string().optional(),
   managedDependencies: z.record(z.string(), z.string()).optional(),
   metadataDependencies: z.object({
-    seed: z.string(),
-    unpackaged: z.string(),
+    seed: z.string().optional(),
+    unpackaged: z.string().optional(),
   }).optional(),
   name: z.string(),
   namespace: z.string().optional(),

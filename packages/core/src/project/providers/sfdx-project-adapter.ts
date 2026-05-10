@@ -207,17 +207,16 @@ export function fromSalesforceProjectJson(projectJson: Record<string, unknown>):
       const managedDeps: Record<string, string> = {};
 
       for (const dep of dir.dependencies as Array<{package: string; versionNumber?: string}>) {
-        if (localPackageNames.has(dep.package)) {
+        // Check for managed dependency first — a 04t alias always wins,
+        // even if the name matches a local packageDirectory stub.
+        const aliasValue = packageAliases[dep.package];
+        if (aliasValue?.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX) && !localPackageNames.has(dep.package)) {
+          managedDeps[dep.package] = aliasValue;
+        } else if (localPackageNames.has(dep.package)) {
           // Local workspace dependency
           deps[dep.package] = dep.versionNumber
             ? `^${dep.versionNumber.split('.').slice(0, 3).join('.')}`
             : '*';
-        } else {
-          // External/managed dependency — look up in packageAliases
-          const aliasValue = packageAliases[dep.package];
-          if (aliasValue?.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
-            managedDeps[dep.package] = aliasValue;
-          }
         }
       }
 
@@ -241,7 +240,7 @@ export function fromSalesforceProjectJson(projectJson: Record<string, unknown>):
     }
 
     if (md.seed || md.unpackaged) {
-      pkgDef.metadataDependencies = md as {seed: string; unpackaged: string};
+      pkgDef.metadataDependencies = md as {seed?: string; unpackaged?: string};
     }
 
     return pkgDef;
