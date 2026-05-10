@@ -139,8 +139,8 @@ export class ArtifactService {
   /**
    * Create an `Sfpm_Artifact_History__c` record in the target org.
    *
-   * This is an opt-in feature controlled by `artifacts.trackHistory` in sfpm.config.ts.
-   * It degrades gracefully — if the custom object is not deployed to the target org
+   * Called automatically after every artifact upsert.
+   * Degrades gracefully — if the custom object is not deployed to the target org
    * the error is caught and a warning is logged.
    *
    * @param sfpmPackage - Package that was just installed/updated
