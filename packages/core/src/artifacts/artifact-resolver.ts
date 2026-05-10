@@ -1,6 +1,5 @@
 import fs from 'fs-extra';
 import {EventEmitter} from 'node:events';
-import path from 'node:path';
 import * as semver from 'semver';
 
 import {ArtifactManifest, ArtifactResolutionOptions, ResolvedArtifact} from '../types/artifact.js';
@@ -193,7 +192,9 @@ export class ArtifactResolver extends EventEmitter {
       version,
     });
 
-    const versionDir = await this.repository.ensureVersionDir(packageName, version);
+    const versionDir = this.repository.getVersionPath(packageName, version);
+    const existedBefore = fs.existsSync(versionDir);
+    await this.repository.ensureVersionDir(packageName, version);
 
     try {
       // Download the package tarball using registry client
@@ -217,10 +218,12 @@ export class ArtifactResolver extends EventEmitter {
         versionEntry: localized.versionEntry,
       };
     } catch (error) {
-      // Cleanup on failure
-      await this.repository.removeVersion(packageName, version).catch(() => {
-        /* ignore cleanup errors */
-      });
+      // Only clean up the version dir if we created it (don't delete pre-existing local artifacts)
+      if (!existedBefore) {
+        await this.repository.removeVersion(packageName, version).catch(() => {
+          /* ignore cleanup errors */
+        });
+      }
 
       throw new ArtifactError(packageName, 'extract', 'Failed to download and localize artifact', {
         cause: error instanceof Error ? error : new Error(String(error)),
@@ -387,7 +390,7 @@ export class ArtifactResolver extends EventEmitter {
     }
 
     const versionEntry = manifest.versions[targetVersion];
-    const artifactPath = path.join(this.repository.getArtifactsRoot(), versionEntry.path);
+    const artifactPath = this.repository.getArtifactPath(packageName, targetVersion);
 
     // Verify artifact exists
     if (!fs.existsSync(artifactPath)) {
