@@ -87,6 +87,8 @@ export class ArtifactService {
   private static instance?: ArtifactService;
   /** Track if we've attempted to load the cache (even if it failed) to avoid repeated attempts */
   private cacheLoadAttempted = false;
+  /** Whether the history object is available in the org. Starts true, flipped to false on first failure. */
+  private historyAvailable = true;
   /** In-memory cache of installed artifacts keyed by package name. Lazy-loaded on first access. */
   private installedArtifactsCache: Map<string, CachedArtifact> | null = null;
   private logger?: Logger;
@@ -134,6 +136,7 @@ export class ArtifactService {
   public clearCache(): void {
     this.installedArtifactsCache = null;
     this.cacheLoadAttempted = false;
+    this.historyAvailable = true;
   }
 
   /**
@@ -153,6 +156,10 @@ export class ArtifactService {
   ): Promise<string | undefined> {
     if (!this.org) {
       throw new Error('Org connection required for createHistoryRecord');
+    }
+
+    if (!this.historyAvailable) {
+      return undefined;
     }
 
     try {
@@ -177,8 +184,8 @@ export class ArtifactService {
       this.logger?.info(`Created artifact history record for ${sfpmPackage.name}@${sfpmPackage.version}: ${resultId}`);
       return resultId;
     } catch {
-      this.logger?.warn(`Unable to create artifact history record for ${sfpmPackage.name} — `
-        + 'Sfpm_Artifact_History__c may not be deployed to this org');
+      this.historyAvailable = false;
+      this.logger?.debug('Sfpm_Artifact_History__c is not available in this org — skipping history tracking');
       return undefined;
     }
   }
