@@ -85,6 +85,8 @@ interface CachedArtifact {
 export class ArtifactService {
   /** Singleton instance for shared cache across operations */
   private static instance?: ArtifactService;
+  /** Whether the artifact object is available in the org. Starts true, flipped to false on first failure. */
+  private artifactAvailable = true;
   /** Track if we've attempted to load the cache (even if it failed) to avoid repeated attempts */
   private cacheLoadAttempted = false;
   /** Whether the history object is available in the org. Starts true, flipped to false on first failure. */
@@ -136,6 +138,7 @@ export class ArtifactService {
   public clearCache(): void {
     this.installedArtifactsCache = null;
     this.cacheLoadAttempted = false;
+    this.artifactAvailable = true;
     this.historyAvailable = true;
   }
 
@@ -183,9 +186,10 @@ export class ArtifactService {
 
       this.logger?.info(`Created artifact history record for ${sfpmPackage.name}@${sfpmPackage.version}: ${resultId}`);
       return resultId;
-    } catch {
+    } catch (error) {
       this.historyAvailable = false;
-      this.logger?.debug('Sfpm_Artifact_History__c is not available in this org — skipping history tracking');
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.debug(`Sfpm_Artifact_History__c is not available in this org — skipping history tracking: ${message}`);
       return undefined;
     }
   }
@@ -376,6 +380,10 @@ export class ArtifactService {
       throw new Error('Org connection required for upsertArtifact');
     }
 
+    if (!this.artifactAvailable) {
+      return undefined;
+    }
+
     try {
       const artifactId = await this.getArtifactRecordId(sfpmPackage.name);
 
@@ -427,10 +435,10 @@ export class ArtifactService {
       }
 
       return resultId;
-    } catch {
-      this.logger?.warn('Unable to update sfpm artifacts in the org, skipping updates\n'
-        + '1. sfpm artifact package is not installed in the org\n'
-        + '2. The required prerequisite object is not deployed to this org');
+    } catch (error) {
+      this.artifactAvailable = false;
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.debug(`SfpmArtifact__c is not available in this org — skipping artifact tracking: ${message}`);
       return undefined;
     }
   }
