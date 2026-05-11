@@ -22,18 +22,18 @@ import {
   type TestLevel,
   VersionFormat,
 } from '../types/package.js';
-import {EnvAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {OrgAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
-import {ENV_ALIAS_DEFAULT_DIR, EnvAliasResolution, EnvAliasResolver} from './env-alias-resolver.js';
 import {
   type DataDeployable,
   ManagedPackageRef,
   type SourceDeployable,
   VersionInstallable,
 } from './installers/types.js';
+import {ORG_ALIAS_DEFAULT_DIR, OrgAliasResolution, OrgAliasResolver} from './org-alias-resolver.js';
 
 const TEST_COVERAGE_THRESHOLD = 75;
 const DEFAULT_API_VERSION = '65.0';
@@ -791,95 +791,95 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
 }
 
 /**
- * Interface for packages that support environment-aliased source directories.
+ * Interface for packages that support org-aliased source directories.
  *
- * An env-aliased package contains subdirectories named after target environments
+ * An org-aliased package contains subdirectories named after target org aliases
  * (e.g., `uat/`, `prod/`) plus a mandatory `default/` directory. At install/deploy
  * time, the target org alias is matched against these directory names.
  *
- * Use the {@link isEnvAliasable} type guard to cast a package to this interface.
+ * Use the {@link isOrgAliasable} type guard to cast a package to this interface.
  */
-export interface EnvAliasable {
-  /** The env alias configuration, normalized. `undefined` when not env-aliased. */
-  readonly envAliasConfig: EnvAliasConfig | undefined;
-  /** The last env alias resolution, set by {@link resolveEnvAlias}. */
-  readonly envAliasResolution: EnvAliasResolution | undefined;
+export interface OrgAliasable {
   /**
-   * For env-aliased packages, returns the path to the `default/` subdirectory
+   * For org-aliased packages, returns the path to the `default/` subdirectory
    * within the package source. Used during build for analysis.
    *
-   * For non-env-aliased packages, returns the normal package source path.
+   * For non-org-aliased packages, returns the normal package source path.
    */
   getAnalysisSourcePath(): string;
+  /** Whether this package uses org-aliased source directories. */
+  readonly isOrgAliased: boolean;
+  /** The org alias configuration, normalized. `undefined` when not org-aliased. */
+  readonly orgAliasConfig: OrgAliasConfig | undefined;
 
-  /** Whether this package uses environment-aliased source directories. */
-  readonly isEnvAliased: boolean;
+  /** The last org alias resolution, set by {@link resolveOrgAlias}. */
+  readonly orgAliasResolution: OrgAliasResolution | undefined;
 
   /**
-   * Resolve the env alias for a target org and return the resolution.
+   * Resolve the org alias for a target org and return the resolution.
    *
    * For **analysis / build** contexts (no target org), pass `undefined` — the
    * resolver will fall back to the `default/` directory.
    *
    * The resolution is cached on the instance so downstream consumers
-   * (builder, installer, hooks) can read `envAliasResolution` without
+   * (builder, installer, hooks) can read `orgAliasResolution` without
    * re-resolving.
    *
-   * @param targetOrg - The org alias/username to match against env directories.
+   * @param targetOrg - The org alias/username to match against org directories.
    *                     When `undefined`, always resolves to `default/`.
    * @param logger    - Optional logger for resolution diagnostics.
    */
-  resolveEnvAlias(targetOrg?: string, logger?: Logger): Promise<EnvAliasResolution>;
+  resolveOrgAlias(targetOrg?: string, logger?: Logger): Promise<OrgAliasResolution>;
 }
 
 /**
- * Type guard to check whether a package supports env aliasing.
- * Use this to safely cast an `SfpmPackage` to the `EnvAliasable` interface.
+ * Type guard to check whether a package supports org aliasing.
+ * Use this to safely cast an `SfpmPackage` to the `OrgAliasable` interface.
  */
-export function isEnvAliasable(pkg: SfpmPackage): pkg is EnvAliasable & SfpmPackage {
-  return pkg instanceof SfpmSourcePackage && 'isEnvAliased' in pkg;
+export function isOrgAliasable(pkg: SfpmPackage): pkg is OrgAliasable & SfpmPackage {
+  return pkg instanceof SfpmSourcePackage && 'isOrgAliased' in pkg;
 }
 
-export class SfpmSourcePackage extends SfpmMetadataPackage implements EnvAliasable {
-  private _envAliasResolution?: EnvAliasResolution;
+export class SfpmSourcePackage extends SfpmMetadataPackage implements OrgAliasable {
+  private _orgAliasResolution?: OrgAliasResolution;
 
-  get envAliasConfig(): EnvAliasConfig | undefined {
-    const raw = this.packageDefinition?.packageOptions?.envAliased;
+  get isOrgAliased(): boolean {
+    return Boolean(this.packageDefinition?.packageOptions?.orgAliased);
+  }
+
+  get orgAliasConfig(): OrgAliasConfig | undefined {
+    const raw = this.packageDefinition?.packageOptions?.orgAliased;
     if (!raw) return undefined;
     return typeof raw === 'object' ? raw : {};
   }
 
-  get envAliasResolution(): EnvAliasResolution | undefined {
-    return this._envAliasResolution;
-  }
-
-  get isEnvAliased(): boolean {
-    return Boolean(this.packageDefinition?.packageOptions?.envAliased);
+  get orgAliasResolution(): OrgAliasResolution | undefined {
+    return this._orgAliasResolution;
   }
 
   public getAnalysisSourcePath(): string {
     const basePath = this.resolveSourcePackagePath();
-    if (!this.isEnvAliased) {
+    if (!this.isOrgAliased) {
       return basePath;
     }
 
-    return path.join(basePath, ENV_ALIAS_DEFAULT_DIR);
+    return path.join(basePath, ORG_ALIAS_DEFAULT_DIR);
   }
 
-  public async resolveEnvAlias(targetOrg?: string, logger?: Logger): Promise<EnvAliasResolution> {
-    if (!this.isEnvAliased) {
-      throw new Error(`Package '${this.packageName}' is not env-aliased`);
+  public async resolveOrgAlias(targetOrg?: string, logger?: Logger): Promise<OrgAliasResolution> {
+    if (!this.isOrgAliased) {
+      throw new Error(`Package '${this.packageName}' is not org-aliased`);
     }
 
     const packagePath = this.resolveSourcePackagePath();
-    const resolver = new EnvAliasResolver(logger);
+    const resolver = new OrgAliasResolver(logger);
     const resolution = await resolver.resolve(
       packagePath,
-      targetOrg ?? ENV_ALIAS_DEFAULT_DIR,
-      this.envAliasConfig,
+      targetOrg ?? ORG_ALIAS_DEFAULT_DIR,
+      this.orgAliasConfig,
     );
 
-    this._envAliasResolution = resolution;
+    this._orgAliasResolution = resolution;
     return resolution;
   }
 }

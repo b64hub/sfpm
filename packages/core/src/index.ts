@@ -67,7 +67,6 @@ export {
   type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry, type BuildTask, RegisterBuilder,
 } from './package/builders/builder-registry.js';
 export {default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
-export {ENV_ALIAS_DEFAULT_DIR, type EnvAliasResolution, EnvAliasResolver} from './package/env-alias-resolver.js';
 export {
   type Installer, type InstallerConstructor, type InstallerExecResult, InstallerRegistry, RegisterInstaller,
 } from './package/installers/installer-registry.js';
@@ -75,6 +74,7 @@ export {default as SourceDeployer} from './package/installers/strategies/source-
 export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
+export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from './package/org-alias-resolver.js';
 export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
@@ -83,7 +83,7 @@ export {
   type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
 } from './package/services/validation-poller.js';
 export {
-  type EnvAliasable, isEnvAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
+  isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export * from './project/project-graph.js';

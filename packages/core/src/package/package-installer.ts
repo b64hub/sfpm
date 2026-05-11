@@ -23,7 +23,7 @@ import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
 import './installers/managed-package-installer.js';
 import SfpmPackage, {
-  isEnvAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage,
+  isOrgAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage,
 } from './sfpm-package.js';
 
 export interface InstallOptions {
@@ -313,8 +313,8 @@ export default class PackageInstaller extends EventEmitter {
       sfpmPackage.workingDirectory = this.provider.projectDir;
     }
 
-    // Handle env-aliased packages: resolve the correct source directory
-    await this.resolveEnvAliasForDeploy(sfpmPackage);
+    // Handle org-aliased packages: resolve the correct source directory
+    await this.resolveOrgAliasForDeploy(sfpmPackage);
 
     this.logger?.info(`Deploying ${packageName} from local source`);
     this.emit('install:start', {
@@ -553,24 +553,24 @@ export default class PackageInstaller extends EventEmitter {
   }
 
   /**
-   * For env-aliased packages, resolve the env alias on the package and
+   * For org-aliased packages, resolve the org alias on the package and
    * update its working directory so that `packageDirectory` (and by
-   * extension `getComponentSet()`) points at the env-specific content.
+   * extension `getComponentSet()`) points at the org-specific content.
    *
    * Creates a staging directory where `packageDefinition.path` resolves
-   * to the env-specific content, preserving the path structure expected
+   * to the org-specific content, preserving the path structure expected
    * by downstream consumers.
    */
-  private async resolveEnvAliasForDeploy(sfpmPackage: SfpmPackage): Promise<void> {
-    if (!isEnvAliasable(sfpmPackage) || !sfpmPackage.isEnvAliased) return;
+  private async resolveOrgAliasForDeploy(sfpmPackage: SfpmPackage): Promise<void> {
+    if (!isOrgAliasable(sfpmPackage) || !sfpmPackage.isOrgAliased) return;
 
-    const resolution = await sfpmPackage.resolveEnvAlias(this.options.targetOrg, this.logger);
-    this.logger?.info(`Env alias resolved for ${sfpmPackage.name}: alias='${resolution.resolvedAlias}', matched=${resolution.matched}`);
+    const resolution = await sfpmPackage.resolveOrgAlias(this.options.targetOrg, this.logger);
+    this.logger?.info(`Org alias resolved for ${sfpmPackage.name}: alias='${resolution.resolvedAlias}', matched=${resolution.matched}`);
 
     // Create a staging root where path.join(stagingRoot, packageDefinition.path)
-    // contains the resolved env-specific metadata
+    // contains the resolved org-specific metadata
     const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.name);
-    const stagingRoot = path.join(os.tmpdir(), 'sfpm-env-alias', sfpmPackage.name, resolution.resolvedAlias);
+    const stagingRoot = path.join(os.tmpdir(), 'sfpm-org-alias', sfpmPackage.name, resolution.resolvedAlias);
     const stagingPackagePath = path.join(stagingRoot, packageDefinition.path);
 
     await fs.remove(stagingPackagePath);
@@ -591,13 +591,13 @@ export default class PackageInstaller extends EventEmitter {
    * appended so the result points to the actual metadata directory, not just
    * the project/artifact root.
    *
-   * For env-aliased packages, uses the package's resolved env alias path
-   * (set by a prior call to {@link SfpmPackage.resolveEnvAlias}).
+   * For org-aliased packages, uses the package's resolved org alias path
+   * (set by a prior call to {@link SfpmPackage.resolveOrgAlias}).
    */
   private resolvePackageSourceDir(sfpmPackage: SfpmPackage): string {
-    // If env alias was resolved, use the effective path directly
-    if (isEnvAliasable(sfpmPackage) && sfpmPackage.envAliasResolution) {
-      return sfpmPackage.envAliasResolution.effectivePath;
+    // If org alias was resolved, use the effective path directly
+    if (isOrgAliasable(sfpmPackage) && sfpmPackage.orgAliasResolution) {
+      return sfpmPackage.orgAliasResolution.effectivePath;
     }
 
     const root = sfpmPackage.workingDirectory ?? this.provider.projectDir;
