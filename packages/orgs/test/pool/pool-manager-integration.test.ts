@@ -421,7 +421,8 @@ describe('PoolManager', () => {
       const result = await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
       expect(nextTask.execute).toHaveBeenCalled();
-      expect(result.taskResults![0].success).toBe(false); // overall org fails (first task failed)
+      expect(result.taskResults![0].success).toBe(true); // continueOnError=true: task error doesn't fail org provisioning
+      expect(result.taskResults![0].results[0].success).toBe(false); // individual task still reported as failed
     });
 
     it('should handle task execution errors gracefully', async () => {

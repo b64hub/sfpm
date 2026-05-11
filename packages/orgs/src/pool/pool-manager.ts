@@ -462,6 +462,8 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   private async cleanupFailedOrgs(orgs: PoolOrg[], tag: string): Promise<void> {
     this.logger?.info(`Cleaning up ${orgs.length} org(s) that failed tasks in pool "${tag}"`);
 
+    const undeleted: PoolOrg[] = [];
+
     for (const org of orgs) {
       try {
         // eslint-disable-next-line no-await-in-loop -- sequential deletion avoids overwhelming the DevHub API
@@ -476,6 +478,19 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.logger?.warn(`Failed to delete org ${org.auth.username ?? org.recordId}: ${message}`);
+        undeleted.push(org);
+      }
+    }
+
+    // Fallback: mark undeleted orgs as Available rather than leaving them stuck In_Progress.
+    // A partially prepared org is preferable to a permanently orphaned one.
+    if (undeleted.length > 0) {
+      this.logger?.warn(`Marking ${undeleted.length} undeleted org(s) as Available to prevent In_Progress leak`);
+      try {
+        await this.markOrgsAvailable(undeleted, tag);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger?.error(`Failed to mark orgs as Available — orgs may be stuck as In_Progress: ${message}`);
       }
     }
   }
@@ -768,7 +783,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     return {
       results,
-      success: results.every(r => r.success),
+      success: results.every((r, i) => r.success || this.tasks[i].continueOnError),
       username: org.auth.username!,
     };
   }
