@@ -11,8 +11,8 @@ describe('computeOrgAllocation', () => {
   describe('basic allocation scenarios', () => {
     it('should allocate orgs to reach maxAllocation when capacity allows', () => {
       const result = computeOrgAllocation(100, 0, {
-        batchSize: 5,
-        maxAllocation: 10,
+        batch: 5,
+        max: 10,
       });
 
       expect(result).toEqual<PoolAllocation>({
@@ -25,8 +25,8 @@ describe('computeOrgAllocation', () => {
 
     it('should allocate only remaining capacity when less than needed', () => {
       const result = computeOrgAllocation(5, 0, {
-        batchSize: 10,
-        maxAllocation: 20,
+        batch: 10,
+        max: 20,
       });
 
       expect(result).toEqual<PoolAllocation>({
@@ -39,8 +39,8 @@ describe('computeOrgAllocation', () => {
 
     it('should allocate zero when pool is at max capacity', () => {
       const result = computeOrgAllocation(100, 10, {
-        batchSize: 5,
-        maxAllocation: 10,
+        batch: 5,
+        max: 10,
       });
 
       expect(result).toEqual<PoolAllocation>({
@@ -53,8 +53,8 @@ describe('computeOrgAllocation', () => {
 
     it('should allocate zero when DevHub has no remaining capacity', () => {
       const result = computeOrgAllocation(0, 5, {
-        batchSize: 10,
-        maxAllocation: 20,
+        batch: 10,
+        max: 20,
       });
 
       expect(result).toEqual<PoolAllocation>({
@@ -69,8 +69,8 @@ describe('computeOrgAllocation', () => {
   describe('partial pool scenarios', () => {
     it('should allocate to fill gap when pool is partially filled', () => {
       const result = computeOrgAllocation(50, 7, {
-        batchSize: 5,
-        maxAllocation: 10,
+        batch: 5,
+        max: 10,
       });
 
       expect(result).toEqual<PoolAllocation>({
@@ -83,8 +83,8 @@ describe('computeOrgAllocation', () => {
 
     it('should respect remaining capacity over pool gap', () => {
       const result = computeOrgAllocation(2, 8, {
-        batchSize: 10,
-        maxAllocation: 15,
+        batch: 10,
+        max: 15,
       });
 
       expect(result).toEqual<PoolAllocation>({
@@ -99,8 +99,8 @@ describe('computeOrgAllocation', () => {
   describe('over-allocation scenarios', () => {
     it('should allocate zero when current allocation exceeds max (cleanup needed)', () => {
       const result = computeOrgAllocation(100, 15, {
-        batchSize: 5,
-        maxAllocation: 10,
+        batch: 5,
+        max: 10,
       });
 
       expect(result).toEqual<PoolAllocation>({
@@ -115,8 +115,8 @@ describe('computeOrgAllocation', () => {
   describe('edge cases', () => {
     it('should handle zero maxAllocation gracefully', () => {
       const result = computeOrgAllocation(100, 0, {
-        batchSize: 5,
-        maxAllocation: 0,
+        batch: 5,
+        max: 0,
       });
 
       expect(result).toEqual<PoolAllocation>({
@@ -129,8 +129,8 @@ describe('computeOrgAllocation', () => {
 
     it('should handle large numbers without overflow', () => {
       const result = computeOrgAllocation(1000, 50, {
-        batchSize: 100,
-        maxAllocation: 500,
+        batch: 100,
+        max: 500,
       });
 
       expect(result).toEqual<PoolAllocation>({
@@ -144,7 +144,7 @@ describe('computeOrgAllocation', () => {
     it('should work with default sizing config values', () => {
       const result = computeOrgAllocation(50, 5, {
         ...DEFAULT_POOL_SIZING,
-        maxAllocation: 20,
+        max: 20,
       });
 
       expect(result.toAllocate).toBeLessThanOrEqual(20 - 5);
@@ -163,8 +163,8 @@ describe('computeOrgAllocation', () => {
 
       for (const {current, max, remaining} of scenarios) {
         const result = computeOrgAllocation(remaining, current, {
-          batchSize: 10,
-          maxAllocation: max,
+          batch: 10,
+          max: max,
         });
 
         expect(result.toAllocate).toBeLessThanOrEqual(remaining);
@@ -180,8 +180,8 @@ describe('computeOrgAllocation', () => {
 
       for (const {current, max, remaining} of scenarios) {
         const result = computeOrgAllocation(remaining, current, {
-          batchSize: 10,
-          maxAllocation: max,
+          batch: 10,
+          max: max,
         });
 
         expect(result.toAllocate).toBeLessThanOrEqual(result.toSatisfyMax);
@@ -197,8 +197,8 @@ describe('computeOrgAllocation', () => {
 
       for (const {current, max, remaining} of scenarios) {
         const result = computeOrgAllocation(remaining, current, {
-          batchSize: 10,
-          maxAllocation: max,
+          batch: 10,
+          max: max,
         });
 
         expect(result.toAllocate).toBeGreaterThanOrEqual(0);

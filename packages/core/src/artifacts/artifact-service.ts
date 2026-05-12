@@ -2,7 +2,7 @@ import {Connection, Org} from '@salesforce/core';
 
 import SfpmPackage from '../package/sfpm-package.js';
 import {
-  ArtifactResolveOptions, ResolvedArtifact,
+  ArtifactResolutionOptions, ResolvedArtifact,
 } from '../types/artifact.js';
 import {Logger} from '../types/logger.js';
 import {InstalledArtifact} from '../types/package.js';
@@ -85,8 +85,12 @@ interface CachedArtifact {
 export class ArtifactService {
   /** Singleton instance for shared cache across operations */
   private static instance?: ArtifactService;
+  /** Whether the artifact object is available in the org. Starts true, flipped to false on first failure. */
+  private artifactAvailable = true;
   /** Track if we've attempted to load the cache (even if it failed) to avoid repeated attempts */
   private cacheLoadAttempted = false;
+  /** Whether the history object is available in the org. Starts true, flipped to false on first failure. */
+  private historyAvailable = true;
   /** In-memory cache of installed artifacts keyed by package name. Lazy-loaded on first access. */
   private installedArtifactsCache: Map<string, CachedArtifact> | null = null;
   private logger?: Logger;
@@ -134,13 +138,15 @@ export class ArtifactService {
   public clearCache(): void {
     this.installedArtifactsCache = null;
     this.cacheLoadAttempted = false;
+    this.artifactAvailable = true;
+    this.historyAvailable = true;
   }
 
   /**
    * Create an `Sfpm_Artifact_History__c` record in the target org.
    *
-   * This is an opt-in feature controlled by `artifacts.trackHistory` in sfpm.config.ts.
-   * It degrades gracefully — if the custom object is not deployed to the target org
+   * Called automatically after every artifact upsert.
+   * Degrades gracefully — if the custom object is not deployed to the target org
    * the error is caught and a warning is logged.
    *
    * @param sfpmPackage - Package that was just installed/updated
@@ -153,6 +159,10 @@ export class ArtifactService {
   ): Promise<string | undefined> {
     if (!this.org) {
       throw new Error('Org connection required for createHistoryRecord');
+    }
+
+    if (!this.historyAvailable) {
+      return undefined;
     }
 
     try {
@@ -176,9 +186,10 @@ export class ArtifactService {
 
       this.logger?.info(`Created artifact history record for ${sfpmPackage.name}@${sfpmPackage.version}: ${resultId}`);
       return resultId;
-    } catch {
-      this.logger?.warn(`Unable to create artifact history record for ${sfpmPackage.name} — `
-        + 'Sfpm_Artifact_History__c may not be deployed to this org');
+    } catch (error) {
+      this.historyAvailable = false;
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.debug(`Sfpm_Artifact_History__c is not available in this org — skipping history tracking: ${message}`);
       return undefined;
     }
   }
@@ -281,30 +292,22 @@ export class ArtifactService {
    * including support for scoped registries (e.g., @myorg packages).
    *
    * @param projectDirectory - Root project directory for artifact storage
-   * @param packageName - Name of the package to resolve (SFPM package name, not npm name)
-   * @param options - Resolution options (version, forceRefresh, npmName, etc.)
+   * @param packageName - Fully scoped name of the package to resolve
+   * @param options - Resolution options (version, forceRefresh, etc.)
    * @returns InstallTarget with resolved artifact and install decision
    */
   public async resolveInstallTarget(
     projectDirectory: string,
     packageName: string,
-    options?: ArtifactResolveOptions & {
-      localOnly?: boolean;
-      /** Full npm-scoped package name for registry lookup (e.g., "@myorg/core-package") */
-      npmName?: string;
-    },
+    options?: ArtifactResolutionOptions,
   ): Promise<InstallTarget> {
-    // Use provided npm name, or fall back to bare package name for local-only resolution
-    const npmPackageName = options?.npmName ?? packageName;
-
     // 1. Create resolver for this specific package (handles scoped registries)
-    const resolver = await ArtifactResolver.createForPackage(
+    const resolver = await ArtifactResolver.create(
       projectDirectory,
-      npmPackageName,
-      this.logger,
       {
         localOnly: options?.localOnly,
       },
+      this.logger,
     );
 
     // Note: We still use the SFPM package name for local artifact resolution
@@ -377,6 +380,10 @@ export class ArtifactService {
       throw new Error('Org connection required for upsertArtifact');
     }
 
+    if (!this.artifactAvailable) {
+      return undefined;
+    }
+
     try {
       const artifactId = await this.getArtifactRecordId(sfpmPackage.name);
 
@@ -428,10 +435,10 @@ export class ArtifactService {
       }
 
       return resultId;
-    } catch {
-      this.logger?.warn('Unable to update sfpm artifacts in the org, skipping updates\n'
-        + '1. sfpm artifact package is not installed in the org\n'
-        + '2. The required prerequisite object is not deployed to this org');
+    } catch (error) {
+      this.artifactAvailable = false;
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.debug(`SfpmArtifact__c is not available in this org — skipping artifact tracking: ${message}`);
       return undefined;
     }
   }

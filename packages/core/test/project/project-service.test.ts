@@ -134,7 +134,9 @@ describe('ProjectService', () => {
             vi.spyOn(SfProject, 'resolve').mockResolvedValue(mockSfProject as any);
 
             const definition = await ProjectService.getProjectDefinition('/mock/path');
-            expect(definition).toEqual(mockDefinition);
+            expect(definition.packages).toBeDefined();
+            expect(definition.packages[0].name).toBe('pkg-a');
+            expect(definition.packages[0].path).toBe('packages/pkg-a');
         });
 
         test('getPackageDefinition should return specific package', async () => {
@@ -158,7 +160,7 @@ describe('ProjectService', () => {
             vi.spyOn(SfProject, 'resolve').mockResolvedValue(mockSfProject as any);
 
             const pkg = await ProjectService.getPackageDefinition('pkg-a');
-            expect(pkg.package).toBe('pkg-a');
+            expect(pkg.name).toBe('pkg-a');
             expect(pkg.path).toBe('packages/pkg-a');
         });
 

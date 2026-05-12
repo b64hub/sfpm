@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import {EventEmitter} from 'node:events';
 import path from 'node:path';
 
-import type {WorkspacePackageJson} from '../types/workspace.js';
+import type {WorkspacePackageJson} from '../project/providers/types/workspace.js';
 
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
 import {ArtifactError} from '../types/errors.js';
@@ -78,7 +78,7 @@ export default class ArtifactAssembler extends EventEmitter {
     this.repository = new ArtifactRepository(projectDirectory, logger);
 
     // artifacts/<package_name>/<version>
-    this.versionDirectory = this.repository.getVersionPath(sfpmPackage.packageName, this.packageVersionNumber);
+    this.versionDirectory = this.repository.getVersionPath(sfpmPackage.name, this.packageVersionNumber);
 
     this.changelogProvider = options.changelogProvider || new StubChangelogProvider();
   }
@@ -122,7 +122,7 @@ export default class ArtifactAssembler extends EventEmitter {
       return artifactPath;
     } catch (error: any) {
       this.emitError(error);
-      throw new ArtifactError(this.sfpmPackage.packageName, 'assembly', 'Failed to assemble artifact', {
+      throw new ArtifactError(this.sfpmPackage.name, 'assembly', 'Failed to assemble artifact', {
         cause: error instanceof Error ? error : new Error(String(error)),
         version: this.packageVersionNumber,
       });
@@ -197,14 +197,14 @@ export default class ArtifactAssembler extends EventEmitter {
       this.logger?.debug(`Tarball created: ${tarballName}`);
 
       this.emit('assembly:pack', {
-        packageName: this.sfpmPackage.packageName,
+        packageName: this.sfpmPackage.name,
         tarballName,
         timestamp: new Date(),
       });
 
       return tarballName;
     } catch (error) {
-      throw new ArtifactError(this.sfpmPackage.packageName, 'pack', 'Failed to create tarball', {
+      throw new ArtifactError(this.sfpmPackage.name, 'pack', 'Failed to create tarball', {
         cause: error instanceof Error ? error : new Error(String(error)),
         context: {workspaceDir},
         version: this.packageVersionNumber,
@@ -218,7 +218,7 @@ export default class ArtifactAssembler extends EventEmitter {
       artifactHash,
       artifactPath,
       duration: Date.now() - startTime,
-      packageName: this.sfpmPackage.packageName,
+      packageName: this.sfpmPackage.name,
       sourceHash,
       timestamp: new Date(),
       version: this.packageVersionNumber,
@@ -229,16 +229,16 @@ export default class ArtifactAssembler extends EventEmitter {
     this.logger?.error(`Failed to assemble artifact: ${error.message}`);
     this.emit('assembly:error', {
       error: error instanceof Error ? error : new Error(String(error)),
-      packageName: this.sfpmPackage.packageName,
+      packageName: this.sfpmPackage.name,
       timestamp: new Date(),
       version: this.packageVersionNumber,
     });
   }
 
   private emitStart(): void {
-    this.logger?.info(`Assembling artifact for ${this.sfpmPackage.packageName}@${this.packageVersionNumber}`);
+    this.logger?.info(`Assembling artifact for ${this.sfpmPackage.name}@${this.packageVersionNumber}`);
     this.emit('assembly:start', {
-      packageName: this.sfpmPackage.packageName,
+      packageName: this.sfpmPackage.name,
       timestamp: new Date(),
       version: this.packageVersionNumber,
     });
@@ -251,11 +251,11 @@ export default class ArtifactAssembler extends EventEmitter {
     const artifactHash = await this.repository.calculateFileHash(artifactPath);
     this.logger?.debug(`Artifact hash: ${artifactHash}`);
 
-    await this.repository.finalizeArtifact(this.sfpmPackage.packageName, this.packageVersionNumber, {
+    await this.repository.finalizeArtifact(this.sfpmPackage.name, this.packageVersionNumber, {
       artifactHash,
       commit: this.sfpmPackage.commitId,
       generatedAt: Date.now(),
-      path: this.repository.getRelativeArtifactPath(this.sfpmPackage.packageName, this.packageVersionNumber),
+      path: this.repository.getRelativeArtifactPath(this.sfpmPackage.name, this.packageVersionNumber),
       sourceHash,
     });
 
@@ -304,7 +304,7 @@ export default class ArtifactAssembler extends EventEmitter {
    */
   private async moveTarball(workspaceDir: string, tarballName: string): Promise<string> {
     const sourcePath = path.join(workspaceDir, tarballName);
-    const targetPath = this.repository.getArtifactPath(this.sfpmPackage.packageName, this.packageVersionNumber);
+    const targetPath = this.repository.getArtifactPath(this.sfpmPackage.name, this.packageVersionNumber);
 
     // Ensure version directory exists
     await fs.ensureDir(path.dirname(targetPath));
@@ -329,7 +329,7 @@ export default class ArtifactAssembler extends EventEmitter {
   private async prepareStagingDirectory(): Promise<{packageDir: string; workspaceDir: string}> {
     if (!this.sfpmPackage.workingDirectory) {
       throw new ArtifactError(
-        this.sfpmPackage.packageName,
+        this.sfpmPackage.name,
         'assembly',
         'No staging directory available - package must be staged before assembly',
         {version: this.packageVersionNumber},
@@ -366,7 +366,7 @@ export default class ArtifactAssembler extends EventEmitter {
     const sourcePath = this.sfpmPackage.packageDefinition?.path;
     if (!sourcePath) {
       throw new ArtifactError(
-        this.sfpmPackage.packageName,
+        this.sfpmPackage.name,
         'assembly',
         'Package definition path is not set — cannot locate workspace package.json',
         {version: this.packageVersionNumber},
@@ -392,7 +392,7 @@ export default class ArtifactAssembler extends EventEmitter {
     }
 
     throw new ArtifactError(
-      this.sfpmPackage.packageName,
+      this.sfpmPackage.name,
       'assembly',
       `No workspace package.json found for source path "${sourcePath}"`,
       {version: this.packageVersionNumber},

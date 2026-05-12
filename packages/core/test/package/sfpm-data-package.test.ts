@@ -23,9 +23,9 @@ describe('SfpmDataPackage', () => {
     tmpDir = await createTmpProject();
     dataPackage = new SfpmDataPackage('my-data', tmpDir);
     dataPackage.packageDefinition = {
-      package: 'my-data',
+      name: 'my-data',
       path: 'data',
-      versionNumber: '1.0.0.0',
+      version: '1.0.0',
       type: PackageType.Data,
     } as any;
   });

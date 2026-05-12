@@ -5,15 +5,9 @@ import {GitService} from '../git/git-service.js';
 import {OrgPackageVersionFetcher} from '../types/org.js';
 import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {
-  formatVersion as formatVersionUtil,
-  getVersionSuffix,
   stripBuildSegment,
-  toVersionFormat,
 } from '../utils/version-utils.js';
 import {PackageNode, ProjectGraph} from './project-graph.js';
-
-const NEXT_SUFFIX = '.NEXT';
-const LATEST_SUFFIX = '.LATEST';
 
 export type VersionBumpType = 'custom' | 'major' | 'minor' | 'patch';
 
@@ -55,14 +49,6 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
   }
 
   /**
-   * Cleans a version string for semver comparison.
-   * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'semver', { strict: false, resolveTokens: true })`.
-   */
-  public static cleanVersion(version: string): string {
-    return toVersionFormat(version, 'semver', {resolveTokens: true, strict: false});
-  }
-
-  /**
    * Creates and initializes a new VersionManager instance.
    *
    * @param graph - A pre-built ProjectGraph
@@ -71,31 +57,6 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
    */
   public static create(graph: ProjectGraph, definition: ProjectDefinition): VersionManager {
     return new VersionManager(graph, definition);
-  }
-
-  /**
-   * Formats version components into a dot-separated version string.
-   * @deprecated Import `formatVersion` from `utils/version-utils.js` instead.
-   */
-  public static formatVersion(major: number, minor: number, patch: number, build: number): string {
-    return formatVersionUtil(major, minor, patch, build);
-  }
-
-  /**
-   * Normalizes and validates a version string.
-   * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'semver')`.
-   */
-  public static normalizeVersion(version: string): string {
-    if (!version) return '0.0.0.0'; // Legacy default preserved
-    return toVersionFormat(version, 'semver');
-  }
-
-  /**
-   * Converts an npm/semver-style version to the Salesforce 4-part format.
-   * @deprecated Import `toVersionFormat` from `utils/version-utils.js` and use `toVersionFormat(version, 'salesforce')`.
-   */
-  public static toSalesforceVersion(version: string): string {
-    return toVersionFormat(version, 'salesforce');
   }
 
   /**
@@ -136,9 +97,9 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
    * The caller is responsible for persisting the result.
    */
   getUpdatedDefinition(): ProjectDefinition {
-    const newConfig = {...this.definition};
-    newConfig.packageDirectories = (newConfig.packageDirectories as PackageDefinition[]).map((pkgDef: PackageDefinition) => {
-      const tracker = this.trackers.get(pkgDef.package);
+    const newConfig = structuredClone(this.definition);
+    newConfig.packages = newConfig.packages.map(pkgDef => {
+      const tracker = this.trackers.get(pkgDef.name);
       if (tracker && tracker.isUpdated) {
         return tracker.writeToDefinition(pkgDef);
       }
@@ -161,10 +122,10 @@ export class VersionManager extends EventEmitter implements VersionManagerEvents
           // Check if potentialParent depends on updatedPkg (it should, based on graph)
           const dependencyRef = potentialParent.getDependency(updatedPkg.packageName);
           if (dependencyRef) {
-            // Update the dependency version in the parent.
-            // Use the bumped version with a .LATEST suffix so dependents
-            // resolve to the latest build of the new version.
-            const newDepVersion = updatedPkg.cleanedVersion(updatedPkg.newVersion ?? undefined) + LATEST_SUFFIX;
+            // Update the dependency version in the parent to the bumped semver.
+            // The adapter layer handles format conversion (e.g. appending .LATEST)
+            // when writing to sfdx-project.json.
+            const newDepVersion = updatedPkg.cleanedVersion(updatedPkg.newVersion ?? undefined);
             potentialParent.updateDependencyVersion(updatedPkg.packageName, newDepVersion);
             affectedParentPackages.add(potentialParent);
           }
@@ -266,8 +227,8 @@ export class VersionTracker {
 
     const def = node.definition as PackageDefinition;
     if (def.dependencies) {
-      for (const d of def.dependencies) {
-        this.dependencies.set(d.package, d.versionNumber ?? '');
+      for (const [depName, depVersion] of Object.entries(def.dependencies)) {
+        this.dependencies.set(depName, depVersion);
       }
     }
   }
@@ -294,20 +255,17 @@ export class VersionTracker {
 
     if (type === 'custom') {
       if (!customVersion) throw new Error('Custom version required for custom bump type');
-      this.setNewVersion(customVersion);
+      this.newVersion = stripBuildSegment(customVersion);
       return;
     }
 
     const base = this.baseVersionOverride || this.currentVersion;
-    const cleaned = this.cleanVersion(base);
+    const cleaned = stripBuildSegment(base);
 
     const next = semver.inc(cleaned, type as ReleaseType);
     if (!next) throw new Error(`Failed to increment version ${cleaned} with type ${type}`);
 
-    // Prefer the suffix from the current configuration (e.g. .NEXT),
-    // falling back to the base version's suffix (e.g. .0)
-    const suffixSource = this.currentVersion || base;
-    this.setNewVersion(next + this.getSuffix(suffixSource));
+    this.newVersion = next;
   }
 
   cleanedVersion(version?: string): string {
@@ -330,8 +288,8 @@ export class VersionTracker {
 
     const def = this.node.definition as PackageDefinition;
     if (def.dependencies) {
-      for (const d of def.dependencies) {
-        this.dependencies.set(d.package, d.versionNumber ?? '');
+      for (const [depName, depVersion] of Object.entries(def.dependencies)) {
+        this.dependencies.set(depName, depVersion);
       }
     }
   }
@@ -360,7 +318,6 @@ export class VersionTracker {
 
   updateDependencyVersion(pkgName: string, newVersion: string): void {
     if (this.dependencies.has(pkgName)) {
-      // Check if it's already updated to this?
       this.dependencies.set(pkgName, newVersion);
       this.updatedDependencies.add(pkgName);
     }
@@ -369,35 +326,20 @@ export class VersionTracker {
   writeToDefinition(original: PackageDefinition): PackageDefinition {
     const copy = {...original};
     if (this.newVersion) {
-      copy.versionNumber = this.newVersion;
+      copy.version = this.newVersion;
     }
 
     if (this.updatedDependencies.size > 0 && copy.dependencies) {
-      copy.dependencies = copy.dependencies.map(d => {
-        if (this.updatedDependencies.has(d.package)) {
-          return {...d, versionNumber: this.dependencies.get(d.package)!};
+      const updatedDeps = {...copy.dependencies};
+      for (const depName of this.updatedDependencies) {
+        if (depName in updatedDeps) {
+          updatedDeps[depName] = this.dependencies.get(depName)!;
         }
+      }
 
-        return d;
-      });
+      copy.dependencies = updatedDeps;
     }
 
     return copy;
-  }
-
-  private cleanVersion(version: string): string {
-    return stripBuildSegment(version);
-  }
-
-  private getSuffix(version: string): string {
-    const suffix = getVersionSuffix(version);
-    // Normalise to Salesforce dot-separator for consistency with sfdx-project.json
-    if (suffix === '-NEXT') return NEXT_SUFFIX;
-    if (suffix === '-LATEST') return LATEST_SUFFIX;
-    return suffix || '.0';
-  }
-
-  private setNewVersion(version: string) {
-    this.newVersion = toVersionFormat(version, 'salesforce');
   }
 }

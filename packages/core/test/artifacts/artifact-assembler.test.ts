@@ -71,6 +71,7 @@ describe('ArtifactAssembler', () => {
 
     const projectDirectory = '/project';
     const packageName = 'my-package';
+    const scopedName = `@testorg/${packageName}`;
     const version = '1.0.0-1';
 
     beforeEach(() => {
@@ -91,6 +92,7 @@ describe('ArtifactAssembler', () => {
 
         mockSfpmPackage = {
             packageName,
+            name: `@testorg/${packageName}`,
             npmName: `@testorg/${packageName}`,
             version,
             type: PackageType.Unlocked,
@@ -152,7 +154,7 @@ describe('ArtifactAssembler', () => {
     });
 
     it('should initialize with correct paths', () => {
-        expect((assembler as any).versionDirectory).toBe(`/project/artifacts/${packageName}/${version}`);
+        expect((assembler as any).versionDirectory).toBe(`/project/artifacts/${scopedName}/${version}`);
         expect((assembler as any).repository).toBeDefined();
         expect((assembler as any).options).toBeDefined();
     });
@@ -186,7 +188,7 @@ describe('ArtifactAssembler', () => {
             const result = await assembler.assemble();
 
             // Should return path to tgz file
-            expect(result).toBe(`/project/artifacts/${packageName}/${version}/artifact.tgz`);
+            expect(result).toBe(`/project/artifacts/${scopedName}/${version}/artifact.tgz`);
             
             // Should generate package.json in the package directory
             expect(fs.writeJson).toHaveBeenCalledWith(
@@ -207,10 +209,10 @@ describe('ArtifactAssembler', () => {
             
             // Should finalize artifact (update manifest and symlink)
             expect(mockRepository.finalizeArtifact).toHaveBeenCalledWith(
-                packageName,
+                scopedName,
                 version,
                 expect.objectContaining({
-                    path: `${packageName}/${version}/artifact.tgz`,
+                    path: `${scopedName}/${version}/artifact.tgz`,
                     sourceHash: expect.any(String),
                     artifactHash: 'mockhash123'
                 })
@@ -384,13 +386,13 @@ describe('ArtifactAssembler', () => {
 
             const result = await (assembler as any).moveTarball('/tmp/workspace', 'test-1.0.0-1.tgz');
 
-            expect(fs.ensureDir).toHaveBeenCalledWith(`/project/artifacts/${packageName}/${version}`);
+            expect(fs.ensureDir).toHaveBeenCalledWith(`/project/artifacts/${scopedName}/${version}`);
             expect(fs.move).toHaveBeenCalledWith(
                 '/tmp/workspace/test-1.0.0-1.tgz',
-                `/project/artifacts/${packageName}/${version}/artifact.tgz`,
+                `/project/artifacts/${scopedName}/${version}/artifact.tgz`,
                 { overwrite: true }
             );
-            expect(result).toBe(`/project/artifacts/${packageName}/${version}/artifact.tgz`);
+            expect(result).toBe(`/project/artifacts/${scopedName}/${version}/artifact.tgz`);
         });
     });
 });

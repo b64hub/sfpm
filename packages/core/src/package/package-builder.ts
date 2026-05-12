@@ -21,6 +21,8 @@ import SfpmPackage, {PackageFactory} from './sfpm-package.js';
 
 export interface BuildOptions {
   buildNumber?: string;
+  /** Enable code coverage calculation during package version creation (required for promotion) */
+  codeCoverage?: boolean;
   destructiveManifestPath?: string;
   devhubUsername?: string;
   /** Force build even if no source changes detected */
@@ -68,64 +70,26 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    * @returns
    */
   public async buildPackage(packageName: string, projectDirectory: string) {
-    // Use PackageFactory to create a fully-configured package
     const packageFactory = new PackageFactory(this.provider);
     const sfpmPackage = packageFactory.createFromName(packageName);
 
-    // Emit build start event
     this.emit('build:start', {
       buildNumber: this.options.buildNumber,
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       timestamp: new Date(),
       version: sfpmPackage.version,
     });
 
-    // Merge build options from package definition
-    if (sfpmPackage.packageDefinition?.packageOptions?.build) {
-      merge(sfpmPackage.metadata.orchestration, {
-        build: sfpmPackage.packageDefinition.packageOptions.build,
-      });
-    }
-
-    if (this.options.buildNumber) {
-      sfpmPackage.setBuildNumber(this.options.buildNumber);
-    } else if (sfpmPackage.type !== PackageType.Unlocked) {
-      // Source and data packages don't get build numbers from Salesforce.
-      // Generate one from the CI pipeline run ID or a timestamp to ensure
-      // each build produces a unique, ever-increasing version.
-      const autoBuildNumber = getPipelineRunId() ?? String(Math.floor(Date.now() / 1000));
-      sfpmPackage.setBuildNumber(autoBuildNumber);
-      this.logger?.debug(`Auto-assigned build number ${autoBuildNumber} for ${sfpmPackage.packageName}`);
-    }
-
-    if (this.options.orgDefinitionPath) {
-      sfpmPackage.orgDefinitionPath = this.options.orgDefinitionPath;
-    }
-
-    // Set source context from git repository
-    if (!this.gitService) {
-      this.gitService = await GitService.initialize(projectDirectory, this.logger);
-    }
-
-    sfpmPackage.metadata.source = await this.gitService.getPackageSourceContext();
-
-    // Apply orchestration options - each package type handles its own options
-    sfpmPackage.setOrchestrationOptions({
-      installationkey: this.options.installationKey,
-      installationkeybypass: this.options.installationKeyBypass,
-      isAsyncValidation: this.options.isAsyncValidation,
-      isSkipValidation: this.options.isSkipValidation,
-      waitTime: this.options.waitTime,
-    });
-
+    this.handleBuildConfiguration(sfpmPackage);
+    await this.handleSourceContext(sfpmPackage, projectDirectory);
+    this.handleOrchestrationOptions(sfpmPackage);
     await this.stagePackage(sfpmPackage);
 
     try {
-      // Skip empty packages before running analyzers or builder
       if (await this.isPackageEmpty(sfpmPackage)) {
         this.emit('build:skipped', {
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           packageType: sfpmPackage.type as PackageType,
           reason: 'empty-package',
           timestamp: new Date(),
@@ -136,59 +100,11 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       await this.runAnalyzers(sfpmPackage);
 
-      if (!sfpmPackage.workingDirectory) {
-        const error = new Error('Package must be staged for build');
-        this.emit('build:error', {
-          error,
-          packageName: sfpmPackage.packageName,
-          phase: 'staging',
-          timestamp: new Date(),
-        });
-        throw error;
-      }
+      const builderInstance = await this.handleBuilderSetup(sfpmPackage);
+      await this.executeBuilder(sfpmPackage, builderInstance, builderInstance.constructor.name);
 
-      const BuilderClass = BuilderRegistry.getBuilder(sfpmPackage.type);
-
-      if (!BuilderClass) {
-        const error = new Error(`No builder registered for package type: ${sfpmPackage.type}`);
-        this.emit('build:error', {
-          error,
-          packageName: sfpmPackage.packageName,
-          phase: 'build',
-          timestamp: new Date(),
-        });
-        throw error;
-      }
-
-      // Build options for the builder from sfpm.config.ts
-      const builderOptions: BuilderOptions = {
-        ignoreFilesConfig: this.options.ignoreFilesConfig,
-      };
-
-      const builderInstance: Builder = new BuilderClass(
-        sfpmPackage.workingDirectory,
-        sfpmPackage,
-        builderOptions,
-        this.logger,
-      );
-
-      // Skip source hash check when force is enabled
-      if (this.options.force && builderInstance.preBuildTasks) {
-        builderInstance.preBuildTasks = builderInstance.preBuildTasks.filter(task => task.constructor.name !== 'SourceHashTask');
-        this.logger?.info('Force build enabled - skipping source change detection');
-      }
-
-      // Connect to dev hub if needed
-      if (this.options.devhubUsername) {
-        await this.connectToDevHub(sfpmPackage, builderInstance, this.options.devhubUsername);
-      }
-
-      // Execute the builder
-      await this.executeBuilder(sfpmPackage, builderInstance, BuilderClass.name);
-
-      // Emit build complete
       this.emit('build:complete', {
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         packageVersionId: 'packageVersionId' in sfpmPackage ? (sfpmPackage.packageVersionId as string) : undefined,
         success: true,
         timestamp: new Date(),
@@ -208,7 +124,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
     this.emit('analyzers:start', {
       analyzerCount: enabledAnalyzers.length,
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       timestamp: new Date(),
     });
 
@@ -219,7 +135,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
         this.emit('analyzer:start', {
           analyzerName,
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           timestamp: new Date(),
         });
 
@@ -230,7 +146,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
           this.emit('analyzer:complete', {
             analyzerName,
             findings: metadataContribution,
-            packageName: sfpmPackage.packageName,
+            packageName: sfpmPackage.name,
             timestamp: new Date(),
           });
 
@@ -240,7 +156,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
             analyzerName,
             error: error instanceof Error ? error.message : String(error),
             findings: {},
-            packageName: sfpmPackage.packageName,
+            packageName: sfpmPackage.name,
             timestamp: new Date(),
           });
 
@@ -254,13 +170,13 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       this.emit('analyzers:complete', {
         completedCount: enabledAnalyzers.length,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         timestamp: new Date(),
       });
     } catch (error: any) {
       this.emit('build:error', {
         error,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         phase: 'analysis',
         timestamp: new Date(),
       });
@@ -270,14 +186,14 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
   public async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
     this.emit('stage:start', {
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       stagingDirectory: sfpmPackage.workingDirectory,
       timestamp: new Date(),
     });
 
     try {
       const assemblyOutput = await new PackageAssembler(
-        sfpmPackage.packageName,
+        sfpmPackage.name,
         this.provider,
         {
           destructiveManifestPath: this.options.destructiveManifestPath,
@@ -292,14 +208,14 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       this.emit('stage:complete', {
         componentCount: assemblyOutput.componentCount || 0,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         stagingDirectory: assemblyOutput.stagingDirectory,
         timestamp: new Date(),
       });
     } catch (error: any) {
       this.emit('build:error', {
         error,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         phase: 'staging',
         timestamp: new Date(),
       });
@@ -358,7 +274,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   ): Promise<void> {
     this.emit('connection:start', {
       orgType: 'devhub',
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       timestamp: new Date(),
       username: devhubUsername,
     });
@@ -367,14 +283,14 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       await builderInstance.connect(devhubUsername);
 
       this.emit('connection:complete', {
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         timestamp: new Date(),
         username: devhubUsername,
       });
     } catch (error: any) {
       this.emit('build:error', {
         error,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         phase: 'connection',
         timestamp: new Date(),
       });
@@ -385,7 +301,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<any> {
     this.emit('builder:start', {
       builderName,
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       timestamp: new Date(),
     });
@@ -402,7 +318,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       this.emit('builder:complete', {
         builderName,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         packageType: sfpmPackage.type as PackageType,
         timestamp: new Date(),
       });
@@ -414,7 +330,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         this.emit('build:skipped', {
           artifactPath: error.artifactPath,
           latestVersion: error.latestVersion,
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           packageType: sfpmPackage.type as PackageType,
           reason: 'no-changes',
           sourceHash: error.sourceHash,
@@ -427,12 +343,114 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       // Handle actual build errors
       this.emit('build:error', {
         error,
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         phase: 'build',
         timestamp: new Date(),
       });
       throw error;
     }
+  }
+
+  /**
+   * Merge package definition build options, assign build number, and set org definition path.
+   */
+  private handleBuildConfiguration(sfpmPackage: SfpmPackage): void {
+    if (sfpmPackage.packageDefinition?.packageOptions?.build) {
+      merge(sfpmPackage.metadata.orchestration, {
+        build: sfpmPackage.packageDefinition.packageOptions.build,
+      });
+    }
+
+    if (this.options.buildNumber) {
+      sfpmPackage.setBuildNumber(this.options.buildNumber);
+    } else if (sfpmPackage.type !== PackageType.Unlocked) {
+      // Source and data packages don't get build numbers from Salesforce.
+      // Generate one from the CI pipeline run ID or a timestamp to ensure
+      // each build produces a unique, ever-increasing version.
+      const autoBuildNumber = getPipelineRunId() ?? String(Math.floor(Date.now() / 1000));
+      sfpmPackage.setBuildNumber(autoBuildNumber);
+      this.logger?.debug(`Auto-assigned build number ${autoBuildNumber} for ${sfpmPackage.name}`);
+    }
+
+    if (this.options.orgDefinitionPath) {
+      sfpmPackage.orgDefinitionPath = this.options.orgDefinitionPath;
+    }
+  }
+
+  /**
+   * Resolve and instantiate the appropriate builder for the package type, configure force mode and DevHub.
+   */
+  private async handleBuilderSetup(sfpmPackage: SfpmPackage): Promise<Builder> {
+    if (!sfpmPackage.workingDirectory) {
+      const error = new Error('Package must be staged for build');
+      this.emit('build:error', {
+        error,
+        packageName: sfpmPackage.name,
+        phase: 'staging',
+        timestamp: new Date(),
+      });
+      throw error;
+    }
+
+    const BuilderClass = BuilderRegistry.getBuilder(sfpmPackage.type);
+
+    if (!BuilderClass) {
+      const error = new Error(`No builder registered for package type: ${sfpmPackage.type}`);
+      this.emit('build:error', {
+        error,
+        packageName: sfpmPackage.name,
+        phase: 'build',
+        timestamp: new Date(),
+      });
+      throw error;
+    }
+
+    const builderOptions: BuilderOptions = {
+      ignoreFilesConfig: this.options.ignoreFilesConfig,
+    };
+
+    const builderInstance: Builder = new BuilderClass(
+      sfpmPackage.workingDirectory,
+      sfpmPackage,
+      builderOptions,
+      this.logger,
+    );
+
+    if (this.options.force && builderInstance.preBuildTasks) {
+      builderInstance.preBuildTasks = builderInstance.preBuildTasks.filter(task => task.constructor.name !== 'SourceHashTask');
+      this.logger?.info('Force build enabled - skipping source change detection');
+    }
+
+    if (this.options.devhubUsername) {
+      await this.connectToDevHub(sfpmPackage, builderInstance, this.options.devhubUsername);
+    }
+
+    return builderInstance;
+  }
+
+  /**
+   * Apply orchestration options that each package type handles independently.
+   */
+  private handleOrchestrationOptions(sfpmPackage: SfpmPackage): void {
+    sfpmPackage.setOrchestrationOptions({
+      codeCoverage: this.options.codeCoverage,
+      installationkey: this.options.installationKey,
+      installationkeybypass: this.options.installationKeyBypass,
+      isAsyncValidation: this.options.isAsyncValidation,
+      isSkipValidation: this.options.isSkipValidation,
+      waitTime: this.options.waitTime,
+    });
+  }
+
+  /**
+   * Initialize the git service and attach source context (commit, branch, repo) to the package.
+   */
+  private async handleSourceContext(sfpmPackage: SfpmPackage, projectDirectory: string): Promise<void> {
+    if (!this.gitService) {
+      this.gitService = await GitService.initialize(projectDirectory, this.logger);
+    }
+
+    sfpmPackage.metadata.source = await this.gitService.getPackageSourceContext();
   }
 
   /** Check whether a staged package contains zero deployable components or files. */
@@ -450,7 +468,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       const taskName = task.constructor.name;
 
       this.emit('task:start', {
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         taskName,
         taskType,
         timestamp: new Date(),
@@ -461,7 +479,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         await task.exec();
 
         this.emit('task:complete', {
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           success: true,
           taskName,
           taskType,
@@ -471,7 +489,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         const success = error instanceof Error && (error as any).code === 'BUILD_NOT_REQUIRED';
 
         this.emit('task:complete', {
-          packageName: sfpmPackage.packageName,
+          packageName: sfpmPackage.name,
           success,
           taskName,
           taskType,

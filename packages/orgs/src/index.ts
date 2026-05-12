@@ -22,32 +22,25 @@ export {
   DEFAULT_SANDBOX,
   type Sandbox,
   type SandboxCreateOptions,
-  type SandboxCreateRequest,
-  type SandboxCreateResult,
-  type SandboxDefaults,
   type SandboxLicenseType,
   type SandboxPoolInfo,
 } from './org/sandbox/types.js';
 
 export {
   type ActiveScratchOrgRecord,
-  type ScratchOrgInfoRecord,
   default as ScratchOrgProvider,
 } from './org/scratch/scratch-org-provider.js';
 export {
   DEFAULT_SCRATCH_ORG,
+  type PoolScratchOrgCreateResult,
   type ScratchOrg,
-  type ScratchOrgCreateOptions,
-  type ScratchOrgCreateRequest,
   type ScratchOrgCreateResult,
+  type ScratchOrgInfoRecord,
+  type ScratchOrgRequest,
 } from './org/scratch/types.js';
 
 export {default as AuthService} from './org/services/auth-service.js';
 export {default as DevHubService} from './org/services/devhub-service.js';
-
-export {
-  ORG_PHASES, type OrgPhase, PREPARE_PHASE, VALIDATE_PHASE,
-} from './phases.js';
 
 export {createPoolServices, type CreatePoolServicesOptions, type PoolServices} from './pool/pool-factory.js';
 
@@ -65,6 +58,9 @@ export {
   type PoolProvisionResult,
 } from './pool/pool-manager.js';
 
+export {DeploymentTask, type DeploymentTaskOptions} from './pool/tasks/deployment-task.js';
+export {SfpmPackageInstallTask as ArtifactPackageInstallTask, type SfpmPackageInstallTaskOptions as ArtifactPackageInstallTaskOptions} from './pool/tasks/sfpm-package-install-task.js';
+
 // Pool-layer types
 export {
   DEFAULT_POOL_SIZING,
@@ -77,14 +73,21 @@ export {
   type PoolOrgTask,
   type PoolOrgTaskResult,
   type PoolProvisioningState,
-  type PoolSizingConfig,
+  type PoolSize,
+  type PoolType,
   type PostClaimAction,
   type SandboxPoolConfig,
   type ScratchOrgPoolConfig,
 } from './pool/types.js';
 
 // Config
-export {defineOrgConfig, type OrgConfig} from './types.js';
+export {
+  defineOrgConfig,
+  type OrgConfig,
+  type PoolConfigInput,
+  type SandboxDefaults,
+  type ScratchOrgDefaults,
+} from './types.js';
 
 // Utilities
 export {default as generatePassword} from './utils/password-generator.js';

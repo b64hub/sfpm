@@ -6,6 +6,7 @@ import EventEmitter from 'node:events';
 import path from 'node:path';
 
 import ProjectService from '../../project/project-service.js';
+import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
 import {UnlockedBuildEvents} from '../../types/events.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, SfpmUnlockedPackageBuildOptions} from '../../types/package.js';
@@ -78,23 +79,53 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     await this.buildPackage();
   }
 
-  private async buildPackage(): Promise<void> {
-    // @salesforce/packaging resolves seedMetadata / unpackagedMetadata paths
-    // relative to process.cwd(), NOT the SfProject root. When building from a
-    // staging directory we must chdir so those relative paths resolve correctly.
-    const originalCwd = process.cwd();
-    if (this.workingDirectory !== originalCwd) {
-      process.chdir(this.workingDirectory);
+  /**
+   * Apply a successful create result to the package — updates version,
+   * emits the completion event, and enforces code coverage if required.
+   *
+   * Used both in the happy path and the verify-after-failure recovery.
+   */
+  private applyCreateResult(
+    result: PackageVersionCreateRequestResult,
+    buildOptions?: SfpmUnlockedPackageBuildOptions,
+  ): void {
+    this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId ?? undefined;
+
+    if (result.VersionNumber) {
+      this.sfpmPackage.version = result.VersionNumber;
+      this.logger?.debug(`Updated package version to ${result.VersionNumber}`);
     }
 
-    const sfProject = await SfProject.resolve(this.workingDirectory);
+    this.emit('unlocked:create:complete', {
+      codeCoverage: result.CodeCoverage ?? undefined,
+      createdDate: result.CreatedDate ?? undefined,
+      hasMetadataRemoved: result.HasMetadataRemoved ?? undefined,
+      hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
+      packageId: result.Package2Id ?? '',
+      packageName: this.sfpmPackage.packageName,
+      packageVersionCreateRequestId: result.Id,
+      packageVersionId: result.SubscriberPackageVersionId ?? '',
+      status: result.Status,
+      subscriberPackageVersionId: result.SubscriberPackageVersionId ?? '',
+      timestamp: new Date(),
+      totalNumberOfMetadataFiles: result.TotalNumberOfMetadataFiles ?? undefined,
+      totalSizeOfMetadataFiles: result.TotalSizeOfMetadataFiles ?? undefined,
+      versionNumber: result.VersionNumber || this.sfpmPackage.version || '',
+    });
 
-    // Get build options from package metadata
+    if (buildOptions?.codeCoverage && !this.sfpmPackage.isOrgDependent && !buildOptions?.isAsyncValidation && !result.HasPassedCodeCoverageCheck) {
+      throw new Error('This package has not meet the minimum coverage requirement of 75%');
+    }
+  }
+
+  private async buildPackage(): Promise<void> {
+    await this.rewriteMetadataPathsForCwd();
+
+    const sfProject = await SfProject.resolve(this.workingDirectory);
     const buildOptions = this.sfpmPackage.metadata.orchestration.build as SfpmUnlockedPackageBuildOptions;
     const waitTime = Duration.minutes(buildOptions?.waitTime || 120);
     const pollingFrequency = Duration.seconds(30);
 
-    // Emit create start event
     this.emit('unlocked:create:start', {
       packageId: this.sfpmPackage.packageId,
       packageName: this.sfpmPackage.packageName,
@@ -102,117 +133,112 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       versionNumber: this.sfpmPackage.version || '',
     });
 
-    // Setup lifecycle listener for progress logging
+    const tracker = {lastRequestId: undefined as string | undefined, lastStatus: undefined as string | undefined};
     const lifecycle = Lifecycle.getInstance();
-    let lastRequestId: string | undefined;
-    let lastStatus: string | undefined;
-    const progressListener = async (data: PackageVersionCreateRequestResult) => {
-      // Track the request ID so we can include it in timeout errors
-      if (data.Id) lastRequestId = data.Id;
-      lastStatus = data.Status;
-
-      // Emit progress event
-      this.emit('unlocked:create:progress', {
-        message: data.Status,
-        packageName: this.sfpmPackage.packageName,
-        status: data.Status,
-        timestamp: new Date(),
-      });
-
-      if (this.logger) {
-        this.logger.info(`Status: ${data.Status}, Next Status check in ${pollingFrequency.seconds} seconds`);
-        if (data.Error?.length) {
-          this.logger.error(`Creation errors: ${data.Error.join('\n')}`);
-        }
-      }
-    };
-
-    lifecycle.on('packageVersionCreate:progress', progressListener);
+    lifecycle.on('packageVersionCreate:progress', async (data: PackageVersionCreateRequestResult) => {
+      this.handleCreateProgress(data, tracker, pollingFrequency);
+    });
 
     try {
-      const packageVersionCreateOptions: Record<string, unknown> = {
-        asyncvalidation: buildOptions?.isAsyncValidation ?? false,
-        codecoverage: buildOptions?.isCoverageEnabled ?? false,
-        connection: this.devhubOrg!.getConnection(),
-        installationkey: buildOptions?.installationKey,
-        installationkeybypass: buildOptions?.installationKey ? undefined : true,
-        packageId: this.sfpmPackage.packageId,
-        project: sfProject,
-        skipvalidation: buildOptions?.isSkipValidation ?? false,
-        versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
-        ...(buildOptions?.definitionFile
-          ? {definitionfile: path.join(this.workingDirectory, buildOptions.definitionFile)}
-          : {}),
-        ...(this.sfpmPackage.metadata.source?.tag
-          ? {tag: this.sfpmPackage.metadata.source.tag}
-          : {}),
-      };
-
-      this.logger?.debug(`PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, `
-        + `version=${this.sfpmPackage.version}, skipvalidation=${buildOptions?.isSkipValidation ?? false}, `
-        + `definitionfile=${buildOptions?.definitionFile ?? '(not set)'}`);
-
-      const result = await PackageVersion.create(
-        packageVersionCreateOptions as any,
-        {frequency: pollingFrequency, timeout: waitTime},
-      );
-
-      // Log key result fields (avoid JSON.stringify as result may contain circular Connection refs)
-      this.logger?.debug(`Package Result: Status=${result.Status}, VersionId=${result.SubscriberPackageVersionId}, Version=${result.VersionNumber}`);
-
-      if (result.SubscriberPackageVersionId) {
-        this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
-
-        // Update the package version with the actual version number (including build number)
-        // This ensures artifact folders and git tags use the complete version (e.g., 1.1.0-1 instead of 1.1.0.NEXT)
-        if (result.VersionNumber) {
-          this.sfpmPackage.version = result.VersionNumber;
-          this.logger?.debug(`Updated package version to ${result.VersionNumber}`);
-        }
-
-        // Emit create complete event with detailed result information
-        this.emit('unlocked:create:complete', {
-          codeCoverage: result.CodeCoverage ?? undefined,
-          createdDate: result.CreatedDate,
-          hasMetadataRemoved: result.HasMetadataRemoved ?? undefined,
-          hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
-          packageId: result.Package2Id,
-          packageName: this.sfpmPackage.packageName,
-          packageVersionCreateRequestId: result.Id,
-          packageVersionId: result.SubscriberPackageVersionId,
-          status: result.Status,
-          subscriberPackageVersionId: result.SubscriberPackageVersionId,
-          timestamp: new Date(),
-          totalNumberOfMetadataFiles: result.TotalNumberOfMetadataFiles ?? undefined,
-          totalSizeOfMetadataFiles: result.TotalSizeOfMetadataFiles ?? undefined,
-          versionNumber: result.VersionNumber || this.sfpmPackage.version || '',
-        });
-
-        // Update other metadata if available in result
-        if (result.Status === 'Success') {
-          // We could fetch more info here if needed
-        }
-      } else {
-        throw new Error(`Package creation failed or timed out.\n${result.Error?.join('\n')}`);
-      }
-
-      if (buildOptions?.isCoverageEnabled && !this.sfpmPackage.isOrgDependent && !buildOptions?.isAsyncValidation && !result.HasPassedCodeCoverageCheck) {
-        throw new Error('This package has not meet the minimum coverage requirement of 75%');
-      }
+      const result = await this.createPackageVersion(sfProject, buildOptions, waitTime, pollingFrequency);
+      this.applyCreateResult(result, buildOptions);
     } catch (error: any) {
-      // Detect timeout — the @salesforce/packaging library throws when the
-      // polling timeout is exceeded. The error message typically contains
-      // "timed out" or the last status is still "InProgress" / "Queued".
-      const isTimeout = /timed?\s*out/i.test(error.message)
-        || (lastStatus && !['Error', 'Success'].includes(lastStatus));
+      await this.handleCreateFailure(error, tracker, buildOptions, waitTime);
+    } finally {
+      lifecycle.removeAllListeners('packageVersionCreate:progress');
+    }
+  }
 
-      if (isTimeout && lastRequestId) {
+  /**
+   * Assemble PackageVersion.create options and invoke the Salesforce API.
+   * Returns the result on success, or throws if the result has no SubscriberPackageVersionId.
+   */
+  private async createPackageVersion(
+    sfProject: SfProject,
+    buildOptions: SfpmUnlockedPackageBuildOptions | undefined,
+    waitTime: Duration,
+    pollingFrequency: Duration,
+  ): Promise<PackageVersionCreateRequestResult> {
+    const packageVersionCreateOptions: Record<string, unknown> = {
+      asyncvalidation: buildOptions?.isAsyncValidation ?? false,
+      codecoverage: buildOptions?.codeCoverage ?? false,
+      connection: this.devhubOrg!.getConnection(),
+      installationkey: buildOptions?.installationKey,
+      installationkeybypass: buildOptions?.installationKey ? undefined : true,
+      packageId: this.sfpmPackage.packageId,
+      project: sfProject,
+      skipvalidation: buildOptions?.isSkipValidation ?? false,
+      versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
+      ...(buildOptions?.definitionFile
+        ? {definitionfile: path.join(this.workingDirectory, buildOptions.definitionFile)}
+        : {}),
+      ...(this.sfpmPackage.metadata.source?.tag
+        ? {tag: this.sfpmPackage.metadata.source.tag}
+        : {}),
+    };
+
+    this.logger?.debug(`PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, `
+      + `version=${this.sfpmPackage.version}, skipvalidation=${buildOptions?.isSkipValidation ?? false}, `
+      + `definitionfile=${buildOptions?.definitionFile ?? '(not set)'}`);
+
+    const result = await PackageVersion.create(
+      packageVersionCreateOptions as any,
+      {frequency: pollingFrequency, timeout: waitTime},
+    );
+
+    this.logger?.debug(`Package Result: Status=${result.Status}, VersionId=${result.SubscriberPackageVersionId}, Version=${result.VersionNumber}`);
+
+    if (!result.SubscriberPackageVersionId) {
+      throw new Error(`Package creation failed or timed out.\n${result.Error?.join('\n')}`);
+    }
+
+    return result;
+  }
+
+  /**
+   * Handle a failed PackageVersion.create call. Attempts verify-after-failure
+   * recovery via getCreateStatus, detects timeouts, and formats error messages.
+   *
+   * Returns normally only when server-side creation succeeded despite the client error.
+   * Throws in all other cases.
+   */
+  private async handleCreateFailure(
+    error: any,
+    tracker: {lastRequestId?: string; lastStatus?: string},
+    buildOptions: SfpmUnlockedPackageBuildOptions | undefined,
+    waitTime: Duration,
+  ): Promise<void> {
+    const {lastRequestId, lastStatus} = tracker;
+
+    // If we have a request ID, check whether SF actually completed the work
+    // despite the client-side failure (connection drop, timeout, etc.)
+    if (lastRequestId) {
+      try {
+        this.logger?.debug(`Create failed for ${this.sfpmPackage.packageName}, verifying server-side status (request ${lastRequestId})...`);
+        const status = await PackageVersion.getCreateStatus(
+          lastRequestId,
+          this.devhubOrg!.getConnection(),
+        );
+
+        if (status.Status === 'Success' && status.SubscriberPackageVersionId) {
+          this.logger?.info('Package version creation succeeded server-side despite client error');
+          this.applyCreateResult(status, buildOptions);
+          return;
+        }
+
+        if (status.Status === 'Error') {
+          const serverErrors = status.Error?.map((e: any) =>
+            typeof e === 'string' ? e : e.Message).join('; ') ?? 'Unknown server error';
+          this.logger?.error(`Server-side creation failed: ${serverErrors}`);
+          throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${serverErrors}`, {cause: error});
+        }
+
+        // Still in progress (Queued / InProgress / Verifying)
         const timeoutMsg = [
-          `Package version creation for ${this.sfpmPackage.packageName} timed out after ${waitTime.minutes} minutes.`,
-          'The request is still in progress on the server.',
+          `Package version creation for ${this.sfpmPackage.packageName} was interrupted but is still in progress on the server.`,
           '',
           `  Request ID: ${lastRequestId}`,
-          `  Last Status: ${lastStatus ?? 'Unknown'}`,
+          `  Last Status: ${status.Status}`,
           '',
           'Check status with:',
           `  sf package version create report -i ${lastRequestId} -v ${this.devhubOrg!.getUsername()}`,
@@ -220,20 +246,72 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
 
         this.logger?.error(timeoutMsg);
         throw new Error(timeoutMsg, {cause: error});
+      } catch (verifyError) {
+        // If the verify query itself fails, check if it's our own rethrown error
+        if (verifyError instanceof Error && verifyError.cause === error) {
+          throw verifyError;
+        }
+
+        // Verify query failed (connection still down) — fall through to original error handling
+        this.logger?.debug(`Could not verify server-side status: ${verifyError instanceof Error ? verifyError.message : String(verifyError)}`);
       }
+    }
 
-      const details = [
-        error.message,
-        error.data ? `Data: ${JSON.stringify(error.data)}` : '',
-        error.actions?.length ? `Actions: ${error.actions.join(', ')}` : '',
-      ].filter(Boolean).join('\n');
+    // Detect timeout — the @salesforce/packaging library throws when the
+    // polling timeout is exceeded. The error message typically contains
+    // "timed out" or the last status is still "InProgress" / "Queued".
+    const isTimeout = /timed?\s*out/i.test(error.message)
+      || (lastStatus && !['Error', 'Success'].includes(lastStatus));
 
-      this.logger?.error(`Error during package creation: ${details}`);
-      throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${details}`, {cause: error});
-    } finally {
-      lifecycle.removeAllListeners('packageVersionCreate:progress');
-      if (process.cwd() !== originalCwd) {
-        process.chdir(originalCwd);
+    if (isTimeout && lastRequestId) {
+      const timeoutMsg = [
+        `Package version creation for ${this.sfpmPackage.packageName} timed out after ${waitTime.minutes} minutes.`,
+        'The request is still in progress on the server.',
+        '',
+        `  Request ID: ${lastRequestId}`,
+        `  Last Status: ${lastStatus ?? 'Unknown'}`,
+        '',
+        'Check status with:',
+        `  sf package version create report -i ${lastRequestId} -v ${this.devhubOrg!.getUsername()}`,
+      ].join('\n');
+
+      this.logger?.error(timeoutMsg);
+      throw new Error(timeoutMsg, {cause: error});
+    }
+
+    const details = [
+      error.message,
+      error.data ? `Data: ${JSON.stringify(error.data)}` : '',
+      error.actions?.length ? `Actions: ${error.actions.join(', ')}` : '',
+    ].filter(Boolean).join('\n');
+
+    this.logger?.error(`Error during package creation: ${details}`);
+    throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${details}`, {cause: error});
+  }
+
+  /**
+   * Handle a lifecycle progress event during package version creation.
+   * Tracks the request ID and status, and emits progress events.
+   */
+  private handleCreateProgress(
+    data: PackageVersionCreateRequestResult,
+    tracker: {lastRequestId?: string; lastStatus?: string},
+    pollingFrequency: Duration,
+  ): void {
+    if (data.Id) tracker.lastRequestId = data.Id;
+    tracker.lastStatus = data.Status;
+
+    this.emit('unlocked:create:progress', {
+      message: data.Status,
+      packageName: this.sfpmPackage.packageName,
+      status: data.Status,
+      timestamp: new Date(),
+    });
+
+    if (this.logger) {
+      this.logger.info(`Status: ${data.Status}, Next Status check in ${pollingFrequency.seconds} seconds`);
+      if (data.Error?.length) {
+        this.logger.error(`Creation errors: ${data.Error.join('\n')}`);
       }
     }
   }
@@ -257,12 +335,53 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       isOrgDependent: true,
     });
 
-    await fs.writeJson(path.join(this.workingDirectory, 'sfdx-project.json'), prunedDefinition, {spaces: 4});
+    await fs.writeJson(path.join(this.workingDirectory, 'sfdx-project.json'), toSalesforceProjectJson(prunedDefinition), {spaces: 4});
 
     this.emit('unlocked:prune:complete', {
       packageName: this.sfpmPackage.packageName,
       prunedFiles: 1,
       timestamp: new Date(),
     });
+  }
+
+  /**
+   * Rewrites seedMetadata / unpackagedMetadata paths in the staged
+   * sfdx-project.json so they resolve correctly from process.cwd().
+   *
+   * The assembly step writes these paths relative to the staging root
+   * (where sfdx-project.json lives) — the standard Salesforce convention.
+   * However, `@salesforce/packaging` resolves them via
+   * `path.join(process.cwd(), relativePath)` instead of relative to the
+   * project root. This method bridges that gap by converting the paths
+   * from staging-dir-relative to CWD-relative, so `path.join` normalises
+   * the ".." segments to the correct absolute path.
+   */
+  private async rewriteMetadataPathsForCwd(): Promise<void> {
+    const projectJsonPath = path.join(this.workingDirectory, 'sfdx-project.json');
+    if (!await fs.pathExists(projectJsonPath)) return;
+
+    const projectJson = await fs.readJson(projectJsonPath);
+    const pkg = projectJson.packageDirectories?.[0];
+    if (!pkg) return;
+
+    let modified = false;
+    const cwd = process.cwd();
+
+    if (pkg.seedMetadata?.path) {
+      const absolutePath = path.resolve(this.workingDirectory, pkg.seedMetadata.path);
+      pkg.seedMetadata.path = path.relative(cwd, absolutePath);
+      modified = true;
+    }
+
+    if (pkg.unpackagedMetadata?.path) {
+      const absolutePath = path.resolve(this.workingDirectory, pkg.unpackagedMetadata.path);
+      pkg.unpackagedMetadata.path = path.relative(cwd, absolutePath);
+      modified = true;
+    }
+
+    if (modified) {
+      await fs.writeJson(projectJsonPath, projectJson, {spaces: 4});
+      this.logger?.debug('Rewrote metadata paths in staged sfdx-project.json relative to CWD');
+    }
   }
 }

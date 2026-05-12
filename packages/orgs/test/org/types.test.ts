@@ -11,7 +11,7 @@ describe('AllocationStatus', () => {
     expect(AllocationStatus.Allocated).toBe('Allocated');
     expect(AllocationStatus.Assigned).toBe('Assigned');
     expect(AllocationStatus.Available).toBe('Available');
-    expect(AllocationStatus.InProgress).toBe('In Progress');
+    expect(AllocationStatus.InProgress).toBe('In_Progress');
     expect(AllocationStatus.Return).toBe('Return');
   });
 });

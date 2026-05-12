@@ -74,11 +74,11 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
   const {devhub, logger, poolType = OrgTypes.Scratch, tasks} = options;
 
   if (!devhub.getUsername()) {
-    throw new Error('Hub org must be authenticated and have a username');
+    throw new Error('org must be authenticated and have a username');
   }
 
   if (!devhub.isDevHubOrg()) {
-    throw new Error('Hub org must be a DevHub');
+    throw new Error('org must be a DevHub');
   }
 
   const devhubService = new DevHubService(devhub, logger);
@@ -93,10 +93,11 @@ export function createPoolServices(options: CreatePoolServicesOptions): PoolServ
     jwtConfig.clientId ? jwtConfig : undefined,
   );
 
+  const resolvedTasks: PoolOrgTask[] = tasks ?? [];
   const manager = new PoolManager({
     logger,
     provider,
-    tasks,
+    tasks: resolvedTasks,
   });
 
   const fetcher = new PoolFetcher(provider, logger);

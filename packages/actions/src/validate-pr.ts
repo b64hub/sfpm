@@ -236,9 +236,8 @@ async function fetchOrgFromPool(
   const renderer = new ActionsProgressRenderer(logger);
   renderer.attachToPoolFetcher(fetcher);
 
-  const org = await fetcher.fetch({
+  const org = await fetcher.fetch(options.poolTag, {
     postClaimActions: [org => authenticator.login(org)],
-    tag: options.poolTag,
   });
 
   logger.info(`Fetched org: ${org.auth.username} (${org.orgId})`);

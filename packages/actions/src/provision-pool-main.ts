@@ -1,5 +1,3 @@
-import type {SandboxLicenseType} from '@b64hub/sfpm-orgs';
-
 import * as core from '@actions/core';
 import {OrgTypes} from '@salesforce/core';
 
@@ -14,7 +12,7 @@ try {
   const tag = core.getInput('pool-tag', {required: true});
   const maxAllocation = Number.parseInt(core.getInput('max-allocation', {required: true}), 10);
 
-  const poolTypeInput = core.getInput('pool-type') || 'scratchOrg';
+  const poolTypeInput = core.getInput('pool-type') || OrgTypes.Scratch;
   const poolType = poolTypeInput === 'sandbox' ? OrgTypes.Sandbox : OrgTypes.Scratch;
 
   const batchSize = core.getInput('batch-size')
@@ -24,22 +22,16 @@ try {
   const expiryDays = core.getInput('expiry-days')
     ? Number.parseInt(core.getInput('expiry-days'), 10)
     : undefined;
-  const licenseType = (core.getInput('license-type') || undefined) as SandboxLicenseType | undefined;
   const sandboxNamePattern = core.getInput('sandbox-name-pattern') || undefined;
-  const sourceSandboxName = core.getInput('source-sandbox') || undefined;
-  const groupName = core.getInput('group-name') || undefined;
 
   const result = await provisionPool({
     batchSize,
     definitionFile,
     devhubUsername,
     expiryDays,
-    groupName,
-    licenseType,
     maxAllocation,
     poolType,
     sandboxNamePattern,
-    sourceSandboxName,
     tag,
   });
 

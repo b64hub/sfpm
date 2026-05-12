@@ -1,11 +1,12 @@
 import type {ProjectDefinitionProvider} from './providers/project-definition-provider.js';
 
+import {PackageType} from '../types/package.js';
 import {
-  ManagedPackageDefinition,
   PackageDefinition,
   ProjectDefinition,
   SUBSCRIBER_PKG_VERSION_ID_PREFIX,
 } from '../types/project.js';
+import {stripScope} from '../utils/scope-utils.js';
 
 export interface DependencyResolution {
   /** All packages that need to be installed (flattened) */
@@ -19,7 +20,7 @@ export interface DependencyResolution {
 }
 
 export class PackageNode {
-  public readonly definition: ManagedPackageDefinition | PackageDefinition;
+  public readonly definition: PackageDefinition;
   // Graph connections
   public readonly dependencies: Set<PackageNode> = new Set();
   public readonly dependents: Set<PackageNode> = new Set();
@@ -30,22 +31,23 @@ export class PackageNode {
   public readonly packageVersionId?: string;
   public readonly path?: string;
 
-  constructor(def: ManagedPackageDefinition | PackageDefinition) {
-    this.name = def.package;
+  constructor(def: PackageDefinition) {
+    this.name = def.name;
     this.definition = def;
+    this.isManaged = def.type === PackageType.Managed;
 
-    if ('packageVersionId' in def) {
-      this.isManaged = true;
-      this.packageVersionId = def.packageVersionId;
-    } else {
-      this.isManaged = false;
+    if (this.isManaged) {
+      this.packageVersionId = def.packageId;
+    }
+
+    if (!this.isManaged) {
       this.path = def.path;
     }
   }
 
   get version(): string | undefined {
     if (this.isManaged) return undefined;
-    return (this.definition as PackageDefinition).versionNumber;
+    return this.definition.version;
   }
 }
 
@@ -67,14 +69,14 @@ export class ProjectGraph {
   public detectCircularDependencies(packageNames: string[]): null | string[][] {
     // Validate all package names exist
     for (const name of packageNames) {
-      if (!this.nodes.has(name)) {
+      if (!this.resolveNode(name)) {
         throw new Error(`Package ${name} not found in project graph`);
       }
     }
 
     const nodeSet = new Set<PackageNode>();
     for (const name of packageNames) {
-      const node = this.nodes.get(name);
+      const node = this.resolveNode(name);
       if (node) {
         nodeSet.add(node);
       }
@@ -142,7 +144,7 @@ export class ProjectGraph {
   public getInstallationLevels(packageNames: string[]): PackageNode[][] {
     // Validate all package names exist
     for (const name of packageNames) {
-      if (!this.nodes.has(name)) {
+      if (!this.resolveNode(name)) {
         throw new Error(`Package ${name} not found in project graph`);
       }
     }
@@ -150,7 +152,7 @@ export class ProjectGraph {
     // Build a set of nodes we're working with
     const nodeSet = new Set<PackageNode>();
     for (const name of packageNames) {
-      const node = this.nodes.get(name);
+      const node = this.resolveNode(name);
       if (node) {
         nodeSet.add(node);
       }
@@ -210,21 +212,21 @@ export class ProjectGraph {
   }
 
   public getNode(packageName: string): PackageNode | undefined {
-    return this.nodes.get(packageName);
+    return this.resolveNode(packageName);
   }
 
   /**
    * Returns all transitive dependencies of a package, in topological order (roughly).
    * Does not include the package itself.
    */
-  public getTransitiveDependencies(packageName: string): (ManagedPackageDefinition | PackageDefinition)[] {
-    const startNode = this.nodes.get(packageName);
+  public getTransitiveDependencies(packageName: string): PackageDefinition[] {
+    const startNode = this.resolveNode(packageName);
     if (!startNode) {
       throw new Error(`Package ${packageName} not found in project graph`);
     }
 
     const visited = new Set<string>();
-    const result: (ManagedPackageDefinition | PackageDefinition)[] = [];
+    const result: PackageDefinition[] = [];
 
     const traverse = (node: PackageNode): void => {
       for (const dep of node.dependencies) {
@@ -252,7 +254,7 @@ export class ProjectGraph {
   public resolveDependencies(packageNames: string[]): DependencyResolution {
     // Validate all package names exist
     for (const name of packageNames) {
-      if (!this.nodes.has(name)) {
+      if (!this.resolveNode(name)) {
         throw new Error(`Package ${name} not found in project graph`);
       }
     }
@@ -309,7 +311,7 @@ export class ProjectGraph {
 
     // Start traversal from all requested packages
     for (const name of packageNames) {
-      const node = this.nodes.get(name);
+      const node = this.resolveNode(name);
       if (node) {
         traverse(node);
       }
@@ -319,19 +321,18 @@ export class ProjectGraph {
   }
 
   /**
-   * Creates graph nodes from packageDirectories entries (project-local packages).
+   * Creates graph nodes from project packages (project-local packages).
    * Returns the filtered list of PackageDefinitions for use by subsequent steps.
    */
   private createLocalNodes(projectDefinition: ProjectDefinition): PackageDefinition[] {
-    const packages = projectDefinition.packageDirectories
-    .filter((pkg): pkg is PackageDefinition => 'package' in pkg && typeof pkg.package === 'string');
+    const {packages} = projectDefinition;
 
     for (const pkg of packages) {
-      if (this.nodes.has(pkg.package)) {
+      if (this.nodes.has(pkg.name)) {
         continue;
       }
 
-      this.nodes.set(pkg.package, new PackageNode(pkg));
+      this.nodes.set(pkg.name, new PackageNode(pkg));
     }
 
     return packages;
@@ -339,40 +340,70 @@ export class ProjectGraph {
 
   /**
    * Detects managed/external dependencies — packages referenced in a
-   * package's dependencies that have no packageDirectories entry but are
-   * listed in packageAliases with a subscriber package version ID (04t).
+   * package's managedDependencies that have no local entry.
+   * Creates stub PackageDefinition nodes with type=managed.
    */
-  private createManagedNodes(packages: PackageDefinition[], projectDefinition: ProjectDefinition): void {
-    const packageAliases: Record<string, string> = (projectDefinition.packageAliases as Record<string, string>) ?? {};
-
+  private createManagedNodes(packages: PackageDefinition[], _projectDefinition: ProjectDefinition): void {
     for (const pkg of packages) {
-      if (!pkg.dependencies) continue;
-      for (const dep of pkg.dependencies) {
-        if (this.nodes.has(dep.package)) continue;
+      if (!pkg.managedDependencies) continue;
+      for (const [depName, versionId] of Object.entries(pkg.managedDependencies)) {
+        if (this.nodes.has(depName)) continue;
 
-        const aliasValue = packageAliases[dep.package];
-        if (aliasValue?.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
-          this.nodes.set(dep.package, new PackageNode({
-            package: dep.package,
-            packageVersionId: aliasValue,
-          }));
+        if (versionId.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
+          const managedDef: PackageDefinition = {
+            name: depName,
+            packageId: versionId,
+            path: '',
+            type: PackageType.Managed,
+            version: '0.0.0',
+          };
+          this.nodes.set(depName, new PackageNode(managedDef));
         }
       }
     }
   }
 
   /**
+   * Resolve a node by exact name, falling back to scope-stripped matching.
+   * e.g. 'sfpm-artifact' resolves to the node keyed as '@b64hub/sfpm-artifact'.
+   */
+  private resolveNode(name: string): PackageNode | undefined {
+    const exact = this.nodes.get(name);
+    if (exact) return exact;
+    const stripped = stripScope(name);
+    for (const [key, node] of this.nodes) {
+      if (stripScope(key) === stripped) return node;
+    }
+
+    return undefined;
+  }
+
+  /**
    * Wires dependency and dependent edges between nodes.
-   * Skips managed nodes as they have no local dependencies to resolve.
+   * Handles both workspace dependencies (from `dependencies` record)
+   * and managed dependencies (from `managedDependencies` record).
    */
   private wireDependencyEdges(): void {
     for (const node of this.nodes.values()) {
       if (node.isManaged) continue;
 
-      const def = node.definition as PackageDefinition;
+      const def = node.definition;
+
+      // Wire workspace dependencies
       if (def.dependencies) {
-        for (const depDef of def.dependencies) {
-          const depNode = this.nodes.get(depDef.package);
+        for (const depName of Object.keys(def.dependencies)) {
+          const depNode = this.resolveNode(depName);
+          if (depNode) {
+            node.dependencies.add(depNode);
+            depNode.dependents.add(node);
+          }
+        }
+      }
+
+      // Wire managed dependencies
+      if (def.managedDependencies) {
+        for (const depName of Object.keys(def.managedDependencies)) {
+          const depNode = this.resolveNode(depName);
           if (depNode) {
             node.dependencies.add(depNode);
             depNode.dependents.add(node);

@@ -95,15 +95,24 @@ describe('createPoolServices', () => {
     );
   });
 
-  it('should pass tasks to PoolManager', () => {
+  it('should pass tasks through to PoolManager unchanged', () => {
     const devhub = createMockOrg();
-    const tasks = [{name: 'prepare', run: vi.fn()}];
+    const tasks = [{name: 'deploy', run: vi.fn()}];
 
     createPoolServices({devhub, tasks: tasks as never});
 
-    expect(PoolManager).toHaveBeenCalledWith(
-      expect.objectContaining({tasks}),
-    );
+    const managerCall = vi.mocked(PoolManager).mock.calls[0][0] as {tasks: Array<{name: string}>};
+    expect(managerCall.tasks).toHaveLength(1);
+    expect(managerCall.tasks[0].name).toBe('deploy');
+  });
+
+  it('should pass empty tasks when none provided', () => {
+    const devhub = createMockOrg();
+
+    createPoolServices({devhub});
+
+    const managerCall = vi.mocked(PoolManager).mock.calls[0][0] as {tasks: Array<{name: string}>};
+    expect(managerCall.tasks).toHaveLength(0);
   });
 
   it('should pass provider to PoolFetcher', () => {
@@ -142,7 +151,7 @@ describe('createPoolServices', () => {
     const devhub = createMockOrg({getUsername: vi.fn().mockReturnValue(undefined)});
 
     expect(() => createPoolServices({devhub})).toThrow(
-      'Hub org must be authenticated and have a username',
+      'org must be authenticated and have a username',
     );
   });
 
@@ -150,7 +159,7 @@ describe('createPoolServices', () => {
     const devhub = createMockOrg({isDevHubOrg: vi.fn().mockReturnValue(false)});
 
     expect(() => createPoolServices({devhub})).toThrow(
-      'Hub org must be a DevHub',
+      'org must be a DevHub',
     );
   });
 });

@@ -18,7 +18,7 @@ vi.mock('adm-zip', () => {
             }),
             readAsText: vi.fn().mockReturnValue(JSON.stringify({
                 identity: {
-                    packageName: 'test-package',
+                    packageName: '@testorg/test-package',
                     packageVersionId: '04t1234567890',
                 },
             })),
@@ -63,7 +63,7 @@ describe('ArtifactResolver', () => {
             version: versions[0] || '1.0.0-1'
         }),
         getPackageInfo: vi.fn().mockResolvedValue({
-            name: 'test-package',
+            name: '@testorg/test-package',
             versions: versions.reduce((acc, v) => ({ ...acc, [v]: {} }), {}),
         }),
         packageExists: vi.fn().mockResolvedValue(true),
@@ -84,7 +84,7 @@ describe('ArtifactResolver', () => {
     };
 
     const createMockManifest = (overrides?: Partial<ArtifactManifest>): ArtifactManifest => ({
-        name: 'test-package',
+        name: '@testorg/test-package',
         latest: '1.0.0-1',
         lastCheckedRemote: Date.now() - 30 * 60 * 1000, // 30 minutes ago (within TTL)
         versions: {
@@ -121,9 +121,9 @@ describe('ArtifactResolver', () => {
 
         it('should accept an injected registry client via create()', () => {
             const mockClient = createMockRegistryClient();
-            const customResolver = ArtifactResolver.create(projectDirectory, mockLogger, {
+            const customResolver = ArtifactResolver.create(projectDirectory, {
                 registryClient: mockClient,
-            });
+            }, mockLogger);
             expect(customResolver.getRegistryUrl()).toBe('https://registry.npmjs.org');
             expect(customResolver.hasRegistryClient()).toBe(true);
         });
@@ -148,12 +148,12 @@ describe('ArtifactResolver', () => {
         });
 
         it('should create local-only resolver via create() with localOnly option', () => {
-            const localResolver = ArtifactResolver.create(projectDirectory, mockLogger, {
+            const customResolver = ArtifactResolver.create(projectDirectory, {
                 localOnly: true,
-            });
+            }, mockLogger);
 
-            expect(localResolver.getRegistryUrl()).toBeUndefined();
-            expect(localResolver.hasRegistryClient()).toBe(false);
+            expect(customResolver.getRegistryUrl()).toBeUndefined();
+            expect(customResolver.hasRegistryClient()).toBe(false);
         });
     });
 
@@ -163,7 +163,7 @@ describe('ArtifactResolver', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
 
-            expect(resolver.getRepository().hasVersion('test-package', '1.0.0-1')).toBe(true);
+            expect(resolver.getRepository().hasVersion('@testorg/test-package', '1.0.0-1')).toBe(true);
         });
 
         it('should return false if version does not exist', () => {
@@ -171,13 +171,13 @@ describe('ArtifactResolver', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
 
-            expect(resolver.getRepository().hasVersion('test-package', '2.0.0-1')).toBe(false);
+            expect(resolver.getRepository().hasVersion('@testorg/test-package', '2.0.0-1')).toBe(false);
         });
 
         it('should return false if manifest does not exist', () => {
             vi.mocked(fs.existsSync).mockReturnValue(false);
 
-            expect(resolver.getRepository().hasVersion('test-package', '1.0.0-1')).toBe(false);
+            expect(resolver.getRepository().hasVersion('@testorg/test-package', '1.0.0-1')).toBe(false);
         });
     });
 
@@ -193,7 +193,7 @@ describe('ArtifactResolver', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
 
-            const versions = resolver.getRepository().getVersions('test-package');
+            const versions = resolver.getRepository().getVersions('@testorg/test-package');
             expect(versions).toHaveLength(3);
             expect(versions).toContain('1.0.0-1');
             expect(versions).toContain('1.0.0-2');
@@ -203,7 +203,7 @@ describe('ArtifactResolver', () => {
         it('should return empty array if no manifest', () => {
             vi.mocked(fs.existsSync).mockReturnValue(false);
 
-            const versions = resolver.getRepository().getVersions('test-package');
+            const versions = resolver.getRepository().getVersions('@testorg/test-package');
             expect(versions).toEqual([]);
         });
     });
@@ -214,14 +214,14 @@ describe('ArtifactResolver', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
 
-            const result = resolver.getRepository().getManifestSync('test-package');
+            const result = resolver.getRepository().getManifestSync('@testorg/test-package');
             expect(result).toEqual(manifest);
         });
 
         it('should return undefined if manifest does not exist', () => {
             vi.mocked(fs.existsSync).mockReturnValue(false);
 
-            const result = resolver.getRepository().getManifestSync('test-package');
+            const result = resolver.getRepository().getManifestSync('@testorg/test-package');
             expect(result).toBeUndefined();
         });
     });
@@ -236,7 +236,7 @@ describe('ArtifactResolver', () => {
                 vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
 
-                const result = await resolver.resolve('test-package');
+                const result = await resolver.resolve('@testorg/test-package');
 
                 expect(result.version).toBe('1.0.0-1');
                 expect(result.source).toBe('local');
@@ -259,12 +259,12 @@ describe('ArtifactResolver', () => {
                 vi.mocked(fs.move).mockResolvedValue(undefined as never);
                 vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
 
-                const result = await testResolver.resolve('test-package');
+                const result = await testResolver.resolve('@testorg/test-package');
 
                 expect(result.version).toBe('1.0.0-1');
                 expect(result.source).toBe('local');
                 // Should have called registry client to check remote
-                expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('test-package');
+                expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('@testorg/test-package');
             });
 
             it('should check remote when forceRefresh is true', async () => {
@@ -281,10 +281,10 @@ describe('ArtifactResolver', () => {
                 vi.mocked(fs.move).mockResolvedValue(undefined as never);
                 vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
 
-                await testResolver.resolve('test-package', { forceRefresh: true });
+                await testResolver.resolve('@testorg/test-package', { forceRefresh: true });
 
                 // Should have called registry client even though TTL is valid
-                expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('test-package');
+                expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('@testorg/test-package');
             });
         });
 
@@ -302,7 +302,7 @@ describe('ArtifactResolver', () => {
                 vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
 
-                const result = await resolver.resolve('test-package');
+                const result = await resolver.resolve('@testorg/test-package');
 
                 expect(result.version).toBe('1.0.1-2');
             });
@@ -320,7 +320,7 @@ describe('ArtifactResolver', () => {
                 vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
 
-                const result = await resolver.resolve('test-package', { version: '1.0.0-1' });
+                const result = await resolver.resolve('@testorg/test-package', { version: '1.0.0-1' });
 
                 expect(result.version).toBe('1.0.0-1');
             });
@@ -343,7 +343,7 @@ describe('ArtifactResolver', () => {
                 // Remote has Salesforce format version
                 vi.mocked(execSync).mockReturnValue(JSON.stringify(['1.0.0-1']));
 
-                const result = await resolver.resolve('test-package', { forceRefresh: true });
+                const result = await resolver.resolve('@testorg/test-package', { forceRefresh: true });
 
                 expect(result).toBeDefined();
             });
@@ -359,11 +359,11 @@ describe('ArtifactResolver', () => {
                 vi.mocked(fs.existsSync).mockReturnValue(true);
 
                 resolver.on('resolve:start', startHandler);
-                await resolver.resolve('test-package');
+                await resolver.resolve('@testorg/test-package');
 
                 expect(startHandler).toHaveBeenCalledWith(
                     expect.objectContaining({
-                        packageName: 'test-package',
+                        packageName: '@testorg/test-package',
                         timestamp: expect.any(Date),
                     })
                 );
@@ -378,11 +378,11 @@ describe('ArtifactResolver', () => {
                 vi.mocked(fs.existsSync).mockReturnValue(true);
 
                 resolver.on('resolve:cache-hit', cacheHitHandler);
-                await resolver.resolve('test-package');
+                await resolver.resolve('@testorg/test-package');
 
                 expect(cacheHitHandler).toHaveBeenCalledWith(
                     expect.objectContaining({
-                        packageName: 'test-package',
+                        packageName: '@testorg/test-package',
                         version: '1.0.0-1',
                     })
                 );
@@ -397,13 +397,13 @@ describe('ArtifactResolver', () => {
                 vi.mocked(fs.existsSync).mockReturnValue(true);
 
                 resolver.on('resolve:complete', completeHandler);
-                await resolver.resolve('test-package');
+                await resolver.resolve('@testorg/test-package');
 
                 expect(completeHandler).toHaveBeenCalledWith(
                     expect.objectContaining({
-                        packageName: 'test-package',
+                        packageName: '@testorg/test-package',
                         version: '1.0.0-1',
-                        source: 'local',
+                        registry: 'local',
                     })
                 );
             });
@@ -420,11 +420,11 @@ describe('ArtifactResolver', () => {
 
                 resolver.on('resolve:error', errorHandler);
 
-                await expect(resolver.resolve('test-package')).rejects.toThrow();
+                await expect(resolver.resolve('@testorg/test-package')).rejects.toThrow();
 
                 expect(errorHandler).toHaveBeenCalledWith(
                     expect.objectContaining({
-                        packageName: 'test-package',
+                        packageName: '@testorg/test-package',
                         error: expect.any(String),
                     })
                 );
@@ -461,7 +461,7 @@ describe('ArtifactResolver', () => {
                 });
 
                 // Should still resolve from local
-                const result = await resolver.resolve('test-package');
+                const result = await resolver.resolve('@testorg/test-package');
                 expect(result.version).toBe('1.0.0-1');
             });
         });
@@ -485,7 +485,7 @@ describe('ArtifactResolver', () => {
                 vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
 
-                const result = await resolver.resolve('test-package');
+                const result = await resolver.resolve('@testorg/test-package');
 
                 expect(result.versionEntry.packageVersionId).toBe('04t1234567890');
             });
@@ -509,10 +509,10 @@ describe('ArtifactResolver', () => {
             vi.mocked(fs.move).mockResolvedValue(undefined as never);
             vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
 
-            await testResolver.resolve('test-package');
+            await testResolver.resolve('@testorg/test-package');
 
             // Should have checked remote because TTL was expired
-            expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('test-package');
+            expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('@testorg/test-package');
         });
 
         it('should respect custom TTL setting', async () => {
@@ -532,9 +532,9 @@ describe('ArtifactResolver', () => {
             vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
 
             // With 5 minute TTL, 10 minutes ago should be expired
-            await testResolver.resolve('test-package', { ttlMinutes: 5 });
+            await testResolver.resolve('@testorg/test-package', { ttlMinutes: 5 });
 
-            expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('test-package');
+            expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('@testorg/test-package');
         });
     });
 });

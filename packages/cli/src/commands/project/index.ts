@@ -6,7 +6,7 @@ import boxen from 'boxen'
 import chalk from 'chalk'
 import treeify from 'object-treeify'
 
-import SfpmCommand from '../sfpm-command.js'
+import SfpmCommand from '../../sfpm-command.js'
 
 export default class Project extends SfpmCommand {
   static override description = 'Overview of the project'
@@ -25,17 +25,17 @@ export default class Project extends SfpmCommand {
     const {flags} = await this.parse(Project);
 
     const projectService = await ProjectService.getInstance();
-    const config = projectService.getProjectDefinition();
+    const projectDef = projectService.getProjectDefinition();
     const graph = projectService.getProjectGraph();
 
     const treeData: Record<string, any> = {};
 
-    for (const pkg of config.packageDirectories) {
-      if (!('package' in pkg)) {
+    for (const pkg of projectDef.packages) {
+      if (!('name' in pkg)) {
         continue;
       }
 
-      const node = graph.getNode(pkg.package);
+      const node = graph.getNode(pkg.name);
       if (!node) {
         continue;
       }

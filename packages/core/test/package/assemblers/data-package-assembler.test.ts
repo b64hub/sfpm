@@ -35,7 +35,7 @@ vi.mock('../../../src/project/project-service.js', () => ({
   default: {
     getInstance: vi.fn().mockResolvedValue({
       resolveForPackage: vi.fn().mockReturnValue({
-        packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
+        packages: [{name: 'my-data', path: 'data', type: 'data', version: '1.0.0'}],
       }),
     }),
   },
@@ -57,16 +57,16 @@ describe('PackageAssembler — Data packages', () => {
     mockProvider = {
       projectDir: '/root',
       getPackageDefinition: vi.fn().mockReturnValue({
-        package: 'my-data',
+        name: 'my-data',
         path: 'data',
         type: 'data',
-        versionNumber: '1.0.0.0',
+        version: '1.0.0',
       }),
       getProjectDefinition: vi.fn().mockReturnValue({
-        packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
+        packages: [{name: 'my-data', path: 'data', type: 'data', version: '1.0.0'}],
       }),
       resolveForPackage: vi.fn().mockReturnValue({
-        packageDirectories: [{package: 'my-data', path: 'data', type: 'data', versionNumber: '1.0.0.0'}],
+        packages: [{name: 'my-data', path: 'data', type: 'data', version: '1.0.0'}],
       }),
     };
 

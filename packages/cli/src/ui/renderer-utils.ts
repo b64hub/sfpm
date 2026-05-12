@@ -61,6 +61,20 @@ export function formatDuration(ms: number): string {
 }
 
 /**
+ * Create a clickable terminal hyperlink using OSC 8 escape sequences.
+ *
+ * Supported by most modern terminals (iTerm2, Windows Terminal, GNOME
+ * Terminal, VS Code integrated terminal). Terminals that don't support
+ * it will show the display text as plain text.
+ *
+ * @param text - The visible display text
+ * @param url - The URL to link to
+ */
+export function terminalLink(text: string, url: string): string {
+  return `\u001B]8;;${url}\u0007${text}\u001B]8;;\u0007`;
+}
+
+/**
  * Calculate the human-readable duration between a start date and an end date.
  * Returns an empty string when `start` is undefined.
  */

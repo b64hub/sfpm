@@ -10,6 +10,7 @@ export type {
   SfdmuExportJson,
   SfdmuObjectConfig,
   SfdmuObjectResult,
+  SfdmuObjectSet,
   SfdmuOperation,
   SfdmuRunOptions,
   SfdmuRunResult,

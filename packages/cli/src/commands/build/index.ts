@@ -14,8 +14,9 @@ import {fileURLToPath} from 'node:url'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
-import SfpmCommand from '../sfpm-command.js'
-import {BuildProgressRenderer, OutputMode} from '../ui/build-progress-renderer.js'
+import SfpmCommand from '../../sfpm-command.js'
+import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
+import {resolvePackageInputs} from '../../utils/package-resolver.js'
 
 export default class Build extends SfpmCommand {
   static override args = {
@@ -42,7 +43,19 @@ export default class Build extends SfpmCommand {
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'skip-validation': Flags.boolean({description: 'skip validation'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
-    'target-dev-hub': Flags.string({char: 'v', description: 'target dev hub username', env: 'SF_DEV_HUB'}),
+    'target-dev-hub': Flags.string({
+      char: 'v',
+      async defaultHelp() {
+        try {
+          const configAggregator = await ConfigAggregator.create();
+          return configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
+        } catch {
+
+        }
+      },
+      description: 'target dev hub username',
+      env: 'SF_DEV_HUB',
+    }),
     turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies --skip-validation)'}),
     wait: Flags.integer({
       char: 'w', default: 120, description: 'timeout in minutes for package version creation', min: 1,
@@ -76,6 +89,9 @@ export default class Build extends SfpmCommand {
 
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();
+
+    // Resolve user input (scoped or unscoped) to canonical scoped package names
+    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: flags.json})
 
     // Determine output mode
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
@@ -164,14 +180,14 @@ export default class Build extends SfpmCommand {
 
       try {
         const context = await task.setup()
-        const result = await task.processSinglePackage(packages[0], 0, context, emitter)
+        const result = await task.processSinglePackage(resolvedPackages[0], 0, context, emitter)
 
         if (flags.json) {
           this.logJson(result)
         }
 
         if (!result.success) {
-          this.error(`Build failed for: ${packages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 1})
+          this.error(`Build failed for: ${resolvedPackages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 1})
         }
 
         // Start async validation watcher if applicable
@@ -206,7 +222,7 @@ export default class Build extends SfpmCommand {
     }
 
     try {
-      const result = await orchestrator.buildAll(packages)
+      const result = await orchestrator.buildAll(resolvedPackages)
 
       if (flags.json) {
         this.logJson(result)

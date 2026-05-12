@@ -58,14 +58,15 @@ describe('PackageAssembler', () => {
             projectDir: '/root',
             getPackageDefinition: vi.fn().mockReturnValue({
                 path: 'force-app',
-                package: 'core',
-                versionNumber: '1.0.0.0'
+                name: 'core',
+                type: 'unlocked',
+                version: '1.0.0',
             }),
             getProjectDefinition: vi.fn().mockReturnValue({
-                packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
+                packages: [{ path: 'force-app', name: 'core', type: 'unlocked', version: '1.0.0' }]
             }),
             resolveForPackage: vi.fn().mockReturnValue({
-                packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
+                packages: [{ path: 'force-app', name: 'core', type: 'unlocked', version: '1.0.0' }]
             }),
         };
 

@@ -1,6 +1,14 @@
 import {PackageManifestObject} from '@salesforce/source-deploy-retrieve';
 
-import {DeployOptions} from './project.js';
+import {PackageInstallConfig} from './project.js';
+
+/**
+ * Salesforce test levels for metadata API deployments.
+ *
+ * Mirrors the `testLevel` values accepted by the Salesforce Metadata API
+ * and `@salesforce/source-deploy-retrieve`.
+ */
+export type TestLevel = 'NoTestRun' | 'RunAllTestsInOrg' | 'RunLocalTests' | 'RunRelevantTests' | 'RunSpecifiedTests';
 
 export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked'}
 
@@ -95,7 +103,7 @@ export interface SfpmPackageContent {
 export interface SfpmPackageOrchestration {
   build?: SfpmPackageBuildOptions;
   creationDetails?: {duration?: number; timestamp?: number};
-  install?: DeployOptions;
+  install?: PackageInstallConfig;
   installation?: {
     installationTime?: number;
     subDirectory?: string;
@@ -105,7 +113,7 @@ export interface SfpmPackageOrchestration {
 }
 
 export interface SfpmPackageBuildOptions {
-  isCoverageEnabled?: boolean;
+  codeCoverage?: boolean;
 }
 
 export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions {
@@ -147,8 +155,11 @@ export interface SfpmPackageMetadataBase {
   [key: string]: any;
   apiVersion?: string;
   orchestration: SfpmPackageOrchestration;
+  // package name without npm scope. This is used for user-facing messages and Salesforce operations, but should not be used as a unique identifier since it is not guaranteed to be unique across scopes.
   packageName: string;
   packageType: Omit<PackageType, 'managed'>;
+  // npm scope of the package, if present. This is not guaranteed to be unique across packages, and should not be used as an identifier on its own. It is primarily for informational purposes and to reconstruct the fully qualified package name when needed. For Salesforce operations, the scope is stripped and only the unscoped package name is used.
+  readonly scope: string;
   source: SfpmPackageSource;
   versionNumber?: string;
 }

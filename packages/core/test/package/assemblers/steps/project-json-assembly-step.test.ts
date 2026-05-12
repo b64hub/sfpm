@@ -47,16 +47,17 @@ describe('ProjectJsonAssemblyStep', () => {
         mockProvider = {
             projectDir: '/root',
             getPackageDefinition: vi.fn().mockReturnValue({
-                package: 'core',
+                name: 'core',
                 path: 'force-app',
                 type: 'unlocked',
-                versionNumber: '1.0.0.NEXT',
+                version: '1.0.0',
             }),
             resolveForPackage: vi.fn().mockReturnValue({
-                packageDirectories: [{
+                packages: [{
                     path: 'force-app',
-                    package: 'core',
-                    versionNumber: '1.0.0.NEXT'
+                    name: 'core',
+                    type: 'unlocked',
+                    version: '1.0.0',
                 }]
             }),
         };
@@ -69,14 +70,13 @@ describe('ProjectJsonAssemblyStep', () => {
         };
     });
 
-    it('should inject version number and use relative path for unpackagedMetadata', async () => {
-        (fs.pathExists as any).mockImplementation((p: string) => {
-            if (p === path.join('/staging', 'unpackagedMetadata')) return Promise.resolve(true);
-            return Promise.resolve(false);
-        });
+    it('should inject version number and use staging-relative path for unpackagedMetadata', async () => {
+        (fs.pathExists as any).mockResolvedValue(false);
         (fs.writeJson as any).mockResolvedValue(undefined);
         (fs.ensureDir as any).mockResolvedValue(undefined);
         (fs.copy as any).mockResolvedValue(undefined);
+
+        output.metadataPaths = { unpackaged: 'unpackagedMetadata' };
 
         await step.execute(options, output);
 

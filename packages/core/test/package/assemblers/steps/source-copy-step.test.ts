@@ -205,8 +205,8 @@ describe('SourceCopyStep', () => {
     );
   });
 
-  it('should copy all env subdirectories for env-aliased packages', async () => {
-    // Setup env-aliased directory structure inside the source dir
+  it('should copy all org subdirectories for org-aliased packages', async () => {
+    // Setup org-aliased directory structure inside the source dir
     const defaultDir = path.join(sourceDir, 'default');
     const uatDir = path.join(sourceDir, 'uat');
     await fs.ensureDir(path.join(defaultDir, 'classes'));
@@ -214,10 +214,10 @@ describe('SourceCopyStep', () => {
     await fs.writeFile(path.join(defaultDir, 'classes', 'DefaultClass.cls'), 'default class');
     await fs.writeFile(path.join(uatDir, 'classes', 'UatClass.cls'), 'uat class');
 
-    // Mark package as env-aliased
+    // Mark package as org-aliased
     mockProvider.getPackageDefinition.mockReturnValue({
       package: 'core',
-      packageOptions: {envAliased: true},
+      packageOptions: {orgAliased: true},
       path: 'force-app',
     });
 

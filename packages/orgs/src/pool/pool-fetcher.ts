@@ -37,8 +37,7 @@ export interface PoolFetcherEvents {
  * const fetcher = new PoolFetcher(orgSource, logger);
  * fetcher.on('pool:fetch:claimed', (p) => console.log(`Claimed ${p.username}`));
  *
- * const org = await fetcher.fetch({
- *   tag: 'dev-pool',
+ * const org = await fetcher.fetch('dev-pool', {
  *   postClaimActions: [
  *     (org) => authenticator.login(org),
  *     (org) => authenticator.enableSourceTracking(org),
@@ -65,20 +64,21 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
    *
    * @throws {OrgError} When no orgs are available or none could be claimed
    */
-  public async fetch(options: PoolFetchOptions): Promise<PoolOrg> {
-    const available = await this.provider.getAvailableByTag(options.tag, options.myPool);
+  public async fetch(tag: string, options?: PoolFetchOptions): Promise<PoolOrg> {
+    const {myPool, postClaimActions = []} = options ?? {};
+    const available = await this.provider.getAvailableByTag(tag, myPool);
 
     if (available.length === 0) {
-      throw new OrgError('fetch', `No orgs available for pool "${options.tag}"`, {
-        context: {tag: options.tag},
+      throw new OrgError('fetch', `No orgs available for pool "${tag}"`, {
+        context: {tag},
       });
     }
 
-    this.logger?.info(`Pool "${options.tag}" has ${available.length} candidate(s)`);
+    this.logger?.info(`Pool "${tag}" has ${available.length} candidate(s)`);
 
     this.emit('pool:fetch:start', {
       available: available.length,
-      tag: options.tag,
+      tag,
       timestamp: new Date(),
     });
 
@@ -93,19 +93,19 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
         }
 
         this.emit('pool:fetch:claimed', {
-          tag: options.tag,
+          tag,
           timestamp: new Date(),
           username: org.auth.username!,
         });
 
-        this.logger?.info(`Claimed org ${org.auth.username} from pool "${options.tag}"`);
+        this.logger?.info(`Claimed org ${org.auth.username} from pool "${tag}"`);
 
         // eslint-disable-next-line no-await-in-loop -- post-claim runs only once (we return immediately after)
-        await this.handlePostClaims([org], options.postClaimActions ?? []);
+        await this.handlePostClaims([org], postClaimActions);
 
         this.emit('pool:fetch:complete', {
           count: 1,
-          tag: options.tag,
+          tag,
           timestamp: new Date(),
         });
 
@@ -121,8 +121,8 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
       this.logger?.trace(`Org ${org.auth.username} claim failed, trying next...`);
     }
 
-    throw new OrgError('fetch', `No org could be claimed from pool "${options.tag}"`, {
-      context: {candidateCount: available.length, tag: options.tag},
+    throw new OrgError('fetch', `No org could be claimed from pool "${tag}"`, {
+      context: {candidateCount: available.length, tag},
     });
   }
 
@@ -138,36 +138,37 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
    *
    * @throws {OrgError} When no orgs are available
    */
-  public async fetchAll(options: PoolFetchOptions): Promise<PoolOrg[]> {
-    let candidates = await this.provider.getAvailableByTag(options.tag, options.myPool);
+  public async fetchAll(tag: string, options?: PoolFetchOptions): Promise<PoolOrg[]> {
+    const {limit, myPool, postClaimActions = []} = options ?? {};
+    let candidates = await this.provider.getAvailableByTag(tag, myPool);
 
     if (candidates.length === 0) {
-      throw new OrgError('fetch', `No orgs available for pool "${options.tag}"`, {
-        context: {tag: options.tag},
+      throw new OrgError('fetch', `No orgs available for pool "${tag}"`, {
+        context: {tag},
       });
     }
 
     this.emit('pool:fetch:start', {
       available: candidates.length,
-      tag: options.tag,
+      tag,
       timestamp: new Date(),
     });
 
-    if (options.limit && options.limit < candidates.length) {
-      candidates = candidates.slice(0, options.limit);
+    if (limit && limit < candidates.length) {
+      candidates = candidates.slice(0, limit);
     }
 
     const orgs: PoolOrg[] = candidates.map((org, i) => ({
       ...org,
       auth: {...org.auth, alias: `SO${i + 1}`},
-      pool: {status: AllocationStatus.Available, tag: org.pool?.tag ?? options.tag, timestamp: org.pool?.timestamp ?? Date.now()},
+      pool: {status: AllocationStatus.Available, tag: org.pool?.tag ?? tag, timestamp: org.pool?.timestamp ?? Date.now()},
     }));
 
-    const validOrgs = await this.handlePostClaims(orgs, options.postClaimActions ?? []);
+    const validOrgs = await this.handlePostClaims(orgs, postClaimActions);
 
     this.emit('pool:fetch:complete', {
       count: validOrgs.length,
-      tag: options.tag,
+      tag,
       timestamp: new Date(),
     });
 

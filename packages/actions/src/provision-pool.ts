@@ -3,7 +3,6 @@ import {
   createPoolServices,
   type PoolConfig,
   type PoolProvisionResult,
-  type SandboxLicenseType,
 } from '@b64hub/sfpm-orgs';
 import {Org, OrgTypes} from '@salesforce/core';
 
@@ -17,24 +16,18 @@ import {ActionsProgressRenderer} from './progress-renderer.js';
 export interface ProvisionPoolOptions {
   /** Max concurrent org creations (default: 5) */
   batchSize?: number;
-  /** Scratch org definition file path */
+  /** Org definition file path (scratch org or sandbox) */
   definitionFile?: string;
   /** DevHub username or alias */
   devhubUsername: string;
   /** Scratch org expiry in days (default: 7) */
   expiryDays?: number;
-  /** Sandbox activation user group name */
-  groupName?: string;
-  /** Sandbox license type (default: DEVELOPER) */
-  licenseType?: SandboxLicenseType;
   /** Maximum number of orgs to allocate */
   maxAllocation: number;
-  /** Pool type: scratchOrg or sandbox */
+  /** Pool type: scratch or sandbox */
   poolType?: OrgTypes;
   /** Sandbox name prefix (e.g., SB → SB1, SB2, ...) */
   sandboxNamePattern?: string;
-  /** Source sandbox name to clone from */
-  sourceSandboxName?: string;
   /** Pool tag */
   tag: string;
 }
@@ -109,7 +102,7 @@ export async function provisionPool(options: ProvisionPoolOptions): Promise<Prov
   // 4. Build config and provision
   // ------------------------------------------------------------------
   const config = buildPoolConfig(options, poolType);
-  const provisionResult = await manager.provision(config);
+  const provisionResult = await manager.provision(options.tag, config);
 
   renderer.printSummary();
 
@@ -145,35 +138,27 @@ export async function provisionPool(options: ProvisionPoolOptions): Promise<Prov
 
 function buildPoolConfig(options: ProvisionPoolOptions, poolType: OrgTypes): PoolConfig {
   const sizing = {
-    batchSize: options.batchSize,
-    maxAllocation: options.maxAllocation,
+    batch: options.batchSize,
+    max: options.maxAllocation,
   };
+
+  if (!options.definitionFile) {
+    throw new Error('definition-file is required');
+  }
 
   if (poolType === OrgTypes.Sandbox) {
     return {
-      sandbox: {
-        groupName: options.groupName,
-        licenseType: options.licenseType ?? 'DEVELOPER',
-        namePattern: options.sandboxNamePattern ?? 'SB',
-        sourceSandboxName: options.sourceSandboxName,
-      },
+      definitionFile: options.definitionFile,
+      namePattern: options.sandboxNamePattern ?? 'SB',
       sizing,
-      tag: options.tag,
       type: OrgTypes.Sandbox,
     };
   }
 
-  if (!options.definitionFile) {
-    throw new Error('--definition-file is required for scratch org pools');
-  }
-
   return {
-    scratchOrg: {
-      definitionFile: options.definitionFile,
-      expiryDays: options.expiryDays,
-    },
+    definitionFile: options.definitionFile,
+    expiryDays: options.expiryDays,
     sizing,
-    tag: options.tag,
     type: OrgTypes.Scratch,
   };
 }

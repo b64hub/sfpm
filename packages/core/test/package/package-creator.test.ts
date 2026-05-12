@@ -172,83 +172,45 @@ describe('PackageCreator', () => {
     });
   });
 
-  describe('updateProjectAliases', () => {
-    it('should add package alias to sfdx-project.json', async () => {
-      vi.mocked(fs.readJson).mockResolvedValue({
-        packageAliases: {},
-        packageDirectories: [],
-      });
-
-      await creator.updateProjectAliases('/tmp/project', 'test-package', '0Ho000099');
-
-      expect(fs.writeJson).toHaveBeenCalledWith(
-        '/tmp/project/sfdx-project.json',
-        expect.objectContaining({
-          packageAliases: {'test-package': '0Ho000099'},
-        }),
-        {spaces: 4},
-      );
-    });
-
-    it('should create packageAliases when it does not exist', async () => {
-      vi.mocked(fs.readJson).mockResolvedValue({
-        packageDirectories: [],
-      });
-
-      await creator.updateProjectAliases('/tmp/project', 'test-package', '0Ho000099');
-
-      expect(fs.writeJson).toHaveBeenCalledWith(
-        '/tmp/project/sfdx-project.json',
-        expect.objectContaining({
-          packageAliases: {'test-package': '0Ho000099'},
-        }),
-        {spaces: 4},
-      );
-    });
-
-    it('should emit alias update event', async () => {
-      vi.mocked(fs.readJson).mockResolvedValue({packageAliases: {}});
-
-      const events: string[] = [];
-      creator.on('package:alias:update', () => events.push('update'));
-
-      await creator.updateProjectAliases('/tmp/project', 'test-package', '0Ho000099');
-
-      expect(events).toEqual(['update']);
-    });
-  });
-
   describe('ensurePackages', () => {
+    let mockProvider: any;
+
+    beforeEach(() => {
+      mockProvider = {
+        updatePackageConfig: vi.fn().mockResolvedValue(undefined),
+      };
+    });
+
     it('should reuse existing packages without creating', async () => {
       mockListAllPackages.mockResolvedValue([
         {ContainerOptions: 'Unlocked', Description: '', Id: '0Ho000001', IsOrgDependent: false, Name: 'test-package', NamespacePrefix: ''},
       ]);
-      vi.mocked(fs.readJson).mockResolvedValue({packageAliases: {}});
 
       const shouldCreate = vi.fn();
 
-      const results = await creator.ensurePackages([testConfig], '/tmp/project', shouldCreate);
+      const results = await creator.ensurePackages([testConfig], mockProvider, '/tmp/project', shouldCreate);
 
       expect(results).toHaveLength(1);
       expect(results[0].created).toBe(false);
       expect(results[0].packageId).toBe('0Ho000001');
       expect(shouldCreate).not.toHaveBeenCalled();
+      expect(mockProvider.updatePackageConfig).toHaveBeenCalledWith('test-package', {packageId: '0Ho000001'});
     });
 
     it('should create missing packages when approved', async () => {
       mockListAllPackages.mockResolvedValue([]);
       vi.mocked(SfPackage.create).mockResolvedValue({Id: '0Ho000099'} as any);
       vi.mocked(SfProject.resolve).mockResolvedValue({} as any);
-      vi.mocked(fs.readJson).mockResolvedValue({packageAliases: {}});
 
       const shouldCreate = vi.fn().mockResolvedValue(true);
 
-      const results = await creator.ensurePackages([testConfig], '/tmp/project', shouldCreate);
+      const results = await creator.ensurePackages([testConfig], mockProvider, '/tmp/project', shouldCreate);
 
       expect(results).toHaveLength(1);
       expect(results[0].created).toBe(true);
       expect(results[0].packageId).toBe('0Ho000099');
       expect(shouldCreate).toHaveBeenCalledWith('test-package');
+      expect(mockProvider.updatePackageConfig).toHaveBeenCalledWith('test-package', {packageId: '0Ho000099'});
     });
 
     it('should throw when creation is declined', async () => {
@@ -257,22 +219,22 @@ describe('PackageCreator', () => {
       const shouldCreate = vi.fn().mockResolvedValue(false);
 
       await expect(
-        creator.ensurePackages([testConfig], '/tmp/project', shouldCreate),
+        creator.ensurePackages([testConfig], mockProvider, '/tmp/project', shouldCreate),
       ).rejects.toThrow('creation was declined');
     });
 
-    it('should update project aliases for all packages', async () => {
+    it('should update provider for all packages', async () => {
       mockListAllPackages.mockResolvedValue([
         {ContainerOptions: 'Unlocked', Description: '', Id: '0Ho000001', IsOrgDependent: false, Name: 'test-package', NamespacePrefix: ''},
       ]);
       vi.mocked(SfPackage.create).mockResolvedValue({Id: '0Ho000002'} as any);
       vi.mocked(SfProject.resolve).mockResolvedValue({} as any);
-      vi.mocked(fs.readJson).mockResolvedValue({packageAliases: {}});
 
       const shouldCreate = vi.fn().mockResolvedValue(true);
 
       const results = await creator.ensurePackages(
         [testConfig, orgDependentConfig],
+        mockProvider,
         '/tmp/project',
         shouldCreate,
       );
@@ -280,7 +242,7 @@ describe('PackageCreator', () => {
       expect(results).toHaveLength(2);
       expect(results[0]).toEqual({created: false, name: 'test-package', packageId: '0Ho000001'});
       expect(results[1]).toEqual({created: true, name: 'test-orgs', packageId: '0Ho000002'});
-      expect(fs.writeJson).toHaveBeenCalledTimes(2);
+      expect(mockProvider.updatePackageConfig).toHaveBeenCalledTimes(2);
     });
   });
 });

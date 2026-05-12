@@ -16,13 +16,12 @@ describe('VersionManager', () => {
 
     beforeEach(() => {
         mockProject = {
-            packageDirectories: [
-                { package: 'pkg-a', path: 'packages/pkg-a', versionNumber: '1.0.0.NEXT', default: true },
-                { package: 'pkg-b', path: 'packages/pkg-b', versionNumber: '1.0.0.NEXT', dependencies: [{ package: 'pkg-a', versionNumber: '1.0.0.LATEST' }] },
-                { package: 'pkg-c', path: 'packages/pkg-c', versionNumber: '2.0.0.0', dependencies: [{ package: 'pkg-b', versionNumber: '1.0.0.LATEST' }] }
+            packages: [
+                { name: 'pkg-a', path: 'packages/pkg-a', version: '1.0.0', type: 'unlocked' },
+                { name: 'pkg-b', path: 'packages/pkg-b', version: '1.0.0', type: 'unlocked', dependencies: { 'pkg-a': '1.0.0' } },
+                { name: 'pkg-c', path: 'packages/pkg-c', version: '2.0.0', type: 'source', dependencies: { 'pkg-b': '1.0.0' } }
             ],
-            packageAliases: {}
-        } as any;
+        };
     });
 
     test('should update single package (minor bump) and propagate to dependencies', async () => {
@@ -33,17 +32,17 @@ describe('VersionManager', () => {
             { strategy: new SinglePackageStrategy('pkg-a') }
         );
 
-        // pkg-a: 1.0.0.NEXT -> 1.1.0.NEXT
+        // pkg-a: 1.0.0 -> 1.1.0
         const pkgA = result.packages.find(p => p.name === 'pkg-a');
         expect(pkgA).toBeDefined();
-        expect(pkgA?.newVersion).toBe('1.1.0.NEXT');
+        expect(pkgA?.newVersion).toBe('1.1.0');
 
         // pkg-b should assume new version of pkg-a
         const pkgB = result.dependencies?.find(p => p.name === 'pkg-b');
         expect(pkgB).toBeDefined();
 
         const depOnA = pkgB?.dependencies?.find(d => d.name === 'pkg-a');
-        expect(depOnA?.newVersion).toBe('1.1.0.LATEST');
+        expect(depOnA?.newVersion).toBe('1.1.0');
     });
 
     test('should update all packages (patch bump)', async () => {
@@ -57,13 +56,13 @@ describe('VersionManager', () => {
         expect(result.packagesUpdated).toBe(3);
 
         const pkgA = result.packages.find(p => p.name === 'pkg-a');
-        expect(pkgA?.newVersion).toBe('1.0.1.NEXT');
+        expect(pkgA?.newVersion).toBe('1.0.1');
     });
 
     test('should use OrgDiffStrategy to detect updates', async () => {
         const mockFetcher: OrgPackageVersionFetcher = {
             getInstalledVersion: vi.fn(async (name: string) => {
-                if (name === 'pkg-a') return '1.2.0.0';
+                if (name === 'pkg-a') return '1.2.0';
                 return null;
             })
         };
@@ -78,8 +77,8 @@ describe('VersionManager', () => {
         // Should update pkg-a
         const pkgA = result.packages.find(p => p.name === 'pkg-a');
         expect(pkgA).toBeDefined();
-        // Base 1.2.0.0 + patch -> 1.2.1.NEXT
-        expect(pkgA?.newVersion).toBe('1.2.1.NEXT');
+        // Base 1.2.0 + patch -> 1.2.1
+        expect(pkgA?.newVersion).toBe('1.2.1');
     });
 
     test('should return updated definition after bump', async () => {
@@ -90,7 +89,7 @@ describe('VersionManager', () => {
         const updatedDefinition = vm.getUpdatedDefinition();
 
         expect(updatedDefinition).toBeDefined();
-        expect(updatedDefinition.packageDirectories).toBeDefined();
+        expect(updatedDefinition.packages).toBeDefined();
     });
 
     test('should write updated dependency versions to definition', async () => {
@@ -101,11 +100,9 @@ describe('VersionManager', () => {
         await vm.bump('minor', { strategy: new SinglePackageStrategy('pkg-a') });
         const updatedDefinition = vm.getUpdatedDefinition();
 
-        const pkgB = (updatedDefinition.packageDirectories as any[]).find(p => p.package === 'pkg-b');
+        const pkgB = updatedDefinition.packages.find(p => p.name === 'pkg-b');
         expect(pkgB).toBeDefined();
-        const depOnA = pkgB.dependencies?.find((d: any) => d.package === 'pkg-a');
-        expect(depOnA).toBeDefined();
-        expect(depOnA.versionNumber).toBe('1.1.0.LATEST');
+        expect(pkgB?.dependencies?.['pkg-a']).toBe('1.1.0');
     });
 
     describe('GitDiffStrategy', () => {
@@ -128,7 +125,7 @@ describe('VersionManager', () => {
 
             expect(result.packagesUpdated).toBe(1);
             expect(result.packages[0].name).toBe('pkg-a');
-            expect(result.packages[0].newVersion).toBe('1.0.1.NEXT');
+            expect(result.packages[0].newVersion).toBe('1.0.1');
             expect(gitService.getChangedPackagePaths).toHaveBeenCalledWith(
                 'main',
                 expect.arrayContaining(['packages/pkg-a', 'packages/pkg-b', 'packages/pkg-c']),
@@ -159,32 +156,6 @@ describe('VersionManager', () => {
             expect(result.packagesUpdated).toBe(2);
             const names = result.packages.map(p => p.name).sort();
             expect(names).toEqual(['pkg-a', 'pkg-c']);
-        });
-    });
-
-    describe('toSalesforceVersion', () => {
-        test('converts npm format to Salesforce format', () => {
-            expect(VersionManager.toSalesforceVersion('0.1.0-NEXT')).toBe('0.1.0.NEXT');
-            expect(VersionManager.toSalesforceVersion('1.2.3-7')).toBe('1.2.3.7');
-            expect(VersionManager.toSalesforceVersion('1.0.0-LATEST')).toBe('1.0.0.LATEST');
-        });
-
-        test('returns Salesforce format as-is', () => {
-            expect(VersionManager.toSalesforceVersion('0.1.0.NEXT')).toBe('0.1.0.NEXT');
-            expect(VersionManager.toSalesforceVersion('1.2.3.42')).toBe('1.2.3.42');
-            expect(VersionManager.toSalesforceVersion('1.0.0.LATEST')).toBe('1.0.0.LATEST');
-        });
-
-        test('appends .NEXT to plain 3-part semver', () => {
-            expect(VersionManager.toSalesforceVersion('1.0.0')).toBe('1.0.0.NEXT');
-        });
-
-        test('returns default for empty input', () => {
-            expect(VersionManager.toSalesforceVersion('')).toBe('0.0.0.NEXT');
-        });
-
-        test('throws on unsupported format', () => {
-            expect(() => VersionManager.toSalesforceVersion('not-a-version')).toThrow('Invalid version format');
         });
     });
 });

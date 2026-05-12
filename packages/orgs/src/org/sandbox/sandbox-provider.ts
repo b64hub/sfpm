@@ -1,6 +1,7 @@
 import {escapeSOQL, soql} from '@b64hub/sfpm-core';
-import {Org, OrgTypes} from '@salesforce/core';
+import {Org, OrgTypes, type SandboxRequest} from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
+import {readFile} from 'node:fs/promises';
 
 import type {OrgProvider} from '../org-provider.js';
 import type {PoolOrg, PoolOrgRecord, PoolOrgUsage} from '../pool-org.js';
@@ -150,28 +151,50 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   }
 
   async createOrg(options: SandboxCreateOptions): Promise<PoolOrg> {
-    const sandboxName = options.sandboxName ?? options.alias;
-    const licenseType = options.licenseType ?? DEFAULT_SANDBOX.licenseType;
+    const defContents = await this.readDefinitionFile(options.definitionFile);
     const waitMinutes = options.waitMinutes ?? DEFAULT_SANDBOX.waitMinutes;
-    const groupId = await this.getGroupId(options.activationUserGroupName ?? DEFAULT_SANDBOX.groupName);
 
-    const sandboxRequest = {
-      ActivationUserGroupId: groupId,
-      ApexClassId: options.apexClassId,
-      LicenseType: licenseType,
-      SandboxName: sandboxName,
-    };
+    // Resolve sandbox name: namePattern override > definition sandboxName
+    const baseName = options.namePattern ?? (defContents.SandboxName as string);
+    const index = options.alias.replaceAll(/\D/g, '');
+    const sandboxName = `${baseName}${index}`;
+
+    // Override SandboxName with the generated pool name
+    defContents.SandboxName = sandboxName;
+
+    // Resolve human-readable name fields → Salesforce IDs
+    if (defContents.ApexClassName) {
+      defContents.ApexClassId = await this.resolveApexClassId(defContents.ApexClassName as string);
+      delete defContents.ApexClassName;
+    }
+
+    if (defContents.ActivationUserGroupName) {
+      defContents.ActivationUserGroupId = await this.getGroupId(defContents.ActivationUserGroupName as string);
+      delete defContents.ActivationUserGroupName;
+    }
+
+    // Extract clone source fields (handled separately by cloneSandbox)
+    const sourceSandboxName = defContents.SourceSandboxName as string | undefined;
+    const sourceId = defContents.SourceId as string | undefined;
+    delete defContents.SourceSandboxName;
+    delete defContents.SourceId;
+
+    // Pass remaining definition properties straight through as the SandboxRequest
+    const sandboxRequest = defContents as SandboxRequest;
 
     let processResult;
 
-    if (options.sourceSandboxName) {
-      // Clone from an existing sandbox using the proper SDK API
-      processResult = await this.hubOrg.cloneSandbox(sandboxRequest, options.sourceSandboxName, {
+    if (sourceSandboxName) {
+      processResult = await this.hubOrg.cloneSandbox(sandboxRequest, sourceSandboxName, {
+        interval: Duration.seconds(30),
+        wait: Duration.minutes(waitMinutes),
+      });
+    } else if (sourceId) {
+      processResult = await this.hubOrg.cloneSandbox(sandboxRequest, sourceId, {
         interval: Duration.seconds(30),
         wait: Duration.minutes(waitMinutes),
       });
     } else {
-      // Create a new sandbox using the proper SDK API
       processResult = await this.hubOrg.createSandbox(sandboxRequest, {
         async: false,
         interval: Duration.seconds(30),
@@ -180,8 +203,6 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     }
 
     const orgId = processResult.SandboxOrganization ?? '';
-
-    // Derive the sandbox username (production username + sandbox name suffix)
     const sandboxUsername = orgId ? await this.resolveSandboxUsername(sandboxName) : '';
 
     // Create the shadow pool record for tracking this sandbox
@@ -200,7 +221,6 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       orgId,
       orgType: OrgTypes.Sandbox,
       pool: {
-        groupId,
         status: AllocationStatus.InProgress,
         tag: '',
         timestamp: Date.now(),
@@ -265,7 +285,7 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     const escapedTag = escapeSOQL(tag);
     const conditions = [
       `Tag__c = '${escapedTag}'`,
-      String.raw`(Allocation_Status__c = 'Available' OR Allocation_Status__c = 'In Progress')`,
+      `(Allocation_Status__c = '${AllocationStatus.Available}' OR Allocation_Status__c = '${AllocationStatus.InProgress}')`,
     ];
 
     if (myPool) {
@@ -282,16 +302,23 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     return this.enrichPoolRecords(poolResult.records);
   }
 
-  async getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
+  async getOrgsByTag(tag?: string, myPool?: boolean): Promise<PoolOrg[]> {
     await this.pruneStalePoolRecords();
 
-    const conditions = [`Tag__c = '${escapeSOQL(tag)}'`];
+    const conditions: string[] = [];
+
+    if (tag) {
+      conditions.push(`Tag__c = '${escapeSOQL(tag)}'`);
+    } else {
+      conditions.push('Tag__c != null');
+    }
 
     if (myPool) {
       conditions.push(`CreatedById = '${escapeSOQL(this.hubUsername)}'`);
     }
 
-    const poolQuery = soql`SELECT ${SANDBOX_POOL_ORG_FIELDS.join(', ')} FROM ${SANDBOX_POOL_ORG_OBJECT} WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const poolQuery = soql`SELECT ${SANDBOX_POOL_ORG_FIELDS.join(', ')} FROM ${SANDBOX_POOL_ORG_OBJECT} ${whereClause} ORDER BY CreatedDate DESC`;
     const poolResult = await this.conn.query<SandboxPoolOrgRecord>(poolQuery);
 
     if (poolResult.records.length === 0) return [];
@@ -360,19 +387,34 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   }
 
   async getRemainingCapacity(): Promise<number> {
-    const apiVersion = this.conn.getApiVersion();
-    const limits = await this.conn.request<Record<string, {Max: number; Remaining: number}>>(`/services/data/v${apiVersion}/limits`);
+    // The /limits REST API does not expose sandbox entitlements reliably.
+    // Instead, query TenantUsageEntitlement (Tooling API) for the total
+    // sandbox allowance, then subtract currently active sandboxes.
+    try {
+      const entitlementQuery = 'SELECT Setting, CurrentAmountAllowed FROM TenantUsageEntitlement WHERE Setting LIKE \'%Sandbox%\'';
+      const entitlementResult = await this.conn.query<{CurrentAmountAllowed: number; Setting: string}>(entitlementQuery);
 
-    // Salesforce exposes sandbox limits under 'DeveloperSandbox', 'DeveloperProSandbox', etc.
-    // Aggregate remaining across all sandbox types
-    let remaining = 0;
-    for (const key of Object.keys(limits)) {
-      if (key.toLowerCase().includes('sandbox')) {
-        remaining += limits[key]?.Remaining ?? 0;
+      let totalAllowed = 0;
+      for (const record of entitlementResult.records) {
+        totalAllowed += record.CurrentAmountAllowed ?? 0;
       }
-    }
 
-    return remaining;
+      if (totalAllowed === 0) {
+        // No entitlement records found — cannot determine capacity.
+        // Return maxAllocation so the caller proceeds and fails
+        // gracefully at create-time if the org truly has no licenses.
+        return Number.MAX_SAFE_INTEGER;
+      }
+
+      const activeCount = await this.getActiveSandboxCount();
+
+      return Math.max(0, totalAllowed - activeCount);
+    } catch {
+      // TenantUsageEntitlement may not be queryable (permissions, API version).
+      // Return unbounded so provisioning proceeds — Salesforce will reject
+      // the create call with a clear error if no licenses remain.
+      return Number.MAX_SAFE_INTEGER;
+    }
   }
 
   async isOrgActive(username: string): Promise<boolean> {
@@ -410,7 +452,12 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       Tag__c: r.poolTag, // eslint-disable-line camelcase -- Salesforce custom field
     }));
 
-    await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).update(updates);
+    const results = await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).update(updates);
+    const failures = (Array.isArray(results) ? results : [results]).filter(r => !r.success);
+    if (failures.length > 0 && failures.length === updates.length) {
+      const errors = failures.flatMap(f => (f as {errors?: {message: string}[]}).errors?.map(e => e.message) ?? ['unknown error']);
+      throw new OrgError('update', `Failed to update pool metadata on all ${failures.length} record(s): ${errors.join('; ')}`);
+    }
   }
 
   async validate(): Promise<void> {
@@ -535,6 +582,12 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     return parts.length > 2 ? parts.at(-1) : undefined;
   }
 
+  /** Count sandboxes currently active on the production org. */
+  private async getActiveSandboxCount(): Promise<number> {
+    const result = await this.conn.query(soql`SELECT count() FROM SandboxInfo WHERE Status IN ('Active', 'Completed')`);
+    return result.totalSize;
+  }
+
   private async getGroupId(groupName: string): Promise<string> {
     const query = soql`SELECT Id FROM Group WHERE Name = '${escapeSOQL(groupName)}'`;
     const result = await this.conn.query<{Id: string}>(query);
@@ -615,6 +668,35 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       // Pruning is best-effort — never break the primary operation
       this.lastPruneTimestamp = Date.now();
     }
+  }
+
+  /**
+   * Read a sandbox definition JSON file and capitalize keys to match
+   * the Salesforce API field names (e.g., `sandboxName` → `SandboxName`).
+   *
+   * Returns a mutable record so the caller can override/remove fields
+   * before passing it to the SDK.
+   */
+  private async readDefinitionFile(filePath: string): Promise<Record<string, unknown>> {
+    try {
+      const content = await readFile(filePath, 'utf8');
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key.charAt(0).toUpperCase() + key.slice(1), value]));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new OrgError('prerequisite', `Failed to read sandbox definition file "${filePath}": ${message}`);
+    }
+  }
+
+  /** Resolve an Apex class name to its Salesforce ID. */
+  private async resolveApexClassId(className: string): Promise<string> {
+    const result = await this.conn.query<{Id: string}>(soql`SELECT Id FROM ApexClass WHERE Name = '${escapeSOQL(className)}'`);
+
+    if (result.records.length === 0) {
+      throw new OrgError('prerequisite', `No Apex class found with name "${className}"`);
+    }
+
+    return result.records[0].Id;
   }
 
   /**

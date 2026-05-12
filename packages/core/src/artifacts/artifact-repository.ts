@@ -8,6 +8,7 @@ import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 import {NpmPackageJson} from '../types/npm.js';
 import {SfpmPackageMetadataBase} from '../types/package.js';
+import {splitPackageName} from '../utils/scope-utils.js';
 import {extractPackageVersionId, extractSourceHash, fromNpmPackageJson} from './npm-package-adapter.js';
 
 /**
@@ -56,6 +57,8 @@ export class ArtifactRepository {
 
   /**
    * Ensure version directory exists
+   * @param packageName - Scoped name of the package
+   * @param version - Version of the package (including buildnumber)
    */
   public async ensureVersionDir(packageName: string, version: string): Promise<string> {
     const versionPath = this.getVersionPath(packageName, version);
@@ -224,7 +227,15 @@ export class ArtifactRepository {
    * Get the path to a package's artifact directory
    */
   public getPackageArtifactPath(packageName: string): string {
-    return path.join(this.artifactsRootDir, packageName);
+    const {name, scope} = splitPackageName(packageName);
+
+    if (!scope) {
+      throw new ArtifactError(packageName, 'read', 'Invalid package name: missing scope', {
+        context: {packageName},
+      });
+    }
+
+    return path.join(this.artifactsRootDir, scope, name);
   }
 
   /**
@@ -238,7 +249,14 @@ export class ArtifactRepository {
    * Get the relative path to the artifact file (for storage in manifest)
    */
   public getRelativeArtifactPath(packageName: string, version: string): string {
-    return `${packageName}/${version}/artifact.tgz`;
+    const {name, scope} = splitPackageName(packageName);
+    if (!scope) {
+      throw new ArtifactError(packageName, 'read', 'Invalid package name: missing scope', {
+        context: {packageName},
+      });
+    }
+
+    return path.join(scope, name, version, 'artifact.tgz');
   }
 
   /**

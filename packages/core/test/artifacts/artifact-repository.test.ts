@@ -10,7 +10,7 @@ const mockPackageJson = {
     name: '@testorg/test-package',
     version: '1.0.0-1',
     sfpm: {
-        packageName: 'test-package',
+        packageName: '@testorg/test-package',
         packageType: PackageType.Unlocked,
         versionNumber: '1.0.0-1',
         packageId: '0Ho1234567890',
@@ -42,7 +42,7 @@ describe('ArtifactRepository', () => {
     };
 
     const createMockManifest = (overrides?: Partial<ArtifactManifest>): ArtifactManifest => ({
-        name: 'test-package',
+        name: '@testorg/test-package',
         latest: '1.0.0-1',
         lastCheckedRemote: Date.now() - 30 * 60 * 1000,
         versions: {
@@ -72,26 +72,26 @@ describe('ArtifactRepository', () => {
         });
 
         it('should return correct package artifact path', () => {
-            expect(repository.getPackageArtifactPath('my-package')).toBe(
-                path.join(projectDirectory, 'artifacts', 'my-package')
+            expect(repository.getPackageArtifactPath('@testorg/my-package')).toBe(
+                path.join(projectDirectory, 'artifacts', '@testorg/my-package')
             );
         });
 
         it('should return correct version path', () => {
-            expect(repository.getVersionPath('my-package', '1.0.0-1')).toBe(
-                path.join(projectDirectory, 'artifacts', 'my-package', '1.0.0-1')
+            expect(repository.getVersionPath('@testorg/my-package', '1.0.0-1')).toBe(
+                path.join(projectDirectory, 'artifacts', '@testorg/my-package', '1.0.0-1')
             );
         });
 
         it('should return correct artifact tgz path', () => {
-            expect(repository.getArtifactPath('my-package', '1.0.0-1')).toBe(
-                path.join(projectDirectory, 'artifacts', 'my-package', '1.0.0-1', 'artifact.tgz')
+            expect(repository.getArtifactPath('@testorg/my-package', '1.0.0-1')).toBe(
+                path.join(projectDirectory, 'artifacts', '@testorg/my-package', '1.0.0-1', 'artifact.tgz')
             );
         });
 
         it('should return correct manifest path', () => {
-            expect(repository.getManifestPath('my-package')).toBe(
-                path.join(projectDirectory, 'artifacts', 'my-package', 'manifest.json')
+            expect(repository.getManifestPath('@testorg/my-package')).toBe(
+                path.join(projectDirectory, 'artifacts', '@testorg/my-package', 'manifest.json')
             );
         });
     });
@@ -99,12 +99,12 @@ describe('ArtifactRepository', () => {
     describe('existence checks', () => {
         it('should return true if manifest exists', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
-            expect(repository.hasArtifacts('test-package')).toBe(true);
+            expect(repository.hasArtifacts('@testorg/test-package')).toBe(true);
         });
 
         it('should return false if manifest does not exist', () => {
             vi.mocked(fs.existsSync).mockReturnValue(false);
-            expect(repository.hasArtifacts('test-package')).toBe(false);
+            expect(repository.hasArtifacts('@testorg/test-package')).toBe(false);
         });
 
         it('should check if version exists in manifest', () => {
@@ -112,13 +112,13 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
 
-            expect(repository.hasVersion('test-package', '1.0.0-1')).toBe(true);
-            expect(repository.hasVersion('test-package', '2.0.0-1')).toBe(false);
+            expect(repository.hasVersion('@testorg/test-package', '1.0.0-1')).toBe(true);
+            expect(repository.hasVersion('@testorg/test-package', '2.0.0-1')).toBe(false);
         });
 
         it('should check if artifact tgz exists', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
-            expect(repository.artifactExists('test-package', '1.0.0-1')).toBe(true);
+            expect(repository.artifactExists('@testorg/test-package', '1.0.0-1')).toBe(true);
         });
     });
 
@@ -128,14 +128,14 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.pathExists).mockResolvedValue(true);
             vi.mocked(fs.readJson).mockResolvedValue(manifest);
 
-            const result = await repository.getManifest('test-package');
+            const result = await repository.getManifest('@testorg/test-package');
             expect(result).toEqual(manifest);
         });
 
         it('should return undefined if manifest does not exist', async () => {
             vi.mocked(fs.pathExists).mockResolvedValue(false);
 
-            const result = await repository.getManifest('test-package');
+            const result = await repository.getManifest('@testorg/test-package');
             expect(result).toBeUndefined();
         });
 
@@ -144,7 +144,7 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
 
-            const result = repository.getManifestSync('test-package');
+            const result = repository.getManifestSync('@testorg/test-package');
             expect(result).toEqual(manifest);
         });
 
@@ -154,7 +154,7 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
             vi.mocked(fs.move).mockResolvedValue(undefined as any);
 
-            await repository.saveManifest('test-package', manifest);
+            await repository.saveManifest('@testorg/test-package', manifest);
 
             expect(fs.writeJson).toHaveBeenCalled();
             expect(fs.move).toHaveBeenCalled();
@@ -165,7 +165,7 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
 
-            expect(repository.getLatestVersion('test-package')).toBe('1.0.0-1');
+            expect(repository.getLatestVersion('@testorg/test-package')).toBe('1.0.0-1');
         });
 
         it('should get all versions', () => {
@@ -178,7 +178,7 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
 
-            const versions = repository.getVersions('test-package');
+            const versions = repository.getVersions('@testorg/test-package');
             expect(versions).toHaveLength(2);
             expect(versions).toContain('1.0.0-1');
             expect(versions).toContain('1.0.0-2');
@@ -193,7 +193,7 @@ describe('ArtifactRepository', () => {
                 return p.endsWith('manifest.json') || p.endsWith('artifact.tgz');
             });
 
-            const metadata = repository.getMetadata('test-package');
+            const metadata = repository.getMetadata('@testorg/test-package');
             expect(metadata).toBeDefined();
             expect(metadata?.packageVersionId).toBe('04t1234567890');
         });
@@ -205,7 +205,7 @@ describe('ArtifactRepository', () => {
                 return p.endsWith('manifest.json') || p.endsWith('artifact.tgz');
             });
 
-            const versionId = repository.extractPackageVersionId('test-package');
+            const versionId = repository.extractPackageVersionId('@testorg/test-package');
             expect(versionId).toBe('04t1234567890');
         });
 
@@ -216,7 +216,7 @@ describe('ArtifactRepository', () => {
                 return p.endsWith('manifest.json') || p.endsWith('artifact.tgz');
             });
 
-            const info = repository.getArtifactInfo('test-package');
+            const info = repository.getArtifactInfo('@testorg/test-package');
             expect(info.version).toBe('1.0.0-1');
             expect(info.manifest).toBeDefined();
             expect(info.metadata).toBeDefined();
@@ -229,7 +229,7 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.pathExists).mockResolvedValue(false);
             vi.mocked(fs.symlink).mockResolvedValue(undefined as any);
 
-            await repository.updateLatestSymlink('test-package', '1.0.0-2');
+            await repository.updateLatestSymlink('@testorg/test-package', '1.0.0-2');
 
             expect(fs.symlink).toHaveBeenCalledWith(
                 '1.0.0-2',
@@ -243,7 +243,7 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.remove).mockResolvedValue(undefined as any);
             vi.mocked(fs.symlink).mockResolvedValue(undefined as any);
 
-            await repository.updateLatestSymlink('test-package', '1.0.0-2');
+            await repository.updateLatestSymlink('@testorg/test-package', '1.0.0-2');
 
             expect(fs.remove).toHaveBeenCalled();
             expect(fs.symlink).toHaveBeenCalled();
@@ -254,7 +254,7 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.symlink).mockRejectedValue(new Error('Symlink not supported'));
             vi.mocked(fs.writeFile).mockResolvedValue(undefined as any);
 
-            await repository.updateLatestSymlink('test-package', '1.0.0-2');
+            await repository.updateLatestSymlink('@testorg/test-package', '1.0.0-2');
 
             expect(fs.writeFile).toHaveBeenCalledWith(
                 expect.stringContaining('latest.version'),
@@ -267,19 +267,19 @@ describe('ArtifactRepository', () => {
         it('should ensure version directory exists', async () => {
             vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
 
-            const result = await repository.ensureVersionDir('test-package', '1.0.0-1');
+            const result = await repository.ensureVersionDir('@testorg/test-package', '1.0.0-1');
 
             expect(fs.ensureDir).toHaveBeenCalled();
-            expect(result).toBe(repository.getVersionPath('test-package', '1.0.0-1'));
+            expect(result).toBe(repository.getVersionPath('@testorg/test-package', '1.0.0-1'));
         });
 
         it('should remove version directory', async () => {
             vi.mocked(fs.remove).mockResolvedValue(undefined as any);
 
-            await repository.removeVersion('test-package', '1.0.0-1');
+            await repository.removeVersion('@testorg/test-package', '1.0.0-1');
 
             expect(fs.remove).toHaveBeenCalledWith(
-                repository.getVersionPath('test-package', '1.0.0-1')
+                repository.getVersionPath('@testorg/test-package', '1.0.0-1')
             );
         });
     });

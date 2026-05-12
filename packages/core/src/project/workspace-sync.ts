@@ -19,9 +19,9 @@ import type {Logger} from '../types/logger.js';
 import type {
   WorkspaceSyncPackage,
   WorkspaceSyncResult,
-} from '../types/workspace.js';
+} from './providers/types/workspace.js';
 
-import {stripScope} from './package-json-adapter.js';
+import {stripScope} from '../utils/scope-utils.js';
 import {WorkspaceProvider} from './providers/workspace-provider.js';
 
 // ---------------------------------------------------------------------------
@@ -63,7 +63,6 @@ export class WorkspaceSync {
     // Delegate discovery and definition building to WorkspaceProvider
     const provider = new WorkspaceProvider({
       logger: this.logger,
-      namespace: this.options.namespace,
       projectDir: this.options.projectDir,
       sfdcLoginUrl: this.options.sfdcLoginUrl,
       sourceApiVersion: this.options.sourceApiVersion,

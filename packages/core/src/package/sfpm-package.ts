@@ -4,11 +4,10 @@ import {
   get, merge, omit, set,
 } from 'lodash-es';
 import fs from 'node:fs';
-import path from 'node:path';
+import path, {join} from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {Logger} from '../types/logger.js';
-import type {WorkspacePackageJson} from '../types/workspace.js';
 
 import {
   MetadataFile,
@@ -20,19 +19,21 @@ import {
   SfpmPackageOrchestration,
   SfpmUnlockedPackageBuildOptions,
   SfpmUnlockedPackageMetadata,
+  type TestLevel,
   VersionFormat,
 } from '../types/package.js';
-import {EnvAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {OrgAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
+import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
-import {ENV_ALIAS_DEFAULT_DIR, EnvAliasResolution, EnvAliasResolver} from './env-alias-resolver.js';
 import {
   type DataDeployable,
   ManagedPackageRef,
   type SourceDeployable,
   VersionInstallable,
 } from './installers/types.js';
+import {ORG_ALIAS_DEFAULT_DIR, OrgAliasResolution, OrgAliasResolver} from './org-alias-resolver.js';
 
 const TEST_COVERAGE_THRESHOLD = 75;
 const DEFAULT_API_VERSION = '65.0';
@@ -67,6 +68,7 @@ const PROFILE_SUPPORTED_METADATA_TYPES = new Set([
 export default abstract class SfpmPackage {
   protected _metadata: SfpmPackageMetadataBase;
   protected _packageDefinition?: PackageDefinition;
+  protected _scope?: string;
   public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
   public projectDefinition?: ProjectDefinition;
   public projectDirectory: string;
@@ -75,8 +77,8 @@ export default abstract class SfpmPackage {
   constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadataBase>) {
     this.projectDirectory = projectDirectory;
     this._metadata = {
-      packageName,
-      packageType: '',
+      packageName: stripScope(packageName),
+      scope: extractScope(packageName),
       ...metadata?.identity,
       orchestration: {...metadata?.orchestration},
       source: {...metadata?.source},
@@ -101,7 +103,7 @@ export default abstract class SfpmPackage {
     return this._metadata.source?.commit;
   }
 
-  get dependencies(): undefined | {package: string; versionNumber?: string}[] {
+  get dependencies(): undefined | {[packageName: string]: string} {
     return this.packageDefinition?.dependencies;
   }
 
@@ -109,17 +111,9 @@ export default abstract class SfpmPackage {
     return this._metadata;
   }
 
+  /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package") */
   get name(): string {
-    return this._metadata.packageName;
-  }
-
-  set name(val: string) {
-    this._metadata.packageName = val;
-  }
-
-  /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package"). Undefined in legacy mode. */
-  get npmName(): string | undefined {
-    return this._packageDefinition?.npmName;
+    return joinPackageName(this.packageName, this.scope);
   }
 
   get packageDefinition(): PackageDefinition | undefined {
@@ -131,8 +125,8 @@ export default abstract class SfpmPackage {
       throw new Error('Package definition already set');
     }
 
-    if (packageDefinition.package !== this.name) {
-      throw new Error(`Package definition name ${packageDefinition.package} does not match package name ${this.name}`);
+    if (packageDefinition.name !== this.name) {
+      throw new Error(`Package definition name ${packageDefinition.name} does not match package name ${this.name}`);
     }
 
     this._packageDefinition = packageDefinition;
@@ -152,6 +146,10 @@ export default abstract class SfpmPackage {
 
   set packageName(val: string) {
     this._metadata.packageName = val;
+  }
+
+  get scope(): string {
+    return this._metadata.scope;
   }
 
   get sourceHash(): string | undefined {
@@ -223,7 +221,7 @@ export default abstract class SfpmPackage {
       return;
     }
 
-    const version = this.version || this.packageDefinition?.versionNumber;
+    const version = this.version || this.packageDefinition?.version;
 
     if (!version) {
       throw new Error('The package doesnt have a version attribute, Please check your definition');
@@ -359,22 +357,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     return (this._metadata.content?.testCoverage || 0) > TEST_COVERAGE_THRESHOLD;
   }
 
-  private get isOptimizedDeployment(): boolean {
-    return (this.type === PackageType.Source && this.packageDefinition?.packageOptions?.deploy?.optimize) || false;
-  }
-
-  get isTriggerAllTests(): boolean {
-    return this._metadata.orchestration?.install?.isTriggerAllTests || !this.isOptimizedDeployment || this.hasApex;
-  }
-
-  set isTriggerAllTests(val: boolean) {
-    if (!this._metadata.orchestration.install) {
-      this._metadata.orchestration.install = {};
-    }
-
-    this._metadata.orchestration.install.isTriggerAllTests = val;
-  }
-
   get permissionSetGroups(): SourceComponent[] {
     return this.getComponentSet()
     .getSourceComponents()
@@ -417,6 +399,18 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
 
   set testCoverage(coverage: number) {
     this._metadata.content.testCoverage = coverage;
+  }
+
+  get testLevel(): TestLevel | undefined {
+    return this._metadata.orchestration?.install?.testLevel;
+  }
+
+  set testLevel(level: TestLevel) {
+    if (!this._metadata.orchestration.install) {
+      this._metadata.orchestration.install = {};
+    }
+
+    this._metadata.orchestration.install.testLevel = level;
   }
 
   get testSuites(): string[] {
@@ -529,18 +523,17 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
         ...orchestration,
         // Persist only build properties that describe artifact state, not runtime parameters
         build: {
-          ...(this._metadata.orchestration?.build?.isCoverageEnabled !== undefined && {
-            isCoverageEnabled: this._metadata.orchestration.build.isCoverageEnabled,
+          ...(this._metadata.orchestration?.build?.codeCoverage !== undefined && {
+            codeCoverage: this._metadata.orchestration.build.codeCoverage,
           }),
         },
         install: {
           ...orchestration.install,
-          isTriggerAllTests: this.isTriggerAllTests,
         },
       },
       packageName: this.name || content.payload?.Package?.fullName,
       packageType: this.type || this.packageDefinition?.type,
-      versionNumber: this.version || this.packageDefinition?.versionNumber,
+      versionNumber: this.version || this.packageDefinition?.version,
     });
 
     return metadata;
@@ -717,12 +710,14 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
         dataDirectory: this.packageDefinition?.path || '',
         fileCount,
       },
+      name: this.name,
       orchestration: {
         build: this.packageDefinition?.packageOptions?.build as any,
         install: this.packageDefinition?.packageOptions?.install as any,
       },
-      packageName: this.name,
+      packageName: this.packageName,
       packageType: PackageType.Data,
+      scope: this.scope,
       source: this._metadata.source,
       versionNumber: this.version,
     };
@@ -779,6 +774,10 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
     if (options.isAsyncValidation !== undefined) {
       set(this.metadata, 'orchestration.build.isAsyncValidation', options.isAsyncValidation);
     }
+
+    if (options.codeCoverage !== undefined) {
+      set(this.metadata, 'orchestration.build.codeCoverage', options.codeCoverage);
+    }
   }
 
   /**
@@ -792,95 +791,95 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
 }
 
 /**
- * Interface for packages that support environment-aliased source directories.
+ * Interface for packages that support org-aliased source directories.
  *
- * An env-aliased package contains subdirectories named after target environments
+ * An org-aliased package contains subdirectories named after target org aliases
  * (e.g., `uat/`, `prod/`) plus a mandatory `default/` directory. At install/deploy
  * time, the target org alias is matched against these directory names.
  *
- * Use the {@link isEnvAliasable} type guard to cast a package to this interface.
+ * Use the {@link isOrgAliasable} type guard to cast a package to this interface.
  */
-export interface EnvAliasable {
-  /** The env alias configuration, normalized. `undefined` when not env-aliased. */
-  readonly envAliasConfig: EnvAliasConfig | undefined;
-  /** The last env alias resolution, set by {@link resolveEnvAlias}. */
-  readonly envAliasResolution: EnvAliasResolution | undefined;
-  /** Whether this package uses environment-aliased source directories. */
-  readonly isEnvAliased: boolean;
-
+export interface OrgAliasable {
   /**
-   * For env-aliased packages, returns the path to the `default/` subdirectory
+   * For org-aliased packages, returns the path to the `default/` subdirectory
    * within the package source. Used during build for analysis.
    *
-   * For non-env-aliased packages, returns the normal package source path.
+   * For non-org-aliased packages, returns the normal package source path.
    */
   getAnalysisSourcePath(): string;
+  /** Whether this package uses org-aliased source directories. */
+  readonly isOrgAliased: boolean;
+  /** The org alias configuration, normalized. `undefined` when not org-aliased. */
+  readonly orgAliasConfig: OrgAliasConfig | undefined;
+
+  /** The last org alias resolution, set by {@link resolveOrgAlias}. */
+  readonly orgAliasResolution: OrgAliasResolution | undefined;
 
   /**
-   * Resolve the env alias for a target org and return the resolution.
+   * Resolve the org alias for a target org and return the resolution.
    *
    * For **analysis / build** contexts (no target org), pass `undefined` — the
    * resolver will fall back to the `default/` directory.
    *
    * The resolution is cached on the instance so downstream consumers
-   * (builder, installer, hooks) can read `envAliasResolution` without
+   * (builder, installer, hooks) can read `orgAliasResolution` without
    * re-resolving.
    *
-   * @param targetOrg - The org alias/username to match against env directories.
+   * @param targetOrg - The org alias/username to match against org directories.
    *                     When `undefined`, always resolves to `default/`.
    * @param logger    - Optional logger for resolution diagnostics.
    */
-  resolveEnvAlias(targetOrg?: string, logger?: Logger): Promise<EnvAliasResolution>;
+  resolveOrgAlias(targetOrg?: string, logger?: Logger): Promise<OrgAliasResolution>;
 }
 
 /**
- * Type guard to check whether a package supports env aliasing.
- * Use this to safely cast an `SfpmPackage` to the `EnvAliasable` interface.
+ * Type guard to check whether a package supports org aliasing.
+ * Use this to safely cast an `SfpmPackage` to the `OrgAliasable` interface.
  */
-export function isEnvAliasable(pkg: SfpmPackage): pkg is SfpmPackage & EnvAliasable {
-  return pkg instanceof SfpmSourcePackage && 'isEnvAliased' in pkg;
+export function isOrgAliasable(pkg: SfpmPackage): pkg is OrgAliasable & SfpmPackage {
+  return pkg instanceof SfpmSourcePackage && 'isOrgAliased' in pkg;
 }
 
-export class SfpmSourcePackage extends SfpmMetadataPackage implements EnvAliasable {
-  private _envAliasResolution?: EnvAliasResolution;
+export class SfpmSourcePackage extends SfpmMetadataPackage implements OrgAliasable {
+  private _orgAliasResolution?: OrgAliasResolution;
 
-  get envAliasConfig(): EnvAliasConfig | undefined {
-    const raw = this.packageDefinition?.packageOptions?.envAliased;
+  get isOrgAliased(): boolean {
+    return Boolean(this.packageDefinition?.packageOptions?.orgAliased);
+  }
+
+  get orgAliasConfig(): OrgAliasConfig | undefined {
+    const raw = this.packageDefinition?.packageOptions?.orgAliased;
     if (!raw) return undefined;
     return typeof raw === 'object' ? raw : {};
   }
 
-  get envAliasResolution(): EnvAliasResolution | undefined {
-    return this._envAliasResolution;
-  }
-
-  get isEnvAliased(): boolean {
-    return Boolean(this.packageDefinition?.packageOptions?.envAliased);
+  get orgAliasResolution(): OrgAliasResolution | undefined {
+    return this._orgAliasResolution;
   }
 
   public getAnalysisSourcePath(): string {
     const basePath = this.resolveSourcePackagePath();
-    if (!this.isEnvAliased) {
+    if (!this.isOrgAliased) {
       return basePath;
     }
 
-    return path.join(basePath, ENV_ALIAS_DEFAULT_DIR);
+    return path.join(basePath, ORG_ALIAS_DEFAULT_DIR);
   }
 
-  public async resolveEnvAlias(targetOrg?: string, logger?: Logger): Promise<EnvAliasResolution> {
-    if (!this.isEnvAliased) {
-      throw new Error(`Package '${this.packageName}' is not env-aliased`);
+  public async resolveOrgAlias(targetOrg?: string, logger?: Logger): Promise<OrgAliasResolution> {
+    if (!this.isOrgAliased) {
+      throw new Error(`Package '${this.packageName}' is not org-aliased`);
     }
 
     const packagePath = this.resolveSourcePackagePath();
-    const resolver = new EnvAliasResolver(logger);
+    const resolver = new OrgAliasResolver(logger);
     const resolution = await resolver.resolve(
       packagePath,
-      targetOrg ?? ENV_ALIAS_DEFAULT_DIR,
-      this.envAliasConfig,
+      targetOrg ?? ORG_ALIAS_DEFAULT_DIR,
+      this.orgAliasConfig,
     );
 
-    this._envAliasResolution = resolution;
+    this._orgAliasResolution = resolution;
     return resolution;
   }
 }
@@ -914,7 +913,7 @@ export class PackageFactory {
   createFromName(packageName: string): SfpmPackage {
     // First, try to find in packageDirectories (local packages)
     const allPackages = this.provider.getAllPackageDefinitions();
-    const packageDefinition = allPackages.find(p => p.package === packageName);
+    const packageDefinition = allPackages.find(p => p.name === packageName || stripScope(p.name) === packageName);
 
     if (!packageDefinition) {
       // Check if it's a managed dependency — if so, guide the caller
@@ -935,17 +934,11 @@ export class PackageFactory {
     // Populate from project config
     sfpmPackage.projectDefinition = this.provider.getProjectDefinition();
     sfpmPackage.packageDefinition = packageDefinition;
-    sfpmPackage.version = packageDefinition.versionNumber;
+    sfpmPackage.version = packageDefinition.version;
 
-    // In workspace mode, read packageOptions directly from the workspace package.json
-    // rather than from sfdx-project.json (which no longer carries them)
-    // TODO: Refactor to separate workspace vs legacy provider implementations so this special handling isn't needed
-    this.overlayWorkspacePackageOptions(packageDefinition, sfpmPackage);
-
-    // Resolve package ID from aliases for unlocked packages
+    // Resolve package ID from PackageDefinition or packageAliases for unlocked packages
     if (packageType === PackageType.Unlocked && sfpmPackage instanceof SfpmUnlockedPackage) {
-      const projectDef = this.provider.getProjectDefinition();
-      const packageId = projectDef.packageAliases?.[packageName];
+      const {packageId} = packageDefinition;
       if (packageId) {
         sfpmPackage.packageId = packageId;
       }
@@ -959,7 +952,7 @@ export class PackageFactory {
    */
   createFromPath(packagePath: string): SfpmPackage {
     const packageDefinition = this.provider.getPackageDefinitionByPath(packagePath);
-    return this.createFromName(packageDefinition.package);
+    return this.createFromName(packageDefinition.name);
   }
 
   /**
@@ -967,14 +960,15 @@ export class PackageFactory {
    * Returns undefined if the package is not found as a managed dependency.
    */
   createManagedRef(packageName: string): ManagedPackageRef | undefined {
-    const managedPackages = this.provider.getManagedPackages();
-    const managedDef = managedPackages.find(m => m.package === packageName);
-
-    if (!managedDef) {
-      return undefined;
+    // Look through all packages' managedDependencies for this package
+    const allPackages = this.provider.getAllPackageDefinitions();
+    for (const pkg of allPackages) {
+      if (pkg.managedDependencies?.[packageName]) {
+        return new ManagedPackageRef(packageName, pkg.managedDependencies[packageName]);
+      }
     }
 
-    return new ManagedPackageRef(packageName, managedDef.packageVersionId);
+    return undefined;
   }
 
   /**
@@ -990,12 +984,12 @@ export class PackageFactory {
    */
   isManagedPackage(packageName: string): boolean {
     const allPackages = this.provider.getAllPackageDefinitions();
-    if (allPackages.some(p => p.package === packageName)) {
+    if (allPackages.some(p => p.name === packageName || stripScope(p.name) === packageName)) {
       return false;
     }
 
-    const managedPackages = this.provider.getManagedPackages();
-    return managedPackages.some(m => m.package === packageName);
+    // Check if any package has this as a managedDependency
+    return allPackages.some(p => p.managedDependencies?.[packageName] !== undefined);
   }
 
   /**
@@ -1018,36 +1012,6 @@ export class PackageFactory {
     default: {
       throw new Error(`Unsupported package type: ${packageType}`);
     }
-    }
-  }
-
-  /**
-   * Detect workspace package.json and overlay packageOptions onto the PackageDefinition.
-   *
-   * In workspace mode, packageOptions lives in the package-scoped package.json
-   * (not in sfdx-project.json). This method finds the workspace package.json
-   * by walking up from the SF source path and merges packageOptions onto the
-   * existing PackageDefinition so all downstream consumers work unchanged.
-   */
-  private overlayWorkspacePackageOptions(packageDefinition: PackageDefinition, sfpmPackage: SfpmPackage): void {
-    const {projectDir} = this.provider;
-    const sourcePath = packageDefinition.path;
-    const parts = sourcePath.split('/');
-
-    // Walk up from the source path to find a package.json with sfpm config
-    for (let i = parts.length; i > 0; i--) {
-      const candidatePath = path.join(projectDir, ...parts.slice(0, i), 'package.json');
-      try {
-        if (fs.existsSync(candidatePath)) {
-          const pkgJson: WorkspacePackageJson = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
-          if (pkgJson.sfpm?.packageType && pkgJson.sfpm.packageOptions) {
-            packageDefinition.packageOptions = pkgJson.sfpm.packageOptions;
-            return;
-          }
-        }
-      } catch {
-        // Detection failed — continue to next candidate
-      }
     }
   }
 }

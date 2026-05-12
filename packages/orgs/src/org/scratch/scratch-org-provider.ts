@@ -1,6 +1,7 @@
 import {escapeSOQL, soql} from '@b64hub/sfpm-core';
 import {
   AuthInfo, Connection, Org, OrgTypes,
+  type ScratchOrgRequest,
 } from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
 
@@ -14,29 +15,9 @@ import {
   PasswordResult,
 } from '../types.js';
 import {
-  type ScratchOrg, type ScratchOrgCreateOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult,
+  DEFAULT_SCRATCH_ORG,
+  type PoolScratchOrgCreateResult, type ScratchOrg, type ScratchOrgInfoRecord,
 } from './types.js';
-
-/**
- * Raw ScratchOrgInfo record shape as returned from SOQL queries.
- *
- * Field names match the Salesforce `ScratchOrgInfo` SObject.
- * Custom fields (`Tag__c`, `Allocation_Status__c`, `Password__c`,
- * `Auth_Url__c`) are DevHub customizations required for pool operations.
- */
-export interface ScratchOrgInfoRecord {
-  Allocation_Status__c?: string;
-  Auth_Url__c?: string;
-  CreatedDate?: string;
-  ExpirationDate?: string;
-  Id?: string;
-  LoginUrl?: string;
-  ScratchOrg?: string;
-  SignupEmail?: string;
-  SignupUsername?: string;
-  Status?: string;
-  Tag__c?: string;
-}
 
 /**
  * Raw ActiveScratchOrg record shape as returned from SOQL queries.
@@ -57,6 +38,7 @@ export const SCRATCH_ORG_INFO_FIELDS: (keyof ScratchOrgInfoRecord)[] = [
   'Tag__c',
   'ScratchOrg',
   'Auth_Url__c',
+  'AuthCode',
   'SignupEmail',
   'SignupUsername',
 ];
@@ -69,6 +51,19 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
 ];
 
 /**
+ * Normalize a Salesforce ID to 15-char (case-sensitive) form.
+ *
+ * Salesforce IDs come in two flavours: 15-char (case-sensitive) and
+ * 18-char (case-insensitive, with a 3-char checksum suffix).
+ * `ScratchOrgInfo.ScratchOrg` stores 15-char IDs, while
+ * `scratchOrgCreate()` returns 18-char IDs. Truncating to 15 chars
+ * lets us match them reliably in JavaScript Map lookups.
+ */
+function to15CharId(id: string): string {
+  return id.slice(0, 15);
+}
+
+/**
  * Provider for managing scratch orgs in a pool.
  *
  * Queries `ScratchOrgInfo` and `ActiveScratchOrg` SObjects in the DevHub.
@@ -77,7 +72,7 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
  * Also provides DevHub-level utilities (email, alias, JWT config) that
  * are shared across providers but naturally live on the hub org.
  */
-export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateOptions> {
+export default class ScratchOrgProvider implements OrgProvider<ScratchOrgRequest> {
   private readonly conn;
   private readonly hubOrg;
 
@@ -102,34 +97,59 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     }
   }
 
-  async createOrg(options: ScratchOrgCreateOptions): Promise<PoolOrg> {
-    const request: ScratchOrgCreateRequest = {
-      alias: options.alias,
-      definitionFile: options.definitionFile,
-      durationDays: options.expiryDays ?? 7,
-      noAncestors: options.noAncestors,
-      noNamespace: false,
-      retries: options.retries ?? 0,
-      waitMinutes: options.waitMinutes ?? 6,
-    };
+  async cleanupOrgs(orgs: PoolOrg[]): Promise<void> {
+    const usernames = orgs.map(o => o.auth.username).filter(Boolean) as string[];
+    if (usernames.length === 0) return;
 
-    const result = await this.createScratchOrg(request);
+    try {
+      await Promise.all(usernames.map(async username => {
+        const scratchOrg = await Org.create({aliasOrUsername: username});
+        await scratchOrg.deleteFrom(this.hubOrg);
+      }));
+    } catch {
+      // Best-effort — swallow errors per interface contract
+    }
+  }
 
-    await setAlias(result.username, options.alias);
+  async createOrg(options: ScratchOrgRequest): Promise<PoolOrg> {
+    const result = await this.createScratchOrg({
+      ...options,
+      durationDays: options.durationDays ?? DEFAULT_SCRATCH_ORG.expiryDays,
+      noancestors: options.noancestors ?? DEFAULT_SCRATCH_ORG.noAncestors,
+      nonamespace: options.nonamespace ?? false,
+      retry: options.retry ?? DEFAULT_SCRATCH_ORG.maxRetries,
+      wait: options.wait ?? Duration.minutes(DEFAULT_SCRATCH_ORG.waitMinutes),
+    });
+    const username = result.username ?? '';
+    const orgId = result.authFields?.orgId ?? '';
+
+    if (options.alias) {
+      await setAlias(username, options.alias);
+    }
 
     const scratchOrg: ScratchOrg = {
       auth: {
         alias: options.alias,
-        loginUrl: result.loginUrl,
-        username: result.username,
+        loginUrl: result.authFields?.loginUrl ?? result.authFields?.instanceUrl ?? '',
+        username,
       },
-      orgId: result.orgId,
+      orgId,
       orgType: OrgTypes.Scratch,
     };
 
-    const passwordResult = await this.setPassword(scratchOrg.auth.username);
-    if (passwordResult.password) {
-      scratchOrg.auth.password = passwordResult.password;
+    // const passwordResult = await this.setPassword(username);
+    // if (passwordResult.password) {
+    //   scratchOrg.auth.password = passwordResult.password;
+    // }
+
+    // Use authInfo from the creation result to get the SFDX auth URL
+    try {
+      const authUrl = result.authInfo?.getSfdxAuthUrl();
+      if (authUrl) {
+        scratchOrg.auth.authUrl = authUrl;
+      }
+    } catch {
+      // Auth URL generation is best-effort; JWT fallback is available for scratch orgs
     }
 
     return scratchOrg;
@@ -153,7 +173,7 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     const conditions = [
       `Tag__c = '${escapedTag}'`,
       "Status = 'Active'",
-      String.raw`(Allocation_Status__c = 'Available' OR Allocation_Status__c = 'In Progress')`,
+      `(Allocation_Status__c = '${AllocationStatus.Available}' OR Allocation_Status__c = '${AllocationStatus.InProgress}')`,
     ];
 
     const username: string = this.hubOrg.getUsername()!;
@@ -167,16 +187,22 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
     return result.records.map(r => mapToScratchOrg(r));
   }
 
-  async getOrgsByTag(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
-    let query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE Tag__c = '${escapeSOQL(tag)}' AND Allocation_Status__c = 'Active'`;
+  async getOrgsByTag(tag?: string, myPool?: boolean): Promise<PoolOrg[]> {
+    const conditions = ["Status = 'Active'"];
+
+    if (tag) {
+      conditions.push(`Tag__c = '${escapeSOQL(tag)}'`);
+    } else {
+      conditions.push('Tag__c != null');
+    }
 
     const username: string = this.hubOrg.getUsername()!;
 
     if (myPool) {
-      query += ` AND CreatedById = '${escapeSOQL(username)}'`;
+      conditions.push(`CreatedById = '${escapeSOQL(username)}'`);
     }
 
-    query += ' ORDER BY CreatedDate DESC';
+    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE ${conditions.join(' AND ')} ORDER BY CreatedDate DESC`;
 
     const result = await this.conn.query<ScratchOrgInfoRecord>(query);
     const orgs = result.records.map(r => mapToScratchOrg(r));
@@ -205,22 +231,27 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
   async getRecordIds(orgs: PoolOrg[]): Promise<PoolOrg[]> {
     if (orgs.length === 0) return orgs;
 
+    const missingIds = orgs.filter(org => !org.recordId && org.orgId);
+    if (missingIds.length === 0) return orgs;
+
+    // Primary lookup: by orgId (ScratchOrg field).
+    // Normalize to 15-char keys — ScratchOrgInfo.ScratchOrg stores 15-char IDs
+    // while authFields.orgId from scratchOrgCreate() returns 18-char IDs.
     const orgIdMap = new Map<string, PoolOrg>();
-    for (const org of orgs) {
-      if (org.orgId) {
-        const shortId = org.orgId.slice(0, 15);
-        orgIdMap.set(shortId, org);
-      }
+    for (const org of missingIds) {
+      orgIdMap.set(to15CharId(org.orgId), org);
     }
 
-    const idList = [...orgIdMap.keys()].map(id => `'${id}'`).join(',');
+    const idList = [...orgIdMap.keys()].map(id => `'${escapeSOQL(id)}'`).join(',');
     const query = soql`SELECT Id, ScratchOrg FROM ScratchOrgInfo WHERE ScratchOrg IN (${idList})`;
     const result = await this.conn.query<{Id: string; ScratchOrg: string}>(query);
 
     for (const record of result.records) {
-      const org = orgIdMap.get(record.ScratchOrg);
-      if (org) {
-        org.recordId = record.Id;
+      if (record.ScratchOrg) {
+        const org = orgIdMap.get(to15CharId(record.ScratchOrg));
+        if (org) {
+          org.recordId = record.Id;
+        }
       }
     }
 
@@ -263,12 +294,17 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
 
     const updates = records.map(r => ({
       Allocation_Status__c: r.allocationStatus, // eslint-disable-line camelcase -- Salesforce custom field
+      Auth_Url__c: r.authUrl, // eslint-disable-line camelcase -- Salesforce custom field
       Id: r.id,
-      Password__c: r.password, // eslint-disable-line camelcase -- Salesforce custom field
       Tag__c: r.poolTag, // eslint-disable-line camelcase -- Salesforce custom field
     }));
 
-    await this.conn.sobject('ScratchOrgInfo').update(updates);
+    const results = await this.conn.sobject('ScratchOrgInfo').update(updates);
+    const failures = (Array.isArray(results) ? results : [results]).filter(r => !r.success);
+    if (failures.length > 0 && failures.length === updates.length) {
+      const errors = failures.flatMap(f => (f as {errors?: {message: string}[]}).errors?.map(e => e.message) ?? ['unknown error']);
+      throw new OrgError('update', `Failed to update pool metadata on all ${failures.length} record(s): ${errors.join('; ')}`);
+    }
   }
 
   async validate(): Promise<void> {
@@ -295,24 +331,28 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgCreateO
         {context: {existing: [...picklistValues], missing}},
       );
     }
+
+    const tagField = describe.fields.find(f => f.name === 'Tag__c');
+    if (!tagField) {
+      throw new OrgError(
+        'prerequisite',
+        'ScratchOrgInfo is missing the "Tag__c" custom field. '
+        + 'Deploy the sfpm pool custom fields to your DevHub before running pool operations.',
+      );
+    }
+
+    const authUrlField = describe.fields.find(f => f.name === 'Auth_Url__c');
+    if (!authUrlField) {
+      throw new OrgError(
+        'prerequisite',
+        'ScratchOrgInfo is missing the "Auth_Url__c" custom field. '
+        + 'Deploy the sfpm pool custom fields to your DevHub before running pool operations.',
+      );
+    }
   }
 
-  private async createScratchOrg(request: ScratchOrgCreateRequest): Promise<ScratchOrgCreateResult> {
-    const result = await this.hubOrg.scratchOrgCreate({
-      definitionfile: request.definitionFile,
-      durationDays: request.durationDays,
-      noancestors: request.noAncestors,
-      nonamespace: request.noNamespace,
-      retry: request.retries ?? 0,
-      wait: Duration.minutes(request.waitMinutes ?? 6),
-    });
-
-    return {
-      loginUrl: result.authFields?.loginUrl ?? result.authFields?.instanceUrl ?? '',
-      orgId: result.authFields?.orgId ?? '',
-      username: result.username ?? '',
-      warnings: result.warnings,
-    };
+  private async createScratchOrg(request: ScratchOrgRequest): Promise<PoolScratchOrgCreateResult> {
+    return this.hubOrg.scratchOrgCreate(request);
   }
 
   private async resolveActiveRecordIds(records: ScratchOrgInfoRecord[], orgs: ScratchOrg[]): Promise<void> {

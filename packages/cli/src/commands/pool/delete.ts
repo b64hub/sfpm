@@ -1,11 +1,11 @@
 import {createPoolServices} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
-import {Org, OrgTypes} from '@salesforce/core';
-import ora from 'ora';
+import {ConfigAggregator, OrgTypes} from '@salesforce/core';
 
 import type {OutputMode} from '../../ui/renderer-utils.js';
 
 import SfpmCommand from '../../sfpm-command.js';
+import {connectDevHub} from '../../ui/connect-devhub.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
 
 export default class PoolDelete extends SfpmCommand {
@@ -23,19 +23,28 @@ export default class PoolDelete extends SfpmCommand {
     'my-pool': Flags.boolean({description: 'only delete orgs created by the current user'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     tag: Flags.string({char: 't', description: 'pool tag to delete from', required: true}),
-    'target-dev-hub': Flags.string({char: 'v', description: 'target hub org username or alias', required: true}),
+    'target-dev-hub': Flags.string({
+      char: 'v',
+      async defaultHelp() {
+        try {
+          const configAggregator = await ConfigAggregator.create();
+          return configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
+        } catch {
+
+        }
+      },
+      description: 'target hub org username or alias',
+    }),
     type: Flags.string({
-      default: 'scratchOrg',
-      description: 'pool type: scratchOrg or sandbox',
-      options: ['scratchOrg', 'sandbox'],
+      default: OrgTypes.Scratch,
+      description: 'pool type: scratch or sandbox',
+      options: [OrgTypes.Scratch, OrgTypes.Sandbox],
     }),
   }
 
   public async execute(): Promise<void> {
     const {flags} = await this.parse(PoolDelete);
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
-
-    const spinner = mode === 'interactive' ? ora('Connecting to DevHub...').start() : undefined;
 
     const logger = {
       debug: (msg: string) => this.debug(msg),
@@ -47,13 +56,16 @@ export default class PoolDelete extends SfpmCommand {
     };
 
     try {
-      const devhub = await Org.create({aliasOrUsername: flags['target-dev-hub']});
+      const {devhub} = await connectDevHub({
+        alias: flags['target-dev-hub'],
+        mode,
+      });
+
       const {manager} = createPoolServices({
         devhub,
         logger,
         poolType: flags.type as OrgTypes,
       });
-      spinner?.succeed('Connected to hub org');
 
       const renderer = new PoolProgressRenderer({
         logger: {
@@ -64,10 +76,9 @@ export default class PoolDelete extends SfpmCommand {
       });
       renderer.attachToManager(manager);
 
-      const result = await manager.delete({
+      const result = await manager.delete(flags.tag, {
         inProgressOnly: flags['in-progress-only'],
         myPool: flags['my-pool'],
-        tag: flags.tag,
       });
 
       if (flags.json) {
@@ -80,8 +91,6 @@ export default class PoolDelete extends SfpmCommand {
 
       // Interactive summary already rendered by the renderer via events
     } catch (error) {
-      spinner?.fail('Failed');
-
       if (flags.json) {
         this.logJson({error: (error as Error).message, success: false});
       }

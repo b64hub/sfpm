@@ -1,8 +1,8 @@
-import { PoolOrg } from '../index.js';
+import {PoolOrg} from '../index.js';
 
-export {DEFAULT_SCRATCH_ORG, type ScratchOrgDefaults} from './scratch/types.js';
+export {DEFAULT_SCRATCH_ORG} from './scratch/types.js';
 export type {
-  ScratchOrgCreateOptions as CreateScratchOrgOptions, ScratchOrgCreateRequest, ScratchOrgCreateResult
+  ScratchOrgCreateResult,
 } from './scratch/types.js';
 
 /**
@@ -35,7 +35,6 @@ export interface JwtAuthConfig {
   privateKeyPath: string;
 }
 
-
 export interface DevHub {
   /**
    * Retrieve JWT auth configuration for the hub.
@@ -49,11 +48,9 @@ export interface DevHub {
   shareOrg(org: PoolOrg, options: ShareOrgOptions): Promise<void>;
 }
 
-
 export interface PasswordResult {
   password: string | undefined;
 }
-
 
 /**
  * Allocation status values for scratch orgs managed by a pool.
@@ -64,7 +61,7 @@ export enum AllocationStatus {
   Allocated = 'Allocated',
   Assigned = 'Assigned',
   Available = 'Available',
-  InProgress = 'In Progress',
+  InProgress = 'In_Progress',
   Return = 'Return',
 }
 
@@ -82,7 +79,6 @@ export interface ShareOrgOptions {
 export interface DevHubEvents {
   'org:share:complete': [payload: {emailAddress: string; timestamp: Date; username: string}];
 }
-
 
 /**
  * Error that occurs during org operations (create, delete, share, etc.).

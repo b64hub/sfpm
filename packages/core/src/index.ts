@@ -67,35 +67,38 @@ export {
   type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry, type BuildTask, RegisterBuilder,
 } from './package/builders/builder-registry.js';
 export {default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
-export {ENV_ALIAS_DEFAULT_DIR, type EnvAliasResolution, EnvAliasResolver} from './package/env-alias-resolver.js';
 export {
   type Installer, type InstallerConstructor, type InstallerExecResult, InstallerRegistry, RegisterInstaller,
 } from './package/installers/installer-registry.js';
+export {default as SourceDeployer} from './package/installers/strategies/source-deployer.js';
 export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
+export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from './package/org-alias-resolver.js';
 export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
-export {PackageCreator} from './package/package-creator.js';
+export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
 export {
   type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
 } from './package/services/validation-poller.js';
-export {type EnvAliasable, isEnvAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage} from './package/sfpm-package.js';
-export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export {
-  collectPackageAliases, stripScope, toManagedPackageDefinitions, toPackageDefinition,
-} from './project/package-json-adapter.js';
+  isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
+} from './package/sfpm-package.js';
+export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
 export {
-  type ClassifiedDependencies,
-  type PackageDependency,
   type ProjectDefinitionProvider,
   type ProjectDefinitionResult,
   type ResolveForPackageOptions,
 } from './project/providers/project-definition-provider.js';
+export {
+  fromSalesforceProjectJson, toSalesforceProjectJson,
+} from './project/providers/sfdx-project-adapter.js';
 export {SfdxProjectProvider} from './project/providers/sfdx-project-provider.js';
+export * from './project/providers/types/workspace.js';
+export {toPackageDefinition} from './project/providers/workspace-adapter.js';
 export {type WorkspaceProviderOptions as WorkspaceDefinitionProviderOptions, WorkspaceProvider} from './project/providers/workspace-provider.js';
 export * from './project/version-manager.js';
 export {
@@ -103,7 +106,6 @@ export {
 } from './project/workspace-init.js';
 export {WorkspaceSync, type WorkspaceSyncOptions} from './project/workspace-sync.js';
 export * from './types/artifact.js';
-export * from './types/bootstrap.js';
 export * from './types/build-state.js';
 export * from './types/config.js';
 export * from './types/errors.js';
@@ -114,10 +116,10 @@ export * from './types/npm.js';
 export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
-export * from './types/workspace.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
 export {getPipelineRunId} from './utils/pipeline.js';
+export {resolvePackageName, stripScope} from './utils/scope-utils.js';
 export {escapeSOQL, soql} from './utils/soql.js';
 export {
   formatVersion, getVersionSuffix, stripBuildSegment, toSalesforceVersionWithToken, toVersionFormat,

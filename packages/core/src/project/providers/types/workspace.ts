@@ -11,22 +11,12 @@
  * exclusively to the artifact's package.json by the build pipeline.
  */
 
-import type {PackageType} from './package.js';
-import type {
-  PackageDir, PackageOptions,
-} from './project.js';
+import type {PackageType} from '../../../types/package.js';
+import type {PackageOptions} from '../../../types/project.js';
 
 // ---------------------------------------------------------------------------
 // package.json `sfpm` field — static configuration (committed to repo)
 // ---------------------------------------------------------------------------
-
-/**
- * The named package variant of PackageDir (the one with `package` and `versionNumber`).
- * PackageDir is a union of a simple `{path}` variant and a full package variant;
- * Extract narrows to the variant that carries SF packaging fields like
- * `ancestorId`, `definitionFile`, `seedMetadata`, etc.
- */
-type NamedPackageDir = Extract<PackageDir, {package: string; versionNumber: string}>;
 
 /**
  * The `sfpm` property in a workspace member's package.json.
@@ -34,11 +24,6 @@ type NamedPackageDir = Extract<PackageDir, {package: string; versionNumber: stri
  * Contains only **static configuration** that describes the SF package.
  * Build results (apex analysis, packageVersionId, coverage) are NOT stored here —
  * they are written to the artifact's package.json by the build pipeline.
- *
- * Extends the named PackageDir variant (which carries SF packaging fields like
- * `ancestorId`, `definitionFile`, `seedMetadata`, `unpackagedMetadata`, etc.),
- * omitting fields that are managed by the package.json itself (`package`,
- * `versionNumber`) or overridden with SFPM semantics (`path`).
  *
  * @example
  * ```json
@@ -48,14 +33,24 @@ type NamedPackageDir = Extract<PackageDir, {package: string; versionNumber: stri
  *   "sfpm": {
  *     "packageType": "unlocked",
  *     "path": "force-app",
- *     "packageOptions": { "deploy": { "isTriggerAllTests": true } }
+ *     "packageOptions": { "install": { "testLevel": "RunLocalTests" } }
  *   }
  * }
  * ```
  */
-export interface SfpmPackageConfig extends Omit<NamedPackageDir, 'package' | 'path' | 'seedMetadata' | 'unpackagedMetadata' | 'versionNumber'> {
+export interface SfpmPackageConfig {
+  default?: boolean;
+  /** Whether this is an org-dependent unlocked package. */
   isOrgDependent?: boolean;
-  /** Salesforce package ID (0Ho prefix) resolved from packageAliases */
+  /**
+   * Metadata dependencies with relative paths to seed and unpackaged metadata directories.
+   * Paths are relative to the package directory.
+   */
+  metadataDependencies?: {
+    seed?: string;
+    unpackaged?: string;
+  };
+  /** Salesforce package ID (0Ho prefix) */
   packageId?: string;
   /** Per-package build, deploy, and hook configuration */
   packageOptions?: PackageOptions;
@@ -67,10 +62,6 @@ export interface SfpmPackageConfig extends Omit<NamedPackageDir, 'package' | 'pa
    * like `"force-app"` or `"main/default"`.
    */
   path?: string;
-  /** Relative path to the seed metadata directory (resolved to `{path}` object during sync) */
-  seedMetadata?: string;
-  /** Relative path to the unpackaged metadata directory (resolved to `{path}` object during sync) */
-  unpackagedMetadata?: string;
 }
 
 // ---------------------------------------------------------------------------

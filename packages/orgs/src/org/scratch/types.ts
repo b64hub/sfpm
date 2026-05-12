@@ -1,5 +1,10 @@
-import { OrgTypes } from '@salesforce/core';
+import {OrgTypes, type ScratchOrgCreateResult, type ScratchOrgInfo} from '@salesforce/core';
+
 import type {PoolOrg} from '../pool-org.js';
+
+export type {
+  AuthFields, OrgTypes, ScratchOrgCreateResult, ScratchOrgInfo, ScratchOrgRequest,
+} from '@salesforce/core';
 
 /**
  * A scratch org managed by a pool.
@@ -13,80 +18,30 @@ export interface ScratchOrg extends PoolOrg {
 }
 
 /**
- * Pool-level options for creating a scratch org.
+ * ScratchOrgInfo record with pool-specific custom fields.
  *
- * Used by `ScratchOrgProvider.createOrg()`. Maps to `ScratchOrgCreateRequest`
- * internally but uses pool-friendly terminology (e.g., `expiryDays` instead
- * of `durationDays`).
+ * Extends the SDK's `ScratchOrgInfo` type with DevHub custom fields
+ * required for pool operations (`Tag__c`, `Allocation_Status__c`, `Auth_Url__c`).
  */
-export interface ScratchOrgCreateOptions {
-  /** Local alias for the scratch org */
-  alias: string;
-  /** Path to the scratch org definition file */
-  definitionFile: string;
-  /** Number of days until the org expires */
-  expiryDays?: number;
-  /** Whether to exclude ancestor versions */
-  noAncestors?: boolean;
-  /** Max retries on transient failures */
-  retries?: number;
-  /** Max minutes to wait for creation */
-  waitMinutes?: number;
+export interface ScratchOrgInfoRecord extends ScratchOrgInfo {
+  Allocation_Status__c?: string;
+  Auth_Url__c?: string;
+  Tag__c?: string;
 }
 
 /**
- * SDK-level configuration for creating a scratch org.
+ * SDK `ScratchOrgCreateResult` narrowed so that `scratchOrgInfo`
+ * includes our pool-specific custom fields.
  *
- * @internal
+ * The DevHub returns these fields at runtime — this type makes them
+ * visible to TypeScript without redefining the entire SDK result.
  */
-export interface ScratchOrgCreateRequest {
-  /** Local alias for the scratch org */
-  alias: string;
-  /** Path to the scratch org definition file */
-  definitionFile: string;
-  /** Number of days until the org expires */
-  durationDays: number;
-  /** Whether to exclude ancestor versions */
-  noAncestors?: boolean;
-  /** Whether to exclude namespace from the org */
-  noNamespace?: boolean;
-  /** Number of retries on transient failures */
-  retries?: number;
-  /** Max minutes to wait for org creation */
-  waitMinutes?: number;
-}
-
-/**
- * Result returned from the hub after scratch org creation.
- */
-export interface ScratchOrgCreateResult {
-  loginUrl: string;
-  orgId: string;
-  username: string;
-  warnings?: string[];
-}
-
-/**
- * Scratch org creation defaults used when provisioning orgs for a pool.
- *
- * These settings control how individual scratch orgs are created.
- * They can be overridden per-invocation via `CreateScratchOrgOptions`.
- */
-export interface ScratchOrgDefaults {
-  /** Path to the scratch org definition file (e.g., `config/project-scratch-def.json`) */
-  definitionFile: string;
-  /** Number of days until scratch orgs expire (default: 7) */
-  expiryDays?: number;
-  /** Max retries on transient creation failures (default: 3) */
-  maxRetries?: number;
-  /** Whether to exclude ancestor package versions (default: false) */
-  noAncestors?: boolean;
-  /** Max minutes to wait for org creation (default: 6) */
-  waitMinutes?: number;
-}
+export type PoolScratchOrgCreateResult = Omit<ScratchOrgCreateResult, 'scratchOrgInfo'> & {
+  scratchOrgInfo?: ScratchOrgInfoRecord;
+};
 
 /** Default scratch org creation settings. */
-export const DEFAULT_SCRATCH_ORG: Required<Pick<ScratchOrgDefaults, 'expiryDays' | 'maxRetries' | 'noAncestors' | 'waitMinutes'>> = {
+export const DEFAULT_SCRATCH_ORG = {
   expiryDays: 7,
   maxRetries: 3,
   noAncestors: false,

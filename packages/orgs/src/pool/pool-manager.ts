@@ -17,15 +17,15 @@ import {
   type PoolOrgLoggerFactory,
   type PoolOrgTask,
   type PoolOrgTaskResult,
-  type PoolSizingConfig,
+  type PoolSize,
 } from './types.js';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-/** Default concurrency when batchSize is not configured. */
-const DEFAULT_CONCURRENCY = DEFAULT_POOL_SIZING.batchSize;
+/** Default concurrency when batch is not configured. */
+const DEFAULT_CONCURRENCY = DEFAULT_POOL_SIZING.batch;
 
 // ============================================================================
 // Pool Manager Types
@@ -172,10 +172,10 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * Factors in the current pool count, DevHub remaining capacity,
    * and the pool's configured max allocation.
    */
-  public async computeAllocation(config: PoolConfig): Promise<PoolAllocation> {
+  public async computeAllocation(tag: string, config: PoolConfig): Promise<PoolAllocation> {
     const [remaining, activeCount] = await Promise.all([
       this.provider.getRemainingCapacity(),
-      this.provider.getActiveCountByTag(config.tag),
+      this.provider.getActiveCountByTag(tag),
     ]);
 
     const allocation = computeOrgAllocation(remaining, activeCount, config.sizing);
@@ -183,11 +183,11 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     this.emit('pool:allocation:computed', {
       currentAllocation: activeCount,
       remaining,
-      tag: config.tag,
+      tag,
       toAllocate: allocation.toAllocate,
     });
 
-    this.logger?.info(`Pool "${config.tag}": current=${activeCount}, remaining=${remaining}, toAllocate=${allocation.toAllocate}`);
+    this.logger?.info(`Pool "${tag}": current=${activeCount}, remaining=${remaining}, toAllocate=${allocation.toAllocate}`);
 
     return allocation;
   }
@@ -196,16 +196,16 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * Delete scratch orgs from a pool.
    *
    * Queries all orgs matching the pool tag, optionally filtering to
-   * only 'In Progress' orgs or orgs owned by the current user. Each
-   * matching org with a valid `recordId` is deleted via the provider.
+   * only 'In_Progress' orgs or orgs owned by the current user. Each
+   * matching org with a valid `orgId` is deleted via the provider.
    *
    * @param options - Tag, filter, and ownership options
    * @returns Summary of deleted orgs and any errors
    * @throws {OrgError} When `poolOrgSource` was not provided at construction
    */
-  public async delete(options: PoolDeleteOptions): Promise<PoolDeleteResult> {
+  public async delete(tag: string, options?: PoolDeleteOptions): Promise<PoolDeleteResult> {
     const startTime = Date.now();
-    const {inProgressOnly, myPool, tag} = options;
+    const {inProgressOnly, myPool} = options ?? {};
 
     this.logger?.info(`Querying pool "${tag}" for orgs to delete...`);
 
@@ -214,7 +214,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     // 2. Apply status filter
     if (inProgressOnly) {
-      orgs = orgs.filter(org => org.pool?.status === 'In Progress');
+      orgs = orgs.filter(org => org.pool?.status === AllocationStatus.InProgress);
     }
 
     if (orgs.length === 0) {
@@ -289,8 +289,8 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * @param myPool - When true, only return orgs created by the current user
    * @returns All pool orgs with metadata populated
    */
-  public async list(tag: string, myPool?: boolean): Promise<PoolOrg[]> {
-    this.logger?.info(`Listing orgs for pool "${tag}"...`);
+  public async list(tag?: string, myPool?: boolean): Promise<PoolOrg[]> {
+    this.logger?.info(`Listing orgs for pool${tag ? ` "${tag}"` : ''}...`);
     return this.provider.getOrgsByTag(tag, myPool);
   }
 
@@ -306,30 +306,31 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    *
    * @throws {OrgError} When zero orgs could be provisioned
    */
-  public async provision(config: PoolConfig): Promise<PoolProvisionResult> {
-    const concurrency = config.sizing.batchSize ?? DEFAULT_CONCURRENCY;
+  public async provision(tag: string, config: PoolConfig): Promise<PoolProvisionResult> {
+    const concurrency = config.sizing.batch ?? DEFAULT_CONCURRENCY;
     const startTime = Date.now();
 
     // 0. Validate prerequisites
     await this.validatePrerequisites();
 
     // 1. Compute allocation
-    const allocation = await this.computeAllocation(config);
+    const allocation = await this.computeAllocation(tag, config);
 
     if (allocation.toAllocate === 0) {
-      return this.handleZeroAllocation(config, allocation, startTime);
+      return this.handleZeroAllocation(tag, config, allocation, startTime);
     }
 
     this.emit('pool:provision:start', {
-      tag: config.tag,
+      tag,
       timestamp: new Date(),
       toAllocate: allocation.toAllocate,
     });
 
-    this.logger?.info(`Provisioning ${allocation.toAllocate} scratch org(s) for pool "${config.tag}"...`);
+    this.logger?.info(`Provisioning ${allocation.toAllocate} scratch org(s) for pool "${tag}"...`);
 
     // 2. Create scratch orgs with concurrency limit
     const results = await this.createOrgsWithConcurrency(
+      tag,
       config,
       allocation.toAllocate,
       concurrency,
@@ -344,7 +345,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     if (succeeded.length === 0) {
       throw new OrgError('create', 'All scratch org provisioning attempts failed', {
-        context: {errors, tag: config.tag},
+        context: {errors, tag},
       });
     }
 
@@ -353,26 +354,44 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     if (validOrgs.length === 0) {
       throw new OrgError('create', 'All provisioned orgs were found to be inactive', {
-        context: {tag: config.tag},
+        context: {tag},
       });
     }
 
     // 4. Fetch record IDs and register in pool
-    const registeredOrgs = await this.registerInPool(validOrgs, config.tag);
+    const registeredOrgs = await this.registerInPool(validOrgs, tag);
 
-    // 5. Run preparation tasks on provisioned orgs
+    // 5. Clean up orgs that were created but couldn't be registered
+    const orphanedOrgs = validOrgs.filter(org => !org.recordId);
+    if (orphanedOrgs.length > 0) {
+      this.logger?.warn(`${orphanedOrgs.length} org(s) created but not registered — cleaning up`);
+      await this.cleanupOrphanedOrgs(orphanedOrgs);
+    }
+
+    // 6. Run preparation tasks on provisioned orgs
     let taskResults: OrgTaskSummary[] | undefined;
     if (this.tasks.length > 0) {
-      taskResults = await this.runTasksOnOrgs(registeredOrgs, concurrency);
+      taskResults = await this.runTasksOnOrgs(registeredOrgs);
+    }
+
+    // 7. Mark successfully prepared orgs as Available
+    const availableOrgs = await this.markOrgsAvailable(registeredOrgs, tag, taskResults);
+
+    // 8. Clean up orgs where tasks failed (stuck In_Progress)
+    if (taskResults) {
+      const failedOrgs = registeredOrgs.filter(org => !availableOrgs.includes(org) && org.recordId);
+      if (failedOrgs.length > 0) {
+        await this.cleanupFailedOrgs(failedOrgs, tag);
+      }
     }
 
     const elapsedMs = Date.now() - startTime;
     const result: PoolProvisionResult = {
       elapsedMs,
       errors,
-      failed: allocation.toAllocate - registeredOrgs.length,
-      succeeded: registeredOrgs,
-      tag: config.tag,
+      failed: allocation.toAllocate - availableOrgs.length,
+      succeeded: availableOrgs,
+      tag,
       taskResults,
     };
 
@@ -390,9 +409,29 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * @throws {OrgError} When prerequisites are not met
    */
   public async validatePrerequisites(): Promise<void> {
-    this.logger?.debug('Validating DevHub prerequisites...');
+    this.logger?.debug('Validating devhub prerequisites...');
     await this.provider.validate();
     this.logger?.debug('Prerequisites validated');
+  }
+
+  /**
+   * Build batch definitions for org creation.
+   * @param count The total number of orgs to create.
+   * @param concurrency The maximum number of orgs to create concurrently.
+   * @returns An array of batches, each containing org aliases and their indices.
+   */
+  private buildBatchDefinitions(count: number, concurrency: number): Array<{alias: string; index: number;}[]> {
+    const batches: Array<{alias: string; index: number;}[]> = [];
+    for (let batchStart = 0; batchStart < count; batchStart += concurrency) {
+      const batchEnd = Math.min(batchStart + concurrency, count);
+      const batch = Array.from({length: batchEnd - batchStart}, (_, i) => ({
+        alias: `SO${batchStart + i + 1}`,
+        index: batchStart + i,
+      }));
+      batches.push(batch);
+    }
+
+    return batches;
   }
 
   /**
@@ -404,26 +443,67 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   private buildCreateOptions(config: PoolConfig, alias: string): OrgCreateOptions {
     if (config.type === OrgTypes.Sandbox) {
       return {
-        activationUserGroupName: config.sandbox.groupName,
         alias,
-        apexClassId: config.sandbox.apexClassId,
-        autoActivate: config.sandbox.autoActivate,
-        licenseType: config.sandbox.licenseType,
-        retries: config.sandbox.maxRetries,
-        sandboxName: `${config.sandbox.namePattern}${alias.replaceAll(/\D/g, '')}`,
-        sourceSandboxName: config.sandbox.sourceSandboxName,
-        waitMinutes: config.sandbox.waitMinutes,
+        definitionFile: config.definitionFile,
+        namePattern: config.namePattern,
+        waitMinutes: config.waitMinutes,
       };
     }
 
     return {
       alias,
-      definitionFile: config.scratchOrg.definitionFile,
-      expiryDays: config.scratchOrg.expiryDays,
-      noAncestors: config.scratchOrg.noAncestors,
-      retries: config.scratchOrg.maxRetries,
-      waitMinutes: config.scratchOrg.waitMinutes,
+      definitionfile: config.definitionFile,
+      durationDays: config.expiryDays,
+      noancestors: config.noAncestors,
+      retry: config.maxRetries,
     };
+  }
+
+  private async cleanupFailedOrgs(orgs: PoolOrg[], tag: string): Promise<void> {
+    this.logger?.info(`Cleaning up ${orgs.length} org(s) that failed tasks in pool "${tag}"`);
+
+    const undeleted: PoolOrg[] = [];
+
+    for (const org of orgs) {
+      try {
+        // eslint-disable-next-line no-await-in-loop -- sequential deletion avoids overwhelming the DevHub API
+        await this.provider.deleteOrgs([org.recordId!]);
+
+        this.emit('pool:org:deleted', {
+          timestamp: new Date(),
+          username: org.auth.username!,
+        });
+
+        this.logger?.debug(`Deleted failed org ${org.auth.username}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger?.warn(`Failed to delete org ${org.auth.username ?? org.recordId}: ${message}`);
+        undeleted.push(org);
+      }
+    }
+
+    // Fallback: mark undeleted orgs as Available rather than leaving them stuck In_Progress.
+    // A partially prepared org is preferable to a permanently orphaned one.
+    if (undeleted.length > 0) {
+      this.logger?.warn(`Marking ${undeleted.length} undeleted org(s) as Available to prevent In_Progress leak`);
+      try {
+        await this.markOrgsAvailable(undeleted, tag);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger?.error(`Failed to mark orgs as Available — orgs may be stuck as In_Progress: ${message}`);
+      }
+    }
+  }
+
+  private async cleanupOrphanedOrgs(orgs: PoolOrg[]): Promise<void> {
+    try {
+      if (this.provider.cleanupOrgs) {
+        await this.provider.cleanupOrgs(orgs);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn(`Failed to clean up ${orgs.length} orphaned org(s): ${message}`);
+    }
   }
 
   /**
@@ -438,27 +518,17 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * concurrency control without any external dependencies.
    */
   private async createOrgsWithConcurrency(
+    tag: string,
     config: PoolConfig,
     count: number,
     concurrency: number,
   ): Promise<OrgProvisionResult[]> {
-    // Build all batch definitions up front
-    const batches: Array<{alias: string; index: number;}[]> = [];
-    for (let batchStart = 0; batchStart < count; batchStart += concurrency) {
-      const batchEnd = Math.min(batchStart + concurrency, count);
-      const batch = Array.from({length: batchEnd - batchStart}, (_, i) => ({
-        alias: `SO${batchStart + i + 1}`,
-        index: batchStart + i,
-      }));
-      batches.push(batch);
-    }
-
-    // Process batches sequentially, each batch runs in parallel
+    const batches: Array<{alias: string; index: number;}[]> = this.buildBatchDefinitions(count, concurrency);
     const allResults: OrgProvisionResult[] = [];
 
     for (const batch of batches) {
       const batchPromises = batch.map(({alias, index}) =>
-        this.createSingleOrg(config, alias, index, count));
+        this.createSingleOrg(tag, config, alias, index, count));
       // eslint-disable-next-line no-await-in-loop -- intentional sequential batching for API rate limits
       const settled = await Promise.allSettled(batchPromises);
       const results = settled.map(s =>
@@ -469,11 +539,16 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     return allResults;
   }
 
+  // --------------------------------------------------------------------------
+  // Private helpers
+  // --------------------------------------------------------------------------
+
   /**
    * Create a single org and return the result.
    * Never throws — returns an `OrgProvisionResult` with error info on failure.
    */
   private async createSingleOrg(
+    tag: string,
     config: PoolConfig,
     alias: string,
     index: number,
@@ -483,7 +558,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       const createOptions = this.buildCreateOptions(config, alias);
       const org = await this.provider.createOrg(createOptions);
 
-      org.pool = {status: AllocationStatus.InProgress, tag: config.tag, timestamp: Date.now()};
+      org.pool = {status: AllocationStatus.InProgress, tag, timestamp: Date.now()};
 
       this.emit('pool:org:created', {
         alias,
@@ -496,9 +571,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const timedOut = message.includes('timed out');
-      const waitMinutes = config.type === OrgTypes.Scratch
-        ? config.scratchOrg.waitMinutes
-        : config.sandbox.waitMinutes;
+      const {waitMinutes} = config;
 
       this.emit('pool:org:failed', {
         alias,
@@ -517,10 +590,6 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       return {error: message, timedOut};
     }
   }
-
-  // --------------------------------------------------------------------------
-  // Private helpers
-  // --------------------------------------------------------------------------
 
   /**
    * Execute a single task, catching errors so one task can't crash
@@ -541,12 +610,13 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   }
 
   private handleZeroAllocation(
+    tag: string,
     config: PoolConfig,
     allocation: PoolAllocation,
     startTime: number,
   ): PoolProvisionResult {
     const reason = allocation.remaining > 0
-      ? `Pool "${config.tag}" is at maximum capacity (${config.sizing.maxAllocation})`
+      ? `Pool "${tag}" is at maximum capacity (${config.sizing.max})`
       : 'No remaining scratch org capacity on the DevHub';
 
     this.logger?.info(reason);
@@ -556,13 +626,58 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       errors: [reason],
       failed: 0,
       succeeded: [],
-      tag: config.tag,
+      tag,
     };
   }
 
   // --------------------------------------------------------------------------
   // Private — Task execution
   // --------------------------------------------------------------------------
+
+  /**
+   * Transition orgs from In_Progress to Available after tasks complete.
+   *
+   * When tasks are configured, only orgs where all tasks succeeded are
+   * marked Available. Orgs with failed tasks remain In_Progress (visible
+   * in `pool list` but not claimable by `getAvailableByTag`).
+   *
+   * When no tasks are configured, all orgs are marked Available.
+   */
+  private async markOrgsAvailable(
+    orgs: PoolOrg[],
+    tag: string,
+    taskResults?: OrgTaskSummary[],
+  ): Promise<PoolOrg[]> {
+    // Determine which orgs succeeded
+    let successfulOrgs: PoolOrg[];
+    if (taskResults) {
+      const succeededUsernames = new Set(taskResults.filter(r => r.success).map(r => r.username));
+      successfulOrgs = orgs.filter(org => succeededUsernames.has(org.auth.username));
+    } else {
+      successfulOrgs = orgs;
+    }
+
+    if (successfulOrgs.length === 0) {
+      this.logger?.warn('No orgs to mark as Available — all tasks failed');
+      return [];
+    }
+
+    const records: PoolOrgRecord[] = successfulOrgs
+    .filter(org => org.recordId)
+    .map(org => ({
+      allocationStatus: AllocationStatus.Available as const,
+      authUrl: org.auth.authUrl,
+      id: org.recordId!,
+      poolTag: tag,
+    }));
+
+    if (records.length > 0) {
+      await this.provider.updatePoolMetadata(records);
+      this.logger?.info(`Marked ${records.length} org(s) as Available in pool "${tag}"`);
+    }
+
+    return successfulOrgs;
+  }
 
   /**
    * Fetch record IDs from the DevHub and update pool metadata.
@@ -575,14 +690,14 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     .filter(org => org.recordId)
     .map(org => ({
       allocationStatus: AllocationStatus.InProgress as const,
+      authUrl: org.auth.authUrl,
       id: org.recordId!,
-      password: org.auth.password,
       poolTag: tag,
     }));
 
     if (records.length > 0) {
       await this.provider.updatePoolMetadata(records);
-      this.logger?.debug(`Registered ${records.length} org(s) in pool "${tag}"`);
+      this.logger?.debug(`Registered ${records.length} org(s) in pool "${tag}" as In_Progress`);
     }
 
     return enrichedOrgs.filter(org => org.recordId);
@@ -593,24 +708,18 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    *
    * Each org gets a scoped logger from the `PoolOrgLoggerFactory`.
    * Tasks run sequentially per org (order matters — deploy before
-   * scripts), but multiple orgs are processed in parallel up to
+   * scripts), but multiple orgs are processed concurrently up to
    * `concurrency`.
+   *
+   * Uses a worker-pool pattern: `concurrency` workers pull orgs from
+   * a shared queue. As soon as one org finishes, the next starts —
+   * unlike the org-creation phase which uses rigid sequential batches
+   * (required by Salesforce API limits), task execution benefits from
+   * filling slots immediately.
    */
-  private async runTasksOnOrgs(
-    orgs: PoolOrg[],
-    concurrency: number,
-  ): Promise<OrgTaskSummary[]> {
+  private async runTasksOnOrgs(orgs: PoolOrg[]): Promise<OrgTaskSummary[]> {
     this.logger?.info(`Running ${this.tasks.length} task(s) on ${orgs.length} org(s)...`);
-
-    const summaries: OrgTaskSummary[] = [];
-
-    // Process orgs in batches (same pattern as org creation)
-    for (let i = 0; i < orgs.length; i += concurrency) {
-      const batch = orgs.slice(i, i + concurrency);
-      // eslint-disable-next-line no-await-in-loop -- intentional sequential batching for API rate limits
-      const batchResults = await Promise.all(batch.map(org => this.runTasksOnSingleOrg(org)));
-      summaries.push(...batchResults);
-    }
+    const summaries = await Promise.all(orgs.map(org => this.runTasksOnSingleOrg(org)));
 
     // Clean up logger factory resources
     if (this.loggerFactory?.dispose) {
@@ -674,7 +783,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     return {
       results,
-      success: results.every(r => r.success),
+      success: results.every((r, i) => r.success || this.tasks[i].continueOnError),
       username: org.auth.username!,
     };
   }
@@ -754,9 +863,9 @@ export interface PoolAllocation {
 export function computeOrgAllocation(
   remainingScratchOrgs: number,
   currentActiveCount: number,
-  sizing: PoolSizingConfig,
+  sizing: PoolSize,
 ): PoolAllocation {
-  const toSatisfyMax = Math.max(0, sizing.maxAllocation - currentActiveCount);
+  const toSatisfyMax = Math.max(0, sizing.max - currentActiveCount);
 
   let toAllocate = 0;
   if (toSatisfyMax > 0) {
@@ -776,7 +885,7 @@ export function computeOrgAllocation(
 // ============================================================================
 
 /** Silent logger used when no logger or factory is provided. */
-const noop = (): void => {};
+const noop = (): void => { };
 const noopLogger: Logger = {
   debug: noop,
   error: noop,

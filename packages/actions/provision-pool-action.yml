@@ -17,11 +17,11 @@ inputs:
     description: 'Maximum number of orgs to allocate'
     required: true
   pool-type:
-    description: 'Pool type: scratchOrg or sandbox (default: scratchOrg)'
+    description: 'Pool type: scratch or sandbox (default: scratch)'
     required: false
-    default: 'scratchOrg'
+    default: 'scratch'
   definition-file:
-    description: 'Scratch org definition file path (required for scratch org pools)'
+    description: 'Org definition file path (scratch org or sandbox)'
     required: false
   expiry-days:
     description: 'Scratch org expiry in days (default: 7)'
@@ -29,17 +29,8 @@ inputs:
   batch-size:
     description: 'Max concurrent org creations (default: 5)'
     required: false
-  license-type:
-    description: 'Sandbox license type: DEVELOPER, DEVELOPER PRO, FULL, PARTIAL'
-    required: false
   sandbox-name-pattern:
     description: 'Sandbox name prefix (e.g., SB → SB1, SB2, ...)'
-    required: false
-  source-sandbox:
-    description: 'Source sandbox name to clone from'
-    required: false
-  group-name:
-    description: 'Sandbox activation user group name'
     required: false
 
 outputs:

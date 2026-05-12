@@ -1,6 +1,31 @@
-import { SandboxDefaults } from "./org/sandbox/types.js";
-import { ScratchOrgDefaults } from "./org/scratch/types.js";
-import { PoolConfig } from "./pool/types.js";
+import type {PoolConfig, SandboxPoolConfig, ScratchOrgPoolConfig} from './pool/types.js';
+
+import {DEFAULT_SANDBOX} from './org/sandbox/types.js';
+import {DEFAULT_SCRATCH_ORG} from './org/scratch/types.js';
+
+/**
+ * Pool config as written in `sfpm.config.ts`.
+ *
+ * `definitionFile` is optional here because it can be inherited from
+ * the global `scratch` / `sandbox` defaults on `OrgConfig`.
+ */
+export type PoolConfigInput
+  = | Omit<SandboxPoolConfig, 'definitionFile'> & {definitionFile?: string}
+    | Omit<ScratchOrgPoolConfig, 'definitionFile'> & {definitionFile?: string};
+
+/**
+ * Global defaults for scratch org pools (shared across all scratch pools).
+ *
+ * `type` is omitted — it's implied by the property name.
+ */
+export type ScratchOrgDefaults = Omit<Partial<ScratchOrgPoolConfig>, 'type'>;
+
+/**
+ * Global defaults for sandbox pools (shared across all sandbox pools).
+ *
+ * `type` is omitted — it's implied by the property name.
+ */
+export type SandboxDefaults = Omit<Partial<SandboxPoolConfig>, 'type'>;
 
 /**
  * Org-level configuration that plugs into `sfpm.config.ts`.
@@ -17,42 +42,81 @@ import { PoolConfig } from "./pool/types.js";
  * export default defineConfig({
  *   hooks: [],
  *   orgs: defineOrgConfig({
- *     scratchOrg: {
+ *     scratch: {
  *       definitionFile: 'config/project-scratch-def.json',
  *       expiryDays: 7,
  *     },
- *     pool: {
- *       tag: 'dev-pool',
- *       sizing: { maxAllocation: 10, minAllocation: 2 },
+ *     sandbox: {
+ *       definitionFile: 'config/sandbox-def.json',
+ *     },
+ *     pools: {
+ *       dev: {
+ *         type: 'scratch',
+ *         sizing: { max: 10, min: 2 },
+ *       },
  *     },
  *   }),
  * });
  * ```
  */
 export interface OrgConfig {
-  /** Default network settings applied to all provisioned orgs */
-  network?: PoolConfig['network'];
+  /** Pool configuration(s) keyed by tag. */
+  pools?: {[tag: string]: PoolConfigInput};
 
-  /** Pool configuration(s). A single pool or an array of named pools. */
-  pool?: PoolConfig | PoolConfig[];
+  /** Global defaults for sandbox pools (type omitted — implied) */
+  sandbox?: SandboxDefaults;
 
-  scratchOrg?: Partial<ScratchOrgDefaults>;
-  sandbox?: Partial<SandboxDefaults>;
+  /** Global defaults for scratch org pools (type omitted — implied) */
+  scratch?: ScratchOrgDefaults;
 }
 
 /**
- * Identity function for type-safe org configuration authoring.
+ * Enrich org configuration with domain defaults and resolve pool entries.
+ *
+ * 1. Merges `DEFAULT_SCRATCH_ORG` / `DEFAULT_SANDBOX` into the global
+ *    `scratch` / `sandbox` sections.
+ * 2. For each pool entry, merges: domain defaults → global type defaults
+ *    → pool-specific overrides — producing a fully resolved `PoolConfig`.
+ *
+ * The returned config can be passed directly to `PoolManager.provision()`
+ * without any further merging by callers.
  *
  * @example
  * ```typescript
  * import { defineOrgConfig } from '@b64hub/sfpm-orgs';
  *
  * const orgs = defineOrgConfig({
- *   scratchOrg: { definitionFile: 'config/project-scratch-def.json' },
- *   pool: { tag: 'dev', sizing: { maxAllocation: 10 } },
+ *   scratch: {
+ *     definitionFile: 'config/project-scratch-def.json',
+ *   },
+ *   pools: {
+ *     dev: {
+ *       type: 'scratch',
+ *       sizing: { max: 10 },
+ *     },
+ *   },
  * });
+ *
+ * // orgs.pools.dev.definitionFile === 'config/project-scratch-def.json'
+ * // orgs.pools.dev.expiryDays === 7  (from DEFAULT_SCRATCH_ORG)
  * ```
  */
-export function defineOrgConfig(config: OrgConfig): OrgConfig {
-  return config;
+export function defineOrgConfig(config: OrgConfig): {[tag: string]: PoolConfig} {
+  const scratch: ScratchOrgDefaults = {...DEFAULT_SCRATCH_ORG, ...config.scratch};
+  const sandbox: SandboxDefaults = {...DEFAULT_SANDBOX, ...config.sandbox};
+
+  const pools: {[tag: string]: PoolConfig} = {};
+  for (const [tag, pool] of Object.entries(config.pools ?? {})) {
+    const isSandbox = pool.type === 'sandbox';
+    const typeDefaults = isSandbox ? sandbox : scratch;
+
+    pools[tag] = {
+      ...typeDefaults,
+      ...pool,
+      definitionFile: pool.definitionFile ?? typeDefaults.definitionFile!,
+      sizing: {...typeDefaults.sizing, ...pool.sizing},
+    } as PoolConfig;
+  }
+
+  return pools;
 }

@@ -51,6 +51,7 @@ export default class SourceDeployer {
     }
 
     const deploy = await componentSet.deploy(deployOptions);
+    const deployId = deploy.id;
 
     // Track deployment progress
     deploy.onUpdate(response => {
@@ -64,21 +65,25 @@ export default class SourceDeployer {
       this.emitProgress(packageName, status, percentComplete);
     });
 
-    // Wait for deployment to complete
-    const result = await deploy.pollStatus();
+    try {
+      // Wait for deployment to complete
+      // SDR's pollStatus already handles transient connection errors
+      // (ECONNRESET, ETIMEDOUT, socket hang up, etc.) with up to 1000 retries.
+      const result = await deploy.pollStatus();
 
-    if (!result.response.success) {
-      const failures = result.response.details?.componentFailures;
-      const failuresArray = Array.isArray(failures) ? failures : failures ? [failures] : [];
-      const errorMessages = failuresArray
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DeployMessage shape varies across SDR versions
-      .map((failure: any) => `${failure.fullName}: ${failure.problem}`)
-      .join('\n') || 'Unknown deployment error';
+      if (!result.response.success) {
+        const failures = result.response.details?.componentFailures;
+        const failuresArray = Array.isArray(failures) ? failures : failures ? [failures] : [];
+        const errorMessages = failuresArray
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DeployMessage shape varies across SDR versions
+        .map((failure: any) => `${failure.fullName}: ${failure.problem}`)
+        .join('\n') || 'Unknown deployment error';
 
-      throw new Error(`Source deployment failed:\n${errorMessages}`);
+        throw new Error(`Source deployment failed:\n${errorMessages}`);
+      }
+    } catch (error) {
+      await this.handleDeployFailure(error, deployId, packageName, targetOrg);
     }
-
-    const deployId = result.response.id;
 
     this.emitComplete(packageName, true);
     this.logger?.info('Source deployment completed successfully');
@@ -108,6 +113,72 @@ export default class SourceDeployer {
       packageName,
       timestamp: new Date(),
     });
+  }
+
+  /**
+   * Handle a failed deployment by checking server-side status.
+   *
+   * If SDR's polling exhausted its retry limit or the connection dropped
+   * permanently, we reconnect and verify whether the deploy actually succeeded.
+   *
+   * Returns normally only when the deployment succeeded server-side.
+   * Throws in all other cases.
+   */
+  private async handleDeployFailure(
+    error: unknown,
+    deployId: string | undefined,
+    packageName: string,
+    targetOrg: string,
+  ): Promise<void> {
+    if (!deployId) {
+      throw error;
+    }
+
+    try {
+      this.logger?.debug(`Deploy polling failed for ${packageName}, verifying server-side status (deploy ${deployId})...`);
+
+      // Reconnect — the original connection may be dead
+      const org = await Org.create({aliasOrUsername: targetOrg});
+      const freshConnection = org.getConnection();
+      const status = await freshConnection.metadata.checkDeployStatus(deployId, true);
+
+      if (status.success) {
+        this.logger?.info('Source deployment succeeded server-side despite client error');
+        return;
+      }
+
+      if (status.done) {
+        // Deployment finished but failed
+        const failures = status.details?.componentFailures;
+        const failuresArray = Array.isArray(failures) ? failures : failures ? [failures] : [];
+        const errorMessages = failuresArray
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((failure: any) => `${failure.fullName}: ${failure.problem}`)
+        .join('\n') || 'Unknown deployment error';
+        throw new Error(`Source deployment failed:\n${errorMessages}`, {cause: error});
+      }
+
+      // Still in progress
+      const msg = [
+        `Source deployment for ${packageName} was interrupted but is still in progress on the server.`,
+        '',
+        `  Deploy ID: ${deployId}`,
+        `  Status: ${status.status}`,
+        '',
+        'Check status with:',
+        `  sf project deploy report -i ${deployId} -o ${targetOrg}`,
+      ].join('\n');
+
+      this.logger?.error(msg);
+      throw new Error(msg, {cause: error});
+    } catch (verifyError) {
+      if (verifyError instanceof Error && verifyError.cause === error) {
+        throw verifyError;
+      }
+
+      this.logger?.debug(`Could not verify deploy status: ${verifyError instanceof Error ? verifyError.message : String(verifyError)}`);
+      throw error;
+    }
   }
 }
 

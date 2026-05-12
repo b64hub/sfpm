@@ -1,11 +1,11 @@
 import {createPoolServices, type PoolOrg} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {printTable} from '@oclif/table';
-import {Org, type OrgTypes} from '@salesforce/core';
-import chalk from 'chalk';
+import {ConfigAggregator, OrgTypes} from '@salesforce/core';
 import ora from 'ora';
 
 import SfpmCommand from '../../sfpm-command.js';
+import {connectDevHub} from '../../ui/connect-devhub.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
 
 export default class PoolList extends SfpmCommand {
@@ -20,12 +20,23 @@ export default class PoolList extends SfpmCommand {
     json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
     'my-pool': Flags.boolean({description: 'only show orgs created by the current user'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
-    tag: Flags.string({char: 't', description: 'pool tag to query', required: true}),
-    'target-dev-hub': Flags.string({char: 'v', description: 'target hub org username or alias', required: true}),
+    tag: Flags.string({char: 't', description: 'pool tag to query (omit to list all pools)'}),
+    'target-dev-hub': Flags.string({
+      char: 'v',
+      async defaultHelp() {
+        try {
+          const configAggregator = await ConfigAggregator.create();
+          return configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined;
+        } catch {
+
+        }
+      },
+      description: 'target hub org username or alias',
+    }),
     type: Flags.string({
-      default: 'scratchOrg',
-      description: 'pool type: scratchOrg or sandbox',
-      options: ['scratchOrg', 'sandbox'],
+      default: OrgTypes.Scratch,
+      description: 'pool type: scratch or sandbox',
+      options: [OrgTypes.Scratch, OrgTypes.Sandbox],
     }),
   }
 
@@ -33,23 +44,24 @@ export default class PoolList extends SfpmCommand {
     const {flags} = await this.parse(PoolList);
     const mode = flags.json ? 'json' as const : flags.quiet ? 'quiet' as const : 'interactive' as const;
 
-    const spinner = mode === 'interactive' ? ora('Connecting to devhub...').start() : undefined;
-
     try {
-      const devhub = await Org.create({aliasOrUsername: flags['target-dev-hub']});
+      const {devhub} = await connectDevHub({
+        alias: flags['target-dev-hub'],
+        mode,
+      });
+
       const {manager} = createPoolServices({
         devhub,
         poolType: flags.type as OrgTypes,
       });
-      spinner?.succeed('Connected to devhub');
 
-      const querySpinner = mode === 'interactive' ? ora(`Fetching orgs for pool "${flags.tag}"...`).start() : undefined;
+      const querySpinner = mode === 'interactive' ? ora(`Fetching orgs${flags.tag ? ` for pool "${flags.tag}"` : ''}...`).start() : undefined;
       const orgs = await manager.list(flags.tag, flags['my-pool']);
-      querySpinner?.succeed(`Found ${orgs.length} org(s)`);
+      querySpinner?.succeed(`Found ${orgs.length} org(s) ${flags.tag ? `in pool "${flags.tag}"` : ''}`);
 
       if (flags.json) {
         this.logJson({
-          data: orgs, success: true, tag: flags.tag, total: orgs.length,
+          data: orgs, success: true, tag: flags.tag ?? 'all', total: orgs.length,
         });
         return;
       }
@@ -59,36 +71,16 @@ export default class PoolList extends SfpmCommand {
           logger: {error: (msg: Error | string) => this.error(msg), log: (msg: string) => this.log(msg)},
           mode,
         });
-        renderer.renderOrgList(orgs, flags.tag);
-
-        if (orgs.length > 0) {
-          this.renderTable(orgs);
-        }
+        renderer.renderOrgList(orgs, flags.tag ?? 'all');
       }
     } catch (error) {
-      spinner?.fail('Failed to connect to devhub');
+      if (flags.json) {
+        this.logJson({error: (error as Error).message, success: false});
+        return;
+      }
+
       throw error;
     }
-  }
-
-  private renderTable(orgs: PoolOrg[]): void {
-    printTable({
-      borderStyle: 'headers-only-with-underline',
-      columns: [
-        {key: 'username', name: 'Username'},
-        {key: 'alias', name: 'Alias'},
-        {key: 'status', name: 'Status'},
-        {key: 'expiryDate', name: 'Expires'},
-        {key: 'loginURL', name: 'Login URL'},
-      ],
-      data: orgs.map(org => ({
-        alias: org.auth.alias ?? '',
-        expiryDate: org.expiry ? new Date(org.expiry).toISOString().split('T')[0] : '',
-        loginURL: org.auth.loginUrl ?? '',
-        status: org.pool?.status ?? '',
-        username: org.auth.username ?? '',
-      })),
-    });
   }
 }
 

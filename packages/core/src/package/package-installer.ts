@@ -9,26 +9,45 @@ import type {ProjectDefinitionProvider} from '../project/providers/project-defin
 
 import {ArtifactService, InstallTarget} from '../artifacts/artifact-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
+import {ArtifactResolutionOptions} from '../types/artifact.js';
 import {HookContext} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
-import {InstallationMode, InstallationSource, PackageType} from '../types/package.js';
+import {
+  InstallationMode, InstallationSource, PackageType, type TestLevel,
+} from '../types/package.js';
 import {Installer, InstallerRegistry} from './installers/installer-registry.js';
 import {ManagedPackageRef} from './installers/types.js';
 import {PackageService} from './package-service.js';
-import SfpmPackage, {isEnvAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage} from './sfpm-package.js';
 // Import installers to trigger registration
 import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
 import './installers/managed-package-installer.js';
+import SfpmPackage, {
+  isOrgAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage,
+} from './sfpm-package.js';
 
 export interface InstallOptions {
+  artifact?: {
+    resolution?: Omit<ArtifactResolutionOptions, 'version'>;
+    /**
+     * Whether to update artifact records in the target org after installation.
+     * When true (default), upserts `Sfpm_Artifact__c` and creates an
+     * `Sfpm_Artifact_History__c` record (gracefully skipped if the object
+     * is not deployed to the org).
+     *
+     * @default true
+     */
+    update?: boolean;
+  }
+
+  deployment?: {
+    /**
+     * Salesforce test level for source deployments.
+     */
+    testLevel?: TestLevel;
+  };
   /** Force reinstall even if already installed with matching version/hash */
   force?: boolean;
-  /** Force refresh from npm registry (bypass TTL cache) */
-  forceRefresh?: boolean;
-  installationKey?: string;
-  /** Only use local artifacts, don't check npm registry */
-  localOnly?: boolean;
   /**
    * Set specific installation mode (mainly for unlocked packages, overrides auto-detection).
    */
@@ -37,17 +56,10 @@ export interface InstallOptions {
    * Where to install from: 'local' (project source) or 'artifact'.
    */
   source?: InstallationSource;
+
   targetOrg: string;
-  /**
-   * Salesforce test level for source deployments.
-   * Valid values: NoTestRun, RunSpecifiedTests, RunLocalTests, RunAllTestsInOrg
-   */
-  testLevel?: string;
-  /**
-   * When true, creates an `Sfpm_Artifact_History__c` record after each artifact upsert.
-   * Read from `sfpmConfig.artifacts?.trackHistory` and passed through by the CLI/Actions layer.
-   */
-  trackHistory?: boolean;
+
+  versionInstall?: {installationKeys?: {[packageName: string]: string}};
 }
 
 export interface InstallResult {
@@ -150,7 +162,7 @@ export default class PackageInstaller extends EventEmitter {
       logger: this.logger,
       operation: 'install',
       org: this.org,
-      packageAliases: projectDefinition.packageAliases ?? {},
+      packageAliases: {},
       packageName,
       packagePath,
       packageType,
@@ -163,7 +175,7 @@ export default class PackageInstaller extends EventEmitter {
 
   private emitComplete(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
     this.emit('install:complete', {
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       source: installTarget.resolved.source,
       success: true,
@@ -176,7 +188,7 @@ export default class PackageInstaller extends EventEmitter {
   private emitError(sfpmPackage: SfpmPackage, error: Error): void {
     this.emit('install:error', {
       error: error instanceof Error ? error.message : String(error),
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       targetOrg: this.options.targetOrg,
       timestamp: new Date(),
@@ -234,7 +246,7 @@ export default class PackageInstaller extends EventEmitter {
 
   private emitSkip(sfpmPackage: SfpmPackage, reason: string): void {
     this.emit('install:skip', {
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       reason,
       targetOrg: this.options.targetOrg,
@@ -246,7 +258,7 @@ export default class PackageInstaller extends EventEmitter {
   private emitStart(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
     this.emit('install:start', {
       installReason: installTarget.installReason,
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       source: installTarget.resolved.source,
       targetOrg: this.options.targetOrg,
@@ -301,13 +313,13 @@ export default class PackageInstaller extends EventEmitter {
       sfpmPackage.workingDirectory = this.provider.projectDir;
     }
 
-    // Handle env-aliased packages: resolve the correct source directory
-    await this.resolveEnvAliasForDeploy(sfpmPackage);
+    // Handle org-aliased packages: resolve the correct source directory
+    await this.resolveOrgAliasForDeploy(sfpmPackage);
 
     this.logger?.info(`Deploying ${packageName} from local source`);
     this.emit('install:start', {
       installReason: 'source deploy',
-      packageName: sfpmPackage.packageName,
+      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       source: InstallationSource.Local,
       targetOrg: this.options.targetOrg,
@@ -326,7 +338,7 @@ export default class PackageInstaller extends EventEmitter {
 
       const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
         source: InstallationSource.Local,
-        testLevel: this.options.testLevel,
+        testLevel: this.options.deployment?.testLevel,
       });
       this.forwardInstallerEvents(installer, packageName);
 
@@ -334,7 +346,7 @@ export default class PackageInstaller extends EventEmitter {
       const execResult = await installer.exec();
 
       this.emit('install:complete', {
-        packageName: sfpmPackage.packageName,
+        packageName: sfpmPackage.name,
         packageType: sfpmPackage.type as PackageType,
         source: InstallationSource.Local,
         success: true,
@@ -454,8 +466,7 @@ export default class PackageInstaller extends EventEmitter {
       this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
     }
 
-    const {npmName} = sfpmPackage;
-    if (!npmName) {
+    if (!packageName) {
       throw new Error(`Package "${packageName}" has no npm name. `
         + 'In workspace mode, this is set from the package.json "name" field. '
         + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
@@ -468,12 +479,8 @@ export default class PackageInstaller extends EventEmitter {
 
     const installTarget = await artifactService.resolveInstallTarget(
       sfpmPackage.projectDirectory,
-      sfpmPackage.packageName,
-      {
-        forceRefresh: this.options.forceRefresh,
-        localOnly: this.options.localOnly,
-        npmName,
-      },
+      packageName,
+      this.options.artifact?.resolution,
     );
 
     this.updatePackageFromTarget(sfpmPackage, installTarget);
@@ -508,7 +515,7 @@ export default class PackageInstaller extends EventEmitter {
 
       const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
         source: this.options.source,
-        testLevel: this.options.testLevel,
+        testLevel: this.options.deployment?.testLevel,
       });
 
       // Forward sub-events (connection:*, deployment:*, version-install:*) from the
@@ -518,10 +525,8 @@ export default class PackageInstaller extends EventEmitter {
       await installer.connect(this.options.targetOrg);
       const execResult = await installer.exec();
 
-      await artifactService.upsertArtifact(sfpmPackage);
-
-      // Create history record when opt-in tracking is enabled
-      if (this.options.trackHistory) {
+      if (this.options.artifact?.update !== false) {
+        await artifactService.upsertArtifact(sfpmPackage);
         await artifactService.createHistoryRecord(sfpmPackage, {
           deployId: execResult.deployId,
         });
@@ -548,24 +553,24 @@ export default class PackageInstaller extends EventEmitter {
   }
 
   /**
-   * For env-aliased packages, resolve the env alias on the package and
+   * For org-aliased packages, resolve the org alias on the package and
    * update its working directory so that `packageDirectory` (and by
-   * extension `getComponentSet()`) points at the env-specific content.
+   * extension `getComponentSet()`) points at the org-specific content.
    *
    * Creates a staging directory where `packageDefinition.path` resolves
-   * to the env-specific content, preserving the path structure expected
+   * to the org-specific content, preserving the path structure expected
    * by downstream consumers.
    */
-  private async resolveEnvAliasForDeploy(sfpmPackage: SfpmPackage): Promise<void> {
-    if (!isEnvAliasable(sfpmPackage) || !sfpmPackage.isEnvAliased) return;
+  private async resolveOrgAliasForDeploy(sfpmPackage: SfpmPackage): Promise<void> {
+    if (!isOrgAliasable(sfpmPackage) || !sfpmPackage.isOrgAliased) return;
 
-    const resolution = await sfpmPackage.resolveEnvAlias(this.options.targetOrg, this.logger);
-    this.logger?.info(`Env alias resolved for ${sfpmPackage.packageName}: alias='${resolution.resolvedAlias}', matched=${resolution.matched}`);
+    const resolution = await sfpmPackage.resolveOrgAlias(this.options.targetOrg, this.logger);
+    this.logger?.info(`Org alias resolved for ${sfpmPackage.name}: alias='${resolution.resolvedAlias}', matched=${resolution.matched}`);
 
     // Create a staging root where path.join(stagingRoot, packageDefinition.path)
-    // contains the resolved env-specific metadata
-    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.packageName);
-    const stagingRoot = path.join(os.tmpdir(), 'sfpm-env-alias', sfpmPackage.name, resolution.resolvedAlias);
+    // contains the resolved org-specific metadata
+    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.name);
+    const stagingRoot = path.join(os.tmpdir(), 'sfpm-org-alias', sfpmPackage.name, resolution.resolvedAlias);
     const stagingPackagePath = path.join(stagingRoot, packageDefinition.path);
 
     await fs.remove(stagingPackagePath);
@@ -586,17 +591,17 @@ export default class PackageInstaller extends EventEmitter {
    * appended so the result points to the actual metadata directory, not just
    * the project/artifact root.
    *
-   * For env-aliased packages, uses the package's resolved env alias path
-   * (set by a prior call to {@link SfpmPackage.resolveEnvAlias}).
+   * For org-aliased packages, uses the package's resolved org alias path
+   * (set by a prior call to {@link SfpmPackage.resolveOrgAlias}).
    */
   private resolvePackageSourceDir(sfpmPackage: SfpmPackage): string {
-    // If env alias was resolved, use the effective path directly
-    if (isEnvAliasable(sfpmPackage) && sfpmPackage.envAliasResolution) {
-      return sfpmPackage.envAliasResolution.effectivePath;
+    // If org alias was resolved, use the effective path directly
+    if (isOrgAliasable(sfpmPackage) && sfpmPackage.orgAliasResolution) {
+      return sfpmPackage.orgAliasResolution.effectivePath;
     }
 
     const root = sfpmPackage.workingDirectory ?? this.provider.projectDir;
-    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.packageName);
+    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.name);
     return path.join(root, packageDefinition.path);
   }
 

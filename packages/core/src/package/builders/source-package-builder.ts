@@ -65,7 +65,7 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
 
   private handleApexTestClasses(sfpmPackage: SfpmSourcePackage) {
     if (sfpmPackage.hasApex && sfpmPackage.testClasses.length === 0) {
-      sfpmPackage.isTriggerAllTests = true;
+      sfpmPackage.testLevel = 'RunLocalTests';
     }
   }
 }

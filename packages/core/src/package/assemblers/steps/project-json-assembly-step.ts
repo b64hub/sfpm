@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
-import ProjectService from '../../../project/project-service.js';
+import {toSalesforceProjectJson} from '../../../project/providers/sfdx-project-adapter.js';
 import {Logger} from '../../../types/logger.js';
 import {PackageType} from '../../../types/package.js';
 import {PackageDefinition} from '../../../types/project.js';
@@ -23,7 +23,8 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
  *
  * It also:
  * 1. Injects the provided version number.
- * 2. Rewrites supplemental metadata paths relative to the staging area.
+ * 2. Rewrites supplemental metadata paths relative to the staging root
+ *    (i.e. relative to sfdx-project.json).
  * 3. Archives the original project manifest for reference.
  */
 export class ProjectJsonAssemblyStep implements AssemblyStep {
@@ -38,39 +39,13 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
       const packageDefinition = this.provider.resolveForPackage(this.packageName);
 
       if (options.versionNumber) {
-        (packageDefinition.packageDirectories[0] as PackageDefinition).versionNumber = toVersionFormat(options.versionNumber, 'salesforce');
+        packageDefinition.packages[0].version = toVersionFormat(options.versionNumber, 'salesforce');
       }
 
-      const pkg = packageDefinition.packageDirectories[0] as PackageDefinition;
+      const pkg = packageDefinition.packages[0];
 
-      // Rewrite supplemental metadata paths relative to sfdx-project.json (staging root)
-      const unpackagedMetadataDir = path.join(output.stagingDirectory, 'unpackagedMetadata');
-      if (await fs.pathExists(unpackagedMetadataDir)) {
-        pkg.unpackagedMetadata = {path: 'unpackagedMetadata'};
-      }
-
-      const seedMetadataDir = path.join(output.stagingDirectory, 'seedMetadata');
-      if (await fs.pathExists(seedMetadataDir)) {
-        pkg.seedMetadata = {path: 'seedMetadata'};
-      }
-
-      const projectJsonPath = path.join(output.stagingDirectory, 'sfdx-project.json');
-      await fs.writeJson(projectJsonPath, packageDefinition, {spaces: 4});
-      output.projectDefinitionPath = projectJsonPath;
-
-      // Count components now that the full staging directory structure is complete.
-      // Data packages contain data files (CSV, JSON) rather than Salesforce metadata,
-      // so ComponentSet would report 0. Count actual files instead.
-      const packageType = this.provider.getPackageDefinition(this.packageName).type?.toLowerCase();
-      if (packageType === PackageType.Data) {
-        const files = await fg(['**/*'], {
-          cwd: output.stagingDirectory, dot: false, ignore: ['sfdx-project.json', 'manifests/**'], onlyFiles: true,
-        });
-        output.componentCount = files.length;
-      } else {
-        const componentSet = await ComponentSet.fromSource(output.stagingDirectory);
-        output.componentCount = componentSet.size;
-      }
+      output.projectDefinitionPath = await this.writeProjectDefinition(packageDefinition, pkg, output.stagingDirectory, output);
+      output.componentCount = await this.countComponents(pkg.type || PackageType.Managed, output.stagingDirectory);
 
       const manifestsDir = path.join(output.stagingDirectory, 'manifests');
       await fs.ensureDir(manifestsDir);
@@ -81,5 +56,53 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
     } catch (error) {
       throw new Error(`[ProjectJsonAssemblyStep] ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Count components now that the full staging directory structure is complete.
+   * Data packages contain data files (CSV, JSON) rather than Salesforce metadata,
+   * so ComponentSet would report 0. Count actual files instead.
+   */
+  private async countComponents(packageType: PackageType, stagingDir: string): Promise<number> {
+    if (packageType === PackageType.Data) {
+      const files = await fg(['**/*'], {
+        cwd: stagingDir, dot: false, ignore: ['sfdx-project.json', 'manifests/**'], onlyFiles: true,
+      });
+      return files.length;
+    }
+
+    const componentSet = await ComponentSet.fromSource(stagingDir);
+    return componentSet.size;
+  }
+
+  /**
+   * Rewrite supplemental metadata paths relative to the staging root
+   * (where sfdx-project.json lives) and write the full project definition.
+   *
+   * @returns path to the staged sfdx-project.json
+   */
+  private async writeProjectDefinition(
+    packageDefinition: ReturnType<ProjectDefinitionProvider['resolveForPackage']>,
+    pkg: PackageDefinition,
+    stagingDir: string,
+    output: AssemblyOutput,
+  ): Promise<string> {
+    // Use staged metadata paths set by MetadataDependenciesStep
+    if (output.metadataPaths?.unpackaged) {
+      if (!pkg.metadataDependencies) pkg.metadataDependencies = {} as any;
+      (pkg.metadataDependencies as any).unpackaged = output.metadataPaths.unpackaged;
+    }
+
+    if (output.metadataPaths?.seed) {
+      if (!pkg.metadataDependencies) pkg.metadataDependencies = {} as any;
+      (pkg.metadataDependencies as any).seed = output.metadataPaths.seed;
+    }
+
+    // Convert to SF format for sfdx-project.json output
+    const sfProjectJson = toSalesforceProjectJson(packageDefinition);
+    const projectJsonPath = path.join(stagingDir, 'sfdx-project.json');
+    await fs.writeJson(projectJsonPath, sfProjectJson, {spaces: 4});
+
+    return projectJsonPath;
   }
 }

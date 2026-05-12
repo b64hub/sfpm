@@ -29,6 +29,7 @@ vi.mock('../../../src/artifacts/artifact-service.js', () => ({
                 },
             }),
             upsertArtifact: vi.fn().mockResolvedValue(undefined),
+            createHistoryRecord: vi.fn().mockResolvedValue(undefined),
         }),
     },
 }));
@@ -187,7 +188,11 @@ describe('PackageInstaller', () => {
             expect(mockInstallerConstructor).toHaveBeenCalledWith(
                 'testOrg',
                 mockPackage,
-                mockLogger
+                mockLogger,
+                expect.objectContaining({
+                    source: undefined,
+                    testLevel: undefined,
+                }),
             );
         });
 

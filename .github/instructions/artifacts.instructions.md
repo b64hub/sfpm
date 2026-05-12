@@ -47,101 +47,46 @@ Inside `artifact.zip`:
 
 ## Version Number Patterns
 
-### Version Format Boundaries
+### Canonical Format: Semver
 
-**IMPORTANT:** There are two different version number formats used in this project:
+`PackageDefinition.version` is **always semver** (e.g. `1.2.0`). This is the version stored in:
+- Workspace `package.json` files (source of truth in workspace mode)
+- `PackageDefinition.version` throughout the codebase
+- Artifact metadata and npm packages
 
-1. **Salesforce Format** (used in sfdx-project.json): `major.minor.patch.build`
-   - Example: `1.0.0.NEXT`, `1.0.0.1`, `1.0.0.0`
-   - Uses **dot** (`.`) as separator for all segments
-   - Required by Salesforce CLI and APIs
+### Salesforce Format (Adapter Concern)
 
-2. **npm Format** (used in artifacts): `major.minor.patch-build`
-   - Example: `1.0.0-1`, `1.0.0-abc123`
-   - Uses **hyphen** (`-`) to separate build number
-   - Compatible with semantic versioning (semver)
-   - Used for npm publishing and artifact storage
+Salesforce APIs require a 4-part version: `major.minor.patch.build`. The conversion between semver and Salesforce format is handled exclusively by the `sfdx-project-adapter`:
 
-**Conversion happens during build process:**
-- **Input:** `sfdx-project.json` with Salesforce format (`1.0.0.NEXT` or `1.0.0.0`)
-- **Output:** Artifact with npm format (`1.0.0-1` or `1.0.0-123`)
+| SFPM (semver) | SF Format (write) | SF Format (read) |
+|---------------|-------------------|-------------------|
+| `1.0.0` | `1.0.0.NEXT` (unlocked) / `1.0.0.0` (source/data) | `1.0.0.NEXT` → `1.0.0` |
+| `1.0.0-5` | `1.0.0.5` | `1.0.0.5` → `1.0.0-5` |
 
-### In sfdx-project.json
+**Key rule:** The `VersionManager` works purely in semver space. It never sees `.NEXT` or `.LATEST`. The adapter handles SF conversion only when writing `sfdx-project.json`.
 
-Version number format depends on package type:
+```typescript
+// version-utils.ts entry point
+toSalesforceVersionWithToken(version: string, packageType): string
+// "1.0.0" + unlocked → "1.0.0.NEXT"
+// "1.0.0" + source   → "1.0.0.0"
 
-**Unlocked Packages** - Use `.NEXT` as placeholder for development:
-
-```json
-{
-  "packageDirectories": [
-    {
-      "path": "force-app",
-      "package": "MyUnlockedPackage",
-      "versionNumber": "1.0.0.NEXT",
-      "type": "unlocked"
-    }
-  ]
-}
-```
-
-**Source Packages** (and other non-unlocked types) - Use `.0` as placeholder:
-
-```json
-{
-  "packageDirectories": [
-    {
-      "path": "force-app",
-      "package": "MySourcePackage",
-      "versionNumber": "1.0.0.0",
-      "type": "source"
-    }
-  ]
-}
+stripBuildSegment(version: string): string
+// "1.0.0.NEXT" → "1.0.0"
+// "1.0.0-7"    → "1.0.0"
 ```
 
 ### In Artifacts
 
-Build process converts Salesforce format to npm format:
+Build process assigns concrete build numbers:
 
-**Unlocked packages:**
-- `1.0.0.NEXT` (Salesforce) → `1.0.0-1` (npm) - first build
-- `1.0.0.NEXT` (Salesforce) → `1.0.0-2` (npm) - second build
-- Build number comes from Salesforce package creation
-
-**Source packages** (and other types):
-- `1.0.0.0` (Salesforce) → `1.0.0-<nonce>` (npm)
-- Build identifier can be timestamp, random nonce, or sequential number
-- Not tied to Salesforce's build number system
-- Example: `1.0.0-abc123`, `1.0.0-1674567890`
+- **Unlocked packages:** `1.0.0` → `1.0.0-<buildNumber>` (Salesforce-assigned)
+- **Source/data packages:** `1.0.0` → `1.0.0-<nonce>` (SFPM-assigned, timestamp or sequential)
 
 ### Version Resolution Priority
 
-When loading a package, resolve version in this order:
-
-1. **Artifact metadata** (if artifacts exist) - Shows actual built version
-2. **sfdx-project.json** - Shows `.NEXT` (unlocked) or `.0` (source/other) for development
-
-```typescript
-// In PackageInstaller
-const artifactInfo = artifactService.getLocalArtifactInfo(projectDir, packageName);
-if (artifactInfo.version) {
-    package.version = artifactInfo.version; // Use artifact version (e.g., "1.0.0-1" or "1.0.0-abc123")
-}
-// Otherwise uses version from sfdx-project.json (e.g., "1.0.0.NEXT" or "1.0.0.0")
-```
-
-### Package Type Specific Handling
-
-**Unlocked Packages:**
-- Development version: `1.0.0.NEXT`
-- Build version: `1.0.0-<buildNumber>` (Salesforce managed)
-- Uses packageVersionId (04t...) for installation
-
-**Source Packages:**
-- Development version: `1.0.0.0`
-- Build version: `1.0.0-<nonce>` (SFPM managed)
-- Always deployed as source, no packageVersionId
+1. **Artifact metadata** (if artifacts exist) — shows actual built version with build number
+2. **PackageDefinition.version** — base semver without build number
 
 ## Reading Artifact Metadata
 
@@ -201,30 +146,27 @@ Use **archiver** for creating zips (handles symlinks, deterministic timestamps).
 ### Core Identity Properties
 
 ```typescript
+// From PackageDefinition (canonical source)
 interface PackageIdentity {
-    packageName: string;           // Required
-    versionNumber?: string;         // Optional (may be .NEXT)
-    version?: string;               // Resolved actual version
-    packageVersionId?: string;      // 04t... (unlocked packages only)
+    name: string;              // Scoped npm name: "@b64/sfpm-artifact"
+    version: string;           // Semver: "1.2.0"
+    packageId?: string;        // Package2 ID: "0Ho..." (unlocked only)
+    packageVersionId?: string; // Subscriber version: "04t..." (set during build)
 }
 ```
 
-### Setting packageVersionId
+The `packageVersionId` (04t) is a **build artifact** — it's set by the Salesforce package version creation process and stored in artifact metadata. It is NOT stored in `PackageDefinition` or `package.json`.
 
-Only set when:
-1. Artifacts exist locally
-2. Artifact metadata can be extracted
-3. Package is unlocked type
+### Name Conventions
 
-```typescript
-// In PackageInstaller
-if (sfpmPackage instanceof SfpmUnlockedPackage && artifactInfo.metadata) {
-    const unlockedIdentity = artifactInfo.metadata.identity as any;
-    if (unlockedIdentity?.packageVersionId) {
-        sfpmPackage.packageVersionId = unlockedIdentity.packageVersionId;
-    }
-}
-```
+| Context | Format | Example |
+|---------|--------|---------|
+| `PackageDefinition.name` | Scoped npm | `@b64/sfpm-artifact` |
+| DevHub Package2 name | Unscoped | `sfpm-artifact` |
+| sfdx-project.json `package` | Unscoped | `sfpm-artifact` |
+| npm artifact package | Scoped | `@b64/sfpm-artifact` |
+
+Use `stripScope()` at Salesforce boundaries. Never strip scope internally.
 
 ## Installation Source Type Detection
 

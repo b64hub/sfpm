@@ -1,4 +1,5 @@
 import {Org} from '@salesforce/core';
+import {PackageVersion} from '@salesforce/packaging';
 import semver from 'semver';
 
 import {Logger} from '../types/logger.js';
@@ -320,6 +321,49 @@ export class PackageService {
   public async preloadInstalled2GPPackages(): Promise<void> {
     this.installed2GPCache = await this.queryInstalledSubscriberPackages();
     this.logger?.debug(`Preloaded ${this.installed2GPCache.length} installed 2GP package(s) into cache`);
+  }
+
+  /**
+   * Promote a package version to released state.
+   *
+   * Uses the `@salesforce/packaging` SDK to set `IsReleased = true` on the
+   * `Package2Version` record. Accepts a subscriber package version ID (04t)
+   * or package version ID (05i).
+   *
+   * If the promote request fails (e.g. connection drop), verifies the
+   * server-side state before propagating the error — the update may have
+   * succeeded despite the client-side failure.
+   *
+   * @param idOrAlias - A 04t subscriber version ID, 05i package version ID, or alias
+   */
+  public async promoteVersion(idOrAlias: string): Promise<void> {
+    const connection = this.getOrg().getConnection();
+    const pv = new PackageVersion({connection, idOrAlias});
+
+    // Check if already promoted (idempotent entry point)
+    const versionData = await pv.getData();
+    if (versionData.IsReleased) {
+      this.logger?.debug(`Package version ${idOrAlias} is already released — skipping promote`);
+      return;
+    }
+
+    try {
+      const result = await pv.promote();
+      if (!result.success) {
+        throw new Error(`Failed to promote package version ${idOrAlias}: ${JSON.stringify(result.errors)}`);
+      }
+    } catch (error) {
+      // Connection may have dropped after SF processed the update.
+      // Re-query to check if the promote actually succeeded server-side.
+      this.logger?.debug(`Promote call failed for ${idOrAlias}, verifying server-side state...`);
+      const refreshed = await pv.getData(true);
+      if (refreshed.IsReleased) {
+        this.logger?.info(`Package version ${idOrAlias} was promoted server-side despite client error`);
+        return;
+      }
+
+      throw error;
+    }
   }
 
   /**

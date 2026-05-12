@@ -1,10 +1,17 @@
 import type {Logger} from '@b64hub/sfpm-core';
 
-import {Org, OrgTypes} from '@salesforce/core';
+import {OrgTypes} from '@salesforce/core';
 
 import type {PoolOrg} from '../org/pool-org.js';
-import type {SandboxDefaults} from '../org/sandbox/types.js';
-import type {ScratchOrgDefaults} from '../org/types.js';
+
+/**
+ * Config-friendly pool type — accepts plain strings so users
+ * don't need to import `OrgTypes` from `@salesforce/core`.
+ *
+ * Internally the core always compares against `OrgTypes` enum values,
+ * which are identical at runtime (`OrgTypes.Scratch === 'scratch'`).
+ */
+export type PoolType = 'sandbox' | 'scratch' | OrgTypes;
 
 /**
  * Pool sizing configuration — how many orgs to maintain.
@@ -12,13 +19,18 @@ import type {ScratchOrgDefaults} from '../org/types.js';
  * `minAllocation` and `maxAllocation` define the target range.
  * The pool manager ensures the pool stays within these bounds.
  */
-export interface PoolSizingConfig {
+export interface PoolSize {
   /** Number of orgs to create per provisioning batch (default: 5) */
-  batchSize?: number;
+  batch?: number;
   /** Maximum number of orgs in the pool */
-  maxAllocation: number;
+  max: number;
   /** Minimum number of orgs to maintain (default: 0) */
-  minAllocation?: number;
+  min?: number;
+}
+
+export interface NetworkSettings {
+  /** Specific IP ranges to relax (true = all, array = specific ranges) */
+  relaxIPRanges?: boolean | string[];
 }
 
 /**
@@ -28,66 +40,29 @@ export interface PoolSizingConfig {
  * don't duplicate these properties.
  */
 export interface PoolConfigBase {
+  /** Path to the org definition file (scratch org or sandbox) */
+  definitionFile: string;
   /** Deployment behavior for freshly provisioned orgs */
   deployment?: {
-    /** Disable source package override during deployment (default: false) */
-    disableSourcePackageOverride?: boolean;
+    /** Continue pool provisioning even if deployment fails (default: false) */
+    continueOnError?: boolean;
     /** Whether to enable source tracking in the org (default: false) */
     enableSourceTracking?: boolean;
-    /** Whether to install all packages or only changed ones (default: false) */
-    installAll?: boolean;
-    /** Encryption keys for protected packages (comma-separated) */
-    keys?: string;
-    /** Continue pool provisioning even if deployment fails (default: false) */
-    succeedOnDeploymentErrors?: boolean;
+    /** Apex test level for deployments (default: NoTestRun) */
+    testLevel?: string;
   };
-
-  /** Enable Vlocity/OmniStudio support (default: false) */
-  enableVlocity?: boolean;
-
-  /** Artifact fetching configuration */
-  fetchArtifacts?: {
-    /** Path to a custom script that fetches artifacts */
-    artifactFetchScript?: string;
-    /** Fetch artifacts from an npm registry */
-    npm?: {
-      /** Path to `.npmrc` for authentication */
-      npmrcPath?: string;
-      /** npm scope to fetch from (e.g., `@myorg`) */
-      scope: string;
-    };
-  };
-
+  /** Max retries on transient creation failures (default: 3) */
+  maxRetries?: number;
   /** Network/IP relaxation settings */
-  network?: {
-    /** Specific IP ranges to relax (only used if `relaxAllIPRanges` is false) */
-    ipRangesToBeRelaxed?: string[];
-    /** Relax all IP range restrictions (default: false) */
-    relaxAllIPRanges?: boolean;
-  };
-
-  /** Release config file for pool-based releases */
-  releaseConfigFile?: string;
-
-  /** Retry the full provisioning flow on failure (default: false) */
-  retryOnFailure?: boolean;
-
-  /** Legacy script hooks (prefer sfpm.config.ts hooks instead) */
-  scripts?: {
-    /** Script to run after package deployment into the scratch org */
-    postDeploymentScriptPath?: string;
-    /** Script to run before dependency installation */
-    preDependencyInstallationScriptPath?: string;
-  };
-
+  network?: NetworkSettings;
   /** Pool sizing constraints */
-  sizing: PoolSizingConfig;
-
+  sizing: PoolSize;
   /** Use an existing snapshot pool as a base (pool tag) */
   snapshotPool?: string;
-
-  /** Tag identifying this pool (used for claiming/releasing orgs) */
-  tag: string;
+  /** Pool type (scratch or sandbox) */
+  type: PoolType;
+  /** Max minutes to wait for org creation (default: 30) */
+  waitMinutes?: number;
 }
 
 /**
@@ -96,59 +71,63 @@ export interface PoolConfigBase {
  * @example
  * ```typescript
  * const pool: ScratchOrgPoolConfig = {
- *   type: 'scratch',
- *   tag: 'dev-pool',
- *   scratchOrg: {
- *     definitionFile: 'config/project-scratch-def.json',
- *     expiryDays: 7,
- *   },
- *   sizing: { maxAllocation: 10, minAllocation: 2, batchSize: 5 },
+ *   type: OrgTypes.Scratch,
+ *   definitionFile: 'config/project-scratch-def.json',
+ *   expiryDays: 7,
+ *   sizing: { max: 10, min: 2, batch: 5 },
  * };
  * ```
  */
 export interface ScratchOrgPoolConfig extends PoolConfigBase {
-  scratchOrg: ScratchOrgDefaults;
-  type: OrgTypes.Scratch;
+  /** Number of days until scratch orgs expire (default: 7) */
+  expiryDays?: number;
+  /** Whether to exclude ancestor package versions (default: false) */
+  noAncestors?: boolean;
+  type: 'scratch' | OrgTypes.Scratch;
 }
 
 /**
  * Pool configuration for sandbox pools.
  *
+ * Sandbox creation settings (licenseType, apexClassId, etc.) live in
+ * the sandbox definition file. This config only holds pool operation
+ * concerns.
+ *
  * @example
  * ```typescript
  * const pool: SandboxPoolConfig = {
- *   type: 'sandbox',
- *   tag: 'sb-pool',
- *   sandbox: {
- *     namePattern: 'SB',
- *     licenseType: 'DEVELOPER',
- *     groupId: '0GR000000000001',
- *   },
- *   sizing: { maxAllocation: 5, batchSize: 2 },
+ *   type: OrgTypes.Sandbox,
+ *   definitionFile: 'config/sandbox-def.json',
+ *   namePattern: 'SB',
+ *   sizing: { max: 5, batch: 2 },
  * };
  * ```
  */
 export interface SandboxPoolConfig extends PoolConfigBase {
-  sandbox: SandboxDefaults;
-  type: OrgTypes.Sandbox;
+  /**
+   * Override for the sandbox name prefix from the definition file.
+   *
+   * When set, takes precedence over `sandboxName` in the definition file.
+   * During provisioning, concrete names are generated by appending
+   * an index (e.g., `SB1`, `SB2`). Must be a valid Salesforce
+   * sandbox name prefix (alphanumeric, max 10 chars).
+   */
+  namePattern?: string;
+  type: 'sandbox' | OrgTypes.Sandbox;
 }
 
 /**
- * Pool configuration — discriminated union of scratch org and sandbox pools.
+ * Discriminated union of pool configurations.
  *
- * Use `config.type` to narrow:
- * ```typescript
- * if (config.type === 'sandbox') {
- *   config.sandbox.licenseType; // safe
- * }
- * ```
+ * Discriminated by the `type` field — `OrgTypes.Scratch` or
+ * `OrgTypes.Sandbox`.
  */
 export type PoolConfig = SandboxPoolConfig | ScratchOrgPoolConfig;
 
 /** Default pool sizing when not explicitly configured. */
-export const DEFAULT_POOL_SIZING: Required<Pick<PoolSizingConfig, 'batchSize' | 'minAllocation'>> = {
-  batchSize: 5,
-  minAllocation: 0,
+export const DEFAULT_POOL_SIZING: Required<Pick<PoolSize, 'batch' | 'min'>> = {
+  batch: 5,
+  min: 0,
 };
 
 /**
@@ -223,8 +202,6 @@ export interface PoolFetchOptions {
    * ```
    */
   postClaimActions?: PostClaimAction[];
-  /** Pool tag to fetch from */
-  tag: string;
 }
 
 // ============================================================================
@@ -235,12 +212,10 @@ export interface PoolFetchOptions {
  * Options for deleting orgs from a pool.
  */
 export interface PoolDeleteOptions {
-  /** Only delete orgs with 'In Progress' allocation status */
+  /** Only delete orgs with 'In_Progress' allocation status */
   inProgressOnly?: boolean;
   /** Only delete orgs owned by the current user */
   myPool?: boolean;
-  /** Pool tag identifying which pool to delete from */
-  tag: string;
 }
 
 // ============================================================================

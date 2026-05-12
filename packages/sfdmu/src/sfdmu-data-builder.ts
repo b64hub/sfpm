@@ -13,7 +13,7 @@ import fs from 'fs-extra';
 import EventEmitter from 'node:events';
 import path from 'node:path';
 
-import type {SfdmuExportJson} from './types.js';
+import type {SfdmuExportJson, SfdmuObjectConfig} from './types.js';
 
 /**
  * Builder for SFDMU-based data packages.
@@ -72,6 +72,21 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
     await this.validate();
   }
 
+  /**
+   * Extract all sObject configs from either flat or grouped format.
+   */
+  private extractObjects(exportJson: SfdmuExportJson): SfdmuObjectConfig[] {
+    if (exportJson.objects && Array.isArray(exportJson.objects)) {
+      return exportJson.objects;
+    }
+
+    if (exportJson.objectSets && Array.isArray(exportJson.objectSets)) {
+      return exportJson.objectSets.flatMap(set => set.objects ?? []);
+    }
+
+    return [];
+  }
+
   private async findCsvFiles(): Promise<string[]> {
     const files = await fs.readdir(this.sfpmPackage.dataDirectory);
     return files.filter(f => f.toLowerCase().endsWith('.csv'));
@@ -114,15 +129,14 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
     try {
       const exportJson: SfdmuExportJson = await fs.readJson(exportJsonPath);
 
-      if (!exportJson.objects || !Array.isArray(exportJson.objects)) {
-        throw new Error('export.json must contain an "objects" array');
+      // Support both flat (objects) and grouped (objectSets) formats
+      const allObjects = this.extractObjects(exportJson);
+
+      if (allObjects.length === 0) {
+        throw new Error('export.json must contain either a non-empty "objects" array or a non-empty "objectSets" array');
       }
 
-      if (exportJson.objects.length === 0) {
-        throw new Error('export.json "objects" array must not be empty');
-      }
-
-      const sObjectNames = exportJson.objects.map(o => o.objectName);
+      const sObjectNames = allObjects.map(o => o.objectName ?? o.query?.split(/\s+FROM\s+/i)[1]?.split(/\s+/)[0] ?? 'unknown');
       this.logger?.info(`SFDMU export.json validated: ${sObjectNames.length} sObject(s) configured: ${sObjectNames.join(', ')}`);
 
       // Log CSV files found
