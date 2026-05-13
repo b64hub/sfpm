@@ -18,6 +18,13 @@ export default class Deploy extends SfpmCommand {
     }),
   }
   static override description = 'deploy one or more packages from local project source'
+  /**
+   * Lifecycle stage: **deploy**
+   *
+   * Operations executed per package:
+   * - `install:pre`  — before each package deployment starts
+   * - `install:post` — after each package deployment succeeds
+   */
   static override examples = [
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox',
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --quiet',
@@ -79,7 +86,7 @@ export default class Deploy extends SfpmCommand {
 
     const sfpmConfig = projectService.getSfpmConfig();
 
-    const lifecycle = new LifecycleEngine({logger, stage: 'deploy'});
+    const lifecycle = LifecycleEngine.stage('deploy');
     for (const hooks of sfpmConfig.hooks ?? []) {
       lifecycle.use(hooks);
     }
@@ -109,7 +116,6 @@ export default class Deploy extends SfpmCommand {
         projectConfig,
         installOptions,
         logger,
-        lifecycle,
       )
 
       const emitter = new EventEmitter()
@@ -152,7 +158,6 @@ export default class Deploy extends SfpmCommand {
         targetOrg: flags['target-org'],
       },
       logger,
-      lifecycle,
     );
 
     renderer.attachTo(orchestrator as any)

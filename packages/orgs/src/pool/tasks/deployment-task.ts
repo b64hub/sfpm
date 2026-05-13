@@ -4,7 +4,7 @@ import {
   type Logger,
   ProjectService,
   type TestLevel,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 
 import type {PoolOrg} from '../../org/pool-org.js';
 import type {PoolOrgTask, PoolOrgTaskResult} from '../types.js';

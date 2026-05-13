@@ -18,6 +18,13 @@ export default class Install extends SfpmCommand {
     }),
   }
   static override description = 'install one or more packages'
+  /**
+   * Lifecycle stage: **install**
+   *
+   * Operations executed per package:
+   * - `install:pre`  — before each package installation starts
+   * - `install:post` — after each package installation succeeds
+   */
   static override examples = [
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox',
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --quiet',
@@ -82,7 +89,7 @@ export default class Install extends SfpmCommand {
     const sfpmConfig = projectService.getSfpmConfig();
 
     // Create lifecycle engine and register hooks from config
-    const lifecycle = new LifecycleEngine({logger, stage: 'install'});
+    const lifecycle = LifecycleEngine.stage('install');
     for (const hooks of sfpmConfig.hooks ?? []) {
       lifecycle.use(hooks);
     }
@@ -112,7 +119,6 @@ export default class Install extends SfpmCommand {
         projectConfig,
         installOptions,
         logger,
-        lifecycle,
       )
 
       const emitter = new EventEmitter()
@@ -150,7 +156,6 @@ export default class Install extends SfpmCommand {
       projectGraph,
       {...installOptions, includeDependencies: !flags['no-dependencies']},
       logger,
-      lifecycle,
     )
 
     // Attach renderer to orchestrator — it forwards all installer events

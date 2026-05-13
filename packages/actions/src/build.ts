@@ -64,6 +64,12 @@ export interface BuildResult {
  * 4. Cache build state for the `build-resume` action
  * 5. Set outputs (artifact dir, per-package results)
  *
+ * Lifecycle stage: **build**
+ *
+ * Operations executed per package:
+ * - `build:pre`  — before each package build starts
+ * - `build:post` — after each package build succeeds
+ *
  * Unlocked packages are built with `asyncValidation: true` so that
  * the Salesforce platform starts validation in the background.
  * `PackageVersion.create()` returns immediately with a creation request ID
@@ -104,7 +110,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   // ------------------------------------------------------------------
   // 2. Create lifecycle engine and register hooks
   // ------------------------------------------------------------------
-  const lifecycle = new LifecycleEngine({logger, stage: 'build'});
+  const lifecycle = LifecycleEngine.stage('build');
   for (const hooks of sfpmConfig.hooks ?? []) {
     lifecycle.use(hooks);
   }
@@ -128,7 +134,6 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
     },
     logger,
     projectDir,
-    lifecycle,
   );
 
   // Collect creation request IDs from unlocked:create:complete events
