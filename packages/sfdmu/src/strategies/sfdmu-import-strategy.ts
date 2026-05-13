@@ -1,6 +1,6 @@
-import type {DataDeployable, Logger} from '@b64/sfpm-core';
+import type {DataDeployable, Logger} from '@b64hub/sfpm-core';
 
-import {InstallationError} from '@b64/sfpm-core';
+import {InstallationError} from '@b64hub/sfpm-core';
 import fs from 'fs-extra';
 import {execSync, type ExecSyncOptions} from 'node:child_process';
 import EventEmitter from 'node:events';

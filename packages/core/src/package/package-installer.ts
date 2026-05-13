@@ -80,7 +80,6 @@ export interface InstallTask {
  * Orchestrator for package installations
  */
 export default class PackageInstaller extends EventEmitter {
-  private lifecycle: LifecycleEngine | undefined;
   private logger: Logger | undefined;
   private options: InstallOptions;
   private org?: Org;
@@ -91,14 +90,12 @@ export default class PackageInstaller extends EventEmitter {
     options: InstallOptions,
     logger?: Logger,
     org?: Org,
-    lifecycle?: LifecycleEngine,
   ) {
     super();
     this.options = options;
     this.logger = logger;
     this.provider = provider;
     this.org = org;
-    this.lifecycle = lifecycle;
   }
 
   /**
@@ -606,11 +603,22 @@ export default class PackageInstaller extends EventEmitter {
   }
 
   private async runHooks(timing: string, packageName: string, sfpmPackage?: SfpmPackage): Promise<void> {
-    if (!this.lifecycle) return;
+    if (!LifecycleEngine.isInitialized()) return;
 
+    const lifecycle = LifecycleEngine.getInstance();
     const packagePath = sfpmPackage ? this.resolvePackageSourceDir(sfpmPackage) : undefined;
     const hookContext = this.buildHookContext(packageName, packagePath);
-    await this.lifecycle.run('install', timing, hookContext);
+    if (timing === 'pre') {
+      await lifecycle.runInstallPre(hookContext);
+      return;
+    }
+
+    if (timing === 'post') {
+      await lifecycle.runInstallPost(hookContext);
+      return;
+    }
+
+    await lifecycle.run('install', timing, hookContext);
   }
 
   /**

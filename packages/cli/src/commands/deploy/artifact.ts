@@ -17,6 +17,13 @@ export default class DeployArtifact extends SfpmCommand {
     }),
   }
   static override description = 'deploy one or more packages from built artifacts using source-deploy'
+  /**
+   * Lifecycle stage: **deploy**
+   *
+   * Operations executed per package:
+   * - `install:pre`  — before each package deployment starts
+   * - `install:post` — after each package deployment succeeds
+   */
   static override examples = [
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox',
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --quiet',
@@ -65,7 +72,7 @@ export default class DeployArtifact extends SfpmCommand {
 
     const sfpmConfig = projectService.getSfpmConfig();
 
-    const lifecycle = new LifecycleEngine({logger, stage: 'local'});
+    const lifecycle = LifecycleEngine.stage('deploy');
     for (const hooks of sfpmConfig.hooks ?? []) {
       lifecycle.use(hooks);
     }
@@ -91,7 +98,6 @@ export default class DeployArtifact extends SfpmCommand {
         versionInstall: flags['installation-key'] ? {installationKeys: {'*': flags['installation-key']}} : undefined,
       },
       logger,
-      lifecycle,
     );
 
     renderer.attachTo(orchestrator as any)

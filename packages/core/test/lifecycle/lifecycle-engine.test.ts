@@ -35,7 +35,31 @@ describe('LifecycleEngine', () => {
   let engine: LifecycleEngine;
 
   beforeEach(() => {
-    engine = new LifecycleEngine();
+    LifecycleEngine.resetForTest();
+    engine = LifecycleEngine.stage();
+  });
+
+  // --------------------------------------------------------------------------
+  // Singleton initialization
+  // --------------------------------------------------------------------------
+
+  describe('singleton initialization', () => {
+    it('should return the same instance when initialized with matching options', () => {
+      const first = LifecycleEngine.stage();
+      const second = LifecycleEngine.stage();
+
+      expect(second).toBe(first);
+    });
+
+    it('should throw when reinitialized with a different stage', () => {
+      expect(() => LifecycleEngine.stage('deploy')).toThrow(/already initialized/i);
+    });
+
+    it('should throw when getInstance is called before initialize', () => {
+      LifecycleEngine.resetForTest();
+
+      expect(() => LifecycleEngine.getInstance()).toThrow(/not initialized/i);
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -159,7 +183,7 @@ describe('LifecycleEngine', () => {
       engine.use(createHooks({
         hooks: [{
           async handler() {
-            await new Promise(r => setTimeout(r, 20));
+            await new Promise(resolve => setTimeout(resolve, 20));
             order.push(1);
           },
           operation: 'install',
@@ -537,7 +561,7 @@ describe('LifecycleEngine', () => {
   // --------------------------------------------------------------------------
 
   describe('logging', () => {
-    it('should log debug messages with logger', async () => {
+    it('should log debug messages via context logger', async () => {
       const logger = {
         debug: vi.fn(),
         error: vi.fn(),
@@ -547,19 +571,47 @@ describe('LifecycleEngine', () => {
         warn: vi.fn(),
       };
 
-      const loggedEngine = new LifecycleEngine({logger});
-
-      loggedEngine.use(createHooks({
+      engine.use(createHooks({
         hooks: [{handler: vi.fn(), operation: 'install', timing: 'pre'}],
         name: 'test-hooks',
       }));
 
-      await loggedEngine.run('install', 'pre', createContext());
+      await engine.run('install', 'pre', createContext({logger}));
 
-      // Should log registration
-      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining("registered 'test-hooks'"));
-      // Should log execution
+      // Should log execution via context logger
       expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining("running 1 hook(s) for 'install:pre'"));
+    });
+
+    it('should execute shorthand run and hasHooks methods for build/install timings', async () => {
+      const buildPre = vi.fn();
+      const buildPost = vi.fn();
+      const installPre = vi.fn();
+      const installPost = vi.fn();
+
+      engine.use(createHooks({
+        hooks: [
+          {handler: buildPre, operation: 'build', timing: 'pre'},
+          {handler: buildPost, operation: 'build', timing: 'post'},
+          {handler: installPre, operation: 'install', timing: 'pre'},
+          {handler: installPost, operation: 'install', timing: 'post'},
+        ],
+        name: 'shorthands',
+      }));
+
+      expect(engine.hasBuildPreHooks()).toBe(true);
+      expect(engine.hasBuildPostHooks()).toBe(true);
+      expect(engine.hasInstallPreHooks()).toBe(true);
+      expect(engine.hasInstallPostHooks()).toBe(true);
+
+      await engine.runBuildPre(createContext({operation: 'build', timing: 'pre'}));
+      await engine.runBuildPost(createContext({operation: 'build', timing: 'post'}));
+      await engine.runInstallPre(createContext({operation: 'install', timing: 'pre'}));
+      await engine.runInstallPost(createContext({operation: 'install', timing: 'post'}));
+
+      expect(buildPre).toHaveBeenCalledTimes(1);
+      expect(buildPost).toHaveBeenCalledTimes(1);
+      expect(installPre).toHaveBeenCalledTimes(1);
+      expect(installPost).toHaveBeenCalledTimes(1);
     });
   });
 });

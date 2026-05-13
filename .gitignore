@@ -27,3 +27,9 @@ hive.toml
 **/graphify-out
 
 AGENTS.md
+.mcp.json
+.github/hooks
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json

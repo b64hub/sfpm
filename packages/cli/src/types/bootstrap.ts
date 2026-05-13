@@ -1,4 +1,4 @@
-import {type PackageCreateConfig} from '@b64/sfpm-core'
+import {type PackageCreateConfig} from '@b64hub/sfpm-core'
 
 /**
  * Bootstrap tiers determine which packages are installed into the target org.

@@ -2,7 +2,7 @@ import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
-import type {Logger} from '@b64/sfpm-core';
+import type {Logger} from '@b64hub/sfpm-core';
 import type {Org} from '@salesforce/core';
 
 import type {PoolOrg} from '../../../src/org/pool-org.js';

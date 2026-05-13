@@ -1,7 +1,7 @@
 import {
   type Logger,
   PackageService,
-} from '@b64/sfpm-core';
+} from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 
 import type {PoolOrg} from '../../org/pool-org.js';

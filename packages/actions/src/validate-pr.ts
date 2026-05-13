@@ -71,6 +71,12 @@ export interface ValidatePrResult {
  * 5. Cache the org connection for subsequent runs
  * 6. Report results via GitHub Actions outputs
  *
+ * Lifecycle stage: **validate**
+ *
+ * Operations executed per package:
+ * - `install:pre`  — before each package deployment starts
+ * - `install:post` — after each package deployment succeeds
+ *
  * @example
  * ```typescript
  * const result = await validatePr({
@@ -120,7 +126,7 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   // ------------------------------------------------------------------
   if (isStructuredLogger(logger)) logger.group('Source Deployment');
 
-  const lifecycle = new LifecycleEngine({logger, stage: 'validate'});
+  const lifecycle = LifecycleEngine.stage('validate');
   const sfpmConfig = projectService.getSfpmConfig();
   for (const hooks of sfpmConfig.hooks ?? []) {
     lifecycle.use(hooks);
@@ -134,7 +140,6 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
       targetOrg: connection.username,
     },
     logger,
-    lifecycle,
   );
 
   const renderer = new ActionsProgressRenderer(logger);

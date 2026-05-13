@@ -3,9 +3,9 @@ import {
   HookHandler,
   LifecycleHooks,
 } from '../types/lifecycle.js';
-import {Logger} from '../types/logger.js';
 import {isHookEnabled} from './hook-config.js';
-import {DEFAULT_STAGE} from './stages.js';
+
+const DEFAULT_STAGE = 'local';
 
 // ============================================================================
 // Internal Hook Entry
@@ -52,14 +52,14 @@ const ENFORCE_PRIORITY: Record<string, number> = {default: 1, post: 2, pre: 0};
 const ORDER_PRIORITY: Record<string, number> = {default: 1, post: 2, pre: 0};
 
 function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
-  return [...hooks].sort((a, b) => {
-    const enforceDiff = ENFORCE_PRIORITY[a.enforce] - ENFORCE_PRIORITY[b.enforce];
+  return [...hooks].sort((left, right) => {
+    const enforceDiff = ENFORCE_PRIORITY[left.enforce] - ENFORCE_PRIORITY[right.enforce];
     if (enforceDiff !== 0) return enforceDiff;
 
-    const orderDiff = ORDER_PRIORITY[a.order] - ORDER_PRIORITY[b.order];
+    const orderDiff = ORDER_PRIORITY[left.order] - ORDER_PRIORITY[right.order];
     if (orderDiff !== 0) return orderDiff;
 
-    return a.insertionIndex - b.insertionIndex;
+    return left.insertionIndex - right.insertionIndex;
   });
 }
 
@@ -80,12 +80,12 @@ function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
  * All hooks run **sequentially** in sorted order. For fire-and-forget
  * notifications, use the EventEmitter system instead.
  *
- * **Instance-based** — each CLI command invocation creates its own engine.
- * No global state, no cleanup needed between tests.
+ * **Singleton-based** — each process initializes the engine once per execution.
+ * The stage is fixed at initialization and reused for all hook runs.
  *
  * @example
  * ```typescript
- * const lifecycle = new LifecycleEngine({ stage: 'validate' });
+ * const lifecycle = LifecycleEngine.stage('validate');
  *
  * // Register hooks
  * lifecycle.use(profileHooks({ reconcile: true }));
@@ -95,14 +95,67 @@ function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
  * ```
  */
 export class LifecycleEngine {
+  private static initializedStage?: string;
+  private static instance?: LifecycleEngine;
   private readonly _stage: string;
   private readonly hooks: RegisteredHook[] = [];
   private insertionCounter = 0;
-  private readonly logger?: Logger;
 
-  constructor(options?: {logger?: Logger; stage?: string}) {
-    this.logger = options?.logger;
-    this._stage = options?.stage ?? DEFAULT_STAGE;
+  private constructor(activeStage: string) {
+    this._stage = activeStage;
+  }
+
+  /**
+   * Get the initialized lifecycle singleton.
+   */
+  static getInstance(): LifecycleEngine {
+    if (!LifecycleEngine.instance) {
+      throw new Error('LifecycleEngine is not initialized. Call LifecycleEngine.stage(...) first.');
+    }
+
+    return LifecycleEngine.instance;
+  }
+
+  /**
+   * Whether the lifecycle singleton has been initialized.
+   */
+  static isInitialized(): boolean {
+    return LifecycleEngine.instance !== undefined;
+  }
+
+  /**
+   * Test helper: clear singleton state between test cases.
+   */
+  static resetForTest(): void {
+    LifecycleEngine.instance = undefined;
+    LifecycleEngine.initializedStage = undefined;
+  }
+
+  /**
+   * Initialize the process-wide lifecycle singleton for the given stage.
+   *
+   * The stage is fixed for the lifetime of the process. Calling `stage()`
+   * again with the same value returns the existing instance. Calling with
+   * a different value throws — each execution has exactly one stage.
+   *
+   * @param activeStage - The lifecycle stage (e.g., 'build', 'deploy', 'validate').
+   *                      Defaults to 'local'.
+   */
+  static stage(activeStage?: string): LifecycleEngine {
+    const resolvedStage = activeStage ?? DEFAULT_STAGE;
+
+    if (!LifecycleEngine.instance) {
+      LifecycleEngine.instance = new LifecycleEngine(resolvedStage);
+      LifecycleEngine.initializedStage = resolvedStage;
+      return LifecycleEngine.instance;
+    }
+
+    if (LifecycleEngine.initializedStage !== resolvedStage) {
+      throw new Error(`LifecycleEngine already initialized with stage '${LifecycleEngine.initializedStage}'. `
+        + `Cannot reinitialize with stage '${resolvedStage}'.`);
+    }
+
+    return LifecycleEngine.instance;
   }
 
   /** The lifecycle stage for this invocation (e.g., 'validate', 'deploy', 'local'). */
@@ -120,33 +173,52 @@ export class LifecycleEngine {
   clear(): void {
     this.hooks.length = 0;
     this.insertionCounter = 0;
-    this.logger?.debug('Lifecycle: cleared all hooks');
   }
 
   /**
    * Get all unique hook set names that have been registered.
    */
   getRegisteredHookNames(): string[] {
-    return [...new Set(this.hooks.map(h => h.hooksName))];
+    return [...new Set(this.hooks.map(hook => hook.hooksName))];
   }
 
   /**
    * Get all unique operation names that have at least one hook registered.
    */
   getRegisteredOperations(): string[] {
-    return [...new Set(this.hooks.map(h => h.operation))];
+    return [...new Set(this.hooks.map(hook => hook.operation))];
   }
 
   // --------------------------------------------------------------------------
   // Hook Execution
   // --------------------------------------------------------------------------
 
+  /** Convenience shorthand for build:post hook checks. */
+  hasBuildPostHooks(): boolean {
+    return this.hasHooks('build', 'post');
+  }
+
+  /** Convenience shorthand for build:pre hook checks. */
+  hasBuildPreHooks(): boolean {
+    return this.hasHooks('build', 'pre');
+  }
+
   /**
    * Check if any hooks are registered for a given operation and timing.
    * Useful for orchestrators to skip hook invocation overhead when no hooks exist.
    */
   hasHooks(operation: string, timing: string): boolean {
-    return this.hooks.some(h => h.operation === operation && h.timing === timing);
+    return this.hooks.some(hook => hook.operation === operation && hook.timing === timing);
+  }
+
+  /** Convenience shorthand for install:post hook checks. */
+  hasInstallPostHooks(): boolean {
+    return this.hasHooks('install', 'post');
+  }
+
+  /** Convenience shorthand for install:pre hook checks. */
+  hasInstallPreHooks(): boolean {
+    return this.hasHooks('install', 'pre');
   }
 
   // --------------------------------------------------------------------------
@@ -161,15 +233,11 @@ export class LifecycleEngine {
    */
   remove(name: string): number {
     let removed = 0;
-    for (let i = this.hooks.length - 1; i >= 0; i--) {
-      if (this.hooks[i].hooksName === name) {
-        this.hooks.splice(i, 1);
+    for (let index = this.hooks.length - 1; index >= 0; index--) {
+      if (this.hooks[index].hooksName === name) {
+        this.hooks.splice(index, 1);
         removed++;
       }
-    }
-
-    if (removed > 0) {
-      this.logger?.debug(`Lifecycle: removed ${removed} hook(s) for '${name}'`);
     }
 
     return removed;
@@ -193,7 +261,7 @@ export class LifecycleEngine {
       return;
     }
 
-    this.logger?.debug(`Lifecycle: running ${matching.length} hook(s) for '${operation}:${timing}'`
+    context.logger?.debug(`Lifecycle: running ${matching.length} hook(s) for '${operation}:${timing}'`
       + (context.packageName ? ` on package '${context.packageName}'` : '')
       + ` [stage=${this._stage}]`);
 
@@ -202,13 +270,33 @@ export class LifecycleEngine {
         // eslint-disable-next-line no-await-in-loop -- hooks must run sequentially in defined order
         await hook.handler(enrichedContext);
       } catch (error) {
-        this.logger?.error(`Lifecycle: hook from '${hook.hooksName}' failed `
+        context.logger?.error(`Lifecycle: hook from '${hook.hooksName}' failed `
           + `at '${hook.operation}:${hook.timing}'`
           + (context.packageName ? ` for package '${context.packageName}'` : '')
           + `: ${error instanceof Error ? error.message : String(error)}`);
         throw error;
       }
     }
+  }
+
+  /** Execute build:post hooks with stage-enriched context. */
+  async runBuildPost(context: HookContext): Promise<void> {
+    await this.run('build', 'post', context);
+  }
+
+  /** Execute build:pre hooks with stage-enriched context. */
+  async runBuildPre(context: HookContext): Promise<void> {
+    await this.run('build', 'pre', context);
+  }
+
+  /** Execute install:post hooks with stage-enriched context. */
+  async runInstallPost(context: HookContext): Promise<void> {
+    await this.run('install', 'post', context);
+  }
+
+  /** Execute install:pre hooks with stage-enriched context. */
+  async runInstallPre(context: HookContext): Promise<void> {
+    await this.run('install', 'pre', context);
   }
 
   /**
@@ -236,8 +324,6 @@ export class LifecycleEngine {
 
       this.hooks.push(entry);
     }
-
-    this.logger?.debug(`Lifecycle: registered '${lifecycleHooks.name}' with ${lifecycleHooks.hooks.length} hook(s)`);
   }
 
   // --------------------------------------------------------------------------
@@ -245,29 +331,30 @@ export class LifecycleEngine {
   // --------------------------------------------------------------------------
 
   private getMatchingHooks(operation: string, timing: string, context: HookContext): RegisteredHook[] {
-    const candidates = this.hooks.filter(h => h.operation === operation && h.timing === timing);
+    const candidates = this.hooks.filter(hook => hook.operation === operation && hook.timing === timing);
     const sorted = sortHooks(candidates);
+    const {logger} = context;
 
     // Apply stage, per-package enabled check, and filters
-    return sorted.filter(h => {
+    return sorted.filter(hook => {
       // Check stage filter — if hook is restricted to specific stages, skip if not matching
-      if (h.stages.length > 0 && !h.stages.includes(this._stage)) {
-        this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${operation}:${timing}' — `
-          + `stage '${this._stage}' not in [${h.stages.join(', ')}]`);
+      if (hook.stages.length > 0 && !hook.stages.includes(this._stage)) {
+        logger?.debug(`Lifecycle: skipping hook from '${hook.hooksName}' for '${operation}:${timing}' — `
+          + `stage '${this._stage}' not in [${hook.stages.join(', ')}]`);
         return false;
       }
 
       // Check per-package hook config — if disabled, skip without running filter
-      if (!isHookEnabled(context, h.hooksName)) {
-        this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${operation}:${timing}' — `
+      if (!isHookEnabled(context, hook.hooksName)) {
+        logger?.debug(`Lifecycle: skipping hook from '${hook.hooksName}' for '${operation}:${timing}' — `
           + 'disabled via packageOptions.hooks'
           + (context.packageName ? ` for package '${context.packageName}'` : ''));
         return false;
       }
 
-      // eslint-disable-next-line unicorn/no-array-callback-reference -- h.filter is not Array.filter
-      if (h.filter && !h.filter(context)) {
-        this.logger?.debug(`Lifecycle: skipping hook from '${h.hooksName}' for '${operation}:${timing}' — `
+      // eslint-disable-next-line unicorn/no-array-callback-reference -- hook.filter is not Array.filter
+      if (hook.filter && !hook.filter(context)) {
+        logger?.debug(`Lifecycle: skipping hook from '${hook.hooksName}' for '${operation}:${timing}' — `
           + 'filter returned false'
           + (context.packageName ? ` for package '${context.packageName}'` : ''));
         return false;

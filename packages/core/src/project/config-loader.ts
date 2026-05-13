@@ -41,7 +41,7 @@ const CONFIG_FILES = [
  * @example
  * ```typescript
  * const config = await loadSfpmConfig('/path/to/project');
- * const lifecycle = new LifecycleEngine();
+ * const lifecycle = LifecycleEngine.stage();
  * config.plugins?.forEach(p => lifecycle.use(p));
  * ```
  */

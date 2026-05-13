@@ -26,6 +26,13 @@ export default class Build extends SfpmCommand {
     }),
   }
   static override description = 'build one or more packages'
+  /**
+   * Lifecycle stage: **build**
+   *
+   * Operations executed per package:
+   * - `build:pre`  — before each package build starts
+   * - `build:post` — after each package build succeeds
+   */
   static override examples = [
     '<%= config.bin %> <%= command.id %> my-package -v my-devhub',
     '<%= config.bin %> <%= command.id %> my-package -v my-devhub --quiet',
@@ -109,7 +116,7 @@ export default class Build extends SfpmCommand {
     const sfpmConfig = projectService.getSfpmConfig();
 
     // Create lifecycle engine and register hooks from config
-    const lifecycle = new LifecycleEngine({logger, stage: 'build'});
+    const lifecycle = LifecycleEngine.stage('build');
     for (const hooks of sfpmConfig.hooks ?? []) {
       lifecycle.use(hooks);
     }
@@ -169,7 +176,6 @@ export default class Build extends SfpmCommand {
         buildOptions,
         logger,
         projectDir,
-        lifecycle,
       )
 
       const emitter = new EventEmitter()
@@ -212,7 +218,6 @@ export default class Build extends SfpmCommand {
       {...buildOptions, includeDependencies: !flags['no-dependencies']},
       logger,
       projectDir,
-      lifecycle,
     )
 
     // Attach renderer to orchestrator — it forwards all builder events

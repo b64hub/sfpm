@@ -1,4 +1,4 @@
-import {type ProjectDefinitionProvider, resolvePackageName} from '@b64/sfpm-core';
+import {type ProjectDefinitionProvider, resolvePackageName} from '@b64hub/sfpm-core';
 import {select} from '@inquirer/prompts';
 
 /**
