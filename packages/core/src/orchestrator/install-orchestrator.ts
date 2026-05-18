@@ -207,7 +207,7 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
     return new InstallOrchestrator(
       provider,
       graph,
-      {...options, source: InstallationSource.Local},
+      {...options, includeManagedPackages: false, source: InstallationSource.Local},
       logger,
     );
   }
