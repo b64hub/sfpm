@@ -10,7 +10,7 @@ import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {IgnoreFilesConfig} from '../types/config.js';
 import {NoSourceChangesError} from '../types/errors.js';
 import {AllBuildEvents} from '../types/events.js';
-import {HookContext} from '../types/lifecycle.js';
+import {HookContext, HookTiming} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {PackageType} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
@@ -476,7 +476,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    * the full package context (component set, metadata, working directory, etc.).
    */
   private async runLifecycleHooks(
-    timing: 'post' | 'pre',
+    timing: HookTiming,
     sfpmPackage: SfpmPackage,
     projectDirectory: string,
   ): Promise<void> {

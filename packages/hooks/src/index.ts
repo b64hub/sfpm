@@ -24,10 +24,6 @@ export {lwcTypescriptHooks} from './lwc/lwc-typescript-plugin.js';
 export type {LwcTypescriptHooksOptions} from './lwc/types.js';
 
 export type {LwcTailwindHooksOptions} from './lwc/types.js';
-// ── Managed Package ─────────────────────────────────────────────────────────
-export {managedPackageHooks} from './managed-package/managed-package-plugin.js';
-
-export type {ManagedPackageHooksOptions} from './managed-package/managed-package-plugin.js';
 // ── Permission Set ──────────────────────────────────────────────────────────
 export {PermissionSetAssigner} from './permissionset/permset-assigner.js';
 export {permissionSetHooks} from './permissionset/permset-plugin.js';

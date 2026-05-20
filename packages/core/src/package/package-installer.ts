@@ -291,6 +291,9 @@ export default class PackageInstaller extends EventEmitter {
       versionNumber: sfpmPackage.version,
     });
 
+    // Install managed dependencies before deploying the package itself
+    await this.installManagedDependencies(sfpmPackage);
+
     // Run pre-install hooks with the local source path
     await this.runHooks('pre', sfpmPackage);
 
@@ -334,6 +337,33 @@ export default class PackageInstaller extends EventEmitter {
       this.emitError(sfpmPackage, error as Error);
       this.logger?.error(`Failed to deploy ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
+    }
+  }
+
+  /**
+   * Install managed dependencies (04t subscriber versions) for a package
+   * before deploying the package itself.
+   *
+   * Reads `managedDependencies` from the package definition and delegates
+   * each one to {@link installManagedPackage}, reusing its skip-check,
+   * VersionInstaller, events, and error handling.
+   */
+  private async installManagedDependencies(sfpmPackage: SfpmPackage): Promise<void> {
+    const managedDependencies = sfpmPackage.packageDefinition?.managedDependencies;
+    if (!managedDependencies || Object.keys(managedDependencies).length === 0) return;
+
+    const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
+    const deps = Object.entries(managedDependencies)
+    .filter(([, versionId]) => versionId.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX))
+    .map(([depName, versionId]) => new ManagedPackageRef(depName, versionId));
+
+    if (deps.length === 0) return;
+
+    this.logger?.info(`Installing ${deps.length} managed dependency(ies) for '${sfpmPackage.name}'`);
+
+    for (const dep of deps) {
+      // eslint-disable-next-line no-await-in-loop -- sequential to avoid concurrent Tooling API requests
+      await this.installManagedPackage(dep);
     }
   }
 
@@ -460,6 +490,9 @@ export default class PackageInstaller extends EventEmitter {
     this.logger?.info(`Installing ${packageName}@${installTarget.resolved.version} `
       + `(reason: ${installTarget.installReason}, source: ${installTarget.resolved.source})`);
     this.emitStart(sfpmPackage, installTarget);
+
+    // Install managed dependencies before deploying the package itself
+    await this.installManagedDependencies(sfpmPackage);
 
     // Run pre-install hooks with the resolved package path
     // (extracted artifact dir for source packages, project source for unlocked)
