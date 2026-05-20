@@ -1,11 +1,26 @@
+import {PackageType} from '../index.js';
 import {Logger} from './logger.js';
 
 // ============================================================================
 // Hook Context
 // ============================================================================
 
+export type PackageOperation = 'build' | 'install';
+export type HookTiming = 'post' | 'pre';
+
+export interface PackageContext {
+  packageName: string;
+  /**
+   * Absolute path to the package's metadata directory.
+   * Could be resolved from the local project source or from an extracted artifact.
+   */
+  packagePath: string;
+  /** Package type identifier (e.g., 'Source', 'Unlocked') */
+  packageType?: PackageType;
+}
+
 /**
- * Context provided to lifecycle hook handlers.
+ * Input provided to lifecycle hook handlers.
  *
  * Contains the minimum information guaranteed to be available at any
  * point in the lifecycle. Operation-specific integrations will extend this
@@ -18,26 +33,10 @@ import {Logger} from './logger.js';
 export interface HookContext {
   /** Arbitrary operation-specific data — orchestrators extend this at integration time */
   [key: string]: unknown;
-  /** Logger instance for the current operation */
-  logger?: Logger;
   /** The concrete operation being executed (e.g., 'build', 'install') */
-  operation: string;
+  operation: PackageOperation;
   /** Current package name being processed */
-  packageName?: string;
-  /**
-   * Absolute path to the package's metadata directory.
-   *
-   * This is the directory that contains the package's source files (profiles,
-   * classes, etc.). The value depends on the installation source:
-   * - **Artifact install**: extracted tarball dir + package path (e.g., `/tmp/sfpm-install/.../package/src-access-management`)
-   * - **Local source deploy**: project root + package path (e.g., `/Users/dev/project/src-access-management`)
-   * - **Managed packages**: `undefined` (no local source to process)
-   */
-  packagePath?: string;
-  /** Package type identifier (e.g., 'Source', 'Unlocked') */
-  packageType?: string;
-  /** Project root directory */
-  projectDir?: string;
+  package: PackageContext;
   /** The lifecycle stage that triggered this invocation (e.g., 'validate', 'deploy', 'install', 'build') */
   stage: string;
   /**
@@ -51,18 +50,8 @@ export interface HookContext {
    */
   targetOrg?: string;
   /** The timing within the operation (e.g., 'pre', 'post') */
-  timing: string;
+  timing: HookTiming;
 }
-
-// ============================================================================
-// Hook Handlers
-// ============================================================================
-
-/**
- * A function that handles a lifecycle hook invocation.
- * Handlers are awaited — they run as part of the process, not as observers.
- */
-export type HookHandler = (context: HookContext) => Promise<void> | void;
 
 // ============================================================================
 // Hook Registration
@@ -81,11 +70,12 @@ export interface HookOptions {
 
   /**
    * Per-hook ordering within a timing slot.
-   * - `'pre'`: runs before default-ordered handlers
-   * - `'post'`: runs after default-ordered handlers
-   * - `undefined`: runs in registration order between 'pre' and 'post'
+   * - `'first'`: runs before all other handlers
+   * - `'last'`: runs after all other handlers
+   * - `number`: explicit priority (lower numbers run first; default is `0`)
+   * - `undefined`: equivalent to `0` — runs in registration order among other default hooks
    */
-  order?: 'post' | 'pre';
+  order?: 'first' | 'last' | number;
 
   /**
    * Restrict this hook to specific lifecycle stages.
@@ -102,7 +92,7 @@ export interface HookOptions {
  */
 export interface HookRegistration {
   /** The handler function to execute */
-  handler: HookHandler;
+  handler: (context: HookContext) => Promise<void> | void;
 
   /** Operation name (e.g., 'build', 'install') */
   operation: string;
@@ -155,12 +145,6 @@ export interface HookRegistration {
  * ```
  */
 export interface LifecycleHooks {
-  /**
-   * Set-level ordering. Sets with `enforce: 'pre'` have all their hooks
-   * run before normal sets; `enforce: 'post'` run after.
-   */
-  enforce?: 'post' | 'pre';
-
   /** The hook registrations provided by this module */
   hooks: HookRegistration[];
 

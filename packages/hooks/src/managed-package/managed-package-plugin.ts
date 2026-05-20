@@ -41,7 +41,6 @@ export function managedPackageHooks(options?: ManagedPackageHooksOptions): Lifec
   const failOnError = options?.failOnError ?? true;
 
   return {
-    enforce: 'pre',
     hooks: [
       {
         async handler(context: HookContext) {
@@ -99,6 +98,7 @@ export function managedPackageHooks(options?: ManagedPackageHooksOptions): Lifec
           }
         },
         operation: 'install',
+        options: {order: 'first'},
         timing: 'pre' as const,
       },
     ],
