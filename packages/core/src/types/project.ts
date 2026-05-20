@@ -27,7 +27,7 @@ export interface OrgAliasConfig {
 export interface PackageOptions {
   [key: string]: any;
   /** Whether this is the default package directory. */
-  build?: BuildOptions;
+  build?: PackageBuildConfig;
   /**
    * Per-package hook configuration.
    *
@@ -47,7 +47,7 @@ export interface PackageOptions {
    * Hooks not listed here use their global defaults from `sfpm.config.ts`.
    */
   hooks?: Record<string, boolean | PackageHookConfig>;
-  ignore?: string[];
+  ignoreFiles?: string[];
   install?: PackageInstallConfig;
   /**
    * Marks this package as org-aliased.
@@ -55,11 +55,18 @@ export interface PackageOptions {
    * When an object, allows specifying the merge mode.
    */
   orgAliased?: boolean | OrgAliasConfig;
+  /**
+   * List of lifecycle stages to skip for this package (e.g., ["deploy", "validate"]).
+   * When the engine's current stage is in this list, SFPM skips all processing for this package.
+   * This is a coarse-grained opt-out that bypasses all hooks and orchestrator actions.
+   * Use with caution, as it may lead to unresolved dependencies if used on packages that are
+   * depended on by other packages that are not skipped.
+   * For more targeted control, consider using hook-specific filters instead of skipping entire stages.
+   */
   skip?: string[];
-  validate?: any;
 }
 
-export interface BuildOptions {
+export interface PackageBuildConfig {
   asyncValidation?: boolean;
   skipValidation?: boolean;
 }
@@ -92,9 +99,9 @@ export interface PackageHookConfig {
 }
 
 /**
- * Build and deployment configuration for a package.
+ * Install and deployment configuration for a package.
  *
- * Controls build-time and deploy-time behavior that is not hook-specific:
+ * Controls install-time and deploy-time behavior that is not hook-specific:
  * script assembly, optimized deployment, etc.
  */
 export interface PackageInstallConfig {
