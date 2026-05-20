@@ -36,7 +36,8 @@ export function browserforceHooks(options: BrowserforceHooksOptions): LifecycleH
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
 
           if (options.packageName && options.packageName !== packageName) {
             logger?.debug(`Browserforce: skipping — filter does not match '${packageName}'`);

@@ -2,13 +2,14 @@ import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
 import {join} from 'node:path';
 import {mkdirSync, rmSync, writeFileSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
 
 import {Connection, Org} from '@salesforce/core';
 import type {HookContext} from '@b64hub/sfpm-core';
 
 import {profileHooks} from '../../src/profiles/profile-plugin.js';
 import {parseProfileXml} from '../../src/profiles/profile-xml.js';
+
+const profileTestRoot = join(process.cwd(), 'packages', 'hooks', 'test', '.scratch', 'profiles');
 
 function createLogger() {
   return {
@@ -21,14 +22,29 @@ function createLogger() {
   };
 }
 
+function createPackage(overrides?: Partial<HookContext['sfpmPackage']>): HookContext['sfpmPackage'] {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    packageDirectory: '/project/packages/test-package',
+    type: 'Source',
+    ...overrides,
+  } as HookContext['sfpmPackage'];
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
-    packageName: 'test-package',
-    packageType: 'Source',
     operation: 'install',
+    projectDir: '/project',
+    sfpmPackage: createPackage(),
+    stage: 'local',
     timing: 'pre',
     ...overrides,
   };
+}
+
+function createTestDir(prefix: string): string {
+  return join(profileTestRoot, `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 }
 
 describe('profileHooks', () => {
@@ -57,7 +73,10 @@ describe('profileHooks', () => {
     const hooks = profileHooks();
     const handler = hooks.hooks[0].handler;
     const logger = createLogger();
-    const context = createContext({logger});
+    const context = createContext({
+      logger,
+      sfpmPackage: createPackage({packageDirectory: undefined}),
+    });
 
     await handler(context);
 
@@ -67,14 +86,17 @@ describe('profileHooks', () => {
   });
 
   it('should skip when no profiles directory exists', async () => {
-    const testDir = join(tmpdir(), `sfpm-plugin-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const testDir = createTestDir('sfpm-plugin-test');
     mkdirSync(testDir, {recursive: true});
 
     try {
       const hooks = profileHooks();
       const handler = hooks.hooks[0].handler;
       const logger = createLogger();
-      const context = createContext({logger, packagePath: testDir});
+      const context = createContext({
+        logger,
+        sfpmPackage: createPackage({packageDirectory: testDir}),
+      });
 
       await handler(context);
 
@@ -90,7 +112,7 @@ describe('profileHooks', () => {
     let testDir: string;
 
     beforeEach(() => {
-      testDir = join(tmpdir(), `sfpm-plugin-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      testDir = createTestDir('sfpm-plugin-e2e');
       mkdirSync(testDir, {recursive: true});
     });
 
@@ -99,7 +121,6 @@ describe('profileHooks', () => {
     });
 
     it('should clean profiles during install:pre hook', async () => {
-      // Create package structure with profiles and classes
       const profilesDir = join(testDir, 'profiles');
       const classesDir = join(testDir, 'classes');
       mkdirSync(profilesDir, {recursive: true});
@@ -130,33 +151,26 @@ describe('profileHooks', () => {
 
       await handler(createContext({
         logger,
-        packagePath: testDir,
+        sfpmPackage: createPackage({packageDirectory: testDir}),
       }));
 
-      // Verify profile was cleaned
       const content = await readFile(join(profilesDir, 'Admin.profile-meta.xml'), 'utf-8');
       const profile = parseProfileXml(content);
 
-      // OldController should be removed (not in classes dir)
       expect(profile.classAccesses).toHaveLength(1);
       expect(profile.classAccesses![0].apexClass).toBe('MyController');
-
-      // Login IP ranges should be removed
       expect(profile.loginIpRanges).toBeUndefined();
 
-      // Logger should have been called
       expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('cleaning profiles'));
       expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('cleaned 1 profile'));
     });
 
-    it('should use org resolver when orgConnection is in context', async () => {
-      // Create package structure
+    it('should use org resolver when targetOrg is in context', async () => {
       const profilesDir = join(testDir, 'profiles');
       const classesDir = join(testDir, 'classes');
       mkdirSync(profilesDir, {recursive: true});
       mkdirSync(classesDir, {recursive: true});
 
-      // Only MyController in source
       writeFileSync(join(classesDir, 'MyController.cls-meta.xml'), '<ApexClass/>');
 
       writeFileSync(join(profilesDir, 'Admin.profile-meta.xml'), `<?xml version="1.0" encoding="UTF-8"?>
@@ -176,22 +190,21 @@ describe('profileHooks', () => {
     <custom>true</custom>
 </Profile>`);
 
-      // Mock Salesforce connection — org has OrgOnlyClass
       const mockConnection = Object.create(Connection.prototype) as Connection;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
       (mockConnection as any).query = vi.fn().mockResolvedValue({records: []});
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
       (mockConnection as any).describeGlobal = vi.fn().mockResolvedValue({sobjects: []});
-      // metadata is a getter on Connection.prototype — override with defineProperty
       Object.defineProperty(mockConnection, 'metadata', {
         value: {list: vi.fn().mockResolvedValue([{fullName: 'OrgOnlyClass'}])},
         writable: true,
       });
 
-      // Mock Org instance wrapping the connection
       const mockOrg = Object.create(Org.prototype) as Org;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
       (mockOrg as any).getConnection = vi.fn().mockReturnValue(mockConnection);
+
+      vi.spyOn(Org, 'create').mockResolvedValue(mockOrg);
 
       const hooks = profileHooks({scope: 'org'});
       const handler = hooks.hooks[0].handler;
@@ -199,27 +212,25 @@ describe('profileHooks', () => {
 
       await handler(createContext({
         logger,
-        packagePath: testDir,
-        org: mockOrg,
+        sfpmPackage: createPackage({packageDirectory: testDir}),
+        targetOrg: 'test@user.org',
       }));
 
       const content = await readFile(join(profilesDir, 'Admin.profile-meta.xml'), 'utf-8');
       const profile = parseProfileXml(content);
 
-      // MyController from source + OrgOnlyClass from org
       expect(profile.classAccesses).toHaveLength(2);
       const names = profile.classAccesses!.map((c) => c.apexClass);
       expect(names).toContain('MyController');
       expect(names).toContain('OrgOnlyClass');
       expect(names).not.toContain('DeletedClass');
 
-      // Verify org scoping was logged
       expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('org connection available'),
       );
     });
 
-    it('should accept pre-built org in context', async () => {
+    it('should resolve org metadata from targetOrg', async () => {
       const profilesDir = join(testDir, 'profiles');
       const classesDir = join(testDir, 'classes');
       mkdirSync(profilesDir, {recursive: true});
@@ -240,7 +251,6 @@ describe('profileHooks', () => {
     <custom>true</custom>
 </Profile>`);
 
-      // Mock connection that returns ResolverClass for classAccesses
       const mockConnection = Object.create(Connection.prototype) as Connection;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
       (mockConnection as any).query = vi.fn().mockResolvedValue({records: []});
@@ -255,14 +265,16 @@ describe('profileHooks', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
       (mockOrg as any).getConnection = vi.fn().mockReturnValue(mockConnection);
 
+      vi.spyOn(Org, 'create').mockResolvedValue(mockOrg);
+
       const hooks = profileHooks({scope: 'org'});
       const handler = hooks.hooks[0].handler;
       const logger = createLogger();
 
       await handler(createContext({
         logger,
-        packagePath: testDir,
-        org: mockOrg,
+        sfpmPackage: createPackage({packageDirectory: testDir}),
+        targetOrg: 'test@user.org',
       }));
 
       const content = await readFile(join(profilesDir, 'Admin.profile-meta.xml'), 'utf-8');
@@ -296,16 +308,14 @@ describe('profileHooks', () => {
       const handler = hooks.hooks[0].handler;
       const logger = createLogger();
 
-      // No orgConnection or connection in context
       await handler(createContext({
         logger,
-        packagePath: testDir,
+        sfpmPackage: createPackage({packageDirectory: testDir}),
       }));
 
       const content = await readFile(join(profilesDir, 'Admin.profile-meta.xml'), 'utf-8');
       const profile = parseProfileXml(content);
 
-      // Source-only: only MyController survives
       expect(profile.classAccesses).toHaveLength(1);
       expect(profile.classAccesses![0].apexClass).toBe('MyController');
 

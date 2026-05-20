@@ -51,11 +51,22 @@ function createMockOrg() {
   return org as Org;
 }
 
+function createPackage(overrides?: Partial<HookContext['sfpmPackage']>): HookContext['sfpmPackage'] {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    packageDirectory: '/project/packages/test-package',
+    type: PackageType.Unlocked,
+    ...overrides,
+  } as HookContext['sfpmPackage'];
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'install',
-    packageName: 'test-package',
-    packageType: 'Unlocked',
+    projectDir: '/project',
+    sfpmPackage: createPackage(),
+    stage: 'local',
     timing: 'post',
     ...overrides,
   };
@@ -68,6 +79,7 @@ function createContext(overrides?: Partial<HookContext>): HookContext {
 describe('standardValueSetHooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(Org, 'create').mockResolvedValue(createMockOrg());
   });
   // --------------------------------------------------------------------------
   // Structure
@@ -92,8 +104,8 @@ describe('standardValueSetHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {standardValueSets: [], type: PackageType.Source},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({standardValueSets: [], type: PackageType.Source}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -111,7 +123,7 @@ describe('standardValueSetHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      sfpmPackage: {standardValueSets: [{fullName: 'Industry'}], type: PackageType.Unlocked},
+      sfpmPackage: createPackage({standardValueSets: [{fullName: 'Industry'}], type: PackageType.Unlocked}),
     }));
 
     expect(logger.warn).toHaveBeenCalledWith(
@@ -129,8 +141,8 @@ describe('standardValueSetHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {standardValueSets: [], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({standardValueSets: [], type: PackageType.Unlocked}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -150,12 +162,12 @@ describe('standardValueSetHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({
         packageDirectory: '/some/path',
         standardValueSets: [{fullName: 'Industry'}],
         type: PackageType.Unlocked,
-      },
+      }),
     }));
 
     expect(logger.warn).toHaveBeenCalledWith(
@@ -169,11 +181,12 @@ describe('standardValueSetHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({
+        packageDirectory: undefined,
         standardValueSets: [{fullName: 'Industry'}],
         type: PackageType.Unlocked,
-      },
+      }),
     }));
 
     expect(logger.warn).toHaveBeenCalledWith(
@@ -197,14 +210,16 @@ describe('standardValueSetHooks', () => {
     const logger = createLogger();
     const org = createMockOrg();
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({
         packageDirectory: '/pkg/dir',
         standardValueSets: [{fullName: 'Industry'}, {fullName: 'CaseOrigin'}],
         type: PackageType.Unlocked,
-      },
+      }),
     }));
 
     expect(StandardValueSetDeployer).toHaveBeenCalledWith(
@@ -236,12 +251,12 @@ describe('standardValueSetHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({
         packageDirectory: '/pkg/dir',
         standardValueSets: [{fullName: 'Industry'}, {fullName: 'CaseOrigin'}],
         type: PackageType.Unlocked,
-      },
+      }),
     }));
 
     const deployerInstance = vi.mocked(StandardValueSetDeployer).mock.results[0].value;
@@ -265,12 +280,12 @@ describe('standardValueSetHooks', () => {
     await expect(
       hooks.hooks[0].handler(createContext({
         logger,
-        org: createMockOrg(),
-        sfpmPackage: {
+        targetOrg: 'test@user.org',
+        sfpmPackage: createPackage({
           packageDirectory: '/pkg/dir',
           standardValueSets: [{fullName: 'Industry'}],
           type: PackageType.Unlocked,
-        },
+        }),
       })),
     ).rejects.toThrow('deployment failed');
   });

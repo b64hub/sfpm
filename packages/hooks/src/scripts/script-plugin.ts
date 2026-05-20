@@ -1,5 +1,3 @@
-import type {Logger} from '@b64hub/sfpm-core';
-
 import {HookContext, LifecycleHooks, resolveHookConfig} from '@b64hub/sfpm-core';
 
 import type {ScriptDefinition, ScriptHooksOptions, ScriptType} from './types.js';
@@ -175,10 +173,10 @@ async function executeScripts(
   context: HookContext,
   failOnError: boolean,
 ): Promise<void> {
-  const logger = context.logger as Logger | undefined;
-  const packageName = context.packageName as string;
-  const packagePath = (context.packagePath as string | undefined) ?? '';
-  const projectDir = (context.projectDir as string | undefined) ?? process.cwd();
+  const {logger, sfpmPackage} = context;
+  const packageName = sfpmPackage.name;
+  const packagePath = sfpmPackage.packageDirectory ?? '';
+  const {projectDir} = context;
   const runner = new ScriptRunner(logger);
 
   for (const script of scripts) {
@@ -202,7 +200,7 @@ async function executeScripts(
         packageName,
         packagePath,
         projectDir,
-        stagingDirectory: context.stagingDirectory as string | undefined,
+        stagingDirectory: sfpmPackage.workingDirectory,
         targetOrg: context.targetOrg,
       });
 

@@ -43,22 +43,22 @@ export function managedPackageHooks(options?: ManagedPackageHooksOptions): Lifec
   return {
     hooks: [
       {
+        // eslint-disable-next-line complexity -- will be refactored when this hook is migrated
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
-          const packageDefinition = (context.sfpmPackage as any)?.packageDefinition;
-          const packageAliases = (context.packageAliases ?? {}) as Record<string, string>;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
+          const managedDependencies = sfpmPackage.packageDefinition?.managedDependencies;
 
-          if (!packageDefinition?.dependencies?.length) {
-            logger?.debug(`ManagedPackage: no dependencies for '${packageName}', skipping`);
+          if (!managedDependencies || Object.keys(managedDependencies).length === 0) {
+            logger?.debug(`ManagedPackage: no managed dependencies for '${packageName}', skipping`);
             return;
           }
 
-          // Resolve managed dependencies — those whose alias is a 04t subscriber version ID
+          // Resolve managed dependencies — those with a 04t subscriber version ID
           const managedDeps: ManagedPackageRef[] = [];
-          for (const dep of packageDefinition.dependencies) {
-            const aliasValue = packageAliases[dep.package];
-            if (aliasValue?.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
-              managedDeps.push(new ManagedPackageRef(dep.package, aliasValue));
+          for (const [depName, versionId] of Object.entries(managedDependencies)) {
+            if (versionId.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
+              managedDeps.push(new ManagedPackageRef(depName, versionId));
             }
           }
 
@@ -67,7 +67,7 @@ export function managedPackageHooks(options?: ManagedPackageHooksOptions): Lifec
             return;
           }
 
-          const connection = resolveConnection(context, logger);
+          const connection = await resolveConnection(context, logger);
           if (!connection) {
             const msg = `ManagedPackage: no org connection for '${packageName}', cannot install dependencies`;
             if (failOnError) throw new Error(msg);
@@ -110,14 +110,19 @@ export function managedPackageHooks(options?: ManagedPackageHooksOptions): Lifec
 // Helpers
 // ============================================================================
 
-function resolveConnection(context: HookContext, logger?: Logger): Connection | undefined {
-  const org = context.org as Org | undefined;
-  if (!org) {
-    logger?.debug('ManagedPackage: no org in hook context');
+async function resolveConnection(context: HookContext, logger?: Logger): Promise<Connection | undefined> {
+  if (!context.targetOrg) {
+    logger?.debug('ManagedPackage: no targetOrg in hook context');
     return undefined;
   }
 
-  return org.getConnection();
+  try {
+    const org = await Org.create({aliasOrUsername: context.targetOrg});
+    return org.getConnection();
+  } catch (error) {
+    logger?.debug(`ManagedPackage: failed to connect to '${context.targetOrg}': ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
 }
 
 /**

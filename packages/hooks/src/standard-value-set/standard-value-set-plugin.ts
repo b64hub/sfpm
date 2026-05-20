@@ -64,32 +64,33 @@ export function standardValueSetHooks(options?: StandardValueSetHooksOptions): L
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
 
           // ── Guard: only process unlocked packages ────────────────
-          const sfpmPackage = context.sfpmPackage as SvsCapablePackage | undefined;
+          const svsPackage = sfpmPackage as unknown as SvsCapablePackage;
 
-          if (!sfpmPackage || String(sfpmPackage.type) !== PackageType.Unlocked) {
+          if (String(svsPackage.type) !== PackageType.Unlocked) {
             logger?.debug(`StandardValueSet: skipping '${packageName}' (not an unlocked package)`);
             return;
           }
 
           // ── Guard: need an org connection ─────────────────────────
-          const connection = resolveConnection(context, logger);
+          const connection = await resolveConnection(context, logger);
           if (!connection) {
             logger?.warn(`StandardValueSet: no org connection available for '${packageName}', skipping`);
             return;
           }
 
           // ── Guard: check package has SVS components ───────────────
-          const svsList = sfpmPackage.standardValueSets ?? [];
+          const svsList = svsPackage.standardValueSets ?? [];
           if (svsList.length === 0) {
             logger?.debug(`StandardValueSet: no standard value sets in '${packageName}'`);
             return;
           }
 
           // ── Locate SVS source directory ───────────────────────────
-          const svsPath = findStandardValueSetsDirectory(sfpmPackage.packageDirectory);
+          const svsPath = findStandardValueSetsDirectory(svsPackage.packageDirectory);
           if (!svsPath) {
             logger?.warn(`StandardValueSet: package reports ${svsList.length} SVS component(s) but `
               + `no standardValueSets directory found for '${packageName}'`);
@@ -120,18 +121,22 @@ export function standardValueSetHooks(options?: StandardValueSetHooksOptions): L
 // Helpers
 // ============================================================================
 
-function resolveConnection(
+async function resolveConnection(
   context: HookContext,
   logger?: Logger,
-): Connection | undefined {
-  const {org} = context;
-
-  if (org instanceof Org) {
-    return org.getConnection();
+): Promise<Connection | undefined> {
+  if (!context.targetOrg) {
+    logger?.debug('StandardValueSet: no targetOrg in hook context');
+    return undefined;
   }
 
-  logger?.debug('StandardValueSet: context.org is not an Org instance');
-  return undefined;
+  try {
+    const org = await Org.create({aliasOrUsername: context.targetOrg});
+    return org.getConnection();
+  } catch (error) {
+    logger?.debug(`StandardValueSet: failed to connect to '${context.targetOrg}': ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
 }
 
 /**

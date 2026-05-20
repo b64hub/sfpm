@@ -3,6 +3,7 @@ import {
 } from 'vitest';
 
 import type {HookContext} from '@b64hub/sfpm-core';
+
 import {resolveHookConfig} from '@b64hub/sfpm-core';
 
 import {scriptHooks} from '../../src/scripts/script-plugin.js';
@@ -52,16 +53,17 @@ function createLogger() {
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'install',
-    package: {
+    projectDir: '/project',
+    sfpmPackage: {
       name: 'test-package',
-      path: '/project/packages/test-package',
-    },
-    packageName: 'test-package',
-    packagePath: '/project/packages/test-package',
+      packageDefinition: {},
+      packageDirectory: '/project/packages/test-package',
+      type: 'Source',
+    } as HookContext['sfpmPackage'],
     stage: 'deploy',
     timing: 'post',
     ...overrides,
-  } as HookContext;
+  };
 }
 
 // ============================================================================

@@ -3,17 +3,28 @@ import {
 } from 'vitest';
 
 import {LifecycleEngine} from '../../src/lifecycle/lifecycle-engine.js';
+import type SfpmPackage from '../../src/package/sfpm-package.js';
 import {HookContext, LifecycleHooks} from '../../src/types/lifecycle.js';
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
+function createMockPackage(overrides?: Record<string, unknown>): SfpmPackage {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    type: 'Source',
+    ...overrides,
+  } as unknown as SfpmPackage;
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
-    packageName: 'test-package',
-    packageType: 'Source',
     operation: 'install',
+    projectDir: '/project',
+    sfpmPackage: createMockPackage(),
+    stage: 'local',
     timing: 'pre',
     ...overrides,
   };
@@ -215,7 +226,7 @@ describe('LifecycleEngine', () => {
         hooks: [{handler: receivedContext, operation: 'install', timing: 'pre'}],
       }));
 
-      const context = createContext({packageName: 'my-pkg'});
+      const context = createContext({sfpmPackage: createMockPackage({name: 'my-pkg'})});
       await engine.run('install', 'pre', context);
 
       expect(receivedContext).toHaveBeenCalledWith({...context, stage: 'local'});
@@ -397,18 +408,18 @@ describe('LifecycleEngine', () => {
       engine.use(createHooks({
         hooks: [{
           handler,
-          options: {filter: ctx => ctx.packageType === 'Unlocked'},
+          options: {filter: ctx => ctx.sfpmPackage.type === 'Unlocked'},
           operation: 'install',
           timing: 'pre',
         }],
       }));
 
       // Source package — should be filtered out
-      await engine.run('install', 'pre', createContext({packageType: 'Source'}));
+      await engine.run('install', 'pre', createContext({sfpmPackage: createMockPackage({type: 'Source'})}));
       expect(handler).not.toHaveBeenCalled();
 
       // Unlocked package — should pass filter
-      await engine.run('install', 'pre', createContext({packageType: 'Unlocked'}));
+      await engine.run('install', 'pre', createContext({sfpmPackage: createMockPackage({type: 'Unlocked'})}));
       expect(handler).toHaveBeenCalledTimes(1);
     });
 
@@ -446,12 +457,12 @@ describe('LifecycleEngine', () => {
       const handler = vi.fn();
 
       engine.use(createHooks({
-        hooks: [{handler, operation: 'custom-operation', timing: 'custom-timing'}],
+        hooks: [{handler, operation: 'custom-operation', timing: 'custom-timing' as any}],
       }));
 
       await engine.run('custom-operation', 'custom-timing', createContext({
-        operation: 'custom-operation',
-        timing: 'custom-timing',
+        operation: 'custom-operation' as any,
+        timing: 'custom-timing' as any,
       }));
 
       expect(handler).toHaveBeenCalledTimes(1);

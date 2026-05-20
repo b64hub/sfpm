@@ -1,5 +1,5 @@
-import {PackageType} from '../index.js';
-import {Logger} from './logger.js';
+import type SfpmPackage from '../package/sfpm-package.js';
+import type {Logger} from './logger.js';
 
 // ============================================================================
 // Hook Context
@@ -8,48 +8,42 @@ import {Logger} from './logger.js';
 export type PackageOperation = 'build' | 'install';
 export type HookTiming = 'post' | 'pre';
 
-export interface PackageContext {
-  packageName: string;
-  /**
-   * Absolute path to the package's metadata directory.
-   * Could be resolved from the local project source or from an extracted artifact.
-   */
-  packagePath: string;
-  /** Package type identifier (e.g., 'Source', 'Unlocked') */
-  packageType?: PackageType;
-}
+/**
+ * A hook handler function that receives a {@link HookContext} and performs
+ * lifecycle work. May be synchronous or asynchronous.
+ */
+export type HookHandler = (context: HookContext) => Promise<void> | void;
 
 /**
  * Input provided to lifecycle hook handlers.
  *
- * Contains the minimum information guaranteed to be available at any
- * point in the lifecycle. Operation-specific integrations will extend this
- * with richer context (e.g., org connection, component set, resolved artifact)
- * when the lifecycle engine is wired into orchestrators.
+ * Contains the information guaranteed to be available at any point in the
+ * lifecycle. Every field is statically typed — hooks should never need
+ * to cast or widen the context.
  *
- * The index signature allows orchestrators to pass additional operation-specific
- * data without requiring type changes in core.
+ * Hooks that need a live Salesforce connection should call
+ * `Org.create({ aliasOrUsername: context.targetOrg })` from `@salesforce/core`.
+ * The SDK caches `Org` instances internally, so repeated calls are inexpensive.
  */
 export interface HookContext {
-  /** Arbitrary operation-specific data — orchestrators extend this at integration time */
-  [key: string]: unknown;
-  /** The concrete operation being executed (e.g., 'build', 'install') */
+  /** Optional logger for hook diagnostics. */
+  logger?: Logger;
+  /** The concrete operation being executed (e.g., 'build', 'install'). */
   operation: PackageOperation;
-  /** Current package name being processed */
-  package: PackageContext;
-  /** The lifecycle stage that triggered this invocation (e.g., 'validate', 'deploy', 'install', 'build') */
+  /** Absolute path to the project root directory. */
+  projectDir: string;
+  /** The package being processed. */
+  sfpmPackage: SfpmPackage;
+  /** The lifecycle stage that triggered this invocation (e.g., 'validate', 'deploy', 'install', 'build'). */
   stage: string;
   /**
    * Org alias or username that hooks can use to connect to the relevant org.
    *
    * - **Install operations**: the target org receiving the deployment
    * - **Build operations**: the default DevHub (if one was specified)
-   *
-   * Hooks that need a live connection can call `Org.create({ aliasOrUsername: targetOrg })`
-   * from `@salesforce/core` to obtain one.
    */
   targetOrg?: string;
-  /** The timing within the operation (e.g., 'pre', 'post') */
+  /** The timing within the operation (e.g., 'pre', 'post'). */
   timing: HookTiming;
 }
 
@@ -92,22 +86,13 @@ export interface HookOptions {
  */
 export interface HookRegistration {
   /** The handler function to execute */
-  handler: (context: HookContext) => Promise<void> | void;
+  handler: HookHandler;
 
   /** Operation name (e.g., 'build', 'install') */
   operation: string;
-
   /** Optional execution options (ordering, filtering, stage restriction) */
   options?: HookOptions;
-
-  /**
-   * Timing within the operation.
-   * - `'pre'`: runs before the main operation action (sequential)
-   * - `'post'`: runs after the main operation action (sequential)
-   *
-   * Modules may define custom timings for their own operations.
-   */
-  timing: string;
+  timing: HookTiming;
 }
 
 // ============================================================================

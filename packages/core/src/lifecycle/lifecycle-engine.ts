@@ -256,7 +256,7 @@ export class LifecycleEngine {
     }
 
     context.logger?.debug(`Lifecycle: running ${matching.length} hook(s) for '${operation}:${timing}'`
-      + (context.packageName ? ` on package '${context.packageName}'` : '')
+      + ` on package '${context.sfpmPackage.name}'`
       + ` [stage=${this._stage}]`);
 
     for (const hook of matching) {
@@ -266,7 +266,7 @@ export class LifecycleEngine {
       } catch (error) {
         context.logger?.error(`Lifecycle: hook from '${hook.hooksName}' failed `
           + `at '${hook.operation}:${hook.timing}'`
-          + (context.packageName ? ` for package '${context.packageName}'` : '')
+          + ` for package '${context.sfpmPackage.name}'`
           + `: ${error instanceof Error ? error.message : String(error)}`);
         throw error;
       }
@@ -339,7 +339,7 @@ export class LifecycleEngine {
       if (!isHookEnabled(context, hook.hooksName)) {
         logger?.debug(`Lifecycle: skipping hook from '${hook.hooksName}' for '${operation}:${timing}' — `
           + 'disabled via packageOptions.hooks'
-          + (context.packageName ? ` for package '${context.packageName}'` : ''));
+          + ` for package '${context.sfpmPackage.name}'`);
         return false;
       }
 
@@ -347,7 +347,7 @@ export class LifecycleEngine {
       if (hook.filter && !hook.filter(context)) {
         logger?.debug(`Lifecycle: skipping hook from '${hook.hooksName}' for '${operation}:${timing}' — `
           + 'filter returned false'
-          + (context.packageName ? ` for package '${context.packageName}'` : ''));
+          + ` for package '${context.sfpmPackage.name}'`);
         return false;
       }
 

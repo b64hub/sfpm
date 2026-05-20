@@ -62,10 +62,11 @@ export function feedTrackingHooks(options?: FeedTrackingHooksOptions): Lifecycle
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
 
           // ── Guard: need an org ────────────────────────────────────
-          const org = resolveOrg(context, logger);
+          const org = await resolveOrg(context, logger);
           if (!org) {
             logger?.warn(`FeedTracking: no org connection for '${packageName}', skipping`);
             return;
@@ -78,8 +79,8 @@ export function feedTrackingHooks(options?: FeedTrackingHooksOptions): Lifecycle
           }
 
           // ── Guard: check for FT fields in package ─────────────────
-          const sfpmPackage = context.sfpmPackage as FtCapablePackage | undefined;
-          const ftFields = sfpmPackage?.ftFields ?? [];
+          const ftPackage = sfpmPackage as unknown as FtCapablePackage;
+          const ftFields = ftPackage.ftFields ?? [];
 
           if (ftFields.length === 0) {
             logger?.debug(`FeedTracking: no tracked fields in '${packageName}'`);
@@ -111,16 +112,19 @@ export function feedTrackingHooks(options?: FeedTrackingHooksOptions): Lifecycle
 // Helpers
 // ============================================================================
 
-function resolveOrg(
+async function resolveOrg(
   context: HookContext,
   logger?: Logger,
-): Org | undefined {
-  const {org} = context;
-
-  if (org instanceof Org) {
-    return org;
+): Promise<Org | undefined> {
+  if (!context.targetOrg) {
+    logger?.debug('FeedTracking: no targetOrg in hook context');
+    return undefined;
   }
 
-  logger?.debug('FeedTracking: context.org is not an Org instance');
-  return undefined;
+  try {
+    return await Org.create({aliasOrUsername: context.targetOrg});
+  } catch (error) {
+    logger?.debug(`FeedTracking: failed to connect to '${context.targetOrg}': ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
 }

@@ -41,7 +41,9 @@ export function profileHooks(options?: ProfileHooksOptions): LifecycleHooks {
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName, packagePath} = context;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
+          const packagePath = sfpmPackage.packageDirectory;
           const cleaner = new ProfileCleaner(options, logger);
 
           if (!packagePath) {
@@ -103,33 +105,23 @@ export function profileHooks(options?: ProfileHooksOptions): LifecycleHooks {
 /**
  * Attempt to create an org metadata resolver from the hook context.
  *
- * Resolution order:
- * 1. `context.targetOrg` — alias or username string; creates a new Org connection
- * 2. `context.org` — pre-built `Org` instance (backward compat with orchestrator)
- *
+ * Uses `context.targetOrg` — alias or username string — to create an Org connection.
  * Returns `undefined` when no org information is available.
  */
 async function resolveOrgMetadata(
   context: HookContext,
   logger?: Logger,
 ): Promise<OrgMetadataResolver | undefined> {
-  // Prefer the typed targetOrg alias/username
-  if (context.targetOrg) {
-    try {
-      const org = await Org.create({aliasOrUsername: context.targetOrg});
-      return new OrgMetadataResolver(org.getConnection(), logger);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger?.debug(`Profiles: failed to connect to '${context.targetOrg}': ${message}`);
-      return undefined;
-    }
+  if (!context.targetOrg) {
+    return undefined;
   }
 
-  // Fall back to pre-built Org instance on context
-  const {org} = context;
-  if (org instanceof Org) {
+  try {
+    const org = await Org.create({aliasOrUsername: context.targetOrg});
     return new OrgMetadataResolver(org.getConnection(), logger);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger?.debug(`Profiles: failed to connect to '${context.targetOrg}': ${message}`);
+    return undefined;
   }
-
-  return undefined;
 }

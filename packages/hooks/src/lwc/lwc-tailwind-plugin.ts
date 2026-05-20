@@ -31,7 +31,8 @@ export function lwcTailwindHooks(options?: LwcTailwindHooksOptions): LifecycleHo
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
 
           logger?.info(`LWC Tailwind: generating CSS for '${packageName}'`);
 

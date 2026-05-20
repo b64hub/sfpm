@@ -12,7 +12,6 @@ import {
   OrchestrationResult,
   PackageResult,
 } from '../types/events.js';
-import {HookContext} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {
   OrchestrationTask,
@@ -91,19 +90,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     });
 
     try {
-      // Run pre-build hooks
-      if (LifecycleEngine.isInitialized()) {
-        const hookContext = this.buildHookContext(packageName);
-        await LifecycleEngine.getInstance().runBuildPre(hookContext);
-      }
-
       await builder.buildPackage(packageName, this.projectDirectory);
-
-      // Run post-build hooks (only if not skipped)
-      if (LifecycleEngine.isInitialized() && !skipped) {
-        const hookContext = this.buildHookContext(packageName);
-        await LifecycleEngine.getInstance().runBuildPost(hookContext);
-      }
     } catch (error_) {
       success = false;
       error = error_ instanceof Error ? error_.message : String(error_);
@@ -119,25 +106,6 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
 
   async setup(): Promise<GitService | undefined> {
     return GitService.initialize(this.projectDirectory, this.logger);
-  }
-
-  /**
-   * Build a {@link HookContext} for lifecycle hooks at the build operation.
-   */
-  private buildHookContext(packageName: string): HookContext {
-    const packageDefinition = this.provider.getPackageDefinition(packageName);
-
-    return {
-      logger: this.logger,
-      operation: 'build',
-      packageName,
-      packageType: packageDefinition.type,
-      projectDir: this.projectDirectory,
-      sfpmPackage: {packageDefinition},
-      stage: LifecycleEngine.isInitialized() ? LifecycleEngine.getInstance().stage : 'local',
-      targetOrg: this.options.devhubUsername,
-      timing: '',
-    };
   }
 
   private forwardBuilderEvents(builder: PackageBuilder, emitter: OrchestratorEmitter): void {

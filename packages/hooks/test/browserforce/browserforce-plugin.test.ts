@@ -21,10 +21,22 @@ function createLogger() {
   };
 }
 
+function createPackage(overrides?: Partial<HookContext['sfpmPackage']>): HookContext['sfpmPackage'] {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    packageDirectory: '/project/packages/test-package',
+    type: 'Source',
+    ...overrides,
+  } as HookContext['sfpmPackage'];
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'install',
-    packageName: 'test-package',
+    projectDir: '/project',
+    sfpmPackage: createPackage(),
+    stage: 'local',
     timing: 'post',
     ...overrides,
   };
@@ -58,7 +70,7 @@ describe('browserforceHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      packageName: 'test-package',
+      sfpmPackage: createPackage({name: 'test-package'}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -72,7 +84,7 @@ describe('browserforceHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      packageName: 'test-package',
+      sfpmPackage: createPackage({name: 'test-package'}),
     }));
 
     expect(logger.info).toHaveBeenCalledWith(
@@ -86,7 +98,7 @@ describe('browserforceHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      packageName: 'any-package',
+      sfpmPackage: createPackage({name: 'any-package'}),
     }));
 
     expect(logger.info).toHaveBeenCalledWith(

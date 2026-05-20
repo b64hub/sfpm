@@ -43,10 +43,22 @@ function createLogger() {
   };
 }
 
+function createPackage(overrides?: Partial<HookContext['sfpmPackage']>): HookContext['sfpmPackage'] {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    packageDirectory: '/project/packages/test-package',
+    type: 'Source',
+    ...overrides,
+  } as HookContext['sfpmPackage'];
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'build',
-    packageName: 'test-package',
+    projectDir: '/project',
+    sfpmPackage: createPackage(),
+    stage: 'local',
     timing: 'pre',
     ...overrides,
   };
@@ -133,19 +145,8 @@ describe('lwcTypescriptHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      sfpmPackage: {},
+      sfpmPackage: createPackage({packageDirectory: undefined}),
     }));
-
-    expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('no package directory'),
-    );
-  });
-
-  it('should skip when no sfpmPackage', async () => {
-    const hooks = lwcTypescriptHooks();
-    const logger = createLogger();
-
-    await hooks.hooks[0].handler(createContext({logger}));
 
     expect(logger.debug).toHaveBeenCalledWith(
       expect.stringContaining('no package directory'),
@@ -160,7 +161,7 @@ describe('lwcTypescriptHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      sfpmPackage: {packageDirectory: '/pkg/dir'},
+      sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -179,7 +180,7 @@ describe('lwcTypescriptHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      sfpmPackage: {packageDirectory: '/pkg/dir'},
+      sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -217,7 +218,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: {packageDirectory: '/pkg/dir'},
+        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
       }));
 
       expect(logger.info).toHaveBeenCalledWith(
@@ -251,7 +252,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: {packageDirectory: '/pkg/dir'},
+        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
       }));
 
       // Only 1 file from 'comp', not the one from '__tests__'
@@ -280,7 +281,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: {packageDirectory: '/pkg/dir'},
+        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
       }));
 
       expect(spawn).toHaveBeenCalledWith(
@@ -304,7 +305,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: {packageDirectory: '/pkg/dir'},
+        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
       }));
 
       expect(spawn).toHaveBeenCalledWith(
@@ -329,7 +330,7 @@ describe('lwcTypescriptHooks', () => {
       await expect(
         hooks.hooks[0].handler(createContext({
           logger,
-          sfpmPackage: {packageDirectory: '/pkg/dir'},
+          sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
         })),
       ).rejects.toThrow('compilation failed');
     });
@@ -362,7 +363,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: {packageDirectory: '/pkg/dir'},
+        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
       }));
 
       expect(unlinkSync).toHaveBeenCalledTimes(1);
@@ -393,7 +394,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: {packageDirectory: '/pkg/dir'},
+        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
       }));
 
       expect(unlinkSync).not.toHaveBeenCalled();
