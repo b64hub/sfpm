@@ -77,7 +77,9 @@ export type {
 // ── Scripts ─────────────────────────────────────────────────────────────────
 export {scriptHooks} from './scripts/script-plugin.js';
 export {ScriptRunner} from './scripts/script-runner.js';
-export type {ScriptDefinition, ScriptHooksOptions, ScriptType} from './scripts/types.js';
+export type {
+  ScriptDefinition, ScriptExecutionContext, ScriptExecutor, ScriptHooksOptions, ScriptResult, ScriptType,
+} from './scripts/types.js';
 
 // ── Standard Value Set ──────────────────────────────────────────────────────
 export {StandardValueSetDeployer} from './standard-value-set/standard-value-set-deployer.js';

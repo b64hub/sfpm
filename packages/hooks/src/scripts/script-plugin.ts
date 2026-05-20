@@ -1,8 +1,10 @@
+import type {Logger} from '@b64hub/sfpm-core';
+
 import {HookContext, LifecycleHooks, resolveHookConfig} from '@b64hub/sfpm-core';
-import {Org} from '@salesforce/core';
 
 import type {ScriptDefinition, ScriptHooksOptions, ScriptType} from './types.js';
 
+import {ScriptNotFoundError} from './executors/npm-executor.js';
 import {ScriptRunner} from './script-runner.js';
 
 const EXTENSION_MAP: Record<string, ScriptType> = {
@@ -21,13 +23,14 @@ const EXTENSION_MAP: Record<string, ScriptType> = {
  *   "hooks": {
  *     "scripts": {
  *       "pre": ["scripts/setup.sh"],
- *       "post": ["scripts/seed.ts", "scripts/activate.apex"]
+ *       "post": ["scripts/seed.ts", "scripts/activate.apex", "npm:seed-data"]
  *     }
  *   }
  * }
  * ```
  *
- * Values can be plain paths (strings) or full {@link ScriptDefinition} objects.
+ * Values can be plain paths (strings), `npm:<script-name>` references, or
+ * full {@link ScriptDefinition} objects.
  */
 interface ScriptHookOverrides {
   /** Scripts to run after installation. */
@@ -56,7 +59,8 @@ function resolveScriptType(script: ScriptDefinition): ScriptType {
  *
  * Registers hooks on `install:pre` and `install:post` that execute
  * user-defined scripts. Supports shell scripts (`.sh`), TypeScript
- * (`.ts`), JavaScript (`.js`), and anonymous Apex (`.apex`).
+ * (`.ts`), JavaScript (`.js`), anonymous Apex (`.apex`), and npm
+ * scripts from `package.json`.
  *
  * Scripts are resolved from **two sources** (merged):
  *
@@ -83,6 +87,7 @@ function resolveScriptType(script: ScriptDefinition): ScriptType {
  *         { path: 'scripts/pre-deploy.sh', timing: 'pre' },
  *         { path: 'scripts/seed-data.ts', timing: 'post' },
  *         { path: 'scripts/activate.apex', timing: 'post' },
+ *         { path: 'seed-data', type: 'npm', timing: 'post' },
  *       ],
  *     }),
  *   ],
@@ -142,13 +147,23 @@ function resolveScripts(
 
 /**
  * Normalise mixed arrays of `string | ScriptDefinition` into full `ScriptDefinition[]`.
+ *
+ * Strings prefixed with `npm:` are treated as npm script references
+ * (e.g. `"npm:seed-data"` → `{ path: 'seed-data', type: 'npm' }`).
  */
 function normalizeToDefinitions(
   entries: Array<ScriptDefinition | string>,
   timing: 'post' | 'pre',
 ): ScriptDefinition[] {
-  return entries.map(entry =>
-    typeof entry === 'string' ? {path: entry, timing} : entry);
+  return entries.map(entry => {
+    if (typeof entry !== 'string') return entry;
+
+    if (entry.startsWith('npm:')) {
+      return {path: entry.slice(4), timing, type: 'npm' as const};
+    }
+
+    return {path: entry, timing};
+  });
 }
 
 /**
@@ -160,54 +175,53 @@ async function executeScripts(
   context: HookContext,
   failOnError: boolean,
 ): Promise<void> {
-  const {logger, packageName} = context;
+  const logger = context.logger as Logger | undefined;
+  const packageName = context.packageName as string;
+  const packagePath = (context.packagePath as string | undefined) ?? '';
   const projectDir = (context.projectDir as string | undefined) ?? process.cwd();
-  const targetOrg = resolveTargetOrg(context);
   const runner = new ScriptRunner(logger);
 
   for (const script of scripts) {
     if (script.packageName && script.packageName !== packageName) continue;
 
     // Per-script stage filtering
-    const currentStage = context.stage as string | undefined;
-    if (script.stages && script.stages.length > 0 && currentStage && !script.stages.includes(currentStage)) {
+    const currentStage = context.stage;
+    if (script.stages && script.stages.length > 0 && !script.stages.includes(currentStage)) {
       logger?.debug(`Script [${timing}]: skipping '${script.path}' — stage '${currentStage}' not in [${script.stages.join(', ')}]`);
       continue;
     }
 
     const scriptType = resolveScriptType(script);
+
     logger?.info(`Script [${timing}]: running ${scriptType} script '${script.path}' for '${packageName}'`);
 
-    // eslint-disable-next-line no-await-in-loop -- sequential execution required
-    const result = await runner.run(script, scriptType, {
-      custom: script.env,
-      packageName: packageName as string | undefined,
-      projectDir,
-      stagingDirectory: context.stagingDirectory as string | undefined,
-      targetOrg,
-    }, projectDir);
+    try {
+      // eslint-disable-next-line no-await-in-loop -- sequential execution required
+      const result = await runner.run(script, scriptType, {
+        custom: script.env,
+        packageName,
+        packagePath,
+        projectDir,
+        stagingDirectory: context.stagingDirectory as string | undefined,
+        targetOrg: context.targetOrg,
+      });
 
-    if (!result.success) {
-      const message = `Script '${script.path}' failed:\n${result.stderr || result.stdout}`;
+      if (!result.success) {
+        const message = `Script '${script.path}' failed:\n${result.stderr || result.stdout}`;
 
-      if (failOnError) {
-        throw new Error(message);
+        if (failOnError) {
+          throw new Error(message);
+        }
+
+        logger?.warn(message);
+      }
+    } catch (error) {
+      if (error instanceof ScriptNotFoundError) {
+        logger?.debug(`Script [${timing}]: skipping npm script '${script.path}' — ${error.message}`);
+        continue;
       }
 
-      logger?.warn(message);
+      throw error;
     }
   }
-}
-
-/**
- * Resolve the target org username from the hook context.
- */
-function resolveTargetOrg(context: HookContext): string | undefined {
-  const {org} = context;
-
-  if (org instanceof Org) {
-    return org.getUsername();
-  }
-
-  return undefined;
 }

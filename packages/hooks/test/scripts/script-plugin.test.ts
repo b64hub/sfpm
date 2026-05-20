@@ -4,7 +4,6 @@ import {
 
 import type {HookContext} from '@b64hub/sfpm-core';
 import {resolveHookConfig} from '@b64hub/sfpm-core';
-import {Org} from '@salesforce/core';
 
 import {scriptHooks} from '../../src/scripts/script-plugin.js';
 
@@ -26,6 +25,13 @@ vi.mock('../../src/scripts/script-runner.js', () => ({
   }; }),
 }));
 
+vi.mock('../../src/scripts/executors/npm-executor.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../src/scripts/executors/npm-executor.js')>();
+  return {
+    ...original,
+  };
+});
+
 import {ScriptRunner} from '../../src/scripts/script-runner.js';
 
 // ============================================================================
@@ -43,20 +49,19 @@ function createLogger() {
   };
 }
 
-function createMockOrg(username = 'test@user.org') {
-  const org = Object.create(Org.prototype);
-  org.getConnection = vi.fn().mockReturnValue({});
-  org.getUsername = vi.fn().mockReturnValue(username);
-  return org as Org;
-}
-
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'install',
+    package: {
+      name: 'test-package',
+      path: '/project/packages/test-package',
+    },
     packageName: 'test-package',
+    packagePath: '/project/packages/test-package',
+    stage: 'deploy',
     timing: 'post',
     ...overrides,
-  };
+  } as HookContext;
 }
 
 // ============================================================================
@@ -93,7 +98,7 @@ describe('scriptHooks', () => {
       const hooks = scriptHooks({scripts: []});
       const logger = createLogger();
 
-      await hooks.hooks[0].handler(createContext({logger, org: createMockOrg(), timing: 'pre'}));
+      await hooks.hooks[0].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'pre'}));
 
       expect(ScriptRunner).not.toHaveBeenCalled();
     });
@@ -110,7 +115,7 @@ describe('scriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        org: createMockOrg(),
+        targetOrg: 'test@user.org',
         timing: 'pre',
       }));
 
@@ -119,7 +124,6 @@ describe('scriptHooks', () => {
         expect.objectContaining({path: 'scripts/setup.sh'}),
         'shell',
         expect.objectContaining({targetOrg: 'test@user.org'}),
-        expect.any(String),
       );
     });
   });
@@ -141,7 +145,7 @@ describe('scriptHooks', () => {
 
       await hooks.hooks[1].handler(createContext({
         logger,
-        org: createMockOrg(),
+        targetOrg: 'test@user.org',
         timing: 'post',
       }));
 
@@ -150,7 +154,6 @@ describe('scriptHooks', () => {
         expect.objectContaining({path: 'scripts/deploy.ts'}),
         'typescript',
         expect.any(Object),
-        expect.any(String),
       );
     });
 
@@ -167,7 +170,7 @@ describe('scriptHooks', () => {
       // The script has no timing, defaults to post
       await hooks.hooks[1].handler(createContext({
         logger,
-        org: createMockOrg(),
+        targetOrg: 'test@user.org',
         timing: 'post',
       }));
 
@@ -176,7 +179,6 @@ describe('scriptHooks', () => {
         expect.objectContaining({path: 'scripts/seed.apex'}),
         'apex',
         expect.any(Object),
-        expect.any(String),
       );
     });
 
@@ -197,7 +199,7 @@ describe('scriptHooks', () => {
 
       await hooks.hooks[1].handler(createContext({
         logger,
-        org: createMockOrg(),
+        targetOrg: 'test@user.org',
         timing: 'post',
       }));
 
@@ -227,14 +229,33 @@ describe('scriptHooks', () => {
       });
       const logger = createLogger();
 
-      await hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'}));
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       const instance = vi.mocked(ScriptRunner).mock.results[0].value;
       expect(instance.run).toHaveBeenCalledWith(
         expect.any(Object),
         expectedType,
         expect.any(Object),
-        expect.any(String),
+      );
+    });
+
+    it('should use explicit npm type', async () => {
+      vi.mocked(ScriptRunner).mockImplementation(function() { return {
+        run: vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '', success: true}),
+      }; } as any);
+
+      const hooks = scriptHooks({
+        scripts: [{path: 'seed-data', timing: 'post', type: 'npm'}],
+      });
+      const logger = createLogger();
+
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
+
+      const instance = vi.mocked(ScriptRunner).mock.results[0].value;
+      expect(instance.run).toHaveBeenCalledWith(
+        expect.objectContaining({path: 'seed-data', type: 'npm'}),
+        'npm',
+        expect.any(Object),
       );
     });
 
@@ -245,7 +266,7 @@ describe('scriptHooks', () => {
       const logger = createLogger();
 
       await expect(
-        hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'})),
+        hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'})),
       ).rejects.toThrow('unable to infer script type');
     });
 
@@ -259,14 +280,13 @@ describe('scriptHooks', () => {
       });
       const logger = createLogger();
 
-      await hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'}));
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       const instance = vi.mocked(ScriptRunner).mock.results[0].value;
       expect(instance.run).toHaveBeenCalledWith(
         expect.any(Object),
         'apex',
         expect.any(Object),
-        expect.any(String),
       );
     });
   });
@@ -288,8 +308,7 @@ describe('scriptHooks', () => {
 
       await hooks.hooks[1].handler(createContext({
         logger,
-        org: createMockOrg(),
-        packageName: 'test-package',
+        targetOrg: 'test@user.org',
         timing: 'post',
       }));
 
@@ -309,8 +328,8 @@ describe('scriptHooks', () => {
 
       await hooks.hooks[1].handler(createContext({
         logger,
-        org: createMockOrg(),
         stage: 'validate',
+        targetOrg: 'test@user.org',
         timing: 'post',
       }));
 
@@ -330,8 +349,8 @@ describe('scriptHooks', () => {
 
       await hooks.hooks[1].handler(createContext({
         logger,
-        org: createMockOrg(),
         stage: 'deploy',
+        targetOrg: 'test@user.org',
         timing: 'post',
       }));
 
@@ -356,7 +375,7 @@ describe('scriptHooks', () => {
       const logger = createLogger();
 
       await expect(
-        hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'})),
+        hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'})),
       ).rejects.toThrow("Script 'scripts/run.sh' failed");
     });
 
@@ -371,7 +390,7 @@ describe('scriptHooks', () => {
       });
       const logger = createLogger();
 
-      await hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'}));
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining("Script 'scripts/run.sh' failed"),
@@ -394,18 +413,17 @@ describe('scriptHooks', () => {
       });
       const logger = createLogger();
 
-      await hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'}));
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       const instance = vi.mocked(ScriptRunner).mock.results[0].value;
       expect(instance.run).toHaveBeenCalledWith(
         expect.objectContaining({env: {MY_VAR: 'hello'}}),
         expect.any(String),
         expect.objectContaining({custom: {MY_VAR: 'hello'}}),
-        expect.any(String),
       );
     });
 
-    it('should resolve targetOrg from Org instance', async () => {
+    it('should pass targetOrg from context to runner', async () => {
       vi.mocked(ScriptRunner).mockImplementation(function() { return {
         run: vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '', success: true}),
       }; } as any);
@@ -417,7 +435,7 @@ describe('scriptHooks', () => {
 
       await hooks.hooks[1].handler(createContext({
         logger,
-        org: createMockOrg('admin@myorg.com'),
+        targetOrg: 'admin@myorg.com',
         timing: 'post',
       }));
 
@@ -426,11 +444,10 @@ describe('scriptHooks', () => {
         expect.any(Object),
         expect.any(String),
         expect.objectContaining({targetOrg: 'admin@myorg.com'}),
-        expect.any(String),
       );
     });
 
-    it('should pass undefined targetOrg when no Org instance', async () => {
+    it('should pass undefined targetOrg when not set on context', async () => {
       vi.mocked(ScriptRunner).mockImplementation(function() { return {
         run: vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '', success: true}),
       }; } as any);
@@ -447,7 +464,6 @@ describe('scriptHooks', () => {
         expect.any(Object),
         expect.any(String),
         expect.objectContaining({targetOrg: undefined}),
-        expect.any(String),
       );
     });
 
@@ -464,14 +480,36 @@ describe('scriptHooks', () => {
       const hooks = scriptHooks({scripts: []});
       const logger = createLogger();
 
-      await hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'}));
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       const instance = vi.mocked(ScriptRunner).mock.results[0].value;
       expect(instance.run).toHaveBeenCalledWith(
         expect.objectContaining({path: 'scripts/from-pkg.sh'}),
         'shell',
         expect.any(Object),
-        expect.any(String),
+      );
+    });
+
+    it('should normalise npm: prefixed string overrides to npm ScriptDefinition', async () => {
+      vi.mocked(resolveHookConfig).mockReturnValue({
+        config: {post: ['npm:seed-data']},
+        enabled: true,
+      });
+
+      vi.mocked(ScriptRunner).mockImplementation(function() { return {
+        run: vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '', success: true}),
+      }; } as any);
+
+      const hooks = scriptHooks({scripts: []});
+      const logger = createLogger();
+
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
+
+      const instance = vi.mocked(ScriptRunner).mock.results[0].value;
+      expect(instance.run).toHaveBeenCalledWith(
+        expect.objectContaining({path: 'seed-data', type: 'npm'}),
+        'npm',
+        expect.any(Object),
       );
     });
   });
