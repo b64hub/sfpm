@@ -35,6 +35,7 @@ export default class Deploy extends SfpmCommand {
     force: Flags.boolean({char: 'f', description: 'force deploy even if already installed'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     'no-dependencies': Flags.boolean({description: 'only deploy the specified packages, skip transitive dependencies'}),
+    'no-hooks': Flags.boolean({description: 'skip lifecycle hooks'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'target-org': Flags.string({
       char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
@@ -86,9 +87,11 @@ export default class Deploy extends SfpmCommand {
 
     const sfpmConfig = projectService.getSfpmConfig();
 
-    const lifecycle = LifecycleEngine.stage('deploy');
-    for (const hooks of sfpmConfig.hooks ?? []) {
-      lifecycle.use(hooks);
+    if (!flags['no-hooks']) {
+      const lifecycle = LifecycleEngine.stage('deploy');
+      for (const hooks of sfpmConfig.hooks ?? []) {
+        lifecycle.use(hooks);
+      }
     }
 
     const installOptions = {

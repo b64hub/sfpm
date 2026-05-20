@@ -91,7 +91,7 @@ function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
 export class LifecycleEngine {
   private static initializedStage?: string;
   private static instance?: LifecycleEngine;
-  private readonly _stage: string;
+  private readonly _stage: string = DEFAULT_STAGE
   private readonly hooks: RegisteredHook[] = [];
   private insertionCounter = 0;
 
