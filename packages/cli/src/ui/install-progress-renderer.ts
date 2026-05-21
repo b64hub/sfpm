@@ -1,4 +1,7 @@
 import type {
+  HookCompleteEvent,
+  HooksCompleteEvent,
+  HooksStartEvent,
   InstallOrchestrator, InstallStartEvent, OrchestrationCompleteEvent,
   OrchestrationLevelCompleteEvent,
   OrchestrationLevelStartEvent,
@@ -26,6 +29,7 @@ export type {OutputMode} from './renderer-utils.js';
 interface TimingInfo {
   connectionStart?: Date;
   deploymentStart?: Date;
+  hooksStart?: Date;
   installStart?: Date;
 }
 
@@ -42,6 +46,9 @@ export class InstallProgressRenderer {
     'deployment:complete': {description: 'Deployment completed', handler: this.handleDeploymentComplete.bind(this)},
     'deployment:progress': {description: 'Deployment progress', handler: this.handleDeploymentProgress.bind(this)},
     'deployment:start': {description: 'Deployment started', handler: this.handleDeploymentStart.bind(this)},
+    'hook:complete': {description: 'Hook complete', handler: this.handleHookComplete.bind(this)},
+    'hooks:complete': {description: 'All hooks complete', handler: this.handleHooksComplete.bind(this)},
+    'hooks:start': {description: 'Hooks started', handler: this.handleHooksStart.bind(this)},
     'install:complete': {description: 'Install completed', handler: this.handleInstallComplete.bind(this)},
     'install:error': {description: 'Install error', handler: this.handleInstallError.bind(this)},
     'install:skip': {description: 'Install skipped', handler: this.handleInstallSkip.bind(this)},
@@ -51,6 +58,10 @@ export class InstallProgressRenderer {
     'version-install:start': {description: 'Version install started', handler: this.handleVersionInstallStart.bind(this)},
   };
   private events: EventLog[] = [];
+  /**
+   * Tracks completed hook names per package for rolling title updates.
+   */
+  private hookProgress: Map<string, {completed: string[]; total: string[]}> = new Map();
   private installResult?: {
     error?: Error;
     success: boolean;
@@ -215,10 +226,6 @@ export class InstallProgressRenderer {
     }
   }
 
-  // ========================================================================
-  // Connection Events
-  // ========================================================================
-
   /**
    * Handle deployment progress event
    */
@@ -266,6 +273,75 @@ export class InstallProgressRenderer {
         color: 'cyan',
         text: `Deploying metadata to ${chalk.yellow(event.targetOrg)}...`,
       }).start();
+    }
+  }
+
+  private handleHookComplete(event: HookCompleteEvent): void {
+    if (!this.isInteractive()) return;
+
+    const progress = this.hookProgress.get(event.packageName);
+    if (progress) {
+      progress.completed.push(event.hookName);
+    }
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      const remaining = progress
+        ? progress.total.filter(n => !progress.completed.includes(n))
+        : [];
+      const label = remaining.length > 0
+        ? `Hooks [${event.timing}-${event.operation}] - ${remaining.join(', ')}`
+        : `Hooks [${event.timing}-${event.operation}]...`;
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${label}`,
+      );
+    }
+  }
+
+  // ========================================================================
+  // Connection Events
+  // ========================================================================
+
+  private handleHooksComplete(event: HooksCompleteEvent): void {
+    if (!this.isInteractive() || event.completedCount === 0) return;
+
+    const duration = this.timings.hooksStart
+      ? formatDuration(Date.now() - this.timings.hooksStart.getTime())
+      : '';
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Hooks [${event.timing}-${event.operation}] (${event.completedCount}) ${chalk.gray(`(${duration})`)}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      const hookText = event.completedCount === 1 ? 'hook' : 'hooks';
+      this.logger.log(chalk.green(`✔ Completed ${event.completedCount} ${hookText} [${event.timing}-${event.operation}] in ${duration}`));
+    }
+
+    this.hookProgress.delete(event.packageName);
+  }
+
+  private handleHooksStart(event: HooksStartEvent): void {
+    this.timings.hooksStart = event.timestamp;
+
+    if (!this.isInteractive()) return;
+
+    if (event.hookCount === 0) return;
+
+    this.hookProgress.set(event.packageName, {completed: [], total: [...event.hookNames]});
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Hooks [${event.timing}-${event.operation}] - ${event.hookNames.join(', ')}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      const hookText = event.hookCount === 1 ? 'hook' : 'hooks';
+      this.logger.log(chalk.dim(`Running ${event.hookCount} ${hookText} [${event.timing}-${event.operation}] - ${event.hookNames.join(', ')}...`));
     }
   }
 

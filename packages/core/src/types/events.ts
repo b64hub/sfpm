@@ -195,6 +195,32 @@ export interface TaskCompleteEvent extends BaseEvent {
 }
 
 // ============================================================================
+// Lifecycle Hook Events
+// ============================================================================
+
+export interface HooksStartEvent extends BaseEvent {
+  hookCount: number;
+  hookNames: string[];
+  operation: string;
+  packageName: string;
+  timing: string;
+}
+
+export interface HookCompleteEvent extends BaseEvent {
+  hookName: string;
+  operation: string;
+  packageName: string;
+  timing: string;
+}
+
+export interface HooksCompleteEvent extends BaseEvent {
+  completedCount: number;
+  operation: string;
+  packageName: string;
+  timing: string;
+}
+
+// ============================================================================
 // Event Type Maps (for type-safe EventEmitter usage)
 // ============================================================================
 
@@ -217,6 +243,10 @@ export interface BuildEvents {
 
   'connection:complete': [ConnectionCompleteEvent];
   'connection:start': [ConnectionStartEvent];
+
+  'hook:complete': [HookCompleteEvent];
+  'hooks:complete': [HooksCompleteEvent];
+  'hooks:start': [HooksStartEvent];
 
   'stage:complete': [StageCompleteEvent];
   'stage:start': [StageStartEvent];
@@ -364,6 +394,9 @@ export interface InstallEvents {
   'deployment:complete': [DeploymentCompleteEvent];
   'deployment:progress': [DeploymentProgressEvent];
   'deployment:start': [DeploymentStartEvent];
+  'hook:complete': [HookCompleteEvent];
+  'hooks:complete': [HooksCompleteEvent];
+  'hooks:start': [HooksStartEvent];
   'install:complete': [InstallCompleteEvent];
   'install:error': [InstallErrorEvent];
   'install:skip': [InstallSkipEvent];

@@ -493,10 +493,21 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       timing,
     };
 
-    if (timing === 'pre') {
-      await lifecycle.runBuildPre(hookContext);
-    } else {
-      await lifecycle.runBuildPost(hookContext);
+    const hookEvents = ['hooks:start', 'hook:complete', 'hooks:complete'] as const;
+    const forwarders = hookEvents.map(evt => {
+      const fn = (...args: any[]) => this.emit(evt as any, ...args);
+      lifecycle.on(evt, fn);
+      return {evt, fn};
+    });
+
+    try {
+      if (timing === 'pre') {
+        await lifecycle.runBuildPre(hookContext);
+      } else {
+        await lifecycle.runBuildPost(hookContext);
+      }
+    } finally {
+      for (const {evt, fn} of forwarders) lifecycle.removeListener(evt, fn);
     }
   }
 

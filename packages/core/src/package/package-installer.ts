@@ -610,10 +610,21 @@ export default class PackageInstaller extends EventEmitter {
       timing,
     };
 
-    if (timing === 'pre') {
-      await lifecycle.runInstallPre(hookContext);
-    } else {
-      await lifecycle.runInstallPost(hookContext);
+    const hookEvents = ['hooks:start', 'hook:complete', 'hooks:complete'] as const;
+    const forwarders = hookEvents.map(evt => {
+      const fn = (...args: any[]) => this.emit(evt as any, ...args);
+      lifecycle.on(evt, fn);
+      return {evt, fn};
+    });
+
+    try {
+      if (timing === 'pre') {
+        await lifecycle.runInstallPre(hookContext);
+      } else {
+        await lifecycle.runInstallPost(hookContext);
+      }
+    } finally {
+      for (const {evt, fn} of forwarders) lifecycle.removeListener(evt, fn);
     }
   }
 

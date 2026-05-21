@@ -1,3 +1,5 @@
+import EventEmitter from 'node:events';
+
 import {
   HookContext,
   HookHandler,
@@ -88,7 +90,7 @@ function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
  * await lifecycle.run('install', 'pre', context);
  * ```
  */
-export class LifecycleEngine {
+export class LifecycleEngine extends EventEmitter {
   private static initializedStage?: string;
   private static instance?: LifecycleEngine;
   private readonly _stage: string = DEFAULT_STAGE
@@ -96,6 +98,7 @@ export class LifecycleEngine {
   private insertionCounter = 0;
 
   private constructor(activeStage: string) {
+    super();
     this._stage = activeStage;
   }
 
@@ -255,22 +258,50 @@ export class LifecycleEngine {
       return;
     }
 
+    const packageName = context.sfpmPackage.name;
+    const hookNames = matching.map(h => h.hooksName);
+
     context.logger?.debug(`Lifecycle: running ${matching.length} hook(s) for '${operation}:${timing}'`
-      + ` on package '${context.sfpmPackage.name}'`
+      + ` on package '${packageName}'`
       + ` [stage=${this._stage}]`);
+
+    this.emit('hooks:start', {
+      hookCount: matching.length,
+      hookNames,
+      operation,
+      packageName,
+      timestamp: new Date(),
+      timing,
+    });
 
     for (const hook of matching) {
       try {
         // eslint-disable-next-line no-await-in-loop -- hooks must run sequentially in defined order
         await hook.handler(enrichedContext);
+
+        this.emit('hook:complete', {
+          hookName: hook.hooksName,
+          operation,
+          packageName,
+          timestamp: new Date(),
+          timing,
+        });
       } catch (error) {
         context.logger?.error(`Lifecycle: hook from '${hook.hooksName}' failed `
           + `at '${hook.operation}:${hook.timing}'`
-          + ` for package '${context.sfpmPackage.name}'`
+          + ` for package '${packageName}'`
           + `: ${error instanceof Error ? error.message : String(error)}`);
         throw error;
       }
     }
+
+    this.emit('hooks:complete', {
+      completedCount: matching.length,
+      operation,
+      packageName,
+      timestamp: new Date(),
+      timing,
+    });
   }
 
   /** Execute build:post hooks with stage-enriched context. */

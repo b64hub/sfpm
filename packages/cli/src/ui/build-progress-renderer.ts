@@ -14,6 +14,9 @@ import type {
   CreateCompleteEvent,
   CreateProgressEvent,
   CreateStartEvent,
+  HookCompleteEvent,
+  HooksCompleteEvent,
+  HooksStartEvent,
   OrchestrationCompleteEvent,
   OrchestrationLevelCompleteEvent,
   OrchestrationLevelStartEvent,
@@ -35,7 +38,7 @@ import type {
 
 import {infoBox, successBox, warningBox} from './boxes.js';
 import {OrchestrationListrManager} from './orchestration-listr.js';
-import {calculateDuration, formatDuration, NameAligner} from './renderer-utils.js';
+import {calculateDuration, formatDuration} from './renderer-utils.js';
 
 export type {OutputMode} from './renderer-utils.js';
 
@@ -44,11 +47,11 @@ export type {OutputMode} from './renderer-utils.js';
  */
 interface TimingInfo {
   analyzersStart?: Date;
-  analyzerStarts: Map<string, Date>;
   builderStart?: Date;
   buildStart?: Date;
   connectionStart?: Date;
   createStart?: Date;
+  hooksStart?: Date;
   stageStart?: Date;
 }
 
@@ -56,7 +59,6 @@ interface TimingInfo {
  * Renders build progress in different output modes
  */
 export class BuildProgressRenderer {
-  private analyzerNameAligner = new NameAligner();
   private buildResult?: {
     error?: Error;
     packageVersionId?: string;
@@ -78,6 +80,9 @@ export class BuildProgressRenderer {
     'builder:start': {description: 'Builder started', handler: this.handleBuilderStart.bind(this)},
     'connection:complete': {description: 'Connection complete', handler: this.handleConnectionComplete.bind(this)},
     'connection:start': {description: 'Connection started', handler: this.handleConnectionStart.bind(this)},
+    'hook:complete': {description: 'Hook complete', handler: this.handleHookComplete.bind(this)},
+    'hooks:complete': {description: 'All hooks complete', handler: this.handleHooksComplete.bind(this)},
+    'hooks:start': {description: 'Hooks started', handler: this.handleHooksStart.bind(this)},
     'stage:complete': {description: 'Staging complete', handler: this.handleStageComplete.bind(this)},
     'stage:start': {description: 'Staging package', handler: this.handleStageStart.bind(this)},
     'task:complete': {description: 'Task complete', handler: this.handleTaskComplete.bind(this)},
@@ -87,6 +92,10 @@ export class BuildProgressRenderer {
     'unlocked:create:start': {description: 'Package creation started', handler: this.handleCreateStart.bind(this)},
   };
   private events: EventLog[] = [];
+  /**
+   * Tracks completed hook names per package for rolling title updates.
+   */
+  private hookProgress: Map<string, {completed: string[]; total: string[]}> = new Map();
   private listr: OrchestrationListrManager;
   private logger: OutputLogger;
   private mode: OutputMode;
@@ -101,19 +110,16 @@ export class BuildProgressRenderer {
     'orchestration:start': {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
   };
   /**
-   * Tracks pending analyzer names during collection.
-   * Once all `analyzer:start` events arrive, subtasks are created.
+   * Tracks running analyzer names per package for rolling title updates.
    */
-  private pendingAnalyzers: Map<string, {count: number; names: string[]}> = new Map();
+  private runningAnalyzers: Map<string, {completed: string[]; total: string[]}> = new Map();
   /**
    * Tracks skip reasons per package so they survive across event handlers.
    * Populated by `build:skipped`, consumed by `orchestration:package:complete`.
    */
   private skippedReasons: Map<string, string> = new Map();
   private spinner?: Ora;
-  private timings: TimingInfo = {
-    analyzerStarts: new Map(),
-  };
+  private timings: TimingInfo = {};
 
   constructor(options: {logger: OutputLogger; mode: OutputMode}) {
     this.logger = options.logger;
@@ -122,7 +128,7 @@ export class BuildProgressRenderer {
       const count = event.packages.length;
       const pkgText = count === 1 ? 'package' : 'packages';
       return `Building ${chalk.cyan(String(count))} ${pkgText}`;
-    }, {enableSubtasks: true});
+    });
   }
 
   /**
@@ -189,86 +195,44 @@ export class BuildProgressRenderer {
   private handleAnalyzerComplete(event: AnalyzerCompleteEvent): void {
     if (!this.isInteractive()) return;
 
-    const startTime = this.timings.analyzerStarts.get(event.analyzerName);
-    const duration = calculateDuration(startTime, event.timestamp);
+    const progress = this.runningAnalyzers.get(event.packageName);
+    if (progress) {
+      progress.completed.push(event.analyzerName);
+    }
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      if (this.listr.hasSubtasks(event.packageName)) {
-        // Build findings suffix for the subtask title
-        let findingsSuffix = '';
-        if (event.findings && Object.keys(event.findings).length > 0) {
-          const findings = Object.entries(event.findings)
-          .filter(([_, value]) => value && (Array.isArray(value) ? value.length > 0 : true))
-          .map(([key, value]) => (Array.isArray(value) ? `${key}: ${value.length}` : key))
-          .join(', ');
-          if (findings) findingsSuffix = ` ${chalk.gray(`- ${findings}`)}`;
-        }
-
-        this.listr.updateSubtaskTitle(
-          event.packageName,
-          event.analyzerName,
-          `${chalk.green(event.analyzerName)} ${chalk.gray(`(${duration})`)}${findingsSuffix}`,
-        );
-        this.listr.resolveSubtask(event.packageName, event.analyzerName);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - Analyzer: ${event.analyzerName} ${chalk.gray(`(${duration})`)}`,
-        );
-      }
-    } else if (!this.isOrchestrating()) {
-      // Build findings summary
-      let findingsSummary = '';
-      if (event.findings && Object.keys(event.findings).length > 0) {
-        const findings = Object.entries(event.findings)
-        .filter(([_, value]) => value && (Array.isArray(value) ? value.length > 0 : true))
-        .map(([key, value]) => {
-          if (Array.isArray(value)) {
-            return `${key}: ${value.length}`;
-          }
-
-          return key;
-        })
-        .join(', ');
-
-        if (findings) {
-          findingsSummary = `: ${findings}`;
-        }
-      }
-
-      // Pad duration and analyzer name for alignment
-      const paddedDuration = duration.padStart(6);
-      const paddedName = this.analyzerNameAligner.pad(event.analyzerName);
-
-      // Log completion with aligned duration and analyzer name
-      console.log(`  ${chalk.green('✓')} ${chalk.gray(paddedDuration)} - ${chalk.cyan(paddedName)}${chalk.gray(findingsSummary)}`);
+      const remaining = progress
+        ? progress.total.filter(n => !progress.completed.includes(n))
+        : [];
+      const label = remaining.length > 0
+        ? `Analyzing - ${remaining.join(', ')}`
+        : 'Analyzing...';
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${label}`,
+      );
     }
   }
 
   private handleAnalyzersComplete(event: AnalyzersCompleteEvent): void {
     if (!this.isInteractive() || event.completedCount === 0) return;
 
+    const duration = calculateDuration(this.timings.analyzersStart, event.timestamp);
+
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      // With subtasks the individual analyzer tasks already show completion;
-      // only update the parent title when NOT using subtask mode.
-      if (!this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - Analyzed (${event.completedCount} analyzers)`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Analyzed (${event.completedCount}) ${chalk.gray(`(${duration})`)}`,
+      );
     } else if (!this.isOrchestrating()) {
-      // Show completion summary
-      const duration = calculateDuration(this.timings.analyzersStart, event.timestamp);
       const analyzerText = event.completedCount === 1 ? 'analyzer' : 'analyzers';
       this.logger.log(chalk.green(`✔ Completed ${event.completedCount} ${analyzerText} in ${duration}`));
       this.logger.log('');
     }
 
-    // Reset analyzer tracking for next build
-    this.analyzerNameAligner.reset();
+    this.runningAnalyzers.delete(event.packageName);
   }
 
   private handleAnalyzersStart(event: AnalyzersStartEvent): void {
@@ -276,49 +240,37 @@ export class BuildProgressRenderer {
 
     if (!this.isInteractive()) return;
 
-    // In orchestration mode, set up subtask collection or skip
-    if (this.isOrchestrating()) {
-      if (event.analyzerCount === 0) {
-        this.listr.skipPackageSubtasks(event.packageName);
-      } else {
-        this.pendingAnalyzers.set(event.packageName, {count: event.analyzerCount, names: []});
-      }
-    }
-
     if (event.analyzerCount === 0) return;
+
+    this.runningAnalyzers.set(event.packageName, {completed: [], total: []});
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      // Package title is not updated here — subtasks will show analyzer detail.
-      // For packages without subtasks (0 analyzers), this block is not reached
-      // because we return early above.
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Analyzing...`,
+      );
     } else if (!this.isOrchestrating()) {
-      // Log a static message instead of spinner for parallel analyzers
       const analyzerText = event.analyzerCount === 1 ? 'analyzer' : 'analyzers';
       this.logger.log(chalk.dim(`Running ${event.analyzerCount} ${analyzerText}...`));
     }
   }
 
   private handleAnalyzerStart(event: AnalyzerStartEvent): void {
-    this.timings.analyzerStarts.set(event.analyzerName, event.timestamp);
+    const progress = this.runningAnalyzers.get(event.packageName);
+    if (progress) {
+      progress.total.push(event.analyzerName);
+    }
 
-    // Track analyzer names for alignment
-    this.analyzerNameAligner.add(event.analyzerName);
+    if (!this.isInteractive()) return;
 
-    // In orchestration mode, collect names then create subtasks
-    if (this.isOrchestrating()) {
-      const pending = this.pendingAnalyzers.get(event.packageName);
-      if (pending) {
-        pending.names.push(event.analyzerName);
-        if (pending.names.length === pending.count) {
-          // All analyzer names collected — declare subtask structure
-          this.listr.setPackageSubtasks(
-            event.packageName,
-            pending.names.map(name => ({name, title: chalk.cyan(name)})),
-          );
-          this.pendingAnalyzers.delete(event.packageName);
-        }
-      }
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      const names = progress ? progress.total.filter(n => !progress.completed.includes(n)) : [event.analyzerName];
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Analyzing - ${names.join(', ')}`,
+      );
     }
   }
 
@@ -377,23 +329,12 @@ export class BuildProgressRenderer {
 
     if (!this.isInteractive()) return;
 
-    // If subtasks haven't been set for this package yet (e.g. Data packages
-    // that skip analyzers entirely), resolve with empty subtasks now.
-    if (this.isOrchestrating()) {
-      this.listr.skipPackageSubtasks(event.packageName);
-    }
-
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      const statusText = `Executing ${event.packageType} builder...`;
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, statusText);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - ${statusText}`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Executing ${event.packageType} builder...`,
+      );
     } else if (!this.isOrchestrating()) {
       this.startSpinner(`Executing ${event.packageType} package builder...`);
     }
@@ -462,14 +403,10 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, `Building (${event.packageType})...`);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - Building (${event.packageType})...`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Building (${event.packageType})...`,
+      );
     } else if (!this.isOrchestrating()) {
       this.logger.log(chalk.bold(`\nBuilding package: ${chalk.cyan(event.packageName)} (${event.packageType})\n`));
     }
@@ -482,15 +419,10 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      const statusText = `Connected to ${chalk.yellow(event.username)} ${chalk.gray(`(${duration})`)}`;
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, statusText);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - ${statusText}`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Connected to ${chalk.yellow(event.username)} ${chalk.gray(`(${duration})`)}`,
+      );
     } else if (!this.isOrchestrating()) {
       this.stopSpinner(true, chalk.gray(`Successfully connected to: ${event.username} (${duration})`));
     }
@@ -503,15 +435,10 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      const statusText = `Connecting to ${event.orgType}: ${chalk.yellow(event.username)}...`;
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, statusText);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - ${statusText}`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Connecting to ${event.orgType}: ${chalk.yellow(event.username)}...`,
+      );
     } else if (!this.isOrchestrating()) {
       this.startSpinner(`Connecting to ${event.orgType}: ${event.username}`);
     }
@@ -528,14 +455,10 @@ export class BuildProgressRenderer {
     const task = this.getPackageTask(event.packageName);
     if (task) {
       const statusText = `Created ${event.versionNumber}${elapsedSuffix}`;
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, statusText);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - ${statusText}`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${statusText}`,
+      );
     } else if (!this.isOrchestrating()) {
       this.stopSpinner(true, chalk.green(`Package ${event.packageName}@${event.versionNumber} successfully created with Id: ${event.packageVersionId}`) + elapsedSuffix);
 
@@ -585,14 +508,10 @@ export class BuildProgressRenderer {
     const task = this.getPackageTask(event.packageName);
     if (task) {
       const statusText = `Creating: ${event.message}${elapsedSuffix}`;
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, statusText);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - ${statusText}`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${statusText}`,
+      );
     } else if (!this.isOrchestrating() && this.spinner) {
       this.spinner.text = `Creating package version: ${event.message}${elapsedSuffix}`;
     }
@@ -606,16 +525,75 @@ export class BuildProgressRenderer {
     const task = this.getPackageTask(event.packageName);
     if (task) {
       const statusText = `Creating version ${event.versionNumber}...`;
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, statusText);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - ${statusText}`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${statusText}`,
+      );
     } else if (!this.isOrchestrating()) {
       this.startSpinner(`Creating package version ${event.packageName}@${event.versionNumber}`);
+    }
+  }
+
+  private handleHookComplete(event: HookCompleteEvent): void {
+    if (!this.isInteractive()) return;
+
+    const progress = this.hookProgress.get(event.packageName);
+    if (progress) {
+      progress.completed.push(event.hookName);
+    }
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      const remaining = progress
+        ? progress.total.filter(n => !progress.completed.includes(n))
+        : [];
+      const label = remaining.length > 0
+        ? `Hooks [${event.timing}-${event.operation}] - ${remaining.join(', ')}`
+        : `Hooks [${event.timing}-${event.operation}]...`;
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${label}`,
+      );
+    }
+  }
+
+  private handleHooksComplete(event: HooksCompleteEvent): void {
+    if (!this.isInteractive() || event.completedCount === 0) return;
+
+    const duration = calculateDuration(this.timings.hooksStart, event.timestamp);
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Hooks [${event.timing}-${event.operation}] (${event.completedCount}) ${chalk.gray(`(${duration})`)}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      const hookText = event.completedCount === 1 ? 'hook' : 'hooks';
+      this.logger.log(chalk.green(`✔ Completed ${event.completedCount} ${hookText} [${event.timing}-${event.operation}] in ${duration}`));
+    }
+
+    this.hookProgress.delete(event.packageName);
+  }
+
+  private handleHooksStart(event: HooksStartEvent): void {
+    this.timings.hooksStart = event.timestamp;
+
+    if (!this.isInteractive()) return;
+
+    if (event.hookCount === 0) return;
+
+    this.hookProgress.set(event.packageName, {completed: [], total: [...event.hookNames]});
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Hooks [${event.timing}-${event.operation}] - ${event.hookNames.join(', ')}`,
+      );
+    } else if (!this.isOrchestrating()) {
+      const hookText = event.hookCount === 1 ? 'hook' : 'hooks';
+      this.logger.log(chalk.dim(`Running ${event.hookCount} ${hookText} [${event.timing}-${event.operation}] - ${event.hookNames.join(', ')}...`));
     }
   }
 
@@ -728,15 +706,10 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      const statusText = `Staged ${event.componentCount} components ${chalk.gray(`(${duration})`)}`;
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, statusText);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - ${statusText}`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Staged ${event.componentCount} components ${chalk.gray(`(${duration})`)}`,
+      );
     } else if (!this.isOrchestrating()) {
       this.stopSpinner(
         true,
@@ -752,15 +725,10 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      const statusText = 'Staging...';
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, statusText);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - ${statusText}`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - Staging...`,
+      );
     } else if (!this.isOrchestrating()) {
       this.startSpinner('Staging package');
     }
@@ -772,15 +740,10 @@ export class BuildProgressRenderer {
     const task = this.getPackageTask(event.packageName);
     if (task) {
       const status = event.success ? chalk.green('✓') : chalk.red('✗');
-      const statusText = `${status} ${event.taskName}`;
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, statusText);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - ${statusText}`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${status} ${event.taskName}`,
+      );
     } else if (!this.isOrchestrating()) {
       if (event.success) {
         this.stopSpinner(true, chalk.gray(event.taskName));
@@ -799,15 +762,10 @@ export class BuildProgressRenderer {
 
     const task = this.getPackageTask(event.packageName);
     if (task) {
-      const statusText = `${event.taskType}: ${event.taskName}`;
-      if (this.listr.hasSubtasks(event.packageName)) {
-        this.listr.updateSentinelTitle(event.packageName, statusText);
-      } else {
-        this.listr.updatePackageTitle(
-          event.packageName,
-          `${chalk.cyan(event.packageName)} - ${statusText}`,
-        );
-      }
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${event.taskType}: ${event.taskName}`,
+      );
     } else if (!this.isOrchestrating()) {
       this.startSpinner(`  ${chalk.cyan(event.taskType)}: ${event.taskName}`);
     }
