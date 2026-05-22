@@ -50,10 +50,22 @@ function createMockOrg() {
   return org as Org;
 }
 
+function createPackage(overrides?: Partial<HookContext['sfpmPackage']>): HookContext['sfpmPackage'] {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    packageDirectory: '/project/packages/test-package',
+    type: 'Source',
+    ...overrides,
+  } as HookContext['sfpmPackage'];
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'install',
-    packageName: 'test-package',
+    projectDir: '/project',
+    sfpmPackage: createPackage(),
+    stage: 'local',
     timing: 'pre',
     ...overrides,
   };
@@ -67,6 +79,7 @@ describe('permissionSetHooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(resolveHookConfig).mockReturnValue({config: {}, enabled: true});
+    vi.spyOn(Org, 'create').mockResolvedValue(createMockOrg());
   });
 
   // --------------------------------------------------------------------------
@@ -94,7 +107,7 @@ describe('permissionSetHooks', () => {
       const hooks = permissionSetHooks();
       const logger = createLogger();
 
-      await hooks.hooks[0].handler(createContext({logger, org: createMockOrg()}));
+      await hooks.hooks[0].handler(createContext({logger, targetOrg: 'test@user.org'}));
 
       expect(logger.debug).toHaveBeenCalledWith(
         expect.stringContaining('no permission sets to assign'),
@@ -135,7 +148,9 @@ describe('permissionSetHooks', () => {
       const logger = createLogger();
       const org = createMockOrg();
 
-      await hooks.hooks[0].handler(createContext({logger, org}));
+      vi.mocked(Org.create).mockResolvedValue(org);
+
+      await hooks.hooks[0].handler(createContext({logger, targetOrg: 'test@user.org'}));
 
       expect(PermissionSetAssigner).toHaveBeenCalledWith(
         org.getConnection(),
@@ -170,7 +185,9 @@ describe('permissionSetHooks', () => {
       const logger = createLogger();
       const org = createMockOrg();
 
-      await hooks.hooks[1].handler(createContext({logger, org, timing: 'post'}));
+      vi.mocked(Org.create).mockResolvedValue(org);
+
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       const instance = vi.mocked(PermissionSetAssigner).mock.results[0].value;
       expect(instance.assign).toHaveBeenCalledWith(
@@ -183,7 +200,7 @@ describe('permissionSetHooks', () => {
       const hooks = permissionSetHooks();
       const logger = createLogger();
 
-      await hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'}));
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       expect(logger.debug).toHaveBeenCalledWith(
         expect.stringContaining('no permission sets to assign'),
@@ -207,7 +224,7 @@ describe('permissionSetHooks', () => {
       const hooks = permissionSetHooks({permSets: ['SharedPermSet']});
       const logger = createLogger();
 
-      await hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'}));
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       const instance = vi.mocked(PermissionSetAssigner).mock.results[0].value;
       // Should be deduplicated — only one entry
@@ -237,7 +254,7 @@ describe('permissionSetHooks', () => {
       const hooks = permissionSetHooks();
       const logger = createLogger();
 
-      await hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'}));
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('assigned AdminPerm'),
@@ -261,7 +278,7 @@ describe('permissionSetHooks', () => {
       const hooks = permissionSetHooks();
       const logger = createLogger();
 
-      await hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'}));
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       expect(logger.debug).toHaveBeenCalledWith(
         expect.stringContaining('already assigned AlreadyAssigned'),
@@ -285,7 +302,7 @@ describe('permissionSetHooks', () => {
       const hooks = permissionSetHooks();
       const logger = createLogger();
 
-      await hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'}));
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
 
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('failed assignments'),
@@ -310,7 +327,7 @@ describe('permissionSetHooks', () => {
       const logger = createLogger();
 
       await expect(
-        hooks.hooks[1].handler(createContext({logger, org: createMockOrg(), timing: 'post'})),
+        hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'})),
       ).rejects.toThrow('failed assignments');
     });
   });

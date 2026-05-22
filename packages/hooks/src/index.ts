@@ -24,10 +24,6 @@ export {lwcTypescriptHooks} from './lwc/lwc-typescript-plugin.js';
 export type {LwcTypescriptHooksOptions} from './lwc/types.js';
 
 export type {LwcTailwindHooksOptions} from './lwc/types.js';
-// ── Managed Package ─────────────────────────────────────────────────────────
-export {managedPackageHooks} from './managed-package/managed-package-plugin.js';
-
-export type {ManagedPackageHooksOptions} from './managed-package/managed-package-plugin.js';
 // ── Permission Set ──────────────────────────────────────────────────────────
 export {PermissionSetAssigner} from './permissionset/permset-assigner.js';
 export {permissionSetHooks} from './permissionset/permset-plugin.js';
@@ -77,7 +73,9 @@ export type {
 // ── Scripts ─────────────────────────────────────────────────────────────────
 export {scriptHooks} from './scripts/script-plugin.js';
 export {ScriptRunner} from './scripts/script-runner.js';
-export type {ScriptDefinition, ScriptHooksOptions, ScriptType} from './scripts/types.js';
+export type {
+  ScriptDefinition, ScriptExecutionContext, ScriptExecutor, ScriptHooksOptions, ScriptResult, ScriptType,
+} from './scripts/types.js';
 
 // ── Standard Value Set ──────────────────────────────────────────────────────
 export {StandardValueSetDeployer} from './standard-value-set/standard-value-set-deployer.js';

@@ -10,7 +10,7 @@ import type {ProjectDefinitionProvider} from '../project/providers/project-defin
 import {ArtifactService, InstallTarget} from '../artifacts/artifact-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {ArtifactResolutionOptions} from '../types/artifact.js';
-import {HookContext} from '../types/lifecycle.js';
+import {HookContext, HookTiming} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {
   InstallationMode, InstallationSource, PackageType, type TestLevel,
@@ -135,39 +135,6 @@ export default class PackageInstaller extends EventEmitter {
       this.logger?.error(`Failed to install ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
-  }
-
-  /**
-   * Build a {@link HookContext} for lifecycle hooks during installation.
-   *
-   * The `packagePath` points to the actual source that will be deployed:
-   * - For artifact installs: the extracted artifact directory (`workingDirectory`)
-   * - For local source deploys: the project package directory
-   * - For managed packages: omitted (no source to process)
-   */
-  private buildHookContext(packageName: string, packagePath?: string): HookContext {
-    const projectDefinition = this.provider.getProjectDefinition();
-
-    let packageType: string | undefined;
-    try {
-      packageType = this.provider.getPackageDefinition(packageName).type;
-    } catch {
-      // Managed packages are not in packageDirectories
-    }
-
-    return {
-      logger: this.logger,
-      operation: 'install',
-      org: this.org,
-      packageAliases: {},
-      packageName,
-      packagePath,
-      packageType,
-      projectDir: this.provider.projectDir,
-      stage: '',
-      targetOrg: this.options.targetOrg,
-      timing: '',
-    };
   }
 
   private emitComplete(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
@@ -324,8 +291,11 @@ export default class PackageInstaller extends EventEmitter {
       versionNumber: sfpmPackage.version,
     });
 
+    // Install managed dependencies before deploying the package itself
+    await this.installManagedDependencies(sfpmPackage);
+
     // Run pre-install hooks with the local source path
-    await this.runHooks('pre', packageName, sfpmPackage);
+    await this.runHooks('pre', sfpmPackage);
 
     try {
       const InstallerConstructor = InstallerRegistry.getInstaller(sfpmPackage.type as any);
@@ -354,7 +324,7 @@ export default class PackageInstaller extends EventEmitter {
       this.logger?.info(`Successfully deployed ${packageName}`);
 
       // Run post-install hooks
-      await this.runHooks('post', packageName, sfpmPackage);
+      await this.runHooks('post', sfpmPackage);
 
       return {
         deployId: execResult.deployId,
@@ -367,6 +337,33 @@ export default class PackageInstaller extends EventEmitter {
       this.emitError(sfpmPackage, error as Error);
       this.logger?.error(`Failed to deploy ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
+    }
+  }
+
+  /**
+   * Install managed dependencies (04t subscriber versions) for a package
+   * before deploying the package itself.
+   *
+   * Reads `managedDependencies` from the package definition and delegates
+   * each one to {@link installManagedPackage}, reusing its skip-check,
+   * VersionInstaller, events, and error handling.
+   */
+  private async installManagedDependencies(sfpmPackage: SfpmPackage): Promise<void> {
+    const managedDependencies = sfpmPackage.packageDefinition?.managedDependencies;
+    if (!managedDependencies || Object.keys(managedDependencies).length === 0) return;
+
+    const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
+    const deps = Object.entries(managedDependencies)
+    .filter(([, versionId]) => versionId.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX))
+    .map(([depName, versionId]) => new ManagedPackageRef(depName, versionId));
+
+    if (deps.length === 0) return;
+
+    this.logger?.info(`Installing ${deps.length} managed dependency(ies) for '${sfpmPackage.name}'`);
+
+    for (const dep of deps) {
+      // eslint-disable-next-line no-await-in-loop -- sequential to avoid concurrent Tooling API requests
+      await this.installManagedPackage(dep);
     }
   }
 
@@ -408,9 +405,6 @@ export default class PackageInstaller extends EventEmitter {
 
     this.emitManagedStart(packageName, managedRef.packageVersionId);
 
-    // Run pre-install hooks (no packagePath for managed packages — no source to process)
-    await this.runHooks('pre', packageName);
-
     try {
       const InstallerConstructor = InstallerRegistry.getInstaller(PackageType.Managed as any);
       if (!InstallerConstructor) {
@@ -429,9 +423,6 @@ export default class PackageInstaller extends EventEmitter {
 
       this.emitManagedComplete(packageName, managedRef.packageVersionId, true);
       this.logger?.info(`Successfully installed managed package ${packageName}`);
-
-      // Run post-install hooks
-      await this.runHooks('post', packageName);
 
       return {
         installed: true,
@@ -500,9 +491,12 @@ export default class PackageInstaller extends EventEmitter {
       + `(reason: ${installTarget.installReason}, source: ${installTarget.resolved.source})`);
     this.emitStart(sfpmPackage, installTarget);
 
+    // Install managed dependencies before deploying the package itself
+    await this.installManagedDependencies(sfpmPackage);
+
     // Run pre-install hooks with the resolved package path
     // (extracted artifact dir for source packages, project source for unlocked)
-    await this.runHooks('pre', packageName, sfpmPackage);
+    await this.runHooks('pre', sfpmPackage);
 
     try {
       const InstallerConstructor = InstallerRegistry.getInstaller(sfpmPackage.type as any);
@@ -533,7 +527,7 @@ export default class PackageInstaller extends EventEmitter {
       this.logger?.info(`Successfully installed ${packageName}@${sfpmPackage.version}`);
 
       // Run post-install hooks
-      await this.runHooks('post', packageName, sfpmPackage);
+      await this.runHooks('post', sfpmPackage);
 
       return {
         deployId: execResult.deployId,
@@ -602,23 +596,36 @@ export default class PackageInstaller extends EventEmitter {
     return path.join(root, packageDefinition.path);
   }
 
-  private async runHooks(timing: string, packageName: string, sfpmPackage?: SfpmPackage): Promise<void> {
+  private async runHooks(timing: HookTiming, sfpmPackage: SfpmPackage): Promise<void> {
     if (!LifecycleEngine.isInitialized()) return;
 
     const lifecycle = LifecycleEngine.getInstance();
-    const packagePath = sfpmPackage ? this.resolvePackageSourceDir(sfpmPackage) : undefined;
-    const hookContext = this.buildHookContext(packageName, packagePath);
-    if (timing === 'pre') {
-      await lifecycle.runInstallPre(hookContext);
-      return;
-    }
+    const hookContext: HookContext = {
+      logger: this.logger,
+      operation: 'install',
+      projectDir: this.provider.projectDir,
+      sfpmPackage,
+      stage: lifecycle.stage,
+      targetOrg: this.options.targetOrg,
+      timing,
+    };
 
-    if (timing === 'post') {
-      await lifecycle.runInstallPost(hookContext);
-      return;
-    }
+    const hookEvents = ['hooks:start', 'hook:complete', 'hooks:complete'] as const;
+    const forwarders = hookEvents.map(evt => {
+      const fn = (...args: any[]) => this.emit(evt as any, ...args);
+      lifecycle.on(evt, fn);
+      return {evt, fn};
+    });
 
-    await lifecycle.run('install', timing, hookContext);
+    try {
+      if (timing === 'pre') {
+        await lifecycle.runInstallPre(hookContext);
+      } else {
+        await lifecycle.runInstallPost(hookContext);
+      }
+    } finally {
+      for (const {evt, fn} of forwarders) lifecycle.removeListener(evt, fn);
+    }
   }
 
   /**

@@ -1,5 +1,5 @@
 import {
-  describe, expect, it, vi,
+  beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
 import type {HookContext} from '@b64hub/sfpm-core';
@@ -42,11 +42,22 @@ function createMockOrg(options?: {isScratch?: boolean}) {
   return org as Org;
 }
 
+function createPackage(overrides?: Partial<HookContext['sfpmPackage']>): HookContext['sfpmPackage'] {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    packageDirectory: '/project/packages/test-package',
+    type: 'Source',
+    ...overrides,
+  } as HookContext['sfpmPackage'];
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'install',
-    packageName: 'test-package',
-    packageType: 'Source',
+    projectDir: '/project',
+    sfpmPackage: createPackage(),
+    stage: 'local',
     timing: 'post',
     ...overrides,
   };
@@ -57,6 +68,11 @@ function createContext(overrides?: Partial<HookContext>): HookContext {
 // ============================================================================
 
 describe('fieldHistoryTrackingHooks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(Org, 'create').mockResolvedValue(createMockOrg());
+  });
+
   // --------------------------------------------------------------------------
   // Structure
   // --------------------------------------------------------------------------
@@ -86,14 +102,16 @@ describe('fieldHistoryTrackingHooks', () => {
     );
   });
 
-  it('should skip when org is not an Org instance', async () => {
+  it('should skip when Org.create fails', async () => {
     const hooks = fieldHistoryTrackingHooks();
     const logger = createLogger();
 
-    await hooks.hooks[0].handler(createContext({logger, org: {notAnOrg: true}}));
+    vi.mocked(Org.create).mockRejectedValue(new Error('bad org'));
+
+    await hooks.hooks[0].handler(createContext({logger, targetOrg: 'test@user.org'}));
 
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('not an Org instance'),
+      expect.stringContaining('failed to connect'),
     );
   });
 
@@ -106,10 +124,12 @@ describe('fieldHistoryTrackingHooks', () => {
     const logger = createLogger();
     const org = createMockOrg({isScratch: true});
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {fhtFields: ['Account.MyField__c'], type: 'Source'},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({fhtFields: ['Account.MyField__c'], type: 'Source'}),
     }));
 
     expect(org.determineIfScratch).toHaveBeenCalled();
@@ -123,10 +143,12 @@ describe('fieldHistoryTrackingHooks', () => {
     const logger = createLogger();
     const org = createMockOrg({isScratch: true});
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {fhtFields: [], type: 'Source'},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({fhtFields: [], type: 'Source'}),
     }));
 
     expect(org.determineIfScratch).not.toHaveBeenCalled();
@@ -141,23 +163,13 @@ describe('fieldHistoryTrackingHooks', () => {
     const logger = createLogger();
     const org = createMockOrg();
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {fhtFields: [], type: 'Source'},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({fhtFields: [], type: 'Source'}),
     }));
-
-    expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('no tracked fields'),
-    );
-  });
-
-  it('should skip when sfpmPackage is undefined', async () => {
-    const hooks = fieldHistoryTrackingHooks();
-    const logger = createLogger();
-    const org = createMockOrg();
-
-    await hooks.hooks[0].handler(createContext({logger, org}));
 
     expect(logger.debug).toHaveBeenCalledWith(
       expect.stringContaining('no tracked fields'),
@@ -178,10 +190,12 @@ describe('fieldHistoryTrackingHooks', () => {
     const org = createMockOrg();
     const fhtFields = ['Account.FieldA__c', 'Contact.FieldB__c'];
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {fhtFields, type: 'Source'},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({fhtFields, type: 'Source'}),
     }));
 
     expect(FieldTrackingEnabler).toHaveBeenCalledWith(
@@ -207,10 +221,12 @@ describe('fieldHistoryTrackingHooks', () => {
     const logger = createLogger();
     const org = createMockOrg();
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {fhtFields: ['Account.A__c'], type: 'Source'},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({fhtFields: ['Account.A__c'], type: 'Source'}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(

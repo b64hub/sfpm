@@ -50,10 +50,10 @@ export function lwcTypescriptHooks(options?: LwcTypescriptHooksOptions): Lifecyc
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
-          const sfpmPackage = context.sfpmPackage as LwcCapablePackage | undefined;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
 
-          const packageDir = sfpmPackage?.packageDirectory;
+          const packageDir = (sfpmPackage as unknown as LwcCapablePackage).packageDirectory;
           if (!packageDir) {
             logger?.debug(`LWC TypeScript: no package directory for '${packageName}', skipping`);
             return;

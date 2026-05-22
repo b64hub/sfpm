@@ -6,9 +6,11 @@ import path from 'node:path';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {GitService} from '../git/git-service.js';
+import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {IgnoreFilesConfig} from '../types/config.js';
 import {NoSourceChangesError} from '../types/errors.js';
 import {AllBuildEvents} from '../types/events.js';
+import {HookContext, HookTiming} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {PackageType} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
@@ -100,8 +102,16 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       await this.runAnalyzers(sfpmPackage);
 
+      // Run pre-build hooks after analyzers have enriched the package context
+      await this.runLifecycleHooks('pre', sfpmPackage, projectDirectory);
+
       const builderInstance = await this.handleBuilderSetup(sfpmPackage);
-      await this.executeBuilder(sfpmPackage, builderInstance, builderInstance.constructor.name);
+      const didBuild = await this.executeBuilder(sfpmPackage, builderInstance, builderInstance.constructor.name);
+
+      if (didBuild) {
+        // Run post-build hooks only when the package was actually built
+        await this.runLifecycleHooks('post', sfpmPackage, projectDirectory);
+      }
 
       this.emit('build:complete', {
         packageName: sfpmPackage.name,
@@ -298,7 +308,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     }
   }
 
-  private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<any> {
+  private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<boolean> {
     this.emit('builder:start', {
       builderName,
       packageName: sfpmPackage.name,
@@ -323,7 +333,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         timestamp: new Date(),
       });
 
-      return result;
+      return true;
     } catch (error: any) {
       // Handle no source changes as a successful skip
       if (error instanceof NoSourceChangesError) {
@@ -337,7 +347,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
           timestamp: new Date(),
           version: sfpmPackage.version,
         });
-        return; // Exit gracefully without error
+        return false;
       }
 
       // Handle actual build errors
@@ -456,6 +466,49 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   /** Check whether a staged package contains zero deployable components or files. */
   private async isPackageEmpty(sfpmPackage: SfpmPackage): Promise<boolean> {
     return (await sfpmPackage.componentCount()) === 0;
+  }
+
+  /**
+   * Run lifecycle hooks for the build operation if the engine is initialized.
+   *
+   * The hooks receive the enriched {@link SfpmPackage} instance — the same one
+   * used for staging, analysis, and building — so hook handlers have access to
+   * the full package context (component set, metadata, working directory, etc.).
+   */
+  private async runLifecycleHooks(
+    timing: HookTiming,
+    sfpmPackage: SfpmPackage,
+    projectDirectory: string,
+  ): Promise<void> {
+    if (!LifecycleEngine.isInitialized()) return;
+
+    const lifecycle = LifecycleEngine.getInstance();
+    const hookContext: HookContext = {
+      logger: this.logger,
+      operation: 'build',
+      projectDir: projectDirectory,
+      sfpmPackage,
+      stage: lifecycle.stage,
+      targetOrg: this.options.devhubUsername,
+      timing,
+    };
+
+    const hookEvents = ['hooks:start', 'hook:complete', 'hooks:complete'] as const;
+    const forwarders = hookEvents.map(evt => {
+      const fn = (...args: any[]) => this.emit(evt as any, ...args);
+      lifecycle.on(evt, fn);
+      return {evt, fn};
+    });
+
+    try {
+      if (timing === 'pre') {
+        await lifecycle.runBuildPre(hookContext);
+      } else {
+        await lifecycle.runBuildPost(hookContext);
+      }
+    } finally {
+      for (const {evt, fn} of forwarders) lifecycle.removeListener(evt, fn);
+    }
   }
 
   /** Run a list of build tasks sequentially, emitting task:start/task:complete events. */

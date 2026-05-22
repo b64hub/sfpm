@@ -1,5 +1,5 @@
 import {
-  describe, expect, it, vi,
+  beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
 import type {HookContext} from '@b64hub/sfpm-core';
@@ -42,11 +42,22 @@ function createMockOrg(options?: {isScratch?: boolean}) {
   return org as Org;
 }
 
+function createPackage(overrides?: Partial<HookContext['sfpmPackage']>): HookContext['sfpmPackage'] {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    packageDirectory: '/project/packages/test-package',
+    type: 'Source',
+    ...overrides,
+  } as HookContext['sfpmPackage'];
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'install',
-    packageName: 'test-package',
-    packageType: 'Source',
+    projectDir: '/project',
+    sfpmPackage: createPackage(),
+    stage: 'local',
     timing: 'post',
     ...overrides,
   };
@@ -57,6 +68,11 @@ function createContext(overrides?: Partial<HookContext>): HookContext {
 // ============================================================================
 
 describe('feedTrackingHooks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(Org, 'create').mockResolvedValue(createMockOrg());
+  });
+
   // --------------------------------------------------------------------------
   // Structure
   // --------------------------------------------------------------------------
@@ -95,10 +111,12 @@ describe('feedTrackingHooks', () => {
     const logger = createLogger();
     const org = createMockOrg({isScratch: true});
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {ftFields: ['Account.MyField__c'], type: 'Source'},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({ftFields: ['Account.MyField__c'], type: 'Source'}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -111,10 +129,12 @@ describe('feedTrackingHooks', () => {
     const logger = createLogger();
     const org = createMockOrg({isScratch: true});
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {ftFields: [], type: 'Source'},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({ftFields: [], type: 'Source'}),
     }));
 
     expect(org.determineIfScratch).not.toHaveBeenCalled();
@@ -129,10 +149,12 @@ describe('feedTrackingHooks', () => {
     const logger = createLogger();
     const org = createMockOrg();
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {ftFields: [], type: 'Source'},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({ftFields: [], type: 'Source'}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -154,10 +176,12 @@ describe('feedTrackingHooks', () => {
     const org = createMockOrg();
     const ftFields = ['Account.A__c', 'Contact.B__c', 'Case.C__c'];
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {ftFields, type: 'Source'},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({ftFields, type: 'Source'}),
     }));
 
     expect(FieldTrackingEnabler).toHaveBeenCalledWith(
@@ -183,10 +207,12 @@ describe('feedTrackingHooks', () => {
     const logger = createLogger();
     const org = createMockOrg();
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {ftFields: ['A.B__c', 'C.D__c'], type: 'Source'},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({ftFields: ['A.B__c', 'C.D__c'], type: 'Source'}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(

@@ -42,10 +42,22 @@ function createMockOrg() {
   return org as Org;
 }
 
+function createPackage(overrides?: Partial<HookContext['sfpmPackage']>): HookContext['sfpmPackage'] {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    packageDirectory: '/project/packages/test-package',
+    type: PackageType.Source,
+    ...overrides,
+  } as HookContext['sfpmPackage'];
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'install',
-    packageName: 'test-package',
+    projectDir: '/project',
+    sfpmPackage: createPackage(),
+    stage: 'local',
     timing: 'post',
     ...overrides,
   };
@@ -65,6 +77,7 @@ function createFlowComponent(fullName: string, status = 'Active') {
 describe('flowActivationHooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(Org, 'create').mockResolvedValue(createMockOrg());
   });
 
   // --------------------------------------------------------------------------
@@ -84,26 +97,14 @@ describe('flowActivationHooks', () => {
   // Guards
   // --------------------------------------------------------------------------
 
-  it('should skip when no package model', async () => {
-    const hooks = flowActivationHooks();
-    const logger = createLogger();
-
-    await hooks.hooks[0].handler(createContext({logger, org: createMockOrg()}));
-
-    expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('no package model'),
-    );
-    expect(FlowActivator).not.toHaveBeenCalled();
-  });
-
   it('should skip data packages', async () => {
     const hooks = flowActivationHooks();
     const logger = createLogger();
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {flows: [], type: PackageType.Data},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({flows: [], type: PackageType.Data}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -117,7 +118,7 @@ describe('flowActivationHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      sfpmPackage: {flows: [], type: PackageType.Source},
+      sfpmPackage: createPackage({flows: [], type: PackageType.Source}),
     }));
 
     expect(logger.warn).toHaveBeenCalledWith(
@@ -131,8 +132,8 @@ describe('flowActivationHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {flows: [], type: PackageType.Source},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({flows: [], type: PackageType.Source}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -155,14 +156,14 @@ describe('flowActivationHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        org: createMockOrg(),
-        sfpmPackage: {
+        targetOrg: 'test@user.org',
+        sfpmPackage: createPackage({
           flows: [
             createFlowComponent('MyFlow', 'Active'),
             createFlowComponent('DraftFlow', 'Draft'),
           ],
           type: PackageType.Source,
-        },
+        }),
       }));
 
       const instance = vi.mocked(FlowActivator).mock.results[0].value;
@@ -182,14 +183,14 @@ describe('flowActivationHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        org: createMockOrg(),
-        sfpmPackage: {
+        targetOrg: 'test@user.org',
+        sfpmPackage: createPackage({
           flows: [
             createFlowComponent('MyFlow', 'Active'),
             createFlowComponent('OtherFlow', 'Active'),
           ],
           type: PackageType.Source,
-        },
+        }),
       }));
 
       const instance = vi.mocked(FlowActivator).mock.results[0].value;
@@ -208,14 +209,14 @@ describe('flowActivationHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        org: createMockOrg(),
-        sfpmPackage: {
+        targetOrg: 'test@user.org',
+        sfpmPackage: createPackage({
           flows: [
             {fullName: 'BadFlow', parseXmlSync: () => { throw new Error('parse error'); }},
             createFlowComponent('GoodFlow', 'Active'),
           ],
           type: PackageType.Source,
-        },
+        }),
       }));
 
       const instance = vi.mocked(FlowActivator).mock.results[0].value;
@@ -234,13 +235,13 @@ describe('flowActivationHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        org: createMockOrg(),
-        sfpmPackage: {
+        targetOrg: 'test@user.org',
+        sfpmPackage: createPackage({
           flows: [
             {fullName: 'NoStatus', parseXmlSync: () => ({Flow: {}})},
           ],
           type: PackageType.Source,
-        },
+        }),
       }));
 
       expect(logger.debug).toHaveBeenCalledWith(
@@ -264,13 +265,15 @@ describe('flowActivationHooks', () => {
       const logger = createLogger();
       const org = createMockOrg();
 
+      vi.mocked(Org.create).mockResolvedValue(org);
+
       await hooks.hooks[0].handler(createContext({
         logger,
-        org,
-        sfpmPackage: {
+        targetOrg: 'test@user.org',
+        sfpmPackage: createPackage({
           flows: [createFlowComponent('MyFlow', 'Active')],
           type: PackageType.Source,
-        },
+        }),
       }));
 
       expect(FlowActivator).toHaveBeenCalledWith(
@@ -290,15 +293,15 @@ describe('flowActivationHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        org: createMockOrg(),
-        sfpmPackage: {
+        targetOrg: 'test@user.org',
+        sfpmPackage: createPackage({
           flows: [
             createFlowComponent('Flow1', 'Active'),
             createFlowComponent('Flow2', 'Active'),
             createFlowComponent('Flow3', 'Draft'),
           ],
           type: PackageType.Source,
-        },
+        }),
       }));
 
       expect(logger.info).toHaveBeenCalledWith(
@@ -316,11 +319,11 @@ describe('flowActivationHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        org: createMockOrg(),
-        sfpmPackage: {
+        targetOrg: 'test@user.org',
+        sfpmPackage: createPackage({
           flows: [createFlowComponent('Flow1', 'Active')],
           type: PackageType.Source,
-        },
+        }),
       }));
 
       expect(logger.debug).toHaveBeenCalledWith(

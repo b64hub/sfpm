@@ -3,17 +3,28 @@ import {
 } from 'vitest';
 
 import {LifecycleEngine} from '../../src/lifecycle/lifecycle-engine.js';
+import type SfpmPackage from '../../src/package/sfpm-package.js';
 import {HookContext, LifecycleHooks} from '../../src/types/lifecycle.js';
 
 // ============================================================================
 // Test Helpers
 // ============================================================================
 
+function createMockPackage(overrides?: Record<string, unknown>): SfpmPackage {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    type: 'Source',
+    ...overrides,
+  } as unknown as SfpmPackage;
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
-    packageName: 'test-package',
-    packageType: 'Source',
     operation: 'install',
+    projectDir: '/project',
+    sfpmPackage: createMockPackage(),
+    stage: 'local',
     timing: 'pre',
     ...overrides,
   };
@@ -215,7 +226,7 @@ describe('LifecycleEngine', () => {
         hooks: [{handler: receivedContext, operation: 'install', timing: 'pre'}],
       }));
 
-      const context = createContext({packageName: 'my-pkg'});
+      const context = createContext({sfpmPackage: createMockPackage({name: 'my-pkg'})});
       await engine.run('install', 'pre', context);
 
       expect(receivedContext).toHaveBeenCalledWith({...context, stage: 'local'});
@@ -248,75 +259,34 @@ describe('LifecycleEngine', () => {
   });
 
   // --------------------------------------------------------------------------
-  // Ordering — enforce + order
+  // Ordering
   // --------------------------------------------------------------------------
 
   describe('ordering', () => {
-    it('should respect enforce ordering', async () => {
+    it('should respect per-hook order', async () => {
       const order: string[] = [];
 
       engine.use(createHooks({
         hooks: [{
           handler() {
-            order.push('normal');
+            order.push('order-last');
           },
+          options: {order: 'last'},
           operation: 'install',
           timing: 'pre',
         }],
-        name: 'normal',
-      }));
-      engine.use(createHooks({
-        enforce: 'pre',
-        hooks: [{
-          handler() {
-            order.push('enforce-pre');
-          },
-          operation: 'install',
-          timing: 'pre',
-        }],
-        name: 'pre-hooks',
-      }));
-      engine.use(createHooks({
-        enforce: 'post',
-        hooks: [{
-          handler() {
-            order.push('enforce-post');
-          },
-          operation: 'install',
-          timing: 'pre',
-        }],
-        name: 'post-hooks',
-      }));
-
-      await engine.run('install', 'pre', createContext());
-
-      expect(order).toEqual(['enforce-pre', 'normal', 'enforce-post']);
-    });
-
-    it('should respect per-hook order within enforce group', async () => {
-      const order: string[] = [];
-
-      engine.use(createHooks({
-        hooks: [{
-          handler() {
-            order.push('order-post');
-          },
-          options: {order: 'post'},
-          operation: 'install',
-          timing: 'pre',
-        }],
-        name: 'hook-post',
+        name: 'hook-last',
       }));
       engine.use(createHooks({
         hooks: [{
           handler() {
-            order.push('order-pre');
+            order.push('order-first');
           },
-          options: {order: 'pre'},
+          options: {order: 'first'},
           operation: 'install',
           timing: 'pre',
         }],
-        name: 'hook-pre',
+        name: 'hook-first',
       }));
       engine.use(createHooks({
         hooks: [{
@@ -331,59 +301,60 @@ describe('LifecycleEngine', () => {
 
       await engine.run('install', 'pre', createContext());
 
-      expect(order).toEqual(['order-pre', 'default', 'order-post']);
+      expect(order).toEqual(['order-first', 'default', 'order-last']);
     });
 
-    it('should combine enforce and order for full priority chain', async () => {
+    it('should support numeric order for fine-grained control', async () => {
       const order: string[] = [];
 
-      // enforce:post + order:pre
       engine.use(createHooks({
-        enforce: 'post',
         hooks: [{
-          handler() {
-            order.push('enforce-post:order-pre');
-          },
-          options: {order: 'pre'},
+          handler() { order.push('priority-10'); },
+          options: {order: 10},
           operation: 'install',
           timing: 'pre',
         }],
-        name: 'ep-op',
+        name: 'p10',
       }));
-
-      // enforce:pre + order:post
       engine.use(createHooks({
-        enforce: 'pre',
         hooks: [{
-          handler() {
-            order.push('enforce-pre:order-post');
-          },
-          options: {order: 'post'},
+          handler() { order.push('priority-neg5'); },
+          options: {order: -5},
           operation: 'install',
           timing: 'pre',
         }],
-        name: 'ep-op2',
+        name: 'p-5',
       }));
-
-      // default enforce + default order
       engine.use(createHooks({
         hooks: [{
-          handler() {
-            order.push('default:default');
-          },
+          handler() { order.push('default'); },
           operation: 'install',
           timing: 'pre',
         }],
-        name: 'dd',
+        name: 'default',
+      }));
+      engine.use(createHooks({
+        hooks: [{
+          handler() { order.push('first'); },
+          options: {order: 'first'},
+          operation: 'install',
+          timing: 'pre',
+        }],
+        name: 'first',
+      }));
+      engine.use(createHooks({
+        hooks: [{
+          handler() { order.push('last'); },
+          options: {order: 'last'},
+          operation: 'install',
+          timing: 'pre',
+        }],
+        name: 'last',
       }));
 
       await engine.run('install', 'pre', createContext());
 
-      expect(order).toEqual([
-        'enforce-pre:order-post',   // enforce:pre comes first, even with order:post
-        'default:default',           // normal hooks
-        'enforce-post:order-pre',    // enforce:post comes last, even with order:pre
-      ]);
+      expect(order).toEqual(['first', 'priority-neg5', 'default', 'priority-10', 'last']);
     });
 
     it('should preserve insertion order within same priority', async () => {
@@ -437,18 +408,18 @@ describe('LifecycleEngine', () => {
       engine.use(createHooks({
         hooks: [{
           handler,
-          options: {filter: ctx => ctx.packageType === 'Unlocked'},
+          options: {filter: ctx => ctx.sfpmPackage.type === 'Unlocked'},
           operation: 'install',
           timing: 'pre',
         }],
       }));
 
       // Source package — should be filtered out
-      await engine.run('install', 'pre', createContext({packageType: 'Source'}));
+      await engine.run('install', 'pre', createContext({sfpmPackage: createMockPackage({type: 'Source'})}));
       expect(handler).not.toHaveBeenCalled();
 
       // Unlocked package — should pass filter
-      await engine.run('install', 'pre', createContext({packageType: 'Unlocked'}));
+      await engine.run('install', 'pre', createContext({sfpmPackage: createMockPackage({type: 'Unlocked'})}));
       expect(handler).toHaveBeenCalledTimes(1);
     });
 
@@ -486,12 +457,12 @@ describe('LifecycleEngine', () => {
       const handler = vi.fn();
 
       engine.use(createHooks({
-        hooks: [{handler, operation: 'custom-operation', timing: 'custom-timing'}],
+        hooks: [{handler, operation: 'custom-operation', timing: 'custom-timing' as any}],
       }));
 
       await engine.run('custom-operation', 'custom-timing', createContext({
-        operation: 'custom-operation',
-        timing: 'custom-timing',
+        operation: 'custom-operation' as any,
+        timing: 'custom-timing' as any,
       }));
 
       expect(handler).toHaveBeenCalledTimes(1);

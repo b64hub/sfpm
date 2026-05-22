@@ -62,10 +62,11 @@ export function fieldHistoryTrackingHooks(options?: FieldHistoryTrackingHooksOpt
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
 
           // ── Guard: need an org ────────────────────────────────────
-          const org = resolveOrg(context, logger);
+          const org = await resolveOrg(context, logger);
           if (!org) {
             logger?.warn(`FieldHistoryTracking: no org connection for '${packageName}', skipping`);
             return;
@@ -78,8 +79,8 @@ export function fieldHistoryTrackingHooks(options?: FieldHistoryTrackingHooksOpt
           }
 
           // ── Guard: check for FHT fields in package ────────────────
-          const sfpmPackage = context.sfpmPackage as FhtCapablePackage | undefined;
-          const fhtFields = sfpmPackage?.fhtFields ?? [];
+          const fhtPackage = sfpmPackage as unknown as FhtCapablePackage;
+          const fhtFields = fhtPackage.fhtFields ?? [];
 
           if (fhtFields.length === 0) {
             logger?.debug(`FieldHistoryTracking: no tracked fields in '${packageName}'`);
@@ -111,16 +112,19 @@ export function fieldHistoryTrackingHooks(options?: FieldHistoryTrackingHooksOpt
 // Helpers
 // ============================================================================
 
-function resolveOrg(
+async function resolveOrg(
   context: HookContext,
   logger?: Logger,
-): Org | undefined {
-  const {org} = context;
-
-  if (org instanceof Org) {
-    return org;
+): Promise<Org | undefined> {
+  if (!context.targetOrg) {
+    logger?.debug('FieldHistoryTracking: no targetOrg in hook context');
+    return undefined;
   }
 
-  logger?.debug('FieldHistoryTracking: context.org is not an Org instance');
-  return undefined;
+  try {
+    return await Org.create({aliasOrUsername: context.targetOrg});
+  } catch (error) {
+    logger?.debug(`FieldHistoryTracking: failed to connect to '${context.targetOrg}': ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
 }

@@ -81,7 +81,8 @@ export function permissionSetHooks(options?: PermissionSetHooksOptions): Lifecyc
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
           const prePermSets = resolvePermSets(context, 'pre', []);
 
           if (prePermSets.length === 0) {
@@ -89,7 +90,7 @@ export function permissionSetHooks(options?: PermissionSetHooksOptions): Lifecyc
             return;
           }
 
-          const connection = resolveConnection(context, logger);
+          const connection = await resolveConnection(context, logger);
           if (!connection) {
             logger?.warn(`PermissionSet [pre]: no org connection for '${packageName}', skipping`);
             return;
@@ -107,7 +108,8 @@ export function permissionSetHooks(options?: PermissionSetHooksOptions): Lifecyc
       },
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
           const postPermSets = resolvePermSets(context, 'post', globalPermSets);
 
           if (postPermSets.length === 0) {
@@ -115,7 +117,7 @@ export function permissionSetHooks(options?: PermissionSetHooksOptions): Lifecyc
             return;
           }
 
-          const connection = resolveConnection(context, logger);
+          const connection = await resolveConnection(context, logger);
           if (!connection) {
             logger?.warn(`PermissionSet [post]: no org connection for '${packageName}', skipping`);
             return;
@@ -157,20 +159,24 @@ function resolvePermSets(
 }
 
 /**
- * Resolve a Salesforce {@link Connection} from the hook context.
+ * Resolve a Salesforce {@link Connection} from the hook context via `targetOrg`.
  */
-function resolveConnection(
+async function resolveConnection(
   context: HookContext,
   logger?: Logger,
-): Connection | undefined {
-  const {org} = context;
-
-  if (org instanceof Org) {
-    return org.getConnection();
+): Promise<Connection | undefined> {
+  if (!context.targetOrg) {
+    logger?.debug('PermissionSet: no targetOrg in hook context');
+    return undefined;
   }
 
-  logger?.debug('PermissionSet: context.org is not an Org instance');
-  return undefined;
+  try {
+    const org = await Org.create({aliasOrUsername: context.targetOrg});
+    return org.getConnection();
+  } catch (error) {
+    logger?.debug(`PermissionSet: failed to connect to '${context.targetOrg}': ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
 }
 
 /**

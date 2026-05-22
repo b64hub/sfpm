@@ -85,25 +85,26 @@ export function picklistHooks(options?: PicklistHooksOptions): LifecycleHooks {
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
 
           // ── Guard: only process unlocked packages ──────────────────
-          const sfpmPackage = context.sfpmPackage as PicklistCapablePackage | undefined;
+          const picklistPackage = sfpmPackage as unknown as PicklistCapablePackage;
 
-          if (!sfpmPackage || String(sfpmPackage.type) !== PackageType.Unlocked) {
+          if (String(picklistPackage.type) !== PackageType.Unlocked) {
             logger?.debug(`Picklist: skipping '${packageName}' (not an unlocked package)`);
             return;
           }
 
           // ── Guard: need an org connection ──────────────────────────
-          const connection = resolveConnection(context, logger);
+          const connection = await resolveConnection(context, logger);
           if (!connection) {
             logger?.warn(`Picklist: no org connection available for '${packageName}', skipping`);
             return;
           }
 
           // ── Extract picklist field data from the package model ─────
-          const fields = extractPicklistFields(sfpmPackage, options?.fieldNames, logger);
+          const fields = extractPicklistFields(picklistPackage, options?.fieldNames, logger);
 
           if (fields.length === 0) {
             logger?.debug(`Picklist: no picklist fields found in '${packageName}'`);
@@ -136,22 +137,24 @@ export function picklistHooks(options?: PicklistHooksOptions): LifecycleHooks {
 // ============================================================================
 
 /**
- * Resolve a Salesforce {@link Connection} from the hook context.
- *
- * The orchestrator is expected to place an `Org` instance on `context.org`.
+ * Resolve a Salesforce {@link Connection} from the hook context via `targetOrg`.
  */
-function resolveConnection(
+async function resolveConnection(
   context: HookContext,
   logger?: Logger,
-): Connection | undefined {
-  const {org} = context;
-
-  if (org instanceof Org) {
-    return org.getConnection();
+): Promise<Connection | undefined> {
+  if (!context.targetOrg) {
+    logger?.debug('Picklist: no targetOrg in hook context');
+    return undefined;
   }
 
-  logger?.debug('Picklist: context.org is not an Org instance');
-  return undefined;
+  try {
+    const org = await Org.create({aliasOrUsername: context.targetOrg});
+    return org.getConnection();
+  } catch (error) {
+    logger?.debug(`Picklist: failed to connect to '${context.targetOrg}': ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
 }
 
 /**

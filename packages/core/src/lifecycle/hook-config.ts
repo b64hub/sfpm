@@ -89,23 +89,11 @@ export function isHookEnabled(context: HookContext, hookName: string): boolean {
 // ============================================================================
 
 /**
- * Shape we expect on `context.sfpmPackage` to read per-package hook config.
- */
-interface PackageWithHookConfig {
-  packageDefinition?: {
-    packageOptions?: {
-      hooks?: Record<string, boolean | PackageHookConfig>;
-    };
-  };
-}
-
-/**
  * Read the raw hook config value from the package definition.
  */
 function readRawHookConfig(
   context: HookContext,
   hookName: string,
 ): boolean | PackageHookConfig | undefined {
-  const sfpmPackage = context.sfpmPackage as PackageWithHookConfig | undefined;
-  return sfpmPackage?.packageDefinition?.packageOptions?.hooks?.[hookName];
+  return context.sfpmPackage?.packageDefinition?.packageOptions?.hooks?.[hookName];
 }

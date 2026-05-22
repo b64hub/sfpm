@@ -1,3 +1,5 @@
+import EventEmitter from 'node:events';
+
 import {
   HookContext,
   HookHandler,
@@ -14,22 +16,16 @@ const DEFAULT_STAGE = 'local';
 /**
  * Internal representation of a registered hook with sorting metadata.
  *
- * Sort order priority: set enforce → hook order → insertion order.
+ * Sort order priority: hook order → insertion order.
  *
  * The sorting produces this execution order:
- * 1. Sets with `enforce: 'pre'`  + hooks with `order: 'pre'`
- * 2. Sets with `enforce: 'pre'`  + hooks without order
- * 3. Sets with `enforce: 'pre'`  + hooks with `order: 'post'`
- * 4. Normal sets + hooks with `order: 'pre'`
- * 5. Normal sets + hooks without order
- * 6. Normal sets + hooks with `order: 'post'`
- * 7. Sets with `enforce: 'post'` + hooks with `order: 'pre'`
- * 8. Sets with `enforce: 'post'` + hooks without order
- * 9. Sets with `enforce: 'post'` + hooks with `order: 'post'`
+ * 1. Hooks with `order: 'first'` (registration order among themselves)
+ * 2. Hooks with negative numeric order (ascending)
+ * 3. Hooks without order / `order: 0` (registration order)
+ * 4. Hooks with positive numeric order (ascending)
+ * 5. Hooks with `order: 'last'` (registration order among themselves)
  */
 interface RegisteredHook {
-  /** Set-level ordering from LifecycleHooks.enforce */
-  enforce: 'default' | 'post' | 'pre';
   /** Optional filter predicate */
   filter?: (context: HookContext) => boolean;
   /** The handler function to execute */
@@ -40,23 +36,23 @@ interface RegisteredHook {
   insertionIndex: number;
   /** The lifecycle operation (e.g., 'build', 'install') */
   operation: string;
-  /** Per-hook ordering within a timing slot */
-  order: 'default' | 'post' | 'pre';
+  /** Resolved numeric priority for sorting */
+  orderPriority: number;
   /** Lifecycle stages this hook applies to (empty = all stages) */
   stages: string[];
   /** The timing within the operation (e.g., 'pre', 'post') */
   timing: string;
 }
 
-const ENFORCE_PRIORITY: Record<string, number> = {default: 1, post: 2, pre: 0};
-const ORDER_PRIORITY: Record<string, number> = {default: 1, post: 2, pre: 0};
+function resolveOrderPriority(order: 'first' | 'last' | number | undefined): number {
+  if (order === 'first') return -Infinity;
+  if (order === 'last') return Infinity;
+  return order ?? 0;
+}
 
 function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
   return [...hooks].sort((left, right) => {
-    const enforceDiff = ENFORCE_PRIORITY[left.enforce] - ENFORCE_PRIORITY[right.enforce];
-    if (enforceDiff !== 0) return enforceDiff;
-
-    const orderDiff = ORDER_PRIORITY[left.order] - ORDER_PRIORITY[right.order];
+    const orderDiff = left.orderPriority - right.orderPriority;
     if (orderDiff !== 0) return orderDiff;
 
     return left.insertionIndex - right.insertionIndex;
@@ -94,14 +90,15 @@ function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
  * await lifecycle.run('install', 'pre', context);
  * ```
  */
-export class LifecycleEngine {
+export class LifecycleEngine extends EventEmitter {
   private static initializedStage?: string;
   private static instance?: LifecycleEngine;
-  private readonly _stage: string;
+  private readonly _stage: string = DEFAULT_STAGE
   private readonly hooks: RegisteredHook[] = [];
   private insertionCounter = 0;
 
   private constructor(activeStage: string) {
+    super();
     this._stage = activeStage;
   }
 
@@ -246,7 +243,7 @@ export class LifecycleEngine {
   /**
    * Execute all hooks registered for a given operation and timing, sequentially.
    *
-   * Hooks are sorted by: enforce → order → insertion order.
+   * Hooks are sorted by: order → insertion order.
    * Filtered hooks are skipped. If no hooks match, returns immediately.
    *
    * @param operation - The lifecycle operation (e.g., 'build', 'install')
@@ -261,22 +258,50 @@ export class LifecycleEngine {
       return;
     }
 
+    const packageName = context.sfpmPackage.name;
+    const hookNames = matching.map(h => h.hooksName);
+
     context.logger?.debug(`Lifecycle: running ${matching.length} hook(s) for '${operation}:${timing}'`
-      + (context.packageName ? ` on package '${context.packageName}'` : '')
+      + ` on package '${packageName}'`
       + ` [stage=${this._stage}]`);
+
+    this.emit('hooks:start', {
+      hookCount: matching.length,
+      hookNames,
+      operation,
+      packageName,
+      timestamp: new Date(),
+      timing,
+    });
 
     for (const hook of matching) {
       try {
         // eslint-disable-next-line no-await-in-loop -- hooks must run sequentially in defined order
         await hook.handler(enrichedContext);
+
+        this.emit('hook:complete', {
+          hookName: hook.hooksName,
+          operation,
+          packageName,
+          timestamp: new Date(),
+          timing,
+        });
       } catch (error) {
         context.logger?.error(`Lifecycle: hook from '${hook.hooksName}' failed `
           + `at '${hook.operation}:${hook.timing}'`
-          + (context.packageName ? ` for package '${context.packageName}'` : '')
+          + ` for package '${packageName}'`
           + `: ${error instanceof Error ? error.message : String(error)}`);
         throw error;
       }
     }
+
+    this.emit('hooks:complete', {
+      completedCount: matching.length,
+      operation,
+      packageName,
+      timestamp: new Date(),
+      timing,
+    });
   }
 
   /** Execute build:post hooks with stage-enriched context. */
@@ -307,17 +332,14 @@ export class LifecycleEngine {
    * and executes them when `run()` is called with a matching operation and timing.
    */
   use(lifecycleHooks: LifecycleHooks): void {
-    const enforce = lifecycleHooks.enforce ?? 'default';
-
     for (const registration of lifecycleHooks.hooks) {
       const entry: RegisteredHook = {
-        enforce,
         filter: registration.options?.filter,
         handler: registration.handler,
         hooksName: lifecycleHooks.name,
         insertionIndex: this.insertionCounter++,
         operation: registration.operation,
-        order: registration.options?.order ?? 'default',
+        orderPriority: resolveOrderPriority(registration.options?.order),
         stages: registration.options?.stages ?? [],
         timing: registration.timing,
       };
@@ -348,7 +370,7 @@ export class LifecycleEngine {
       if (!isHookEnabled(context, hook.hooksName)) {
         logger?.debug(`Lifecycle: skipping hook from '${hook.hooksName}' for '${operation}:${timing}' — `
           + 'disabled via packageOptions.hooks'
-          + (context.packageName ? ` for package '${context.packageName}'` : ''));
+          + ` for package '${context.sfpmPackage.name}'`);
         return false;
       }
 
@@ -356,7 +378,7 @@ export class LifecycleEngine {
       if (hook.filter && !hook.filter(context)) {
         logger?.debug(`Lifecycle: skipping hook from '${hook.hooksName}' for '${operation}:${timing}' — `
           + 'filter returned false'
-          + (context.packageName ? ` for package '${context.packageName}'` : ''));
+          + ` for package '${context.sfpmPackage.name}'`);
         return false;
       }
 

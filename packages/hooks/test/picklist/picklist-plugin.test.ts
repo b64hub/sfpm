@@ -66,11 +66,22 @@ function createPicklistField(overrides?: {
   };
 }
 
+function createPackage(overrides?: Partial<HookContext['sfpmPackage']>): HookContext['sfpmPackage'] {
+  return {
+    name: 'test-package',
+    packageDefinition: {},
+    packageDirectory: '/project/packages/test-package',
+    type: PackageType.Unlocked,
+    ...overrides,
+  } as HookContext['sfpmPackage'];
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'install',
-    packageName: 'test-package',
-    packageType: 'Unlocked',
+    projectDir: '/project',
+    sfpmPackage: createPackage(),
+    stage: 'local',
     timing: 'post',
     ...overrides,
   };
@@ -83,6 +94,7 @@ function createContext(overrides?: Partial<HookContext>): HookContext {
 describe('picklistHooks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(Org, 'create').mockResolvedValue(createMockOrg());
   });
   // --------------------------------------------------------------------------
   // Structure
@@ -107,20 +119,9 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [], type: PackageType.Source},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [], type: PackageType.Source}),
     }));
-
-    expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('not an unlocked package'),
-    );
-  });
-
-  it('should skip when no package model is available', async () => {
-    const hooks = picklistHooks();
-    const logger = createLogger();
-
-    await hooks.hooks[0].handler(createContext({logger, org: createMockOrg()}));
 
     expect(logger.debug).toHaveBeenCalledWith(
       expect.stringContaining('not an unlocked package'),
@@ -137,7 +138,7 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      sfpmPackage: {customFields: [], type: PackageType.Unlocked},
+      sfpmPackage: createPackage({customFields: [], type: PackageType.Unlocked}),
     }));
 
     expect(logger.warn).toHaveBeenCalledWith(
@@ -155,8 +156,8 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [], type: PackageType.Unlocked}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -178,10 +179,12 @@ describe('picklistHooks', () => {
     const org = createMockOrg();
     const field = createPicklistField();
 
+    vi.mocked(Org.create).mockResolvedValue(org);
+
     await hooks.hooks[0].handler(createContext({
       logger,
-      org,
-      sfpmPackage: {customFields: [field], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [field], type: PackageType.Unlocked}),
     }));
 
     expect(logger.info).toHaveBeenCalledWith(
@@ -207,8 +210,8 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [textField], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [textField], type: PackageType.Unlocked}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -223,8 +226,8 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [cmtField], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [cmtField], type: PackageType.Unlocked}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -248,8 +251,8 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [gvsField], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [gvsField], type: PackageType.Unlocked}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -272,8 +275,8 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [noParentField], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [noParentField], type: PackageType.Unlocked}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -293,8 +296,8 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [matchingField, excludedField], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [matchingField, excludedField], type: PackageType.Unlocked}),
     }));
 
     const enablerInstance = vi.mocked(PicklistEnabler).mock.results[0].value;
@@ -314,8 +317,8 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [multiField], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [multiField], type: PackageType.Unlocked}),
     }));
 
     expect(logger.info).toHaveBeenCalledWith(
@@ -334,8 +337,8 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [brokenField], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [brokenField], type: PackageType.Unlocked}),
     }));
 
     expect(logger.trace).toHaveBeenCalledWith(
@@ -371,8 +374,8 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [field], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [field], type: PackageType.Unlocked}),
     }));
 
     const enablerInstance = vi.mocked(PicklistEnabler).mock.results[0].value;
@@ -410,8 +413,8 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {customFields: [field], type: PackageType.Unlocked},
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({customFields: [field], type: PackageType.Unlocked}),
     }));
 
     const enablerInstance = vi.mocked(PicklistEnabler).mock.results[0].value;
@@ -436,11 +439,11 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({
         customFields: [createPicklistField()],
         type: PackageType.Unlocked,
-      },
+      }),
     }));
 
     expect(logger.info).toHaveBeenCalledWith(
@@ -458,11 +461,11 @@ describe('picklistHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      org: createMockOrg(),
-      sfpmPackage: {
+      targetOrg: 'test@user.org',
+      sfpmPackage: createPackage({
         customFields: [createPicklistField()],
         type: PackageType.Unlocked,
-      },
+      }),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(

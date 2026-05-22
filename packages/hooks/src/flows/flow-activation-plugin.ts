@@ -7,10 +7,6 @@ import type {FlowActivationHooksOptions, PackageFlowEntry} from './types.js';
 
 import {FlowActivator} from './flow-activator.js';
 
-// ============================================================================
-// Source Component Contracts
-// ============================================================================
-
 /**
  * Minimal interface for SourceComponent — avoids importing SDR.
  */
@@ -69,30 +65,26 @@ export function flowActivationHooks(options?: FlowActivationHooksOptions): Lifec
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, packageName} = context;
+          const {logger, sfpmPackage} = context;
+          const packageName = sfpmPackage.name;
 
           // ── Guard: skip data packages ─────────────────────────────
-          const sfpmPackage = context.sfpmPackage as FlowCapablePackage | undefined;
+          const flowPackage = sfpmPackage as unknown as FlowCapablePackage;
 
-          if (!sfpmPackage) {
-            logger?.debug(`FlowActivation: no package model available for '${packageName}', skipping`);
-            return;
-          }
-
-          if (String(sfpmPackage.type) === PackageType.Data) {
+          if (String(flowPackage.type) === PackageType.Data) {
             logger?.debug(`FlowActivation: skipping '${packageName}' (data package)`);
             return;
           }
 
           // ── Guard: need an org connection ─────────────────────────
-          const connection = resolveConnection(context, logger);
+          const connection = await resolveConnection(context, logger);
           if (!connection) {
             logger?.warn(`FlowActivation: no org connection available for '${packageName}', skipping`);
             return;
           }
 
           // ── Extract flow entries from the package model ───────────
-          const entries = extractFlowEntries(sfpmPackage, options?.flowNames, logger);
+          const entries = extractFlowEntries(flowPackage, options?.flowNames, logger);
 
           if (entries.length === 0) {
             logger?.debug(`FlowActivation: no flows found in '${packageName}'`);
@@ -125,20 +117,24 @@ export function flowActivationHooks(options?: FlowActivationHooksOptions): Lifec
 // ============================================================================
 
 /**
- * Resolve a Salesforce `Connection` from the hook context.
+ * Resolve a Salesforce `Connection` from the hook context via `targetOrg`.
  */
-function resolveConnection(
+async function resolveConnection(
   context: HookContext,
   logger?: Logger,
-): Connection | undefined {
-  const {org} = context;
-
-  if (org instanceof Org) {
-    return org.getConnection();
+): Promise<Connection | undefined> {
+  if (!context.targetOrg) {
+    logger?.debug('FlowActivation: no targetOrg in hook context');
+    return undefined;
   }
 
-  logger?.debug('FlowActivation: context.org is not an Org instance');
-  return undefined;
+  try {
+    const org = await Org.create({aliasOrUsername: context.targetOrg});
+    return org.getConnection();
+  } catch (error) {
+    logger?.debug(`FlowActivation: failed to connect to '${context.targetOrg}': ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
 }
 
 /**
