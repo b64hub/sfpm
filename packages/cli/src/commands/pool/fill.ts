@@ -50,17 +50,8 @@ export default class PoolFill extends SfpmCommand {
     const {flags} = await this.parse(PoolFill);
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
-    const logger = {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-    };
-
     try {
-      const orgConfig = await this.loadOrgConfig(logger);
+      const orgConfig = await this.loadOrgConfig(this.sfpmLogger);
       const config = this.buildPoolConfig(flags, orgConfig);
       const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
 
@@ -76,7 +67,7 @@ export default class PoolFill extends SfpmCommand {
               const tasks = this.buildTasks(config, hub, projectDir);
               const services = createPoolServices({
                 devhub: hub,
-                logger,
+                logger: this.sfpmLogger,
                 poolType: config.type as OrgTypes,
                 tasks,
               });

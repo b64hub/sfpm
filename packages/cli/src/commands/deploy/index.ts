@@ -163,15 +163,6 @@ export default class Deploy extends SfpmCommand {
 
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
-    const logger: Logger = {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-    }
-
     const sfpmConfig = projectService.getSfpmConfig();
 
     if (!flags['no-hooks']) {
@@ -182,7 +173,7 @@ export default class Deploy extends SfpmCommand {
     }
 
     return {
-      flags, logger, mode, projectConfig, projectGraph, resolvedPackages,
+      flags, logger: this.sfpmLogger, mode, projectConfig, projectGraph, resolvedPackages,
     }
   }
 

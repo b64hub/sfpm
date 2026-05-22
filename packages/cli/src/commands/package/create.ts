@@ -54,7 +54,7 @@ export default class PackageCreate extends SfpmCommand {
 
     const isInteractive = !flags.json
 
-    const logger = this.createLogger()
+    const logger = this.sfpmLogger
 
     const packageName = await this.resolvePackageName(flags.name, isInteractive)
     const packageType = await this.resolvePackageType(flags.type as PackageType | undefined, isInteractive)
@@ -140,17 +140,6 @@ export default class PackageCreate extends SfpmCommand {
   // ====================================================================
   // Private helpers
   // ====================================================================
-
-  private createLogger(): Logger {
-    return {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-    }
-  }
 
   private async createPackage2Container(
     packageName: string,

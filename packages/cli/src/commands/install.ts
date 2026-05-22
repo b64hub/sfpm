@@ -1,5 +1,5 @@
 import {
-  InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger, PackageInstaller, ProjectService, type TestLevel,
+  InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, PackageInstaller, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
 import EventEmitter from 'node:events'
@@ -77,15 +77,6 @@ export default class Install extends SfpmCommand {
 
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
-    const logger: Logger = {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-    }
-
     const sfpmConfig = projectService.getSfpmConfig();
 
     // Create lifecycle engine and register hooks from config
@@ -118,7 +109,7 @@ export default class Install extends SfpmCommand {
       const task = new InstallOrchestrationTask(
         projectConfig,
         installOptions,
-        logger,
+        this.sfpmLogger,
       )
 
       const emitter = new EventEmitter()
@@ -155,7 +146,7 @@ export default class Install extends SfpmCommand {
       projectConfig,
       projectGraph,
       {...installOptions, includeDependencies: !flags['no-dependencies']},
-      logger,
+      this.sfpmLogger,
     )
 
     // Attach renderer to orchestrator — it forwards all installer events

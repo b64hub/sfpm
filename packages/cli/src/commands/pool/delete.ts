@@ -46,15 +46,6 @@ export default class PoolDelete extends SfpmCommand {
     const {flags} = await this.parse(PoolDelete);
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
-    const logger = {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-    };
-
     try {
       const {devhub} = await connectDevHub({
         alias: flags['target-dev-hub'],
@@ -63,7 +54,7 @@ export default class PoolDelete extends SfpmCommand {
 
       const {manager} = createPoolServices({
         devhub,
-        logger,
+        logger: this.sfpmLogger,
         poolType: flags.type as OrgTypes,
       });
 

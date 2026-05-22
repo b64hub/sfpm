@@ -10,6 +10,7 @@
  */
 import {
   BuildStateStore,
+  createConsoleLogger,
   type LocalBuildState,
   type LocalValidationResult,
   ValidationPoller,
@@ -113,15 +114,7 @@ async function runPolling(state: LocalBuildState): Promise<LocalValidationResult
     return [];
   }
 
-  // Create a simple console logger for the background process
-  const logger = {
-    debug: (msg: string) => console.debug(`[sfpm-watcher] ${msg}`),
-    error: (msg: string) => console.error(`[sfpm-watcher] ${msg}`),
-    info: (msg: string) => console.info(`[sfpm-watcher] ${msg}`),
-    log: (msg: string) => console.log(`[sfpm-watcher] ${msg}`),
-    trace: (msg: string) => console.debug(`[sfpm-watcher] ${msg}`),
-    warn: (msg: string) => console.warn(`[sfpm-watcher] ${msg}`),
-  };
+  const logger = createConsoleLogger({level: 'info'});
 
   const poller = new ValidationPoller(
     connection,

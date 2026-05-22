@@ -1,4 +1,4 @@
-import {loadSfpmConfig, Logger, WorkspaceSync} from '@b64hub/sfpm-core'
+import {loadSfpmConfig, WorkspaceSync} from '@b64hub/sfpm-core'
 import {Flags} from '@oclif/core'
 import chalk from 'chalk'
 import ora from 'ora'
@@ -21,23 +21,14 @@ export default class Sync extends SfpmCommand {
 
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd()
 
-    const logger: Logger = {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-    }
-
     const spinner = flags.json ? undefined : ora('Syncing workspace...').start()
 
     try {
       // Load project-level settings from sfpm.config.ts
-      const sfpmConfig = await loadSfpmConfig(projectDir, logger)
+      const sfpmConfig = await loadSfpmConfig(projectDir, this.sfpmLogger)
 
       const sync = new WorkspaceSync({
-        logger,
+        logger: this.sfpmLogger,
         namespace: sfpmConfig.namespace,
         projectDir,
         sfdcLoginUrl: sfpmConfig.sfdcLoginUrl,
