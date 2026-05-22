@@ -1,5 +1,6 @@
-import * as core from '@actions/core';
 import type {AnnotationProperties, StructuredLogger} from '@b64hub/sfpm-core';
+
+import * as core from '@actions/core';
 
 // ============================================================================
 // GitHub Actions Logger
@@ -22,66 +23,75 @@ import type {AnnotationProperties, StructuredLogger} from '@b64hub/sfpm-core';
  * ```
  */
 export class GitHubActionsLogger implements StructuredLogger {
-    private readonly prefix: string;
+  private readonly prefix: string;
 
-    constructor(options?: GitHubActionsLoggerOptions) {
-        this.prefix = options?.prefix ? `[${options.prefix}] ` : '';
+  constructor(options?: GitHubActionsLoggerOptions) {
+    this.prefix = options?.prefix ? `[${options.prefix}] ` : '';
+  }
+
+  annotate(level: 'error' | 'notice' | 'warning', message: string, properties?: AnnotationProperties): void {
+    const props: core.AnnotationProperties = {};
+    if (properties?.file) props.file = properties.file;
+    if (properties?.line) props.startLine = properties.line;
+    if (properties?.endLine) props.endLine = properties.endLine;
+    if (properties?.col) props.startColumn = properties.col;
+    if (properties?.endColumn) props.endColumn = properties.endColumn;
+    if (properties?.title) props.title = properties.title;
+
+    switch (level) {
+    case 'error': {
+      core.error(message, props);
+      break;
     }
 
-    log(message: string): void {
-        core.info(`${this.prefix}${message}`);
+    case 'notice': {
+      core.notice(message, props);
+      break;
     }
 
-    info(message: string): void {
-        core.info(`${this.prefix}${message}`);
+    case 'warning': {
+      core.warning(message, props);
+      break;
     }
-
-    warn(message: string): void {
-        core.warning(`${this.prefix}${message}`);
     }
+  }
 
-    error(message: string): void {
-        core.error(`${this.prefix}${message}`);
-    }
+  child(bindings: Record<string, string>): GitHubActionsLogger {
+    const label = Object.values(bindings).join(':');
+    const childPrefix = this.prefix
+      ? `${this.prefix.slice(1, -2)}:${label}`
+      : label;
+    return new GitHubActionsLogger({prefix: childPrefix});
+  }
 
-    debug(message: string): void {
-        core.debug(`${this.prefix}${message}`);
-    }
+  debug(message: string): void {
+    core.debug(`${this.prefix}${message}`);
+  }
 
-    trace(message: string): void {
-        // GitHub Actions does not have a trace level — map to debug
-        core.debug(`${this.prefix}[trace] ${message}`);
-    }
+  error(message: string): void {
+    core.error(`${this.prefix}${message}`);
+  }
 
-    group(label: string): void {
-        core.startGroup(`${this.prefix}${label}`);
-    }
+  group(label: string): void {
+    core.startGroup(`${this.prefix}${label}`);
+  }
 
-    groupEnd(): void {
-        core.endGroup();
-    }
+  groupEnd(): void {
+    core.endGroup();
+  }
 
-    annotate(level: 'error' | 'notice' | 'warning', message: string, properties?: AnnotationProperties): void {
-        const props: core.AnnotationProperties = {};
-        if (properties?.file) props.file = properties.file;
-        if (properties?.line) props.startLine = properties.line;
-        if (properties?.endLine) props.endLine = properties.endLine;
-        if (properties?.col) props.startColumn = properties.col;
-        if (properties?.endColumn) props.endColumn = properties.endColumn;
-        if (properties?.title) props.title = properties.title;
+  info(message: string): void {
+    core.info(`${this.prefix}${message}`);
+  }
 
-        switch (level) {
-            case 'error':
-                core.error(message, props);
-                break;
-            case 'warning':
-                core.warning(message, props);
-                break;
-            case 'notice':
-                core.notice(message, props);
-                break;
-        }
-    }
+  trace(message: string): void {
+    // GitHub Actions does not have a trace level — map to debug
+    core.debug(`${this.prefix}[trace] ${message}`);
+  }
+
+  warn(message: string): void {
+    core.warning(`${this.prefix}${message}`);
+  }
 }
 
 // ============================================================================
@@ -89,8 +99,8 @@ export class GitHubActionsLogger implements StructuredLogger {
 // ============================================================================
 
 export interface GitHubActionsLoggerOptions {
-    /** Optional prefix prepended to all log messages (e.g., package name) */
-    prefix?: string;
+  /** Optional prefix prepended to all log messages (e.g., package name) */
+  prefix?: string;
 }
 
 // ============================================================================
@@ -107,5 +117,5 @@ export interface GitHubActionsLoggerOptions {
  * ```
  */
 export function createGitHubActionsLogger(options?: GitHubActionsLoggerOptions): GitHubActionsLogger {
-    return new GitHubActionsLogger(options);
+  return new GitHubActionsLogger(options);
 }
