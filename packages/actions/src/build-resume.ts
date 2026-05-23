@@ -1,7 +1,6 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import {
-  isStructuredLogger,
   type PackageValidationResult,
   ValidationPoller,
 } from '@b64hub/sfpm-core';
@@ -107,7 +106,7 @@ export async function buildResume(options: BuildResumeOptions): Promise<BuildRes
   // ------------------------------------------------------------------
   // 3. Poll validation status for each pending package
   // ------------------------------------------------------------------
-  if (isStructuredLogger(logger)) logger.group('Validation Polling');
+  logger.group('Validation Polling');
 
   const maxWaitMs = (options.maxWaitMinutes ?? 120) * 60 * 1000;
   const pollingIntervalMs = (options.pollingIntervalSeconds ?? 30) * 1000;
@@ -133,7 +132,7 @@ export async function buildResume(options: BuildResumeOptions): Promise<BuildRes
     });
   }
 
-  if (isStructuredLogger(logger)) logger.groupEnd();
+  logger.groupEnd();
 
   // ------------------------------------------------------------------
   // 4. Set outputs and return

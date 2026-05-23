@@ -143,4 +143,107 @@ describe('GitHubActionsLogger', () => {
             expect(core.notice).toHaveBeenCalledWith('FYI', {});
         });
     });
+
+    describe('child logger buffering', () => {
+        it('should return a Logger-conformant child', () => {
+            const logger = createGitHubActionsLogger();
+            const child = logger.child({package: 'my-pkg'});
+
+            expect(child).toBeDefined();
+            expect(child.info).toBeTypeOf('function');
+            expect(child.debug).toBeTypeOf('function');
+            expect(child.warn).toBeTypeOf('function');
+            expect(child.error).toBeTypeOf('function');
+            expect(child.trace).toBeTypeOf('function');
+        });
+
+        it('should buffer child messages instead of writing immediately', () => {
+            const logger = createGitHubActionsLogger();
+            const child = logger.child({package: 'my-pkg'});
+
+            child.info('buffered message');
+            child.debug('debug message');
+
+            // Nothing written to core.*
+            expect(core.info).not.toHaveBeenCalled();
+            expect(core.debug).not.toHaveBeenCalled();
+        });
+
+        it('should store buffered messages retrievable by key', () => {
+            const logger = createGitHubActionsLogger();
+            const child = logger.child({package: 'my-pkg'});
+
+            child.info('message 1');
+            child.warn('message 2');
+            child.error('message 3');
+            child.debug('message 4');
+            child.trace('message 5');
+
+            const buffer = logger.getChildBuffer('my-pkg');
+            expect(buffer).toHaveLength(5);
+            expect(buffer[0]).toEqual({level: 'info', message: 'message 1'});
+            expect(buffer[1]).toEqual({level: 'warn', message: 'message 2'});
+            expect(buffer[2]).toEqual({level: 'error', message: 'message 3'});
+            expect(buffer[3]).toEqual({level: 'debug', message: 'message 4'});
+            expect(buffer[4]).toEqual({level: 'trace', message: 'message 5'});
+        });
+
+        it('should return empty array for unknown child keys', () => {
+            const logger = createGitHubActionsLogger();
+            expect(logger.getChildBuffer('nonexistent')).toEqual([]);
+        });
+
+        it('should support hasChildBuffer', () => {
+            const logger = createGitHubActionsLogger();
+            expect(logger.hasChildBuffer('pkg')).toBe(false);
+
+            logger.child({package: 'pkg'});
+            expect(logger.hasChildBuffer('pkg')).toBe(true);
+        });
+
+        it('should support clearChildBuffer', () => {
+            const logger = createGitHubActionsLogger();
+            const child = logger.child({package: 'pkg'});
+            child.info('data');
+
+            logger.clearChildBuffer('pkg');
+
+            expect(logger.hasChildBuffer('pkg')).toBe(false);
+            expect(logger.getChildBuffer('pkg')).toEqual([]);
+        });
+
+        it('should share buffer when child() is called multiple times with same key', () => {
+            const logger = createGitHubActionsLogger();
+            const child1 = logger.child({package: 'pkg'});
+            const child2 = logger.child({package: 'pkg'});
+
+            child1.info('from child1');
+            child2.info('from child2');
+
+            const buffer = logger.getChildBuffer('pkg');
+            expect(buffer).toHaveLength(2);
+            expect(buffer[0].message).toBe('from child1');
+            expect(buffer[1].message).toBe('from child2');
+        });
+
+        it('should support nested child() calls sharing same buffer', () => {
+            const logger = createGitHubActionsLogger();
+            const child = logger.child({package: 'pkg'});
+            const nested = child.child!({task: 'deploy'});
+
+            nested.info('nested message');
+
+            const buffer = logger.getChildBuffer('pkg');
+            expect(buffer).toHaveLength(1);
+            expect(buffer[0].message).toBe('nested message');
+        });
+
+        it('top-level methods still write immediately', () => {
+            const logger = createGitHubActionsLogger();
+            logger.child({package: 'pkg'}); // create a child
+
+            logger.info('top-level');
+            expect(core.info).toHaveBeenCalledWith('top-level');
+        });
+    });
 });

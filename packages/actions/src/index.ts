@@ -23,6 +23,7 @@ export {
 
 // Logger
 export {
+  type BufferEntry,
   createGitHubActionsLogger,
   GitHubActionsLogger,
   type GitHubActionsLoggerOptions,

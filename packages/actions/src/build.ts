@@ -5,7 +5,6 @@ import {
   type CreateCompleteEvent,
   isStructuredLogger,
   LifecycleEngine,
-  type Logger,
   type PackageType,
   ProjectService,
 } from '@b64hub/sfpm-core';
@@ -118,8 +117,6 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   // ------------------------------------------------------------------
   // 3. Run BuildOrchestrator with async validation
   // ------------------------------------------------------------------
-  if (isStructuredLogger(logger)) logger.group('Build');
-
   const orchestrator = new BuildOrchestrator(
     projectConfig,
     projectGraph,
@@ -154,7 +151,6 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   const orchResult = await orchestrator.buildAll(packageNames);
 
   renderer.printSummary();
-  if (isStructuredLogger(logger)) logger.groupEnd();
 
   // ------------------------------------------------------------------
   // 4. Build per-package state and determine which need validation
