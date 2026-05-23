@@ -47,7 +47,6 @@ describe('ArtifactResolver', () => {
     const artifactsRootDir = '/test/project/artifacts';
 
     const mockLogger = {
-        log: vi.fn(),
         warn: vi.fn(),
         error: vi.fn(),
         info: vi.fn(),

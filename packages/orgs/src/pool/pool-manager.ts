@@ -890,7 +890,6 @@ const noopLogger: Logger = {
   debug: noop,
   error: noop,
   info: noop,
-  log: noop,
   trace: noop,
   warn: noop,
 };

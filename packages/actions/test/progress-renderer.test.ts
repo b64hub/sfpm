@@ -15,7 +15,6 @@ describe('ActionsProgressRenderer', () => {
             group: vi.fn(),
             groupEnd: vi.fn(),
             info: vi.fn(),
-            log: vi.fn(),
             trace: vi.fn(),
             warn: vi.fn(),
         };
@@ -169,7 +168,6 @@ describe('ActionsProgressRenderer', () => {
                 debug: vi.fn(),
                 error: vi.fn(),
                 info: vi.fn(),
-                log: vi.fn(),
                 trace: vi.fn(),
                 warn: vi.fn(),
             };
@@ -180,7 +178,7 @@ describe('ActionsProgressRenderer', () => {
             emitter.emit('orchestration:package:start', {packageName: 'my-pkg'});
 
             expect(plainLogger.info).toHaveBeenCalledWith(
-                expect.stringContaining('--- Installing: my-pkg ---'),
+                expect.stringContaining('Installing: my-pkg'),
             );
         });
     });

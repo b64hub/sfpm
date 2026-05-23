@@ -33,7 +33,6 @@ describe('ArtifactRepository', () => {
     const projectDirectory = '/test/project';
 
     const mockLogger = {
-        log: vi.fn(),
         warn: vi.fn(),
         error: vi.fn(),
         info: vi.fn(),

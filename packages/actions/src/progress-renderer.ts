@@ -72,10 +72,10 @@ export class ActionsProgressRenderer {
       this.currentPackage = data.packageName;
       this.recordEvent('build:start', data);
       if (isStructuredLogger(this.logger)) {
-        this.logger.group(`Build: ${data.packageName} (${data.packageType ?? 'unknown'})`);
-      } else {
-        this.logger.info(`--- Building: ${data.packageName} ---`);
+        this.logger.group(`Build: ${data.packageName}`);
       }
+
+      this.logger.info(`Building: ${data.packageName} (${data.packageType ?? 'unknown'})`);
     });
 
     emitter.on('build:complete', (data: any) => {
@@ -171,7 +171,7 @@ export class ActionsProgressRenderer {
       if (isStructuredLogger(this.logger)) {
         this.logger.group(`Install: ${data.packageName}`);
       } else {
-        this.logger.info(`--- Installing: ${data.packageName} ---`);
+        this.logger.info(`Installing: ${data.packageName}`);
       }
     });
 

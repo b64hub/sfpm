@@ -37,12 +37,6 @@ describe('GitHubActionsLogger', () => {
     });
 
     describe('log levels', () => {
-        it('should map log() to core.info()', () => {
-            const logger = createGitHubActionsLogger();
-            logger.log('test message');
-            expect(core.info).toHaveBeenCalledWith('test message');
-        });
-
         it('should map info() to core.info()', () => {
             const logger = createGitHubActionsLogger();
             logger.info('info message');
