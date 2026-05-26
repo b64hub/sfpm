@@ -3,6 +3,7 @@ import {
   type CreateCompleteEvent, LifecycleEngine, type LocalBuildState,
   type LocalPackageBuildState, ProjectService,
 } from '@b64hub/sfpm-core'
+import {createTracer} from '@b64hub/sfpm-telemetry'
 import {
   Args, Flags,
 } from '@oclif/core'
@@ -216,8 +217,13 @@ export default class Build extends SfpmCommand {
       orchestrator.on('unlocked:create:complete', captureCreateComplete)
     }
 
+    const tracer = createTracer({serviceName: 'sfpm-cli'})
+    tracer.subscribe(orchestrator)
+
     try {
       const result = await orchestrator.buildAll(resolvedPackages)
+
+      await tracer.shutdown()
 
       if (flags.json) {
         this.logJson(result)

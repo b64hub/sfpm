@@ -12,6 +12,7 @@
     "@b64hub/sfpm-core": "workspace:^0.1.0",
     "@b64hub/sfpm-orgs": "workspace:^",
     "@b64hub/sfpm-sfdmu": "workspace:^",
+    "@b64hub/sfpm-telemetry": "workspace:^0.1.0",
     "@inquirer/prompts": "^8.3.2",
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",

@@ -1,6 +1,7 @@
 import {
   InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, PackageInstaller, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
+import {createTracer} from '@b64hub/sfpm-telemetry'
 import {Args, Flags} from '@oclif/core'
 import EventEmitter from 'node:events'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
@@ -152,8 +153,13 @@ export default class Install extends SfpmCommand {
     // Attach renderer to orchestrator — it forwards all installer events
     renderer.attachTo(orchestrator as any)
 
+    const tracer = createTracer({serviceName: 'sfpm-cli'})
+    tracer.subscribe(orchestrator)
+
     try {
       const result = await orchestrator.installAll(resolvedPackages)
+
+      await tracer.shutdown()
 
       if (flags.json) {
         this.logJson(result)

@@ -8,6 +8,7 @@ import {
   type PackageType,
   ProjectService,
 } from '@b64hub/sfpm-core';
+import {createTracer} from '@b64hub/sfpm-telemetry';
 
 import {BuildCacheService, type CachedBuildState, type PackageBuildState} from './build-cache.js';
 import {createGitHubActionsLogger} from './logger.js';
@@ -148,9 +149,13 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   const renderer = new ActionsProgressRenderer(logger);
   renderer.attachToBuildOrchestrator(orchestrator);
 
+  const tracer = createTracer({serviceName: 'sfpm-actions'});
+  tracer.subscribe(orchestrator);
+
   const orchResult = await orchestrator.buildAll(packageNames);
 
   renderer.printSummary();
+  await tracer.shutdown();
 
   // ------------------------------------------------------------------
   // 4. Build per-package state and determine which need validation

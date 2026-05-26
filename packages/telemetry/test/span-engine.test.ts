@@ -94,14 +94,12 @@ describe('SpanEngine', () => {
       });
 
       emitter.emit('build:start', {
-        orchestrationId,
         packageName: 'pkg-a',
         packageType: 'source',
         timestamp: new Date(),
       });
 
       emitter.emit('build:complete', {
-        orchestrationId,
         packageName: 'pkg-a',
         success: true,
         timestamp: new Date(),
@@ -143,7 +141,6 @@ describe('SpanEngine', () => {
       });
 
       emitter.emit('build:start', {
-        orchestrationId,
         packageName: 'pkg-b',
         packageType: 'unlocked',
         timestamp: new Date(),
@@ -151,7 +148,6 @@ describe('SpanEngine', () => {
 
       emitter.emit('build:complete', {
         error: 'Package creation failed',
-        orchestrationId,
         packageName: 'pkg-b',
         success: false,
         timestamp: new Date(),
@@ -174,10 +170,7 @@ describe('SpanEngine', () => {
     });
 
     it('should record Error object as exception', () => {
-      const orchestrationId = 'test-orch-5';
-
       emitter.emit('build:start', {
-        orchestrationId,
         packageName: 'pkg-c',
         packageType: 'source',
         timestamp: new Date(),
@@ -186,7 +179,6 @@ describe('SpanEngine', () => {
       const error = new Error('Something went wrong');
       emitter.emit('build:complete', {
         error,
-        orchestrationId,
         packageName: 'pkg-c',
         success: false,
         timestamp: new Date(),
@@ -213,13 +205,11 @@ describe('SpanEngine', () => {
       });
 
       emitter.emit('install:start', {
-        orchestrationId,
         packageName: 'pkg-d',
         timestamp: new Date(),
       });
 
       emitter.emit('install:complete', {
-        orchestrationId,
         packageName: 'pkg-d',
         success: true,
         timestamp: new Date(),
@@ -241,6 +231,58 @@ describe('SpanEngine', () => {
       expect(installSpan.attributes['sfpm.package.name']).toBe('pkg-d');
       expect(installSpan.attributes['sfpm.install.success']).toBe(true);
       expect(installSpan.parentSpanId).toBe(orchSpan.spanContext().spanId);
+    });
+  });
+
+  describe('turbo mode (no orchestration)', () => {
+    it('should create a root build span when no orchestration is active', () => {
+      emitter.emit('build:start', {
+        packageName: 'pkg-standalone',
+        packageType: 'source',
+        timestamp: new Date(),
+      });
+
+      emitter.emit('build:complete', {
+        packageName: 'pkg-standalone',
+        success: true,
+        timestamp: new Date(),
+      });
+
+      const spans = exporter.getFinishedSpans();
+      expect(spans).toHaveLength(1);
+
+      const buildSpan = spans[0];
+      expect(buildSpan.name).toBe('sfpm.build');
+      expect(buildSpan.attributes['sfpm.package.name']).toBe('pkg-standalone');
+      expect(buildSpan.parentSpanId).toBeUndefined();
+    });
+
+    it('should parent build span to a registered turbo orchestration span', () => {
+      const tracer = provider.getTracer('test');
+      const turboRootSpan = tracer.startSpan('sfpm.orchestration');
+      engine.registerSpan('orchestration', turboRootSpan);
+
+      emitter.emit('build:start', {
+        packageName: 'pkg-turbo',
+        packageType: 'source',
+        timestamp: new Date(),
+      });
+
+      emitter.emit('build:complete', {
+        packageName: 'pkg-turbo',
+        success: true,
+        timestamp: new Date(),
+      });
+
+      engine.endSpan('orchestration');
+
+      const spans = exporter.getFinishedSpans();
+      expect(spans).toHaveLength(2);
+
+      const buildSpan = spans.find(s => s.name === 'sfpm.build')!;
+      const orchSpan = spans.find(s => s.name === 'sfpm.orchestration')!;
+
+      expect(buildSpan.parentSpanId).toBe(orchSpan.spanContext().spanId);
     });
   });
 
@@ -313,14 +355,12 @@ describe('SpanEngine', () => {
 
       // Start both builds concurrently
       emitter.emit('build:start', {
-        orchestrationId,
         packageName: 'pkg-a',
         packageType: 'source',
         timestamp: new Date(),
       });
 
       emitter.emit('build:start', {
-        orchestrationId,
         packageName: 'pkg-b',
         packageType: 'unlocked',
         timestamp: new Date(),
@@ -328,14 +368,12 @@ describe('SpanEngine', () => {
 
       // Complete them in reverse order
       emitter.emit('build:complete', {
-        orchestrationId,
         packageName: 'pkg-b',
         success: true,
         timestamp: new Date(),
       });
 
       emitter.emit('build:complete', {
-        orchestrationId,
         packageName: 'pkg-a',
         success: true,
         timestamp: new Date(),

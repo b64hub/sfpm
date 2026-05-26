@@ -26,16 +26,15 @@ describe('defaultSpanMappings', () => {
     expect(install.end).toBe('install:complete');
   });
 
-  it('should generate unique span keys per instance', () => {
+  it('should generate unique span keys per package', () => {
     const build = defaultSpanMappings.find(m => m.name === 'sfpm.build')!;
 
-    const key1 = build.spanKey({orchestrationId: 'orch-1', packageName: 'pkg-a'});
-    const key2 = build.spanKey({orchestrationId: 'orch-1', packageName: 'pkg-b'});
-    const key3 = build.spanKey({orchestrationId: 'orch-2', packageName: 'pkg-a'});
+    const key1 = build.spanKey({packageName: 'pkg-a'});
+    const key2 = build.spanKey({packageName: 'pkg-b'});
 
     expect(key1).not.toBe(key2);
-    expect(key1).not.toBe(key3);
-    expect(key2).not.toBe(key3);
+    expect(key1).toBe('build:pkg-a');
+    expect(key2).toBe('build:pkg-b');
   });
 
   it('should extract orchestration start attributes', () => {
@@ -77,14 +76,11 @@ describe('defaultSpanMappings', () => {
     });
   });
 
-  it('should resolve parent key for build spans', () => {
+  it('should resolve parent key for build spans to fixed orchestration key', () => {
     const build = defaultSpanMappings.find(m => m.name === 'sfpm.build')!;
 
-    const parentKey = build.parentKey!({orchestrationId: 'orch-1'});
-    expect(parentKey).toBe('orchestration:orch-1');
-
-    const noParent = build.parentKey!({});
-    expect(noParent).toBeUndefined();
+    const parentKey = build.parentKey!({packageName: 'pkg-a'});
+    expect(parentKey).toBe('orchestration');
   });
 
   it('should not have parentKey for orchestration spans', () => {

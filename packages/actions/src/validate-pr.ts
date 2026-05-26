@@ -9,6 +9,7 @@ import {
   createPoolServices,
   PoolOrg,
 } from '@b64hub/sfpm-orgs';
+import {createTracer} from '@b64hub/sfpm-telemetry';
 import {AuthInfo, Org} from '@salesforce/core';
 
 import {createGitHubActionsLogger, GitHubActionsLogger} from './logger.js';
@@ -141,9 +142,13 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   const renderer = new ActionsProgressRenderer(logger);
   renderer.attachToInstaller(orchestrator as any);
 
+  const tracer = createTracer({serviceName: 'sfpm-actions'});
+  tracer.subscribe(orchestrator);
+
   const orchResult = await orchestrator.installAll(packageNames);
 
   renderer.printSummary();
+  await tracer.shutdown();
 
   // ------------------------------------------------------------------
   // 5. Set outputs and return result

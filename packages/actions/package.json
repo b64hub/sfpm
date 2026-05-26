@@ -22,6 +22,7 @@
     "@actions/github": "^6.0.0",
     "@b64hub/sfpm-core": "workspace:^0.1.0",
     "@b64hub/sfpm-orgs": "workspace:^0.1.0",
+    "@b64hub/sfpm-telemetry": "workspace:^0.1.0",
     "@salesforce/core": "^8.24.2",
     "@salesforce/packaging": "^4.3.0"
   },

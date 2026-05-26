@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import EventEmitter from 'node:events';
 
 import {DependencyResolution, PackageNode, ProjectGraph} from '../project/project-graph.js';
@@ -106,6 +107,7 @@ export class Orchestrator<TContext = void> {
   private readonly graph: ProjectGraph;
   private readonly logger: Logger | undefined;
   private readonly options: OrchestratorOptions;
+  private orchestrationId = '';
   private readonly task: OrchestrationTask<TContext>;
 
   constructor(
@@ -137,6 +139,8 @@ export class Orchestrator<TContext = void> {
   public async executeAll(packageNames: string[]): Promise<OrchestrationResult> {
     const orchestrationStart = Date.now();
     const includeDeps = this.options.includeDependencies !== false;
+
+    this.orchestrationId = randomUUID();
 
     const levels = this.resolveLevels(packageNames);
     this.emitOrchestrationStart(levels, includeDeps);
@@ -178,6 +182,7 @@ export class Orchestrator<TContext = void> {
     };
 
     this.emitter.emit('orchestration:complete', {
+      orchestrationId: this.orchestrationId,
       results: tracker.results,
       timestamp: new Date(),
       totalDuration,
@@ -258,6 +263,7 @@ export class Orchestrator<TContext = void> {
   private emitOrchestrationStart(levels: PackageNode[][], includeDependencies: boolean): void {
     this.emitter.emit('orchestration:start', {
       includeDependencies,
+      orchestrationId: this.orchestrationId,
       packageNames: levels.flat().map(n => n.name),
       timestamp: new Date(),
       totalLevels: levels.length,
@@ -299,6 +305,7 @@ export class Orchestrator<TContext = void> {
 
     this.emitter.emit('orchestration:level:start', {
       level: levelIndex,
+      orchestrationId: this.orchestrationId,
       packageDetails: eligible.map(n => ({isManaged: n.isManaged, name: n.name, version: n.version})),
       packages: eligible.map(n => n.name),
       timestamp: new Date(),
@@ -311,6 +318,7 @@ export class Orchestrator<TContext = void> {
     this.emitter.emit('orchestration:level:complete', {
       failed: outcome.failed,
       level: levelIndex,
+      orchestrationId: this.orchestrationId,
       skipped: outcome.skipped,
       succeeded: outcome.succeeded,
       timestamp: new Date(),
@@ -345,6 +353,7 @@ export class Orchestrator<TContext = void> {
       duration: result.duration,
       error: result.error,
       level,
+      orchestrationId: this.orchestrationId,
       packageName,
       skipped: result.skipped,
       success: result.success,

@@ -87,9 +87,15 @@ export function createTracer(options: TracerOptions): SfpmTracer {
   const engine = new SpanEngine(otelTracer, options.mappings ?? defaultSpanMappings);
 
   let subscribedEmitter: EventEmitter | undefined;
+  let hasTurboSpan = false;
 
   return {
     async shutdown() {
+      if (hasTurboSpan) {
+        engine.endSpan('orchestration');
+        hasTurboSpan = false;
+      }
+
       if (subscribedEmitter) {
         engine.unsubscribe(subscribedEmitter);
         subscribedEmitter = undefined;
@@ -100,6 +106,23 @@ export function createTracer(options: TracerOptions): SfpmTracer {
     subscribe(emitter: EventEmitter) {
       subscribedEmitter = emitter;
       engine.subscribe(emitter);
+
+      // In turbo mode, auto-create a root orchestration span so build/install
+      // spans have a parent. TURBO_RUN_ID correlates spans across processes.
+      const turboRunId = process.env.TURBO_RUN_ID;
+      if (turboRunId) {
+        const rootSpan = otelTracer.startSpan('sfpm.orchestration');
+        rootSpan.setAttribute('sfpm.orchestration.mode', 'turbo');
+        rootSpan.setAttribute('turbo.run_id', turboRunId);
+
+        const turboHash = process.env.TURBO_HASH;
+        if (turboHash) {
+          rootSpan.setAttribute('turbo.hash', turboHash);
+        }
+
+        engine.registerSpan('orchestration', rootSpan);
+        hasTurboSpan = true;
+      }
     },
   };
 }

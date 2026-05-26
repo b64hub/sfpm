@@ -23,9 +23,12 @@ export interface SpanMapping {
 }
 
 /**
- * Default span mappings for SFPM orchestration events.
+ * Default span mappings for SFPM events.
  *
- * Initial granularity: orchestration root + per-package build/install spans.
+ * Granularity: orchestration root (when present) + per-package build/install spans.
+ * Parent linking uses a fixed orchestration key — only one orchestration runs per
+ * process. When no orchestration is active (e.g. turbo mode), build/install spans
+ * become roots automatically.
  */
 export const defaultSpanMappings: SpanMapping[] = [
   {
@@ -34,14 +37,23 @@ export const defaultSpanMappings: SpanMapping[] = [
       'sfpm.orchestration.total_duration_ms': evt.totalDuration as number,
     }),
     name: 'sfpm.orchestration',
-    spanKey: evt => `orchestration:${evt.orchestrationId as string}`,
+    spanKey: () => 'orchestration',
     start: 'orchestration:start',
-    startAttributes: evt => ({
-      'sfpm.orchestration.id': evt.orchestrationId as string,
-      'sfpm.orchestration.include_dependencies': evt.includeDependencies as boolean,
-      'sfpm.orchestration.total_levels': evt.totalLevels as number,
-      'sfpm.orchestration.total_packages': evt.totalPackages as number,
-    }),
+    startAttributes(evt) {
+      const attrs: Record<string, boolean | number | string> = {
+        'sfpm.orchestration.id': evt.orchestrationId as string,
+        'sfpm.orchestration.include_dependencies': evt.includeDependencies as boolean,
+        'sfpm.orchestration.total_levels': evt.totalLevels as number,
+        'sfpm.orchestration.total_packages': evt.totalPackages as number,
+      };
+
+      const turboRunId = process.env.TURBO_RUN_ID;
+      if (turboRunId) {
+        attrs['turbo.run_id'] = turboRunId;
+      }
+
+      return attrs;
+    },
   },
   {
     end: 'build:complete',
@@ -50,13 +62,27 @@ export const defaultSpanMappings: SpanMapping[] = [
       'sfpm.build.success': evt.success as boolean,
     }),
     name: 'sfpm.build',
-    parentKey: evt => evt.orchestrationId ? `orchestration:${evt.orchestrationId as string}` : undefined,
-    spanKey: evt => `build:${evt.orchestrationId as string}:${evt.packageName as string}`,
+    parentKey: () => 'orchestration',
+    spanKey: evt => `build:${evt.packageName as string}`,
     start: 'build:start',
-    startAttributes: evt => ({
-      'sfpm.package.name': evt.packageName as string,
-      'sfpm.package.type': evt.packageType as string,
-    }),
+    startAttributes(evt) {
+      const attrs: Record<string, boolean | number | string> = {
+        'sfpm.package.name': evt.packageName as string,
+        'sfpm.package.type': evt.packageType as string,
+      };
+
+      const turboRunId = process.env.TURBO_RUN_ID;
+      if (turboRunId) {
+        attrs['turbo.run_id'] = turboRunId;
+      }
+
+      const turboHash = process.env.TURBO_HASH;
+      if (turboHash) {
+        attrs['turbo.hash'] = turboHash;
+      }
+
+      return attrs;
+    },
   },
   {
     end: 'install:complete',
@@ -64,11 +90,25 @@ export const defaultSpanMappings: SpanMapping[] = [
       'sfpm.install.success': evt.success as boolean,
     }),
     name: 'sfpm.install',
-    parentKey: evt => evt.orchestrationId ? `orchestration:${evt.orchestrationId as string}` : undefined,
-    spanKey: evt => `install:${evt.orchestrationId as string}:${evt.packageName as string}`,
+    parentKey: () => 'orchestration',
+    spanKey: evt => `install:${evt.packageName as string}`,
     start: 'install:start',
-    startAttributes: evt => ({
-      'sfpm.package.name': evt.packageName as string,
-    }),
+    startAttributes(evt) {
+      const attrs: Record<string, boolean | number | string> = {
+        'sfpm.package.name': evt.packageName as string,
+      };
+
+      const turboRunId = process.env.TURBO_RUN_ID;
+      if (turboRunId) {
+        attrs['turbo.run_id'] = turboRunId;
+      }
+
+      const turboHash = process.env.TURBO_HASH;
+      if (turboHash) {
+        attrs['turbo.hash'] = turboHash;
+      }
+
+      return attrs;
+    },
   },
 ];

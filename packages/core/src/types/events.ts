@@ -423,6 +423,7 @@ export interface PackageResult {
 
 export interface OrchestrationStartEvent {
   includeDependencies: boolean;
+  orchestrationId: string;
   packageNames: string[];
   timestamp: Date;
   totalLevels: number;
@@ -431,6 +432,7 @@ export interface OrchestrationStartEvent {
 
 export interface OrchestrationLevelStartEvent {
   level: number;
+  orchestrationId: string;
   /** Enriched package info for display purposes */
   packageDetails: Array<{isManaged: boolean; name: string; version?: string;}>;
   packages: string[];
@@ -441,6 +443,7 @@ export interface OrchestrationPackageCompleteEvent {
   duration: number;
   error?: string;
   level: number;
+  orchestrationId: string;
   packageName: string;
   skipped: boolean;
   success: boolean;
@@ -450,12 +453,14 @@ export interface OrchestrationPackageCompleteEvent {
 export interface OrchestrationLevelCompleteEvent {
   failed: string[];
   level: number;
+  orchestrationId: string;
   skipped: string[];
   succeeded: string[];
   timestamp: Date;
 }
 
 export interface OrchestrationCompleteEvent {
+  orchestrationId: string;
   results: PackageResult[];
   timestamp: Date;
   totalDuration: number;
@@ -463,6 +468,7 @@ export interface OrchestrationCompleteEvent {
 
 export interface OrchestrationErrorEvent {
   error: Error;
+  orchestrationId: string;
   packageName?: string;
   timestamp: Date;
 }

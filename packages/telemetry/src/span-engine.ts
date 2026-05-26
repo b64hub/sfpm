@@ -22,6 +22,26 @@ export class SpanEngine {
   }
 
   /**
+   * End a span by key and remove it from the registry.
+   * Used by the tracer to close externally-managed spans (e.g. turbo root).
+   */
+  endSpan(key: string): void {
+    const span = this.activeSpans.get(key);
+    if (span) {
+      span.end();
+      this.activeSpans.delete(key);
+    }
+  }
+
+  /**
+   * Register an externally-created span in the active registry.
+   * This allows parent resolution to find it by key.
+   */
+  registerSpan(key: string, span: Span): void {
+    this.activeSpans.set(key, span);
+  }
+
+  /**
    * Subscribe to all mapped events on the given emitter.
    */
   subscribe(emitter: EventEmitter): void {
