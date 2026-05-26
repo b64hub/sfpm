@@ -89,7 +89,6 @@ describe('UnlockedPackageBuilder', () => {
             warn: vi.fn(),
             debug: vi.fn(),
             trace: vi.fn(),
-            log: vi.fn()
         };
 
         // Setup Package

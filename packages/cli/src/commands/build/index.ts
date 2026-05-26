@@ -1,8 +1,9 @@
 import {
   BuildOrchestrationTask, BuildOrchestrator, BuildStateStore,
   type CreateCompleteEvent, LifecycleEngine, type LocalBuildState,
-  type LocalPackageBuildState, Logger, ProjectService,
+  type LocalPackageBuildState, ProjectService,
 } from '@b64hub/sfpm-core'
+import {createTracer} from '@b64hub/sfpm-telemetry'
 import {
   Args, Flags,
 } from '@oclif/core'
@@ -103,16 +104,6 @@ export default class Build extends SfpmCommand {
     // Determine output mode
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
-    // Create logger for audit trail (separate from UI events)
-    const logger: Logger = {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-    }
-
     const sfpmConfig = projectService.getSfpmConfig();
 
     // Create lifecycle engine and register hooks from config
@@ -174,7 +165,7 @@ export default class Build extends SfpmCommand {
       const task = new BuildOrchestrationTask(
         projectConfig,
         buildOptions,
-        logger,
+        this.sfpmLogger,
         projectDir,
       )
 
@@ -216,7 +207,7 @@ export default class Build extends SfpmCommand {
       projectConfig,
       projectGraph,
       {...buildOptions, includeDependencies: !flags['no-dependencies']},
-      logger,
+      this.sfpmLogger,
       projectDir,
     )
 
@@ -226,8 +217,13 @@ export default class Build extends SfpmCommand {
       orchestrator.on('unlocked:create:complete', captureCreateComplete)
     }
 
+    const tracer = createTracer({serviceName: 'sfpm-cli'})
+    tracer.subscribe(orchestrator)
+
     try {
       const result = await orchestrator.buildAll(resolvedPackages)
+
+      await tracer.shutdown()
 
       if (flags.json) {
         this.logJson(result)

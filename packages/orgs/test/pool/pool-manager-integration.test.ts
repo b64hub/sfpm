@@ -472,7 +472,7 @@ describe('PoolManager', () => {
 
       const loggerFactory = {
         create: vi.fn().mockReturnValue({
-          debug: vi.fn(), error: vi.fn(), info: vi.fn(), log: vi.fn(), trace: vi.fn(), warn: vi.fn(),
+          debug: vi.fn(), error: vi.fn(), info: vi.fn(), trace: vi.fn(), warn: vi.fn(),
         }),
         dispose: vi.fn(),
       };

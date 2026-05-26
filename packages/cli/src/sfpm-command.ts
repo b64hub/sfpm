@@ -1,12 +1,28 @@
+import type {LogLevel} from '@b64hub/sfpm-core';
+
 import {Command, Flags} from '@oclif/core';
-import boxen from 'boxen';
 import chalk from 'chalk';
 import gradient from 'gradient-string';
+
+import {CliLogger, CliLoggerFactory} from './logger.js';
+
+const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error'] as const;
 
 /**
  * A base class that provides common funtionality for sfp commands
  */
 export default abstract class SfpmCommand extends Command {
+  static baseFlags = {
+    'log-level': Flags.string({
+      default: 'warn',
+      description: 'diagnostic log level',
+      env: 'SFPM_LOG_LEVEL',
+      options: [...LOG_LEVELS],
+    }),
+  };
+  /** Pino-backed logger for diagnostic output (writes to stderr). */
+  protected sfpmLogger!: CliLogger;
+
   /**
    * Command run code goes here
    */
@@ -17,6 +33,15 @@ export default abstract class SfpmCommand extends Command {
    */
   async run(): Promise<any> {
     const {flags} = await this.parse(this.constructor as any);
+
+    const isJson = flags.json === true;
+    const isQuiet = flags.quiet === true;
+    const logLevel = (flags['log-level'] ?? 'warn') as LogLevel;
+
+    this.sfpmLogger = CliLoggerFactory.create({
+      level: logLevel,
+      pretty: !isJson && !isQuiet,
+    });
 
     if (!this.jsonEnabled()) {
       this.logHeader();

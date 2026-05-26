@@ -85,7 +85,7 @@ export default class Bootstrap extends SfpmCommand {
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive'
     const ctx: BootstrapContext = {
       isInteractive: mode === 'interactive',
-      logger: this.createLogger(),
+      logger: this.sfpmLogger,
       mode,
       targetOrg: flags['target-org'],
     }
@@ -299,17 +299,6 @@ export default class Bootstrap extends SfpmCommand {
   // ====================================================================
   // Private helpers
   // ====================================================================
-
-  private createLogger(): Logger {
-    return {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-    }
-  }
 
   private async ensurePackageContainers(
     org: Org,

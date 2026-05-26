@@ -48,15 +48,45 @@ packages/actions/
 - **`main.ts`** — reads `@actions/core` inputs, calls `validatePr()`, sets outputs
 - **`validate-pr.ts`** — orchestrates the full pipeline (org resolution → deployment)
 - **`org-cache.ts`** — manages `@actions/cache` for PR-scoped scratch org reuse
-- **`logger.ts`** — `StructuredLogger` implementation using `@actions/core`
-- **`progress-renderer.ts`** — subscribes to core EventEmitter events, logs them
+- **`logger.ts`** — `GitHubActionsLogger` with buffered child registry (see below)
+- **`progress-renderer.ts`** — buffered event-driven renderer that flushes per-package groups atomically
 
-### Logging
+### Logging and Rendering
 
-The actions package uses `GitHubActionsLogger` which implements `StructuredLogger`:
+The actions package uses `GitHubActionsLogger` which implements `StructuredLogger` and adds buffered child logger support:
 
 ```typescript
 const logger = createGitHubActionsLogger({ prefix: 'validate-pr' });
+const renderer = new ActionsProgressRenderer(logger);
+const orchestrator = new BuildOrchestrator(..., logger); // same instance
+```
+
+**Dual behavior by depth:**
+- **Top-level** (`logger.info(...)`) — writes immediately via `core.info()`
+- **Child loggers** (`logger.child({package: 'foo'})`) — buffer output silently
+
+The renderer accesses buffered output via `logger.getChildBuffer(name)` and flushes it
+as collapsible log groups on `orchestration:package:complete`.
+
+**Buffered rendering flow:**
+1. Orchestrator creates child loggers per package (via `Logger.child()`)
+2. Core services write diagnostics to the child (buffered)
+3. Renderer subscribes to events and also buffers event messages per-package
+4. On `orchestration:package:complete`, renderer flushes all entries as an atomic group
+5. Group header includes outcome and duration: `Build: my-package ✓ (12s)`
+
+**Why buffering?** Packages within a dependency level run concurrently. Without buffering,
+log groups from different packages would interleave, producing corrupt group nesting.
+
+```typescript
+// Renderer accesses the concrete logger type (actions-internal)
+const buffer = logger.getChildBuffer('my-package');
+logger.group(`Build: my-package ✓ (12s)`);
+for (const entry of buffer) {
+  // Writes via core.info/debug/error preserving level metadata
+}
+logger.groupEnd();
+logger.clearChildBuffer('my-package');
 ```
 
 This is injected into all core and orgs services. See [logging.instructions.md](./logging.instructions.md) for the full logging pattern.

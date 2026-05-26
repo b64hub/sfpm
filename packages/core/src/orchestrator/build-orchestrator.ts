@@ -57,6 +57,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     emitter: OrchestratorEmitter,
   ): Promise<PackageResult> {
     const start = Date.now();
+    const pkgLogger = this.logger?.child?.({package: packageName}) ?? this.logger;
 
     // Check if this package should be skipped for the current lifecycle stage
     if (LifecycleEngine.isInitialized()) {
@@ -64,7 +65,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
       const packageDefinition = this.provider.getPackageDefinition(packageName);
       const skipStages = packageDefinition.packageOptions?.skip ?? [];
       if (skipStages.includes(lifecycle.stage)) {
-        this.logger?.info(`Skipping '${packageName}' — stage '${lifecycle.stage}' is in skip list`);
+        pkgLogger?.info(`Skipping — stage '${lifecycle.stage}' is in skip list`);
         return {
           duration: 0, packageName, skipped: true, success: true,
         };
@@ -74,7 +75,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     const builder = new PackageBuilder(
       this.provider,
       this.options,
-      this.logger,
+      pkgLogger,
       gitService,
     );
 

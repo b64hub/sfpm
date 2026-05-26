@@ -11,7 +11,6 @@ import {
 describe('Logger', () => {
     describe('noopLogger', () => {
         it('should have all Logger methods', () => {
-            expect(noopLogger.log).toBeDefined();
             expect(noopLogger.info).toBeDefined();
             expect(noopLogger.warn).toBeDefined();
             expect(noopLogger.error).toBeDefined();
@@ -20,7 +19,6 @@ describe('Logger', () => {
         });
 
         it('should not throw when called', () => {
-            expect(() => noopLogger.log('test')).not.toThrow();
             expect(() => noopLogger.info('test')).not.toThrow();
             expect(() => noopLogger.warn('test')).not.toThrow();
             expect(() => noopLogger.error('test')).not.toThrow();
@@ -69,16 +67,6 @@ describe('Logger', () => {
 
             spy.mockRestore();
         });
-
-        it('should always show log regardless of level', () => {
-            const logger = createConsoleLogger({level: 'error'});
-            const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-            logger.log('always visible');
-            expect(spy).toHaveBeenCalledWith('always visible');
-
-            spy.mockRestore();
-        });
     });
 
     describe('isStructuredLogger', () => {
@@ -87,7 +75,6 @@ describe('Logger', () => {
                 debug: vi.fn(),
                 error: vi.fn(),
                 info: vi.fn(),
-                log: vi.fn(),
                 trace: vi.fn(),
                 warn: vi.fn(),
             };
@@ -101,7 +88,6 @@ describe('Logger', () => {
                 group: vi.fn(),
                 groupEnd: vi.fn(),
                 info: vi.fn(),
-                log: vi.fn(),
                 trace: vi.fn(),
                 warn: vi.fn(),
             };

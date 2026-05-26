@@ -22,12 +22,16 @@
  * ```
  */
 export interface Logger {
-    log(message: string): void;
-    warn(message: string): void;
-    error(message: string): void;
-    info(message: string): void;
-    debug(message: string): void;
-    trace(message: string): void;
+  /**
+   * Create a child logger with bound context fields (e.g., package name).
+   * Messages from the child are prefixed with the bound values.
+   */
+  child?(bindings: Record<string, string>): Logger;
+  debug(message: string): void;
+  error(message: string): void;
+  info(message: string): void;
+  trace(message: string): void;
+  warn(message: string): void;
 }
 
 // ============================================================================
@@ -57,12 +61,12 @@ export interface Logger {
  * ```
  */
 export interface StructuredLogger extends Logger {
-    /** Start a collapsible log group (GitHub Actions) or section header (CLI) */
-    group(label: string): void;
-    /** End the current log group */
-    groupEnd(): void;
-    /** Emit a file-level annotation (warning/error pinned to a file and line) */
-    annotate?(level: 'error' | 'notice' | 'warning', message: string, properties?: AnnotationProperties): void;
+  /** Emit a file-level annotation (warning/error pinned to a file and line) */
+  annotate?(level: 'error' | 'notice' | 'warning', message: string, properties?: AnnotationProperties): void;
+  /** Start a collapsible log group (GitHub Actions) or section header (CLI) */
+  group(label: string): void;
+  /** End the current log group */
+  groupEnd(): void;
 }
 
 /**
@@ -70,18 +74,18 @@ export interface StructuredLogger extends Logger {
  * Mirrors GitHub Actions annotation properties.
  */
 export interface AnnotationProperties {
-    /** Column number (1-based) */
-    col?: number;
-    /** End column number */
-    endColumn?: number;
-    /** End line number */
-    endLine?: number;
-    /** File path relative to workspace root */
-    file?: string;
-    /** Line number (1-based) */
-    line?: number;
-    /** Annotation title */
-    title?: string;
+  /** Column number (1-based) */
+  col?: number;
+  /** End column number */
+  endColumn?: number;
+  /** End line number */
+  endLine?: number;
+  /** File path relative to workspace root */
+  file?: string;
+  /** Line number (1-based) */
+  line?: number;
+  /** Annotation title */
+  title?: string;
 }
 
 // ============================================================================
@@ -92,7 +96,7 @@ export interface AnnotationProperties {
  * Check if a logger supports structured output (groups, annotations).
  */
 export function isStructuredLogger(logger: Logger): logger is StructuredLogger {
-    return 'group' in logger && 'groupEnd' in logger;
+  return 'group' in logger && 'groupEnd' in logger;
 }
 
 // ============================================================================
@@ -104,42 +108,44 @@ export function isStructuredLogger(logger: Logger): logger is StructuredLogger {
  * logger is provided, avoiding `?.` chains in hot paths.
  */
 export const noopLogger: Logger = {
-    debug() {},
-    error() {},
-    info() {},
-    log() {},
-    trace() {},
-    warn() {},
+  debug() {},
+  error() {},
+  info() {},
+  trace() {},
+  warn() {},
 };
 
 /**
  * Create a logger backed by `console.*` methods.
  * Suitable for scripts, tests, and simple Node.js programs.
  */
-export function createConsoleLogger(options?: {level?: LogLevel}): Logger {
-    const level = options?.level ?? 'info';
-    const levelValue = LOG_LEVEL_VALUES[level];
+export function createConsoleLogger(options?: {level?: LogLevel; prefix?: string}): Logger {
+  const level = options?.level ?? 'info';
+  const levelValue = LOG_LEVEL_VALUES[level];
+  const prefix = options?.prefix ? `[${options.prefix}] ` : '';
 
-    return {
-        debug(message: string) {
-            if (levelValue <= LOG_LEVEL_VALUES.debug) console.debug(message);
-        },
-        error(message: string) {
-            console.error(message);
-        },
-        info(message: string) {
-            if (levelValue <= LOG_LEVEL_VALUES.info) console.info(message);
-        },
-        log(message: string) {
-            console.log(message);
-        },
-        trace(message: string) {
-            if (levelValue <= LOG_LEVEL_VALUES.trace) console.trace(message);
-        },
-        warn(message: string) {
-            if (levelValue <= LOG_LEVEL_VALUES.warn) console.warn(message);
-        },
-    };
+  return {
+    child(bindings: Record<string, string>): Logger {
+      const label = Object.values(bindings).join(':');
+      const childPrefix = prefix ? `${prefix.slice(0, -1)}:${label}] ` : `[${label}] `;
+      return createConsoleLogger({level, prefix: childPrefix.slice(1, -2)});
+    },
+    debug(message: string) {
+      if (levelValue <= LOG_LEVEL_VALUES.debug) console.debug(`${prefix}${message}`);
+    },
+    error(message: string) {
+      console.error(`${prefix}${message}`);
+    },
+    info(message: string) {
+      if (levelValue <= LOG_LEVEL_VALUES.info) console.info(`${prefix}${message}`);
+    },
+    trace(message: string) {
+      if (levelValue <= LOG_LEVEL_VALUES.trace) console.trace(`${prefix}${message}`);
+    },
+    warn(message: string) {
+      if (levelValue <= LOG_LEVEL_VALUES.warn) console.warn(`${prefix}${message}`);
+    },
+  };
 }
 
 // ============================================================================
@@ -149,9 +155,9 @@ export function createConsoleLogger(options?: {level?: LogLevel}): Logger {
 export type LogLevel = 'debug' | 'error' | 'info' | 'trace' | 'warn';
 
 const LOG_LEVEL_VALUES: Record<LogLevel, number> = {
-    error: 50,
-    warn: 40,
-    info: 30,
-    debug: 20,
-    trace: 10,
+  debug: 20,
+  error: 50,
+  info: 30,
+  trace: 10,
+  warn: 40,
 };

@@ -1,4 +1,4 @@
-import {type Logger, WorkspaceInitializer} from '@b64hub/sfpm-core'
+import {WorkspaceInitializer} from '@b64hub/sfpm-core'
 import {
   checkbox, confirm, input, select,
 } from '@inquirer/prompts'
@@ -43,15 +43,6 @@ export default class InitTurbo extends SfpmCommand {
   public async execute(): Promise<void> {
     const {flags} = await this.parse(InitTurbo)
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd()
-
-    const logger: Logger = {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-    }
 
     // Determine mode: migrate or fresh scaffold
     let shouldMigrate = flags.migrate
@@ -157,11 +148,11 @@ export default class InitTurbo extends SfpmCommand {
     const spinner = flags.json ? undefined : ora('Initializing workspace...').start()
 
     try {
-      const initializer = new WorkspaceInitializer(logger)
+      const initializer = new WorkspaceInitializer(this.sfpmLogger)
 
       const result = shouldMigrate
         ? await initializer.migrate({
-          logger,
+          logger: this.sfpmLogger,
           npmScope,
           packageManager,
           projectDir,
@@ -169,7 +160,7 @@ export default class InitTurbo extends SfpmCommand {
           workspaceDir,
         })
         : await initializer.scaffold({
-          logger,
+          logger: this.sfpmLogger,
           npmScope,
           packageManager,
           projectDir,

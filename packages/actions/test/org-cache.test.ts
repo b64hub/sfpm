@@ -27,7 +27,6 @@ describe('OrgCacheService', () => {
             debug: vi.fn(),
             error: vi.fn(),
             info: vi.fn(),
-            log: vi.fn(),
             trace: vi.fn(),
             warn: vi.fn(),
         };

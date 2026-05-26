@@ -2,18 +2,17 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import {
   InstallOrchestrator,
-  isStructuredLogger,
   LifecycleEngine,
-  type Logger,
   ProjectService,
 } from '@b64hub/sfpm-core';
 import {
   createPoolServices,
   PoolOrg,
 } from '@b64hub/sfpm-orgs';
+import {createTracer} from '@b64hub/sfpm-telemetry';
 import {AuthInfo, Org} from '@salesforce/core';
 
-import {createGitHubActionsLogger} from './logger.js';
+import {createGitHubActionsLogger, GitHubActionsLogger} from './logger.js';
 import {type CachedOrgConnection, OrgCacheService} from './org-cache.js';
 import {ActionsProgressRenderer} from './progress-renderer.js';
 
@@ -124,8 +123,6 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   // ------------------------------------------------------------------
   // 4. Deploy source to the org
   // ------------------------------------------------------------------
-  if (isStructuredLogger(logger)) logger.group('Source Deployment');
-
   const lifecycle = LifecycleEngine.stage('validate');
   const sfpmConfig = projectService.getSfpmConfig();
   for (const hooks of sfpmConfig.hooks ?? []) {
@@ -145,10 +142,13 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   const renderer = new ActionsProgressRenderer(logger);
   renderer.attachToInstaller(orchestrator as any);
 
+  const tracer = createTracer({serviceName: 'sfpm-actions'});
+  tracer.subscribe(orchestrator);
+
   const orchResult = await orchestrator.installAll(packageNames);
 
   renderer.printSummary();
-  if (isStructuredLogger(logger)) logger.groupEnd();
+  await tracer.shutdown();
 
   // ------------------------------------------------------------------
   // 5. Set outputs and return result
@@ -188,7 +188,7 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
 async function resolveOrg(
   options: ValidatePrOptions,
   prNumber: number,
-  logger: Logger,
+  logger: GitHubActionsLogger,
 ): Promise<{cacheHit: boolean; connection: CachedOrgConnection}> {
   const orgCache = new OrgCacheService({
     cacheTtlHours: options.cacheTtlHours,
@@ -231,9 +231,9 @@ async function resolveOrg(
 
 async function fetchOrgFromPool(
   options: ValidatePrOptions,
-  logger: Logger,
+  logger: GitHubActionsLogger,
 ): Promise<PoolOrg> {
-  if (isStructuredLogger(logger)) logger.group('Pool Fetch');
+  logger.group('Pool Fetch');
 
   const devhub = await Org.create({aliasOrUsername: options.devhubUsername});
   const {authenticator, fetcher} = createPoolServices({devhub, logger});
@@ -246,7 +246,7 @@ async function fetchOrgFromPool(
   });
 
   logger.info(`Fetched org: ${org.auth.username} (${org.orgId})`);
-  if (isStructuredLogger(logger)) logger.groupEnd();
+  logger.groupEnd();
 
   return org;
 }
@@ -262,7 +262,7 @@ async function fetchOrgFromPool(
 async function authenticateOrg(
   connection: CachedOrgConnection,
   devhubUsername: string,
-  logger: Logger,
+  logger: GitHubActionsLogger,
 ): Promise<void> {
   try {
     // Try sfdxAuthUrl-based auth first (fastest path)

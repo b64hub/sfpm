@@ -42,20 +42,16 @@ export default class PoolFetch extends SfpmCommand {
       },
       description: 'target hub org username or alias',
     }),
+    type: Flags.string({
+      default: OrgTypes.Scratch,
+      description: 'pool type: scratch or sandbox',
+      options: [OrgTypes.Scratch, OrgTypes.Sandbox],
+    }),
   }
 
   public async execute(): Promise<void> {
     const {flags} = await this.parse(PoolFetch);
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
-
-    const logger = {
-      debug: (msg: string) => this.debug(msg),
-      error: (msg: string) => this.error(msg),
-      info: (msg: string) => this.debug(msg),
-      log: (msg: string) => this.log(msg),
-      trace: (msg: string) => this.debug(msg),
-      warn: (msg: string) => this.warn(msg),
-    };
 
     let devhubAlias = flags['target-dev-hub'];
     if (!devhubAlias) {
@@ -74,8 +70,8 @@ export default class PoolFetch extends SfpmCommand {
     try {
       const {authenticator, devhubService, fetcher} = await createPoolServices({
         devhub,
-        logger,
-        poolType: flags.type,
+        logger: this.sfpmLogger,
+        poolType: flags.type as OrgTypes,
       });
       spinner?.succeed(`Connected to ${devhubAlias}`);
 
