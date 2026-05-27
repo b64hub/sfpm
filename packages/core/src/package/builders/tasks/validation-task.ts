@@ -115,7 +115,7 @@ export default class ValidationTask implements BuildTask {
     const connection = org.getConnection();
 
     if (mode === 'test-only') {
-      await this.awaitTestOnly(packageName, connection, jobId);
+      await this.awaitTestOnly(packageName, connection as any, jobId);
     } else {
       await this.awaitDeploy(packageName, connection, jobId);
     }
@@ -163,7 +163,7 @@ export default class ValidationTask implements BuildTask {
     if (this.options.testOnly) {
       jobId = await connection.tooling.runTestsAsynchronous({
         classNames: testClassNames.join(','),
-      });
+      }) as string;
     } else {
       const componentSet = this.sfpmPackage.getComponentSet();
       const deployOptions: DeploySetOptions = {
@@ -174,7 +174,7 @@ export default class ValidationTask implements BuildTask {
         usernameOrConnection: connection,
       };
       const deploy = await componentSet.deploy(deployOptions);
-      jobId = deploy.id;
+      jobId = deploy.id!;
     }
 
     this.logger?.debug(`Job started: ${jobId} [${mode}]`);

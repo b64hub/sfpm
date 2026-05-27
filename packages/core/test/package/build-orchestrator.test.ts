@@ -171,6 +171,39 @@ describe('BuildOrchestrator', () => {
       expect(pkgBResult?.skipped).toBe(true);
     });
 
+    it('should not skip dependents when continueOnError is true', async () => {
+      // A is leaf, B depends on A — A fails, but with continueOnError B should still run
+      mockResolution = createResolution(
+        [['pkg-a'], ['pkg-b']],
+        {'pkg-b': ['pkg-a']},
+      );
+
+      const continueOrchestrator = new BuildOrchestrator(
+        mockProvider,
+        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
+        {continueOnError: true, devHub: 'test-hub'},
+        mockLogger,
+        '/test/project',
+      );
+
+      // Make pkg-a fail, pkg-b succeed
+      mockBuildPackage
+      .mockRejectedValueOnce(new Error('Build failed'))
+      .mockResolvedValueOnce();
+
+      const result = await continueOrchestrator.buildAll(['pkg-b']);
+
+      expect(result.success).toBe(false);
+      expect(result.failedPackages).toContain('pkg-a');
+      // B should NOT be skipped — it should have been built
+      expect(result.skippedPackages).not.toContain('pkg-b');
+      expect(mockBuildPackage).toHaveBeenCalledTimes(2);
+
+      const pkgBResult = result.results.find(r => r.packageName === 'pkg-b');
+      expect(pkgBResult?.skipped).toBeFalsy();
+      expect(pkgBResult?.success).toBe(true);
+    });
+
     it('should throw DependencyError on circular dependencies', async () => {
       const circularResolution: DependencyResolution = {
         allPackages: [],

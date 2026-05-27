@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import {
-  InstallOrchestrator,
+  BuildOrchestrator,
   LifecycleEngine,
   ProjectService,
 } from '@b64hub/sfpm-core';
@@ -42,6 +42,7 @@ export interface ValidatePrResult {
   orgId: string;
   /** Per-package results */
   packages: Array<{
+    coveragePercentage?: number;
     error?: string;
     packageName: string;
     skipped: boolean;
@@ -49,7 +50,7 @@ export interface ValidatePrResult {
   }>;
   /** PR number */
   prNumber: number;
-  /** Whether all deployments succeeded */
+  /** Whether all validations succeeded */
   success: boolean;
   /** Username of the scratch org used */
   username: string;
@@ -66,15 +67,14 @@ export interface ValidatePrResult {
  * 1. Resolve the PR number from the GitHub context
  * 2. Attempt to restore a cached scratch org for this PR
  * 3. If no cache hit, fetch a fresh org from the pool
- * 4. Deploy source changes to the org
+ * 4. Build and validate packages against the org (deploy + tests + coverage)
  * 5. Cache the org connection for subsequent runs
  * 6. Report results via GitHub Actions outputs
  *
  * Lifecycle stage: **validate**
  *
- * Operations executed per package:
- * - `install:pre`  — before each package deployment starts
- * - `install:post` — after each package deployment succeeds
+ * Uses {@link BuildOrchestrator} in validate mode with `continueOnError: true`
+ * so all packages are validated even if earlier ones fail.
  *
  * @example
  * ```typescript
@@ -121,7 +121,7 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   await authenticateOrg(connection, options.devhubUsername, logger);
 
   // ------------------------------------------------------------------
-  // 4. Deploy source to the org
+  // 4. Build + validate packages in the org
   // ------------------------------------------------------------------
   const lifecycle = LifecycleEngine.stage('validate');
   const sfpmConfig = projectService.getSfpmConfig();
@@ -129,23 +129,35 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
     lifecycle.use(hooks);
   }
 
-  const orchestrator = InstallOrchestrator.forSource(
+  const orchestrator = new BuildOrchestrator(
     projectConfig,
     projectGraph,
     {
+      buildOrg: connection.username,
+      continueOnError: true,
+      devhubUsername: options.devhubUsername,
       includeDependencies: true,
-      targetOrg: connection.username,
+      mode: 'validate',
     },
     logger,
+    projectDir,
   );
 
   const renderer = new ActionsProgressRenderer(logger);
-  renderer.attachToInstaller(orchestrator as any);
+  renderer.attachToBuildOrchestrator(orchestrator);
+
+  // Collect coverage data from test completion events
+  const coverageMap = new Map<string, number>();
+  orchestrator.on('source:test:complete', (data: any) => {
+    if (data.packageName && data.coveragePercentage !== null) {
+      coverageMap.set(data.packageName, data.coveragePercentage);
+    }
+  });
 
   const tracer = createTracer({serviceName: 'sfpm-actions'});
   tracer.subscribe(orchestrator);
 
-  const orchResult = await orchestrator.installAll(packageNames);
+  const orchResult = await orchestrator.buildAll(packageNames);
 
   renderer.printSummary();
   await tracer.shutdown();
@@ -159,6 +171,7 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
     duration,
     orgId: connection.orgId,
     packages: orchResult.results.map(r => ({
+      coveragePercentage: coverageMap.get(r.packageName),
       error: r.error,
       packageName: r.packageName,
       skipped: r.skipped,
@@ -175,7 +188,7 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
     logger.info(`PR #${prNumber} validation passed in ${Math.round(duration / 1000)}s`);
   } else {
     const failed = orchResult.failedPackages.join(', ');
-    core.setFailed(`Deployment failed for: ${failed}`);
+    core.setFailed(`Validation failed for: ${failed}`);
   }
 
   return result;

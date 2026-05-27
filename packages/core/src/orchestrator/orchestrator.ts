@@ -401,6 +401,10 @@ export class Orchestrator<TContext = void> {
     levelIndex: number,
     tracker: LevelTracker,
   ): PackageNode[] {
+    if (this.options.continueOnError) {
+      return level;
+    }
+
     return level.filter(node => {
       const hasFailedDep = [...node.dependencies].some(dep => tracker.failedPackages.has(dep.name));
       if (!hasFailedDep) return true;

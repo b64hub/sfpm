@@ -1,5 +1,5 @@
 name: 'SFPM Validate PR'
-description: 'Validate a pull request by deploying source changes to a scratch org from the pool'
+description: 'Validate a pull request by building and testing packages against a scratch org from the pool'
 author: 'b64'
 
 branding:
@@ -26,7 +26,7 @@ inputs:
 
 outputs:
   success:
-    description: 'Whether all deployments succeeded (true/false)'
+    description: 'Whether all validations succeeded (true/false)'
   org-username:
     description: 'Username of the scratch org used for validation'
   org-id:
@@ -38,7 +38,7 @@ outputs:
   duration:
     description: 'Total validation duration in milliseconds'
   result:
-    description: 'Full JSON result with per-package outcomes'
+    description: 'Full JSON result with per-package outcomes including coverage'
 
 runs:
   using: 'node20'
