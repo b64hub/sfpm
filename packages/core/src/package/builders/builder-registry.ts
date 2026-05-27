@@ -28,8 +28,12 @@ export interface Builder {
  * Contains configuration from sfpm.config.ts that builders may need.
  */
 export interface BuilderOptions {
+  /** Target org for source package validation (deploy + test) */
+  buildOrg?: string;
   /** Ignore files configuration for assembly */
   ignoreFilesConfig?: IgnoreFilesConfig;
+  /** Skip the deploy+test validation step */
+  skipValidation?: boolean;
 }
 
 /**

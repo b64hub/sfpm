@@ -171,9 +171,14 @@ export interface SourceAssembleCompleteEvent extends BaseEvent {
 
 export interface SourceTestStartEvent extends BaseEvent {
   testCount: number;
+  testLevel?: string;
 }
 
 export interface SourceTestCompleteEvent extends BaseEvent {
+  /** Coverage percentage achieved. Present when tests were run with coverage. */
+  coveragePercentage?: number;
+  /** Coverage percentage required. Present when a threshold was enforced. */
+  coverageRequired?: number;
   failed: number;
   passed: number;
   testCount: number;

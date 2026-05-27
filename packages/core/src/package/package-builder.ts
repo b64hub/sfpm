@@ -21,8 +21,12 @@ import {
 } from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory} from './sfpm-package.js';
 
+export type BuildMode = 'standard' | 'validate';
+
 export interface BuildOptions {
   buildNumber?: string;
+  /** Target org for source package validation (deploy + test). Required when validation is not skipped. */
+  buildOrg?: string;
   /** Enable code coverage calculation during package version creation (required for promotion) */
   codeCoverage?: boolean;
   destructiveManifestPath?: string;
@@ -36,6 +40,12 @@ export interface BuildOptions {
   /** Use async validation for unlocked packages — returns immediately with a creation request ID */
   isAsyncValidation?: boolean;
   isSkipValidation?: boolean;
+  /**
+   * Build mode. `standard` (default) follows normal build pipelines per package type.
+   * `validate` forces all metadata packages through the source deploy+test pipeline —
+   * no real unlocked builds, no git tags, no artifact publishing.
+   */
+  mode?: BuildMode;
   orgDefinitionPath?: string;
   /** Timeout in minutes for package version creation (default: 120) */
   waitTime?: number;
@@ -63,7 +73,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    * @deprecated Use BuildOrchestrator.buildAll() for multi-package builds.
    * This stub exists for backwards compatibility — the CLI drives the orchestrator directly.
    */
-  public async build(): Promise<void> {}
+  public async build(): Promise<void> { }
 
   /**
    * @description Build a single package by name
@@ -402,7 +412,10 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       throw error;
     }
 
-    const BuilderClass = BuilderRegistry.getBuilder(sfpmPackage.type);
+    const isValidateMode = this.options.mode === 'validate';
+
+    // In validate mode, force unlocked packages through SourcePackageBuilder
+    const BuilderClass = (isValidateMode && sfpmPackage.type === PackageType.Unlocked) ? BuilderRegistry.getBuilder(PackageType.Source) : BuilderRegistry.getBuilder(sfpmPackage.type);
 
     if (!BuilderClass) {
       const error = new Error(`No builder registered for package type: ${sfpmPackage.type}`);
@@ -416,7 +429,9 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     }
 
     const builderOptions: BuilderOptions = {
+      buildOrg: this.options.buildOrg,
       ignoreFilesConfig: this.options.ignoreFilesConfig,
+      skipValidation: isValidateMode ? false : this.options.isSkipValidation,
     };
 
     const builderInstance: Builder = new BuilderClass(
@@ -431,7 +446,10 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       this.logger?.info('Force build enabled - skipping source change detection');
     }
 
-    if (this.options.devhubUsername) {
+    // In validate mode, connect to the build org instead of devhub
+    if (isValidateMode && this.options.buildOrg) {
+      await builderInstance.connect(this.options.buildOrg);
+    } else if (this.options.devhubUsername) {
       await this.connectToDevHub(sfpmPackage, builderInstance, this.options.devhubUsername);
     }
 

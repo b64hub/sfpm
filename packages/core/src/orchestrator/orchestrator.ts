@@ -14,6 +14,8 @@ import {Logger} from '../types/logger.js';
 // ============================================================================
 
 export interface OrchestratorOptions {
+  /** Continue orchestration even if a package fails. Defaults to false (fail fast). */
+  continueOnError?: boolean;
   /** Include transitive dependencies. Defaults to true. */
   includeDependencies?: boolean;
   /** Include managed (external) packages in orchestration. Defaults to true. */

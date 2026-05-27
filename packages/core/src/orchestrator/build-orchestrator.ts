@@ -34,13 +34,13 @@ export interface BuildOrchestratorOptions extends BuildOptions, OrchestratorOpti
  */
 export class BuildOrchestrationTask implements OrchestrationTask<GitService | undefined> {
   private readonly logger: Logger | undefined;
-  private readonly options: BuildOptions;
+  private readonly options: BuildOrchestratorOptions;
   private readonly projectDirectory: string;
   private readonly provider: ProjectDefinitionProvider;
 
   constructor(
     provider: ProjectDefinitionProvider,
-    options: BuildOptions,
+    options: BuildOrchestratorOptions,
     logger?: Logger,
     projectDirectory: string = process.cwd(),
   ) {
@@ -106,6 +106,12 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
   }
 
   async setup(): Promise<GitService | undefined> {
+    // In validate mode, git service is not needed (no tagging or version bumps)
+    if (this.options.mode === 'validate') {
+      this.logger?.debug('Validate mode — skipping git service initialization');
+      return undefined;
+    }
+
     return GitService.initialize(this.projectDirectory, this.logger);
   }
 
