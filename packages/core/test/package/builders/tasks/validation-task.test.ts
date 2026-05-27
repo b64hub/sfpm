@@ -44,12 +44,14 @@ describe('ValidationTask', () => {
 
     mockEventEmitter = new EventEmitter();
 
-    mockConnection = {};
+    mockConnection = {
+      metadata: {
+        checkDeployStatus: vi.fn(),
+      },
+    };
 
     mockDeploy = {
       id: 'deploy-123',
-      onUpdate: vi.fn(),
-      pollStatus: vi.fn(),
     };
 
     vi.mocked(Org.create).mockResolvedValue({
@@ -79,16 +81,15 @@ describe('ValidationTask', () => {
     };
     mockSfpmPackage.getComponentSet.mockReturnValue(mockComponentSet);
 
-    mockDeploy.pollStatus.mockResolvedValue({
-      response: {
-        success: true,
-        details: {
-          runTestResult: {
-            numTestsRun: String(numTestsRun),
-            numFailures: String(numFailures),
-            failures: options?.failures,
-            codeCoverage,
-          },
+    mockConnection.metadata.checkDeployStatus.mockResolvedValue({
+      done: true,
+      success: true,
+      details: {
+        runTestResult: {
+          numTestsRun: String(numTestsRun),
+          numFailures: String(numFailures),
+          failures: options?.failures,
+          codeCoverage,
         },
       },
     });
@@ -148,12 +149,11 @@ describe('ValidationTask', () => {
     };
     mockSfpmPackage.getComponentSet.mockReturnValue(mockComponentSet);
 
-    mockDeploy.pollStatus.mockResolvedValue({
-      response: {
-        success: false,
-        details: {
-          componentFailures: [{fullName: 'MyClass', problem: 'compile error'}],
-        },
+    mockConnection.metadata.checkDeployStatus.mockResolvedValue({
+      done: true,
+      success: false,
+      details: {
+        componentFailures: [{fullName: 'MyClass', problem: 'compile error'}],
       },
     });
 
@@ -369,6 +369,76 @@ describe('ValidationTask', () => {
       const task = createTestOnlyTask();
       await task.exec();
       expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('no Apex'));
+    });
+  });
+
+  // ==========================================================================
+  // Async API (startAsync / awaitResult)
+  // ==========================================================================
+
+  describe('startAsync / awaitResult', () => {
+    it('should return null for packages with no Apex', async () => {
+      mockSfpmPackage.hasApex = false;
+      const task = createTask();
+      const handle = await task.startAsync();
+      expect(handle).toBeNull();
+    });
+
+    it('should return a handle with deploy ID for deploy mode', async () => {
+      setupSuccessfulDeploy();
+      const task = createTask();
+      const handle = await task.startAsync();
+
+      expect(handle).toMatchObject({
+        jobId: 'deploy-123',
+        mode: 'deploy',
+        packageName,
+        testClassNames: ['MyTest', 'OtherTest'],
+      });
+    });
+
+    it('should return a handle with test run ID for test-only mode', async () => {
+      mockConnection.tooling = {
+        runTestsAsynchronous: vi.fn().mockResolvedValue('test-run-456'),
+        query: vi.fn(),
+      };
+
+      const task = new ValidationTask(mockSfpmPackage, buildOrg, mockLogger, mockEventEmitter, {testOnly: true});
+      const handle = await task.startAsync();
+
+      expect(handle).toMatchObject({
+        jobId: 'test-run-456',
+        mode: 'test-only',
+        packageName,
+      });
+    });
+
+    it('should resolve successfully when awaitResult processes a passing deploy', async () => {
+      setupSuccessfulDeploy();
+      const task = createTask();
+      const handle = await task.startAsync();
+      expect(handle).not.toBeNull();
+      await expect(task.awaitResult(handle!)).resolves.toBeUndefined();
+    });
+
+    it('should throw when awaitResult processes a failing test-only run', async () => {
+      mockConnection.tooling = {
+        runTestsAsynchronous: vi.fn().mockResolvedValue('test-run-789'),
+        query: vi.fn().mockImplementation((query: string) => {
+          if (query.includes('ApexTestRunResult')) {
+            return Promise.resolve({
+              records: [{Status: 'Completed', MethodsCompleted: 3, MethodsFailed: 1, MethodsEnqueued: 0}],
+            });
+          }
+          return Promise.resolve({
+            records: [{ApexClass: {Name: 'MyTest'}, MethodName: 'testFoo', Message: 'expected true'}],
+          });
+        }),
+      };
+
+      const task = new ValidationTask(mockSfpmPackage, buildOrg, mockLogger, mockEventEmitter, {testOnly: true});
+      const handle = await task.startAsync();
+      await expect(task.awaitResult(handle!)).rejects.toThrow('Apex test(s) failed');
     });
   });
 });
