@@ -31,21 +31,14 @@ export class ApexTypeAnalyzer implements PackageAnalyzer {
     }));
 
     const classes = enriched
-    .filter(info => info.type === 'Class' && !info.isTest)
-    .map(info => ({
-      name: info.name,
-      path: info.path,
-    }));
-
-    const triggers = enriched
-    .filter(info => info.type === 'Trigger')
+    .filter(info => !info.isTest)
     .map(info => ({
       name: info.name,
       path: info.path,
     }));
 
     const testClasses = enriched
-    .filter(info => info.type === 'Class' && info.isTest)
+    .filter(info => info.isTest)
     .map(info => ({
       name: info.name,
       path: info.path,
@@ -57,7 +50,6 @@ export class ApexTypeAnalyzer implements PackageAnalyzer {
           classes,
           tests: testClasses,
         },
-        triggers,
       },
     };
   }

@@ -63,9 +63,12 @@ export {
 } from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
 export {
-  type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry, type BuildTask, RegisterBuilder,
+  type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry,
+  type BuildTask, type BuildTaskContext, type BuildTaskEnrichments,
+  type BuildTaskRegistration, type BuildTaskResult,
+  RegisterBuilder,
 } from './package/builders/builder-registry.js';
-export {default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
+export {assembleArtifactTask, default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
 export {
   type Installer, type InstallerConstructor, type InstallerExecResult, InstallerRegistry, RegisterInstaller,
 } from './package/installers/installer-registry.js';
@@ -107,6 +110,7 @@ export {WorkspaceSync, type WorkspaceSyncOptions} from './project/workspace-sync
 export * from './types/artifact.js';
 export * from './types/build-state.js';
 export * from './types/config.js';
+export * from './types/dependency-analysis.js';
 export * from './types/errors.js';
 export * from './types/events.js';
 export * from './types/lifecycle.js';

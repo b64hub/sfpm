@@ -1,8 +1,8 @@
 import {
-  AssembleArtifactTask,
+  assembleArtifactTask,
   type Builder,
   type BuilderOptions,
-  type BuildTask,
+  type BuildTaskRegistration,
   type Logger,
   PackageType,
   RegisterBuilder,
@@ -29,8 +29,7 @@ import type {SfdmuExportJson, SfdmuObjectConfig} from './types.js';
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Data)
 export default class SfdmuDataBuilder extends EventEmitter implements Builder {
-  public postBuildTasks: BuildTask[] = [];
-  public preBuildTasks: BuildTask[] = [];
+  public tasks: BuildTaskRegistration[] = [];
   private readonly logger?: Logger;
   private readonly sfpmPackage: SfpmDataPackage;
   private readonly workingDirectory: string;
@@ -50,8 +49,8 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
     this.sfpmPackage = sfpmPackage;
     this.logger = logger;
 
-    this.postBuildTasks = [
-      new AssembleArtifactTask(this.sfpmPackage, this.sfpmPackage.projectDirectory, {}),
+    this.tasks = [
+      {factory: assembleArtifactTask(), phase: 'post'},
     ];
   }
 

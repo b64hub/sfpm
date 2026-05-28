@@ -46,11 +46,7 @@
     "@types/lodash-es": "^4.17.12",
     "@types/semver": "^7.7.1",
     "@types/tmp": "^0.2.6",
-    "prettier-plugin-apex": "^2.2.6",
     "ts-node": "^10.9.2",
     "vitest": "^4.0.17"
-  },
-  "optionalDependencies": {
-    "@prettier-apex/apex-ast-serializer-linux-x64": "^2.2.6"
   }
 }
