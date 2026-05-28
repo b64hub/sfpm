@@ -2,6 +2,7 @@ import {describe, it, expect, vi, beforeEach} from 'vitest';
 import EventEmitter from 'node:events';
 
 import ValidationTask from '../../../../src/package/builders/tasks/validation-task.js';
+import {SfpmMetadataPackage} from '../../../../src/package/sfpm-package.js';
 import {BuildError} from '../../../../src/types/errors.js';
 
 // Mock @salesforce/core
@@ -39,13 +40,14 @@ describe('ValidationTask', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockSfpmPackage = {
-      packageName,
-      hasApex: true,
-      testClasses: ['MyTest', 'OtherTest'],
-      testCoverage: undefined as number | undefined,
-      getComponentSet: vi.fn(),
-    };
+    mockSfpmPackage = Object.create(SfpmMetadataPackage.prototype);
+    Object.defineProperties(mockSfpmPackage, {
+      packageName: {value: packageName, writable: true, configurable: true},
+      hasApex: {value: true, writable: true, configurable: true},
+      testClasses: {value: ['MyTest', 'OtherTest'], writable: true, configurable: true},
+      testCoverage: {value: undefined as number | undefined, writable: true, configurable: true},
+    });
+    mockSfpmPackage.getComponentSet = vi.fn();
 
     mockLogger = {
       info: vi.fn(),
@@ -70,7 +72,10 @@ describe('ValidationTask', () => {
   });
 
   function createTask(): ValidationTask {
-    return new ValidationTask({sfpmPackage: mockSfpmPackage, validationOrg: buildOrg, logger: mockLogger, eventEmitter: mockEventEmitter});
+    return new ValidationTask(
+      {sfpmPackage: mockSfpmPackage, projectDirectory: '/tmp/test', logger: mockLogger, eventEmitter: mockEventEmitter},
+      {validationOrg: buildOrg},
+    );
   }
 
   function setupSuccessfulDeploy(options?: {
@@ -113,11 +118,10 @@ describe('ValidationTask', () => {
     return mockComponentSet;
   }
 
-  it('should skip when package has no Apex', async () => {
+  it('should skip when package has no Apex', () => {
     mockSfpmPackage.hasApex = false;
     const task = createTask();
-    await task.exec();
-    expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('no Apex'));
+    expect(task.canRun()).toBe(false);
   });
 
   it('should throw BuildError when package has Apex but no test classes', async () => {
@@ -210,8 +214,8 @@ describe('ValidationTask', () => {
     });
 
     const task = createTask();
-    await task.exec();
-    expect(mockSfpmPackage.testCoverage).toBe(80);
+    const result = await task.exec();
+    expect(result).toEqual({enrichments: {testCoverage: 80}});
   });
 
   it('should calculate coverage across multiple coverage entries', async () => {
@@ -223,18 +227,18 @@ describe('ValidationTask', () => {
     });
 
     const task = createTask();
-    await task.exec();
+    const result = await task.exec();
     // 90 + 45 = 135 covered / 150 total = 90%
-    expect(mockSfpmPackage.testCoverage).toBe(90);
+    expect(result).toEqual({enrichments: {testCoverage: 90}});
   });
 
-  it('should emit source:test:start and source:test:complete events', async () => {
+  it('should emit task:validation:start and task:validation:complete events', async () => {
     setupSuccessfulDeploy();
 
     const startEvents: any[] = [];
     const completeEvents: any[] = [];
-    mockEventEmitter.on('source:test:start', (evt) => startEvents.push(evt));
-    mockEventEmitter.on('source:test:complete', (evt) => completeEvents.push(evt));
+    mockEventEmitter.on('task:validation:start', (evt) => startEvents.push(evt));
+    mockEventEmitter.on('task:validation:complete', (evt) => completeEvents.push(evt));
 
     const task = createTask();
     await task.exec();
@@ -257,14 +261,14 @@ describe('ValidationTask', () => {
     });
   });
 
-  it('should set testCoverage on the package', async () => {
+  it('should return testCoverage in enrichments', async () => {
     setupSuccessfulDeploy({
       codeCoverage: [{numLocations: 100, numLocationsNotCovered: 25, name: 'CoverClass'}],
     });
 
     const task = createTask();
-    await task.exec();
-    expect(mockSfpmPackage.testCoverage).toBe(75);
+    const result = await task.exec();
+    expect(result).toEqual({enrichments: {testCoverage: 75}});
   });
 
   it('should handle zero coverage lines gracefully', async () => {
@@ -292,7 +296,10 @@ describe('ValidationTask', () => {
 
   describe('test-only mode', () => {
     function createTestOnlyTask(): ValidationTask {
-      return new ValidationTask({sfpmPackage: mockSfpmPackage, validationOrg: buildOrg, logger: mockLogger, eventEmitter: mockEventEmitter, options: {testOnly: true}});
+      return new ValidationTask(
+        {sfpmPackage: mockSfpmPackage, projectDirectory: '/tmp/test', logger: mockLogger, eventEmitter: mockEventEmitter},
+        {validationOrg: buildOrg, testOnly: true},
+      );
     }
 
     /** Helper to build an SDK-shaped TestResult for mocking reportAsyncResults. */
@@ -397,9 +404,8 @@ describe('ValidationTask', () => {
     it('should not assert coverage in test-only mode', async () => {
       setupTestServiceMock(buildApexTestResult({passing: 2, failing: 0}));
       const task = createTestOnlyTask();
-      await expect(task.exec()).resolves.toBeUndefined();
-      // No coverage returned from SDK → testCoverage not set
-      expect(mockSfpmPackage.testCoverage).toBeUndefined();
+      const result = await task.exec();
+      expect(result).toBeUndefined();
     });
 
     it('should record coverage but not assert it in test-only mode', async () => {
@@ -412,16 +418,15 @@ describe('ValidationTask', () => {
       }));
       const task = createTestOnlyTask();
       // 30% coverage would fail the 75% threshold, but test-only mode doesn't assert
-      await expect(task.exec()).resolves.toBeUndefined();
-      // Coverage is recorded on the package
-      expect(mockSfpmPackage.testCoverage).toBe(30);
+      const result = await task.exec();
+      expect(result).toEqual({enrichments: {testCoverage: 30}});
     });
 
     it('should emit events with RunSpecifiedTests test level', async () => {
       setupTestServiceMock();
 
       const startEvents: any[] = [];
-      mockEventEmitter.on('source:test:start', (evt) => startEvents.push(evt));
+      mockEventEmitter.on('task:validation:start', (evt) => startEvents.push(evt));
 
       const task = createTestOnlyTask();
       await task.exec();
@@ -431,11 +436,10 @@ describe('ValidationTask', () => {
       });
     });
 
-    it('should skip when package has no Apex', async () => {
+    it('should skip when package has no Apex', () => {
       mockSfpmPackage.hasApex = false;
       const task = createTestOnlyTask();
-      await task.exec();
-      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('no Apex'));
+      expect(task.canRun()).toBe(false);
     });
   });
 

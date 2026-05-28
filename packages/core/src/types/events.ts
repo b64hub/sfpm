@@ -169,21 +169,6 @@ export interface SourceAssembleCompleteEvent extends BaseEvent {
   sourcePath: string;
 }
 
-export interface SourceTestStartEvent extends BaseEvent {
-  testCount: number;
-  testLevel?: string;
-}
-
-export interface SourceTestCompleteEvent extends BaseEvent {
-  /** Coverage percentage achieved. Present when tests were run with coverage. */
-  coveragePercentage?: number;
-  /** Coverage percentage required. Present when a threshold was enforced. */
-  coverageRequired?: number;
-  failed: number;
-  passed: number;
-  testCount: number;
-}
-
 // ============================================================================
 // Task Events
 // ============================================================================
@@ -197,6 +182,35 @@ export interface TaskCompleteEvent extends BaseEvent {
   success: boolean;
   taskName: string;
   taskType: 'post-build' | 'pre-build';
+}
+
+export interface TaskSkippedEvent extends BaseEvent {
+  reason: string;
+  taskName: string;
+  taskType: 'post-build' | 'pre-build';
+}
+
+// ============================================================================
+// Task Domain Events (emitted by tasks via context.eventEmitter)
+// ============================================================================
+
+export interface TaskValidationStartEvent extends BaseEvent {
+  testCount: number;
+  testLevel?: string;
+}
+
+export interface TaskValidationProgressEvent extends BaseEvent {
+  methodsCompleted?: number;
+  methodsTotal?: number;
+  status: string;
+}
+
+export interface TaskValidationCompleteEvent extends BaseEvent {
+  coveragePercentage?: number;
+  coverageRequired?: number;
+  failed: number;
+  passed: number;
+  testCount: number;
 }
 
 // ============================================================================
@@ -257,7 +271,11 @@ export interface BuildEvents {
   'stage:start': [StageStartEvent];
 
   'task:complete': [TaskCompleteEvent];
+  'task:skipped': [TaskSkippedEvent];
   'task:start': [TaskStartEvent];
+  'task:validation:complete': [TaskValidationCompleteEvent];
+  'task:validation:progress': [TaskValidationProgressEvent];
+  'task:validation:start': [TaskValidationStartEvent];
 }
 
 /**
@@ -265,6 +283,7 @@ export interface BuildEvents {
  */
 export interface UnlockedBuildEvents {
   'task:complete': [TaskCompleteEvent];
+  'task:skipped': [TaskSkippedEvent];
   'task:start': [TaskStartEvent];
   'unlocked:create:complete': [CreateCompleteEvent];
   'unlocked:create:progress': [CreateProgressEvent];
@@ -281,10 +300,12 @@ export interface UnlockedBuildEvents {
 export interface SourceBuildEvents {
   'source:assemble:complete': [SourceAssembleCompleteEvent];
   'source:assemble:start': [SourceAssembleStartEvent];
-  'source:test:complete': [SourceTestCompleteEvent];
-  'source:test:start': [SourceTestStartEvent];
   'task:complete': [TaskCompleteEvent];
+  'task:skipped': [TaskSkippedEvent];
   'task:start': [TaskStartEvent];
+  'task:validation:complete': [TaskValidationCompleteEvent];
+  'task:validation:progress': [TaskValidationProgressEvent];
+  'task:validation:start': [TaskValidationStartEvent];
 }
 
 // ============================================================================

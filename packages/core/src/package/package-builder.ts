@@ -8,7 +8,6 @@ import type {ProjectDefinitionProvider} from '../project/providers/project-defin
 import {GitService} from '../git/git-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {IgnoreFilesConfig} from '../types/config.js';
-import {NoSourceChangesError} from '../types/errors.js';
 import {AllBuildEvents} from '../types/events.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
@@ -17,9 +16,10 @@ import {getPipelineRunId} from '../utils/pipeline.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
-  Builder, BuilderOptions, BuilderRegistry, BuildTask,
+  Builder, BuilderOptions, BuilderRegistry,
+  BuildTask, BuildTaskContext, BuildTaskRegistration, BuildTaskResult,
 } from './builders/builder-registry.js';
-import SfpmPackage, {PackageFactory} from './sfpm-package.js';
+import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
 
 export type BuildMode = 'standard' | 'validate';
 
@@ -236,6 +236,20 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     }
   }
 
+  /** Apply task enrichments to the package. */
+  private applyEnrichments(sfpmPackage: SfpmPackage, enrichments: NonNullable<BuildTaskResult['enrichments']>): void {
+    if (enrichments.testCoverage !== undefined && 'testCoverage' in sfpmPackage) {
+      (sfpmPackage as SfpmMetadataPackage).testCoverage = enrichments.testCoverage;
+    }
+
+    if (enrichments.sourceTag !== undefined) {
+      sfpmPackage.metadata.source.tag = enrichments.sourceTag;
+    }
+
+    // sourceHash is already set via calculateSourceHash() in SourceHashTask
+    // The enrichment is informational — the hash is set on the package as a side effect of calculation
+  }
+
   /**
    * Bubble up events from builder instances to PackageBuilder
    */
@@ -251,10 +265,12 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       'unlocked:validation:complete',
       'source:assemble:start',
       'source:assemble:complete',
-      'source:test:start',
-      'source:test:complete',
       'task:start',
       'task:complete',
+      'task:skipped',
+      'task:validation:start',
+      'task:validation:progress',
+      'task:validation:complete',
     ];
 
     for (const eventName of eventsToBubble) {
@@ -324,10 +340,38 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       this.bubbleEvents(builderInstance);
     }
 
+    // Build task context — shared by all tasks for this package
+    const ctx: BuildTaskContext = {
+      eventEmitter: this,
+      logger: this.logger,
+      projectDirectory: sfpmPackage.projectDirectory,
+      sfpmPackage,
+    };
+
+    const preTasks = builderInstance.tasks.filter(t => t.phase === 'pre');
+    const postTasks = builderInstance.tasks.filter(t => t.phase === 'post');
+
     try {
-      await this.runTasks(sfpmPackage, builderInstance.preBuildTasks ?? [], 'pre-build');
-      const result = await builderInstance.exec();
-      await this.runTasks(sfpmPackage, builderInstance.postBuildTasks ?? [], 'post-build');
+      const preSkip = await this.runTasks(sfpmPackage, preTasks, ctx, 'pre-build');
+      if (preSkip) {
+        this.emit('build:skipped', {
+          artifactPath: preSkip.artifactPath,
+          latestVersion: preSkip.latestVersion,
+          packageName: sfpmPackage.name,
+          packageType: sfpmPackage.type as PackageType,
+          reason: 'no-changes',
+          timestamp: new Date(),
+          version: sfpmPackage.version,
+        });
+        return false;
+      }
+
+      await builderInstance.exec();
+
+      const postSkip = await this.runTasks(sfpmPackage, postTasks, ctx, 'post-build');
+      if (postSkip) {
+        return false;
+      }
 
       this.emit('builder:complete', {
         builderName,
@@ -338,21 +382,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       return true;
     } catch (error: any) {
-      // Handle no source changes as a successful skip
-      if (error instanceof NoSourceChangesError) {
-        this.emit('build:skipped', {
-          artifactPath: error.artifactPath,
-          latestVersion: error.latestVersion,
-          packageName: sfpmPackage.name,
-          packageType: sfpmPackage.type as PackageType,
-          reason: 'no-changes',
-          sourceHash: error.sourceHash,
-          timestamp: new Date(),
-          version: sfpmPackage.version,
-        });
-        return false;
-      }
-
       // Handle actual build errors
       this.emit('build:error', {
         error,
@@ -434,8 +463,21 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       this.logger,
     );
 
-    if (this.options.force && builderInstance.preBuildTasks) {
-      builderInstance.preBuildTasks = builderInstance.preBuildTasks.filter(task => task.constructor.name !== 'SourceHashTask');
+    if (this.options.force && builderInstance.tasks) {
+      builderInstance.tasks = builderInstance.tasks.filter(t => {
+        // Instantiate the task to check its name, then discard
+        const dummyCtx: BuildTaskContext = {
+          logger: this.logger,
+          projectDirectory: sfpmPackage.projectDirectory,
+          sfpmPackage,
+        };
+        try {
+          const task = t.factory(dummyCtx);
+          return task.name !== 'source-hash';
+        } catch {
+          return true;
+        }
+      });
       this.logger?.info('Force build enabled - skipping source change detection');
     }
 
@@ -522,14 +564,31 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     }
   }
 
-  /** Run a list of build tasks sequentially, emitting task:start/task:complete events. */
+  /**
+   * Run task registrations sequentially, emitting lifecycle events.
+   * Returns a skip descriptor if any task signals the build should be skipped.
+   */
   private async runTasks(
     sfpmPackage: SfpmPackage,
-    tasks: BuildTask[],
+    registrations: BuildTaskRegistration[],
+    ctx: BuildTaskContext,
     taskType: 'post-build' | 'pre-build',
-  ): Promise<void> {
-    for (const task of tasks) {
-      const taskName = task.constructor.name;
+  ): Promise<BuildTaskResult['skip'] | undefined> {
+    for (const registration of registrations) {
+      const task = registration.factory(ctx);
+      const taskName = task.name;
+
+      // Check runtime precondition
+      if (task.canRun && !task.canRun()) {
+        this.emit('task:skipped', {
+          packageName: sfpmPackage.name,
+          reason: `Precondition not met for task '${taskName}'`,
+          taskName,
+          taskType,
+          timestamp: new Date(),
+        });
+        continue;
+      }
 
       this.emit('task:start', {
         packageName: sfpmPackage.name,
@@ -540,7 +599,12 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       try {
         // eslint-disable-next-line no-await-in-loop -- tasks run sequentially, stop on first failure
-        await task.exec();
+        const result = await task.exec();
+
+        // Apply enrichments to the package
+        if (result?.enrichments) {
+          this.applyEnrichments(sfpmPackage, result.enrichments);
+        }
 
         this.emit('task:complete', {
           packageName: sfpmPackage.name,
@@ -549,12 +613,15 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
           taskType,
           timestamp: new Date(),
         });
-      } catch (error) {
-        const success = error instanceof Error && (error as any).code === 'BUILD_NOT_REQUIRED';
 
+        // Handle build-level skip
+        if (result?.skip) {
+          return result.skip;
+        }
+      } catch (error) {
         this.emit('task:complete', {
           packageName: sfpmPackage.name,
-          success,
+          success: false,
           taskName,
           taskType,
           timestamp: new Date(),
@@ -563,5 +630,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         throw error;
       }
     }
+
+    return undefined;
   }
 }

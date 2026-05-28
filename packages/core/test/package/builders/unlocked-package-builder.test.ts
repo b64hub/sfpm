@@ -61,13 +61,30 @@ vi.mock('../../../src/artifacts/artifact-assembler.js', () => {
     };
 });
 
-vi.mock('../../../src/package/builders/tasks/git-tag-task.js', () => {
-    return {
-        default: class {
-            exec = vi.fn().mockResolvedValue(undefined);
-        }
-    };
-});
+vi.mock('../../../src/package/builders/tasks/source-hash-task.js', () => ({
+    sourceHashTask: () => () => ({
+        name: 'source-hash',
+        exec: vi.fn().mockResolvedValue(undefined),
+    }),
+}));
+
+vi.mock('../../../src/package/builders/tasks/assemble-artifact-task.js', () => ({
+    assembleArtifactTask: () => () => ({
+        name: 'assemble-artifact',
+        exec: vi.fn().mockResolvedValue(undefined),
+    }),
+}));
+
+vi.mock('../../../src/package/builders/tasks/git-tag-task.js', () => ({
+    default: class {
+        name = 'git-tag';
+        exec = vi.fn().mockResolvedValue(undefined);
+    },
+    gitTagTask: () => () => ({
+        name: 'git-tag',
+        exec: vi.fn().mockResolvedValue(undefined),
+    }),
+}));
 
 describe('UnlockedPackageBuilder', () => {
     let builder: UnlockedPackageBuilder;

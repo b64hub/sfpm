@@ -2,10 +2,9 @@ import fs from 'fs-extra';
 import path from 'node:path';
 
 import {ArtifactManifest} from '../../../types/artifact.js';
-import {NoSourceChangesError} from '../../../types/errors.js';
 import {Logger} from '../../../types/logger.js';
 import SfpmPackage, {SfpmMetadataPackage} from '../../sfpm-package.js';
-import {BuildTask} from '../builder-registry.js';
+import {BuildTask, BuildTaskContext, BuildTaskResult} from '../builder-registry.js';
 
 /**
  * Source hash validation task that checks if a build is necessary.
@@ -14,26 +13,29 @@ import {BuildTask} from '../builder-registry.js';
  * 1. Validates that the package has components (prevents empty package builds)
  * 2. Calculates the current source hash
  * 3. Compares against the latest version in manifest.json
- * 4. Throws an error if no build is needed (idempotency check)
+ * 4. Returns a skip result if no build is needed (idempotency check)
  *
  * This prevents expensive build operations (package version creation, tests, etc.)
  * when the source hasn't changed.
  */
-export default class SourceHashTask implements BuildTask {
-  private logger?: Logger;
-  private projectDirectory: string;
-  private sfpmPackage: SfpmPackage;
+class SourceHashTask implements BuildTask {
+  public readonly name = 'source-hash';
+  private readonly logger?: Logger;
+  private readonly projectDirectory: string;
+  private readonly sfpmPackage: SfpmPackage;
 
-  public constructor(sfpmPackage: SfpmPackage, projectDirectory: string, logger?: Logger) {
-    this.sfpmPackage = sfpmPackage;
-    this.projectDirectory = projectDirectory;
-    this.logger = logger;
+  public constructor(ctx: BuildTaskContext) {
+    this.sfpmPackage = ctx.sfpmPackage;
+    this.projectDirectory = ctx.projectDirectory;
+    this.logger = ctx.logger;
   }
 
-  public async exec(): Promise<void> {
-    // Only perform checks for metadata packages
+  public canRun(): boolean {
+    return this.sfpmPackage instanceof SfpmMetadataPackage;
+  }
+
+  public async exec(): Promise<BuildTaskResult | void> {
     if (!(this.sfpmPackage instanceof SfpmMetadataPackage)) {
-      this.logger?.debug('Skipping source hash check for non-metadata package');
       return;
     }
 
@@ -48,7 +50,7 @@ export default class SourceHashTask implements BuildTask {
 
     this.logger?.debug(`Package contains ${components.length} components`);
 
-    // 2. Calculate current source hash (this also sets it on the package)
+    // 2. Calculate current source hash
     const currentSourceHash = await this.sfpmPackage.calculateSourceHash();
     this.logger?.debug(`Current source hash: ${currentSourceHash}`);
 
@@ -58,7 +60,7 @@ export default class SourceHashTask implements BuildTask {
 
     if (!(await fs.pathExists(manifestPath))) {
       this.logger?.info('No previous builds found, proceeding with build');
-      return;
+      return {enrichments: {sourceHash: currentSourceHash}};
     }
 
     const manifest: ArtifactManifest = await fs.readJson(manifestPath);
@@ -66,7 +68,7 @@ export default class SourceHashTask implements BuildTask {
 
     if (!latestVersion) {
       this.logger?.info('No latest version found in manifest, proceeding with build');
-      return;
+      return {enrichments: {sourceHash: currentSourceHash}};
     }
 
     // 4. Compare source hashes
@@ -74,13 +76,13 @@ export default class SourceHashTask implements BuildTask {
       this.logger?.info(`Build skipped for '${this.sfpmPackage.packageName}': No source changes detected. `
         + `Latest version: ${manifest.latest}, Source hash: ${currentSourceHash}`);
 
-      // Throw NoSourceChangesError for graceful handling
-      throw new NoSourceChangesError({
-        artifactPath: latestVersion.path,
-        latestVersion: manifest.latest,
-        message: `No source changes detected for package '${this.sfpmPackage.packageName}'`,
-        sourceHash: currentSourceHash,
-      });
+      return {
+        skip: {
+          artifactPath: latestVersion.path,
+          latestVersion: manifest.latest,
+          reason: `No source changes detected for package '${this.sfpmPackage.packageName}'`,
+        },
+      };
     }
 
     this.logger?.info('Source changes detected, proceeding with build');
@@ -88,5 +90,14 @@ export default class SourceHashTask implements BuildTask {
       this.logger?.debug(`Previous hash: ${latestVersion.sourceHash}`);
       this.logger?.debug(`Current hash:  ${currentSourceHash}`);
     }
+
+    return {enrichments: {sourceHash: currentSourceHash}};
   }
 }
+
+/** Factory for SourceHashTask — no task-specific options needed. */
+export function sourceHashTask(): (ctx: BuildTaskContext) => BuildTask {
+  return (ctx: BuildTaskContext) => new SourceHashTask(ctx);
+}
+
+export default SourceHashTask;

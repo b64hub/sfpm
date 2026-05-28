@@ -12,17 +12,16 @@ import {Logger} from '../../types/logger.js';
 import {PackageType, SfpmUnlockedPackageBuildOptions} from '../../types/package.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
-  Builder, BuilderOptions, BuildTask, RegisterBuilder,
+  Builder, BuilderOptions, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
-import AssembleArtifactTask, {AssembleArtifactTaskOptions} from './tasks/assemble-artifact-task.js';
-import GitTagTask from './tasks/git-tag-task.js';
-import SourceHashTask from './tasks/source-hash-task.js';
+import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
+import {gitTagTask} from './tasks/git-tag-task.js';
+import {sourceHashTask} from './tasks/source-hash-task.js';
 
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Unlocked)
 export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEvents> implements Builder {
-  public postBuildTasks: BuildTask[] = [];
-  public preBuildTasks: BuildTask[] = [];
+  public tasks: BuildTaskRegistration[] = [];
   private devhubOrg?: Org;
   private logger?: Logger;
   private options: BuilderOptions;
@@ -40,17 +39,10 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     this.options = options;
     this.logger = logger;
 
-    // Use project directory for artifacts, not the staging directory
-    const projectDir = this.sfpmPackage.projectDirectory;
-
-    const assembleOptions: AssembleArtifactTaskOptions = {};
-
-    this.preBuildTasks = [
-      new SourceHashTask(this.sfpmPackage, projectDir, this.logger),
-    ];
-    this.postBuildTasks = [
-      new AssembleArtifactTask(this.sfpmPackage, projectDir, assembleOptions),
-      new GitTagTask(this.sfpmPackage, projectDir),
+    this.tasks = [
+      {factory: sourceHashTask(), phase: 'pre'},
+      {factory: assembleArtifactTask(), phase: 'post'},
+      {factory: gitTagTask(), phase: 'post'},
     ];
   }
 

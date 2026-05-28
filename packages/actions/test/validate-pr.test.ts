@@ -177,14 +177,14 @@ describe('validatePr', () => {
     }));
   });
 
-  it('should capture coverage data from source:test:complete events', async () => {
+  it('should capture coverage data from task:validation:complete events', async () => {
     // Override buildAll to emit coverage events during execution
     mockBuildOrchestrator.buildAll.mockImplementation(async () => {
-      mockBuildOrchestrator.emit('source:test:complete', {
+      mockBuildOrchestrator.emit('task:validation:complete', {
         coveragePercentage: 82.5,
         packageName: 'pkg-a',
       });
-      mockBuildOrchestrator.emit('source:test:complete', {
+      mockBuildOrchestrator.emit('task:validation:complete', {
         coveragePercentage: 91.0,
         packageName: 'pkg-b',
       });

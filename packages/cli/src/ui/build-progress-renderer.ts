@@ -26,6 +26,7 @@ import type {
   StageCompleteEvent,
   StageStartEvent,
   TaskCompleteEvent,
+  TaskSkippedEvent,
   TaskStartEvent,
 } from '@b64hub/sfpm-core';
 
@@ -86,6 +87,7 @@ export class BuildProgressRenderer {
     'stage:complete': {description: 'Staging complete', handler: this.handleStageComplete.bind(this)},
     'stage:start': {description: 'Staging package', handler: this.handleStageStart.bind(this)},
     'task:complete': {description: 'Task complete', handler: this.handleTaskComplete.bind(this)},
+    'task:skipped': {description: 'Task skipped', handler: this.handleTaskSkipped.bind(this)},
     'task:start': {description: 'Task started', handler: this.handleTaskStart.bind(this)},
     'unlocked:create:complete': {description: 'Package creation complete', handler: this.handleCreateComplete.bind(this)},
     'unlocked:create:progress': {description: 'Package creation progress', handler: this.handleCreateProgress.bind(this)},
@@ -750,6 +752,20 @@ export class BuildProgressRenderer {
       } else {
         this.stopSpinner(false, chalk.red(`${event.taskName} failed`));
       }
+    }
+  }
+
+  private handleTaskSkipped(event: TaskSkippedEvent): void {
+    if (!this.isInteractive()) return;
+
+    const task = this.getPackageTask(event.packageName);
+    if (task) {
+      this.listr.updatePackageTitle(
+        event.packageName,
+        `${chalk.cyan(event.packageName)} - ${chalk.yellow('○')} ${event.taskName} skipped`,
+      );
+    } else if (!this.isOrchestrating()) {
+      this.stopSpinner(true, chalk.yellow(`${event.taskName} skipped: ${event.reason}`));
     }
   }
 

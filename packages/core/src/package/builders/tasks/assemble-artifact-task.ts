@@ -1,32 +1,28 @@
 import ArtifactAssembler, {ArtifactAssemblerOptions} from '../../../artifacts/artifact-assembler.js';
 import ProjectService from '../../../project/project-service.js';
-import SfpmPackage from '../../sfpm-package.js';
-import {BuildTask} from '../builder-registry.js';
+import {BuildTask, BuildTaskContext} from '../builder-registry.js';
 
 export interface AssembleArtifactTaskOptions {
   /** Additional keywords to append at build time */
   additionalKeywords?: string[];
 }
 
-export default class AssembleArtifactTask implements BuildTask {
-  private options: AssembleArtifactTaskOptions;
-  private projectDirectory: string;
-  private sfpmPackage: SfpmPackage;
+class AssembleArtifactTask implements BuildTask {
+  public readonly name = 'assemble-artifact';
+  private readonly ctx: BuildTaskContext;
+  private readonly options: AssembleArtifactTaskOptions;
 
-  public constructor(
-    sfpmPackage: SfpmPackage,
-    projectDirectory: string,
-    options: AssembleArtifactTaskOptions,
-  ) {
-    this.sfpmPackage = sfpmPackage;
-    this.projectDirectory = projectDirectory;
+  public constructor(ctx: BuildTaskContext, options: AssembleArtifactTaskOptions) {
+    this.ctx = ctx;
     this.options = options;
   }
 
   public async exec(): Promise<void> {
+    const {projectDirectory, sfpmPackage} = this.ctx;
+
     // Get managed dependencies from the package's project definition
-    const projectService = await ProjectService.getInstance(this.projectDirectory);
-    const packageDef = projectService.getPackageDefinition(this.sfpmPackage.packageName);
+    const projectService = await ProjectService.getInstance(projectDirectory);
+    const packageDef = projectService.getPackageDefinition(sfpmPackage.packageName);
     const managed = packageDef.managedDependencies ?? {};
 
     const assemblerOptions: ArtifactAssemblerOptions = {
@@ -35,9 +31,16 @@ export default class AssembleArtifactTask implements BuildTask {
     };
 
     await new ArtifactAssembler(
-      this.sfpmPackage,
-      this.projectDirectory,
+      sfpmPackage,
+      projectDirectory,
       assemblerOptions,
     ).assemble();
   }
 }
+
+/** Curried factory for AssembleArtifactTask. */
+export function assembleArtifactTask(options: AssembleArtifactTaskOptions = {}): (ctx: BuildTaskContext) => BuildTask {
+  return (ctx: BuildTaskContext) => new AssembleArtifactTask(ctx, options);
+}
+
+export default AssembleArtifactTask;

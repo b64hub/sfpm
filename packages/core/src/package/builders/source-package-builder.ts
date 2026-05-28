@@ -5,17 +5,17 @@ import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import SfpmPackage, {SfpmMetadataPackage, SfpmSourcePackage} from '../sfpm-package.js';
 import {
-  Builder, BuilderOptions, BuildTask, RegisterBuilder,
+  Builder, BuilderOptions, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
-import AssembleArtifactTask from './tasks/assemble-artifact-task.js';
-import SourceHashTask from './tasks/source-hash-task.js';
-import ValidationTask from './tasks/validation-task.js';
+import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
+import {dependencyAnalysisTask} from './tasks/dependency-analysis-task.js';
+import {sourceHashTask} from './tasks/source-hash-task.js';
+import {validationTask} from './tasks/validation-task.js';
 
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Source)
 export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents> implements Builder {
-  public postBuildTasks: BuildTask[] = [];
-  public preBuildTasks: BuildTask[] = [];
+  public tasks: BuildTaskRegistration[] = [];
   private buildOrg?: string;
   private logger?: Logger;
   private options: BuilderOptions;
@@ -38,35 +38,46 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
     this.options = options;
     this.logger = logger;
 
-    // Add source hash check to prevent redundant builds
-    const projectDir = this.sfpmPackage.projectDirectory;
-    this.preBuildTasks.push(new SourceHashTask(this.sfpmPackage, projectDir, this.logger));
+    // Pre-build: source hash check to prevent redundant builds
+    this.tasks.push({factory: sourceHashTask(), phase: 'pre'});
 
-    // Add validation task when not skipped and a build org is available
-    if (!options.skipValidation && options.buildOrg) {
-      this.postBuildTasks.push(new ValidationTask({
-        eventEmitter: this, logger: this.logger, sfpmPackage: this.sfpmPackage, validationOrg: options.buildOrg,
-      }));
+    // Pre-build: static dependency analysis when analyzer is provided
+    if (options.dependencyAnalyzer) {
+      this.tasks.push({
+        factory: dependencyAnalysisTask({
+          analyzer: options.dependencyAnalyzer,
+          warnOnly: options.warnOnMissingDependencies,
+        }),
+        phase: 'pre',
+      });
     }
 
-    // Assemble artifact after build so source packages are installable via artifact resolution
-    this.postBuildTasks.push(new AssembleArtifactTask(this.sfpmPackage, projectDir, {}));
+    // Post-build: validation when not skipped and a build org is available
+    if (!options.skipValidation && options.buildOrg) {
+      this.tasks.push({factory: validationTask({validationOrg: options.buildOrg}), phase: 'post'});
+    }
+
+    // Post-build: assemble artifact so source packages are installable
+    this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});
   }
 
   public async connect(username: string): Promise<void> {
     this.buildOrg = username;
 
     // If validation was deferred (buildOrg provided at connect-time, not constructor-time),
-    // insert the ValidationTask before AssembleArtifactTask
+    // insert the validation task before the assemble task
     if (!this.options.skipValidation && !this.options.buildOrg && username) {
-      const assembleIdx = this.postBuildTasks.findIndex(t => t instanceof AssembleArtifactTask);
-      const validationTask = new ValidationTask({
-        eventEmitter: this, logger: this.logger, sfpmPackage: this.sfpmPackage, validationOrg: username,
-      });
+      const assembleIdx = this.tasks.findIndex(t => t.phase === 'post' && t.factory.toString().includes('AssembleArtifactTask'));
+
+      const registration: BuildTaskRegistration = {
+        factory: validationTask({validationOrg: username}),
+        phase: 'post',
+      };
+
       if (assembleIdx === -1) {
-        this.postBuildTasks.push(validationTask);
+        this.tasks.push(registration);
       } else {
-        this.postBuildTasks.splice(assembleIdx, 0, validationTask);
+        this.tasks.splice(assembleIdx, 0, registration);
       }
     }
   }

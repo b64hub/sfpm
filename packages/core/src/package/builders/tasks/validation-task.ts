@@ -5,7 +5,7 @@ import type {TestClassResult, ValidationResult, ValidationStrategy} from './vali
 import {BuildError} from '../../../types/errors.js';
 import {Logger} from '../../../types/logger.js';
 import {SfpmMetadataPackage} from '../../sfpm-package.js';
-import {BuildTask} from '../builder-registry.js';
+import {BuildTask, BuildTaskContext, BuildTaskResult} from '../builder-registry.js';
 import {DeployAndTestStrategy} from './validation/deploy-and-test-strategy.js';
 import {TestOnlyStrategy} from './validation/test-only-strategy.js';
 
@@ -21,6 +21,7 @@ export interface ValidationTaskOptions {
    * In this mode, coverage is not checked — only pass/fail matters.
    */
   testOnly?: boolean;
+  validationOrg: string;
   warnOnly?: boolean; // TODO: implement warn-only mode that logs validation failures without throwing
 }
 
@@ -40,15 +41,8 @@ export interface ValidationTaskOptions {
  * - Any Apex test failed
  * - Code coverage is below the 75% threshold (deploy mode only)
  */
-export interface ValidationTaskConfig {
-  eventEmitter?: EventEmitter;
-  logger?: Logger;
-  options?: ValidationTaskOptions;
-  sfpmPackage: SfpmMetadataPackage;
-  validationOrg: string;
-}
-
-export default class ValidationTask implements BuildTask {
+class ValidationTask implements BuildTask {
+  public readonly name = 'validation';
   private readonly eventEmitter?: EventEmitter;
   private readonly logger?: Logger;
   private readonly options: ValidationTaskOptions;
@@ -56,29 +50,28 @@ export default class ValidationTask implements BuildTask {
   private readonly strategy: ValidationStrategy;
   private readonly validationOrg: string;
 
-  public constructor(config: ValidationTaskConfig) {
-    this.sfpmPackage = config.sfpmPackage;
-    this.validationOrg = config.validationOrg;
-    this.logger = config.logger;
-    this.eventEmitter = config.eventEmitter;
-    this.options = config.options ?? {};
-
-    const ctx = {logger: this.logger, sfpmPackage: this.sfpmPackage, validationOrg: this.validationOrg};
-    this.strategy = this.options.testOnly
-      ? new TestOnlyStrategy(ctx)
-      : new DeployAndTestStrategy(ctx);
-  }
-
-  /**
-   * Synchronous convenience — starts the validation and polls the result.
-   * Equivalent to calling `start()` followed by `poll()`.
-   */
-  public async exec(): Promise<void> {
-    if (!this.sfpmPackage.hasApex) {
-      this.logger?.info(`Package '${this.sfpmPackage.packageName}' has no Apex — skipping test validation`);
-      return;
+  public constructor(ctx: BuildTaskContext, options: ValidationTaskOptions) {
+    if (!(ctx.sfpmPackage instanceof SfpmMetadataPackage)) {
+      throw new TypeError(`ValidationTask received incompatible package type: ${ctx.sfpmPackage.constructor.name}`);
     }
 
+    this.sfpmPackage = ctx.sfpmPackage;
+    this.validationOrg = options.validationOrg;
+    this.logger = ctx.logger;
+    this.eventEmitter = ctx.eventEmitter;
+    this.options = options;
+
+    const strategyCtx = {logger: this.logger, sfpmPackage: this.sfpmPackage, validationOrg: this.validationOrg};
+    this.strategy = this.options.testOnly
+      ? new TestOnlyStrategy(strategyCtx)
+      : new DeployAndTestStrategy(strategyCtx);
+  }
+
+  public canRun(): boolean {
+    return this.sfpmPackage.hasApex;
+  }
+
+  public async exec(): Promise<BuildTaskResult | void> {
     const testClasses = this.guardTestClasses();
     this.emitTestStart(testClasses.length);
 
@@ -87,7 +80,7 @@ export default class ValidationTask implements BuildTask {
 
     const result = await this.strategy.validate(testClasses, {
       onProgress: progress => {
-        this.eventEmitter?.emit('source:test:progress', {
+        this.eventEmitter?.emit('task:validation:progress', {
           ...progress,
           packageName: this.sfpmPackage.packageName,
           timestamp: new Date(),
@@ -95,10 +88,10 @@ export default class ValidationTask implements BuildTask {
       },
     });
 
-    this.applyResult(result);
+    return this.applyResult(result);
   }
 
-  private applyResult(result: ValidationResult): void {
+  private applyResult(result: ValidationResult): BuildTaskResult | void {
     // 1. Deployment — skip gracefully when absent (test-only mode)
     if (result.deployment) {
       this.assertDeploySuccess(result);
@@ -108,16 +101,20 @@ export default class ValidationTask implements BuildTask {
     this.assertTestsPassed(result);
 
     const hasCoverage = result.tests.results.some(c => c.coverage !== undefined);
+    let coveragePercentage: number | undefined;
     if (hasCoverage) {
-      const coveragePercentage = calculateCoverage(result.tests.results);
-      this.sfpmPackage.testCoverage = coveragePercentage;
+      coveragePercentage = calculateCoverage(result.tests.results);
       if (!this.options.testOnly) {
         this.assertCoverage(coveragePercentage);
       }
     }
 
-    this.emitTestComplete(result);
+    this.emitTestComplete(result, coveragePercentage);
     this.logger?.info(`Validation passed for '${this.sfpmPackage.packageName}'`);
+
+    if (coveragePercentage !== undefined) {
+      return {enrichments: {testCoverage: coveragePercentage}};
+    }
   }
 
   private assertCoverage(coveragePercentage: number): void {
@@ -178,9 +175,8 @@ export default class ValidationTask implements BuildTask {
   // Events
   // ==========================================================================
 
-  private emitTestComplete(result: ValidationResult): void {
-    const coveragePercentage = this.sfpmPackage.testCoverage;
-    this.eventEmitter?.emit('source:test:complete', {
+  private emitTestComplete(result: ValidationResult, coveragePercentage?: number): void {
+    this.eventEmitter?.emit('task:validation:complete', {
       coveragePercentage,
       coverageRequired: coveragePercentage === undefined ? undefined : COVERAGE_THRESHOLD,
       failed: result.tests.failed,
@@ -192,7 +188,7 @@ export default class ValidationTask implements BuildTask {
   }
 
   private emitTestStart(testCount: number): void {
-    this.eventEmitter?.emit('source:test:start', {
+    this.eventEmitter?.emit('task:validation:start', {
       packageName: this.sfpmPackage.packageName,
       testCount,
       testLevel: 'RunSpecifiedTests',
@@ -212,6 +208,13 @@ export default class ValidationTask implements BuildTask {
     return testClassNames;
   }
 }
+
+/** Curried factory for ValidationTask. */
+export function validationTask(options: ValidationTaskOptions): (ctx: BuildTaskContext) => BuildTask {
+  return (ctx: BuildTaskContext) => new ValidationTask(ctx, options);
+}
+
+export default ValidationTask;
 
 /**
  * Calculate overall code coverage percentage from test class results.
