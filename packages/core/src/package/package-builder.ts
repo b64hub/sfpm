@@ -69,13 +69,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   }
 
   /**
-   * @description Build multiple packages and their dependencies.
-   * @deprecated Use BuildOrchestrator.buildAll() for multi-package builds.
-   * This stub exists for backwards compatibility — the CLI drives the orchestrator directly.
-   */
-  public async build(): Promise<void> { }
-
-  /**
    * @description Build a single package by name
    * @param packageName
    * @param projectDirectory

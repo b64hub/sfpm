@@ -44,7 +44,9 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
 
     // Add validation task when not skipped and a build org is available
     if (!options.skipValidation && options.buildOrg) {
-      this.postBuildTasks.push(new ValidationTask(this.sfpmPackage, options.buildOrg, this.logger, this));
+      this.postBuildTasks.push(new ValidationTask({
+        eventEmitter: this, logger: this.logger, sfpmPackage: this.sfpmPackage, validationOrg: options.buildOrg,
+      }));
     }
 
     // Assemble artifact after build so source packages are installable via artifact resolution
@@ -58,7 +60,9 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
     // insert the ValidationTask before AssembleArtifactTask
     if (!this.options.skipValidation && !this.options.buildOrg && username) {
       const assembleIdx = this.postBuildTasks.findIndex(t => t instanceof AssembleArtifactTask);
-      const validationTask = new ValidationTask(this.sfpmPackage, username, this.logger, this);
+      const validationTask = new ValidationTask({
+        eventEmitter: this, logger: this.logger, sfpmPackage: this.sfpmPackage, validationOrg: username,
+      });
       if (assembleIdx === -1) {
         this.postBuildTasks.push(validationTask);
       } else {

@@ -1,58 +1,18 @@
-import {Org} from '@salesforce/core';
-import {type DeploySetOptions} from '@salesforce/source-deploy-retrieve';
 import EventEmitter from 'node:events';
+
+import type {TestClassResult, ValidationResult, ValidationStrategy} from './validation/types.js';
 
 import {BuildError} from '../../../types/errors.js';
 import {Logger} from '../../../types/logger.js';
 import {SfpmMetadataPackage} from '../../sfpm-package.js';
 import {BuildTask} from '../builder-registry.js';
+import {DeployAndTestStrategy} from './validation/deploy-and-test-strategy.js';
+import {TestOnlyStrategy} from './validation/test-only-strategy.js';
 
-/** Minimum code coverage percentage required for validation to pass */
-const COVERAGE_THRESHOLD = 75;
+export type {ValidationProgress, ValidationResult} from './validation/types.js';
 
-const delay = (ms: number): Promise<void> => new Promise(resolve => {
-  setTimeout(resolve, ms);
-});
-
-/** Structural type for the Tooling API connection subset used by this task. */
-interface ToolingConnection {
-  query: <T>(q: string) => Promise<{records: T[]}>;
-  runTestsAsynchronous: (request: {classNames: string}) => Promise<string>;
-}
-
-/** Shape of a row from `SELECT ... FROM ApexTestRunResult` (Tooling API). */
-interface ApexTestRunResult {
-  MethodsCompleted: number;
-  MethodsEnqueued: number;
-  MethodsFailed: number;
-  Status: 'Aborted' | 'Completed' | 'Failed' | 'Processing' | 'Queued';
-}
-
-/** Shape of a row from `SELECT ... FROM ApexTestResult WHERE Outcome = 'Fail'` (Tooling API). */
-interface ApexTestFailure {
-  ApexClass: {Name: string};
-  Message: string;
-  MethodName: string;
-  StackTrace?: string;
-}
-
-/**
- * Handle to an in-flight validation job. Returned by {@link ValidationTask.startAsync}
- * and consumed by {@link ValidationTask.awaitResult} to poll and process the outcome.
- *
- * This enables a future job queue pattern: start N validations in parallel,
- * collect the handles, then await results as they complete.
- */
-export interface ValidationJobHandle {
-  /** The Salesforce async job ID (deploy ID or test run ID). */
-  jobId: string;
-  /** Which execution path this job represents. */
-  mode: 'deploy' | 'test-only';
-  /** Package name this job validates. */
-  packageName: string;
-  /** Test class names being executed. */
-  testClassNames: string[];
-}
+/** Minimum code coverage percentage required for validation to pass. */
+export const COVERAGE_THRESHOLD = 75;
 
 export interface ValidationTaskOptions {
   /**
@@ -61,419 +21,217 @@ export interface ValidationTaskOptions {
    * In this mode, coverage is not checked — only pass/fail matters.
    */
   testOnly?: boolean;
+  warnOnly?: boolean; // TODO: implement warn-only mode that logs validation failures without throwing
 }
 
 /**
- * Build task that validates a source package by deploying metadata to a build org,
- * running the package's specified Apex tests, and checking code coverage.
+ * Build task that validates a metadata package against a build org.
  *
- * This emulates the Salesforce unlocked package build validation for source packages:
- * 1. Deploy metadata to the build org
- * 2. Run the package's Apex tests (RunSpecifiedTests)
- * 3. Check that code coverage meets the 75% threshold
+ * Delegates to one of two strategies:
+ * - {@link DeployAndTestStrategy} (default): deploy metadata, run tests, check 75% coverage
+ * - {@link TestOnlyStrategy} (`testOnly: true`): run tests via Tooling API, no deploy or coverage
  *
- * Supports a **test-only mode** (`testOnly: true`) for downstream unchanged packages:
- * runs tests via the Apex Test API without deploying metadata. Coverage is not checked.
+ * Strategies are pure "fetch and normalize" — they return a {@link ValidationResult}.
+ * All validation assertions live here in the task.
  *
  * Throws {@link BuildError} when:
  * - The package contains Apex but has no test classes defined
- * - The deployment fails (deploy mode only)
- * - Any Apex test fails
- * - Code coverage is below the threshold (deploy mode only)
+ * - Deployment failed (component errors)
+ * - Any Apex test failed
+ * - Code coverage is below the 75% threshold (deploy mode only)
  */
+export interface ValidationTaskConfig {
+  eventEmitter?: EventEmitter;
+  logger?: Logger;
+  options?: ValidationTaskOptions;
+  sfpmPackage: SfpmMetadataPackage;
+  validationOrg: string;
+}
+
 export default class ValidationTask implements BuildTask {
-  private readonly buildOrg: string;
   private readonly eventEmitter?: EventEmitter;
   private readonly logger?: Logger;
   private readonly options: ValidationTaskOptions;
   private readonly sfpmPackage: SfpmMetadataPackage;
+  private readonly strategy: ValidationStrategy;
+  private readonly validationOrg: string;
 
-  public constructor(
-    sfpmPackage: SfpmMetadataPackage,
-    buildOrg: string,
-    logger?: Logger,
-    eventEmitter?: EventEmitter,
-    options?: ValidationTaskOptions,
-  ) {
-    this.sfpmPackage = sfpmPackage;
-    this.buildOrg = buildOrg;
-    this.logger = logger;
-    this.eventEmitter = eventEmitter;
-    this.options = options ?? {};
+  public constructor(config: ValidationTaskConfig) {
+    this.sfpmPackage = config.sfpmPackage;
+    this.validationOrg = config.validationOrg;
+    this.logger = config.logger;
+    this.eventEmitter = config.eventEmitter;
+    this.options = config.options ?? {};
+
+    const ctx = {logger: this.logger, sfpmPackage: this.sfpmPackage, validationOrg: this.validationOrg};
+    this.strategy = this.options.testOnly
+      ? new TestOnlyStrategy(ctx)
+      : new DeployAndTestStrategy(ctx);
   }
 
   /**
-   * Await and process the result of a previously started validation job.
-   * Polls the Salesforce API until the job completes, then asserts pass/fail.
-   *
-   * Throws {@link BuildError} on test failures, deployment failures, or
-   * insufficient coverage (deploy mode only).
-   */
-  public async awaitResult(handle: ValidationJobHandle): Promise<void> {
-    const {jobId, mode, packageName} = handle;
-    const org = await Org.create({aliasOrUsername: this.buildOrg});
-    const connection = org.getConnection();
-
-    if (mode === 'test-only') {
-      await this.awaitTestOnly(packageName, connection as any, jobId);
-    } else {
-      await this.awaitDeploy(packageName, connection, jobId);
-    }
-
-    this.logger?.info(`Validation passed for '${packageName}'`);
-  }
-
-  /**
-   * Synchronous convenience — starts the validation and awaits the result.
-   * Equivalent to calling `startAsync()` followed by `awaitResult()`.
+   * Synchronous convenience — starts the validation and polls the result.
+   * Equivalent to calling `start()` followed by `poll()`.
    */
   public async exec(): Promise<void> {
-    const handle = await this.startAsync();
-    if (!handle) return; // no-op (no Apex)
-    await this.awaitResult(handle);
-  }
-
-  /**
-   * Start the validation asynchronously and return a job handle.
-   * The handle can be stored and later passed to {@link awaitResult} to
-   * poll for completion and process the outcome.
-   *
-   * Returns `null` if the package has no Apex (nothing to validate).
-   */
-  public async startAsync(): Promise<null | ValidationJobHandle> {
-    const {packageName} = this.sfpmPackage;
-
     if (!this.sfpmPackage.hasApex) {
-      this.logger?.info(`Package '${packageName}' has no Apex — skipping test validation`);
-      return null;
+      this.logger?.info(`Package '${this.sfpmPackage.packageName}' has no Apex — skipping test validation`);
+      return;
     }
 
-    const testClassNames = this.guardTestClasses(packageName);
-    const mode = this.options.testOnly ? 'test-only' : 'deploy';
+    const testClasses = this.guardTestClasses();
+    this.emitTestStart(testClasses.length);
 
-    this.logger?.info(`Validating package '${packageName}' against ${this.buildOrg} [${mode}]`);
-    this.logger?.info(`Running ${testClassNames.length} test class(es): ${testClassNames.join(', ')}`);
-    this.emitTestStart(packageName, testClassNames.length);
+    this.logger?.info(`Validating package '${this.sfpmPackage.packageName}' against ${this.validationOrg} [${this.strategy.mode}]`);
+    this.logger?.info(`Running ${testClasses.length} test class(es): ${testClasses.join(', ')}`);
 
-    const org = await Org.create({aliasOrUsername: this.buildOrg});
-    const connection = org.getConnection();
+    const result = await this.strategy.validate(testClasses, {
+      onProgress: progress => {
+        this.eventEmitter?.emit('source:test:progress', {
+          ...progress,
+          packageName: this.sfpmPackage.packageName,
+          timestamp: new Date(),
+        });
+      },
+    });
 
-    let jobId: string;
-
-    if (this.options.testOnly) {
-      jobId = await connection.tooling.runTestsAsynchronous({
-        classNames: testClassNames.join(','),
-      }) as string;
-    } else {
-      const componentSet = this.sfpmPackage.getComponentSet();
-      const deployOptions: DeploySetOptions = {
-        apiOptions: {
-          runTests: testClassNames,
-          testLevel: 'RunSpecifiedTests' as DeploySetOptions['apiOptions'] extends {testLevel?: infer T} ? T : never,
-        },
-        usernameOrConnection: connection,
-      };
-      const deploy = await componentSet.deploy(deployOptions);
-      jobId = deploy.id!;
-    }
-
-    this.logger?.debug(`Job started: ${jobId} [${mode}]`);
-
-    return {
-      jobId,
-      mode: this.options.testOnly ? 'test-only' : 'deploy',
-      packageName,
-      testClassNames,
-    };
+    this.applyResult(result);
   }
 
-  // ==========================================================================
-  // Await helpers (process async job results)
-  // ==========================================================================
+  private applyResult(result: ValidationResult): void {
+    // 1. Deployment — skip gracefully when absent (test-only mode)
+    if (result.deployment) {
+      this.assertDeploySuccess(result);
+    }
 
-  private assertCoverage(packageName: string, coveragePercentage: number): void {
+    // 2. Tests — always asserted
+    this.assertTestsPassed(result);
+
+    const hasCoverage = result.tests.results.some(c => c.coverage !== undefined);
+    if (hasCoverage) {
+      const coveragePercentage = calculateCoverage(result.tests.results);
+      this.sfpmPackage.testCoverage = coveragePercentage;
+      if (!this.options.testOnly) {
+        this.assertCoverage(coveragePercentage);
+      }
+    }
+
+    this.emitTestComplete(result);
+    this.logger?.info(`Validation passed for '${this.sfpmPackage.packageName}'`);
+  }
+
+  private assertCoverage(coveragePercentage: number): void {
     if (coveragePercentage >= COVERAGE_THRESHOLD) return;
 
     throw new BuildError(
-      packageName,
+      this.sfpmPackage.packageName,
       `Code coverage ${coveragePercentage}% is below the required ${COVERAGE_THRESHOLD}%`,
       {
         buildStep: 'validation',
-        context: {buildOrg: this.buildOrg, coveragePercentage, coverageRequired: COVERAGE_THRESHOLD},
+        context: {buildOrg: this.validationOrg, coveragePercentage, coverageRequired: COVERAGE_THRESHOLD},
       },
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private assertDeploySuccess(packageName: string, response: any): void {
-    if (response.success) return;
+  private assertDeploySuccess(result: ValidationResult): void {
+    const {deployment} = result;
+    if (!deployment || deployment.success) return;
 
-    const failures = response.details?.componentFailures;
-    const failuresArray = Array.isArray(failures) ? failures : failures ? [failures] : [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const errorMessages = failuresArray.map((f: any) => `${f.fullName}: ${f.problem}`).join('\n')
-      || 'Unknown deployment error';
+    const errorMessages = deployment.errors
+    .map(e => `${e.fullName}: ${e.problem}`)
+    .join('\n') || 'Unknown deployment error';
 
-    this.emitTestComplete(packageName, {failed: 0, passed: 0, testCount: 0});
-
-    throw new BuildError(packageName, `Validation deployment failed:\n${errorMessages}`, {
+    throw new BuildError(this.sfpmPackage.packageName, `Validation deployment failed:\n${errorMessages}`, {
       buildStep: 'validation',
-      context: {buildOrg: this.buildOrg},
+      context: {buildOrg: this.validationOrg},
     });
   }
 
-  // ==========================================================================
-  // Steps
-  // ==========================================================================
+  private assertTestsPassed(result: ValidationResult): void {
+    const {tests} = result;
+    if (tests.failed === 0) return;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private assertTestsPassed(packageName: string, testResults: {coveragePercentage: number; failuresArray: any[]; numFailures: number; numTestsRun: number}): void {
-    const {coveragePercentage, failuresArray, numFailures, numTestsRun} = testResults;
-    if (numFailures === 0) return;
+    const failures: string[] = [];
+    for (const testClass of tests.results) {
+      for (const testMethod of testClass.methods) {
+        if (testMethod.outcome === 'fail') {
+          failures.push(`${testClass.className}.${testMethod.methodName}: ${testMethod.message}`);
+        }
+      }
+    }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const failureMessages = failuresArray.map((f: any) => `${f.name}.${f.methodName}: ${f.message}`).join('\n');
-
-    throw new BuildError(packageName, `${numFailures} Apex test(s) failed:\n${failureMessages}`, {
-      buildStep: 'validation',
-      context: {
-        buildOrg: this.buildOrg, coveragePercentage, numFailures, numTestsRun,
+    throw new BuildError(
+      this.sfpmPackage.packageName,
+      `${tests.failed} Apex test(s) failed:\n${failures.join('\n')}`,
+      {
+        buildStep: 'validation',
+        context: {
+          buildOrg: this.validationOrg,
+          numFailures: tests.failed,
+          numTestsRun: tests.total,
+        },
       },
-    });
-  }
-
-  /**
-   * Await the result of an async deploy+test job.
-   * Polls the deploy status via Metadata API, then asserts success, tests, and coverage.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async awaitDeploy(packageName: string, connection: any, deployId: string): Promise<void> {
-    const response = await this.pollDeploy(connection, deployId);
-
-    this.assertDeploySuccess(packageName, response);
-
-    const {coveragePercentage, failuresArray, numFailures, numPassed, numTestsRun}
-      = this.extractTestResults(response);
-
-    this.sfpmPackage.testCoverage = coveragePercentage;
-    this.emitTestComplete(packageName, {
-      coveragePercentage, failed: numFailures, passed: numPassed, testCount: numTestsRun,
-    });
-
-    this.assertTestsPassed(packageName, {
-      coveragePercentage, failuresArray, numFailures, numTestsRun,
-    });
-    this.assertCoverage(packageName, coveragePercentage);
+    );
   }
 
   // ==========================================================================
-  // Guards
+  // Events
   // ==========================================================================
 
-  /**
-   * Await the result of an async test-only job.
-   * Polls the test run, then asserts pass/fail (no coverage check).
-   */
-  private async awaitTestOnly(packageName: string, connection: {tooling: ToolingConnection}, testRunId: string): Promise<void> {
-    const testResult = await this.pollTestRun(connection, testRunId);
-    const numTestsRun = Number(testResult.MethodsCompleted ?? 0);
-    const numFailures = Number(testResult.MethodsFailed ?? 0);
-    const numPassed = numTestsRun - numFailures;
-
-    this.emitTestComplete(packageName, {failed: numFailures, passed: numPassed, testCount: numTestsRun});
-
-    if (numFailures > 0) {
-      const failures = await this.fetchTestFailures(connection, testRunId);
-      throw new BuildError(packageName, `${numFailures} Apex test(s) failed:\n${failures}`, {
-        buildStep: 'validation:test-only',
-        context: {buildOrg: this.buildOrg, numFailures, numTestsRun},
-      });
-    }
-
-    this.logger?.info(`All ${numPassed} test(s) passed (test-only mode)`);
-  }
-
-  /**
-   * Calculate overall coverage percentage from the deploy run test result.
-   * Uses per-class coverage data (lines covered / total lines).
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private calculateCoverage(runTestResult: any): number {
-    const codeCoverage = runTestResult?.codeCoverage;
-    if (!codeCoverage) return 0;
-
-    const coverageEntries = Array.isArray(codeCoverage) ? codeCoverage : [codeCoverage];
-    let totalLines = 0;
-    let coveredLines = 0;
-
-    for (const entry of coverageEntries) {
-      const numLocations = Number(entry.numLocations ?? 0);
-      const numLocationsNotCovered = Number(entry.numLocationsNotCovered ?? 0);
-      totalLines += numLocations;
-      coveredLines += numLocations - numLocationsNotCovered;
-    }
-
-    if (totalLines === 0) return 0;
-    return Math.round((coveredLines / totalLines) * 100);
-  }
-
-  private emitTestComplete(packageName: string, counts: {coveragePercentage?: number; failed: number; passed: number; testCount: number}): void {
+  private emitTestComplete(result: ValidationResult): void {
+    const coveragePercentage = this.sfpmPackage.testCoverage;
     this.eventEmitter?.emit('source:test:complete', {
-      coveragePercentage: counts.coveragePercentage,
-      coverageRequired: COVERAGE_THRESHOLD,
-      failed: counts.failed,
-      packageName,
-      passed: counts.passed,
-      testCount: counts.testCount,
+      coveragePercentage,
+      coverageRequired: coveragePercentage === undefined ? undefined : COVERAGE_THRESHOLD,
+      failed: result.tests.failed,
+      packageName: this.sfpmPackage.packageName,
+      passed: result.tests.passed,
+      testCount: result.tests.total,
       timestamp: new Date(),
     });
   }
 
-  private emitTestStart(packageName: string, testCount: number): void {
+  private emitTestStart(testCount: number): void {
     this.eventEmitter?.emit('source:test:start', {
-      packageName,
+      packageName: this.sfpmPackage.packageName,
       testCount,
       testLevel: 'RunSpecifiedTests',
       timestamp: new Date(),
     });
   }
 
-  // ==========================================================================
-  // Helpers
-  // ==========================================================================
-
-  /**
-   * Extract test counts, coverage, and failure details from the deploy response.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private extractTestResults(response: any) {
-    const runTestResult = response.details?.runTestResult;
-    const testFailures = runTestResult?.failures;
-    const failuresArray = Array.isArray(testFailures) ? testFailures : testFailures ? [testFailures] : [];
-    const numTestsRun = Number(runTestResult?.numTestsRun ?? 0);
-    const numFailures = Number(runTestResult?.numFailures ?? 0);
-    const numPassed = numTestsRun - numFailures;
-    const coveragePercentage = this.calculateCoverage(runTestResult);
-
-    return {
-      coveragePercentage, failuresArray, numFailures, numPassed, numTestsRun,
-    };
-  }
-
-  /**
-   * Fetch failure details for a completed test run.
-   */
-  private async fetchTestFailures(connection: {tooling: ToolingConnection}, testRunId: string): Promise<string> {
-    const query = 'SELECT MethodName, StackTrace, Message, ApexClass.Name '
-      + `FROM ApexTestResult WHERE AsyncApexJobId = '${testRunId}' AND Outcome = 'Fail'`;
-    const result = await connection.tooling.query<ApexTestFailure>(query);
-    return (result.records ?? []).map(r => `${r.ApexClass?.Name}.${r.MethodName}: ${r.Message}`).join('\n');
-  }
-
-  /**
-   * Ensure the package has test classes. Returns their resolved names.
-   * Throws if the package contains Apex but defines no tests.
-   */
-  private guardTestClasses(packageName: string): string[] {
-    const testClassNames = this.resolveTestClassNames();
+  private guardTestClasses(): string[] {
+    const testClassNames = this.sfpmPackage.testClasses.map(tc => (typeof tc === 'string' ? tc : tc.name));
 
     if (testClassNames.length === 0) {
-      throw new BuildError(packageName, 'Package contains Apex but has no test classes defined', {
+      throw new BuildError(this.sfpmPackage.packageName, 'Package contains Apex but has no test classes defined', {
         buildStep: 'validation',
-        context: {buildOrg: this.buildOrg},
       });
     }
 
     return testClassNames;
   }
+}
 
-  /**
-   * Poll a Metadata API deployment until it completes.
-   * Uses `connection.metadata.checkDeployStatus()` for resume-safe polling.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async pollDeploy(connection: any, deployId: string): Promise<any> {
-    const pollIntervalMs = 5000;
-    const maxAttempts = 360; // 30 minutes
+/**
+ * Calculate overall code coverage percentage from test class results.
+ * Only considers classes that have coverage data.
+ * Returns 0 when no coverage data is available or total lines is zero.
+ */
+function calculateCoverage(classes: TestClassResult[]): number {
+  const withCoverage = classes.filter(c => c.coverage !== undefined);
+  if (withCoverage.length === 0) return 0;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const poll = async (attempt: number): Promise<any> => {
-      if (attempt >= maxAttempts) {
-        throw new BuildError(this.sfpmPackage.packageName, `Deploy ${deployId} timed out after 30 minutes`, {
-          buildStep: 'validation',
-          context: {buildOrg: this.buildOrg},
-        });
-      }
+  let totalLines = 0;
+  let coveredLines = 0;
 
-      const status = await connection.metadata.checkDeployStatus(deployId, true);
-
-      if (status.done) {
-        return status;
-      }
-
-      const deployed = status.numberComponentsDeployed || 0;
-      const total = status.numberComponentsTotal || 0;
-      const pct = total > 0 ? Math.round((deployed / total) * 100) : 0;
-      this.logger?.debug(`Deploy progress: ${pct}% (${deployed}/${total}) — ${status.status}`);
-
-      await delay(pollIntervalMs);
-      return poll(attempt + 1);
-    };
-
-    return poll(0);
+  for (const cls of withCoverage) {
+    const total = Number(cls.coverage!.totalLines ?? 0);
+    const uncovered = Number(cls.coverage!.uncoveredLines ?? 0);
+    totalLines += total;
+    coveredLines += total - uncovered;
   }
 
-  /**
-   * Poll the ApexTestRunResult until the test run completes.
-   * Uses recursive scheduling to avoid `await` inside a loop.
-   */
-  private async pollTestRun(connection: {tooling: ToolingConnection}, testRunId: string): Promise<ApexTestRunResult> {
-    const pollIntervalMs = 5000;
-    const maxAttempts = 360; // 30 minutes
-
-    const query = 'SELECT Status, MethodsCompleted, MethodsFailed, MethodsEnqueued '
-      + `FROM ApexTestRunResult WHERE AsyncApexJobId = '${testRunId}'`;
-
-    const poll = async (attempt: number): Promise<ApexTestRunResult> => {
-      if (attempt >= maxAttempts) {
-        throw new BuildError(this.sfpmPackage.packageName, `Test run ${testRunId} timed out after 30 minutes`, {
-          buildStep: 'validation:test-only',
-          context: {buildOrg: this.buildOrg},
-        });
-      }
-
-      const result = await connection.tooling.query<ApexTestRunResult>(query);
-      const record = result.records?.[0];
-
-      if (!record) {
-        throw new BuildError(this.sfpmPackage.packageName, `Test run ${testRunId} not found`, {
-          buildStep: 'validation:test-only',
-          context: {buildOrg: this.buildOrg},
-        });
-      }
-
-      if (record.Status === 'Completed' || record.Status === 'Failed' || record.Status === 'Aborted') {
-        return record;
-      }
-
-      this.logger?.debug(`Test run ${record.Status} — ${record.MethodsCompleted ?? 0} completed, ${record.MethodsEnqueued ?? 0} enqueued`);
-      await delay(pollIntervalMs);
-      return poll(attempt + 1);
-    };
-
-    return poll(0);
-  }
-
-  // ==========================================================================
-  // Pollers
-  // ==========================================================================
-
-  /**
-   * Resolve test class names from the package's testClasses metadata.
-   * testClasses can be either plain strings or objects with a `name` property.
-   */
-  private resolveTestClassNames(): string[] {
-    const {testClasses} = this.sfpmPackage;
-    return testClasses.map(tc => (typeof tc === 'string' ? tc : tc.name));
-  }
+  if (totalLines === 0) return 0;
+  return Math.round((coveredLines / totalLines) * 100);
 }
