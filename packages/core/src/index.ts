@@ -87,12 +87,12 @@ export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} fr
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
 export {
-  type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
-} from './package/services/validation-poller.js';
-export {type ResolveOptions, ValidationResolver} from './package/services/validation-resolver.js';
-export {
   isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';
+export {
+  type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
+} from './package/validation/validation-poller.js';
+export {type ResolveOptions, ValidationResolver} from './package/validation/validation-resolver.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
