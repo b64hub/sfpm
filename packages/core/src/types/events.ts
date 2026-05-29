@@ -1,3 +1,5 @@
+import type {PendingValidationDescriptor} from './package.js';
+
 import {PackageType} from './package.js';
 
 // ============================================================================
@@ -443,6 +445,8 @@ export interface PackageResult {
   duration: number;
   error?: string;
   packageName: string;
+  /** Pending validation descriptor when validation was initiated but not yet resolved */
+  pendingValidation?: PendingValidationDescriptor;
   skipped: boolean;
   success: boolean;
 }
@@ -517,6 +521,8 @@ export interface OrchestrationEvents {
 export interface OrchestrationResult {
   duration: number;
   failedPackages: string[];
+  /** Pending validation descriptors from packages that initiated async validation */
+  pendingValidations: PendingValidationDescriptor[];
   results: PackageResult[];
   skippedPackages: string[];
   success: boolean;

@@ -1,6 +1,7 @@
 import EventEmitter from 'node:events';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+import type {PendingValidationDescriptor} from '../types/package.js';
 
 import {GitService} from '../git/git-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
@@ -89,6 +90,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     let success = true;
     let skipped = false;
     let error: string | undefined;
+    let pendingValidation: PendingValidationDescriptor | undefined;
 
     // Detect build-skip before the call so the flag is captured
     builder.on('build:skipped', () => {
@@ -96,7 +98,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     });
 
     try {
-      await builder.buildPackage(packageName, this.projectDirectory);
+      pendingValidation = await builder.buildPackage(packageName, this.projectDirectory);
     } catch (error_) {
       success = false;
       error = error_ instanceof Error ? error_.message : String(error_);
@@ -106,7 +108,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
 
     const duration = Date.now() - start;
     return {
-      duration, error, packageName, skipped, success,
+      duration, error, packageName, pendingValidation, skipped, success,
     };
   }
 

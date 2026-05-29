@@ -12,7 +12,7 @@ import {IgnoreFilesConfig} from '../types/config.js';
 import {AllBuildEvents} from '../types/events.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
-import {PackageType} from '../types/package.js';
+import {PackageType, PendingValidationDescriptor} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
@@ -122,7 +122,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
    * @param projectDirectory
    * @returns
    */
-  public async buildPackage(packageName: string, projectDirectory: string) {
+  public async buildPackage(packageName: string, projectDirectory: string): Promise<PendingValidationDescriptor | undefined> {
     const packageFactory = new PackageFactory(this.provider);
     const sfpmPackage = packageFactory.createFromName(packageName);
 
@@ -147,7 +147,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
           timestamp: new Date(),
           version: sfpmPackage.version,
         });
-        return;
+        return undefined;
       }
 
       const hashSkip = await this.checkSourceHash(sfpmPackage, projectDirectory);
@@ -161,7 +161,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
           timestamp: new Date(),
           version: sfpmPackage.version,
         });
-        return;
+        return undefined;
       }
 
       await this.runAnalyzers(sfpmPackage);
@@ -170,7 +170,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       await this.runLifecycleHooks('pre', sfpmPackage, projectDirectory);
 
       const builderInstance = await this.handleBuilderSetup(sfpmPackage);
-      await this.executeBuilder(sfpmPackage, builderInstance, builderInstance.constructor.name);
+      const pendingValidation = await this.executeBuilder(sfpmPackage, builderInstance, builderInstance.constructor.name);
 
       // Run post-build hooks
       await this.runLifecycleHooks('post', sfpmPackage, projectDirectory);
@@ -181,6 +181,8 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         success: true,
         timestamp: new Date(),
       });
+
+      return pendingValidation;
     } finally {
       await this.cleanupStagingDirectory(sfpmPackage);
     }
@@ -430,7 +432,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     }
   }
 
-  private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<void> {
+  private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<PendingValidationDescriptor | undefined> {
     this.emit('builder:start', {
       builderName,
       packageName: sfpmPackage.name,
@@ -459,11 +461,12 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       await builderInstance.exec();
 
-      // Validation step — deploy + test (source) or verify creation (unlocked).
-      // Runs after the core build but before artifact assembly so that a sync
-      // validation failure prevents artifact creation (mirrors unlocked package behavior).
+      // Validation step — initiates validation and returns a pending descriptor.
+      // The descriptor is set on the domain model and flows into the artifact.
+      // Resolution (awaiting the result) is handled by the entrypoint via ValidationResolver.
+      let pendingValidation: PendingValidationDescriptor | undefined;
       if (builderInstance.validate) {
-        await builderInstance.validate();
+        pendingValidation = await builderInstance.validate();
       }
 
       await this.runTasks(sfpmPackage, postTasks, ctx, 'post-build');
@@ -474,6 +477,8 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         packageType: sfpmPackage.type as PackageType,
         timestamp: new Date(),
       });
+
+      return pendingValidation;
     } catch (error: any) {
       // Handle actual build errors
       this.emit('build:error', {

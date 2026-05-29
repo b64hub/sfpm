@@ -175,9 +175,16 @@ export class Orchestrator<TContext = void> {
     orchestrationStart: number,
   ): OrchestrationResult {
     const totalDuration = Date.now() - orchestrationStart;
+
+    // Collect pending validations from all successful package results
+    const pendingValidations = tracker.results
+    .filter(r => r.pendingValidation)
+    .map(r => r.pendingValidation!);
+
     const result: OrchestrationResult = {
       duration: totalDuration,
       failedPackages: [...tracker.failedPackages],
+      pendingValidations,
       results: tracker.results,
       skippedPackages: [...tracker.skippedPackages],
       success: tracker.failedPackages.size === 0,
