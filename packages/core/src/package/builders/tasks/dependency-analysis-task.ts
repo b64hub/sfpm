@@ -63,7 +63,7 @@ class DependencyAnalysisTask implements BuildTask {
 
 /**
  * Factory that creates a DependencyAnalysisTask.
- * Follows the same pattern as other task factories (e.g., `sourceHashTask()`).
+ * Follows the same pattern as other task factories (e.g., `validationTask()`).
  */
 export function dependencyAnalysisTask(options: DependencyAnalysisOptions): (ctx: BuildTaskContext) => BuildTask {
   return (ctx: BuildTaskContext) => new DependencyAnalysisTask(ctx, options);

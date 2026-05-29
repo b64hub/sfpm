@@ -7,6 +7,7 @@ import type {ProjectDefinitionProvider} from '../project/providers/project-defin
 
 import {GitService} from '../git/git-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
+import {ArtifactManifest} from '../types/artifact.js';
 import {IgnoreFilesConfig} from '../types/config.js';
 import {AllBuildEvents} from '../types/events.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
@@ -149,18 +150,30 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         return;
       }
 
+      const hashSkip = await this.checkSourceHash(sfpmPackage, projectDirectory);
+      if (hashSkip) {
+        this.emit('build:skipped', {
+          artifactPath: hashSkip.artifactPath,
+          latestVersion: hashSkip.latestVersion,
+          packageName: sfpmPackage.name,
+          packageType: sfpmPackage.type as PackageType,
+          reason: 'no-changes',
+          timestamp: new Date(),
+          version: sfpmPackage.version,
+        });
+        return;
+      }
+
       await this.runAnalyzers(sfpmPackage);
 
       // Run pre-build hooks after analyzers have enriched the package context
       await this.runLifecycleHooks('pre', sfpmPackage, projectDirectory);
 
       const builderInstance = await this.handleBuilderSetup(sfpmPackage);
-      const didBuild = await this.executeBuilder(sfpmPackage, builderInstance, builderInstance.constructor.name);
+      await this.executeBuilder(sfpmPackage, builderInstance, builderInstance.constructor.name);
 
-      if (didBuild) {
-        // Run post-build hooks only when the package was actually built
-        await this.runLifecycleHooks('post', sfpmPackage, projectDirectory);
-      }
+      // Run post-build hooks
+      await this.runLifecycleHooks('post', sfpmPackage, projectDirectory);
 
       this.emit('build:complete', {
         packageName: sfpmPackage.name,
@@ -289,9 +302,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     if (enrichments.sourceTag !== undefined) {
       sfpmPackage.metadata.source.tag = enrichments.sourceTag;
     }
-
-    // sourceHash is already set via calculateSourceHash() in SourceHashTask
-    // The enrichment is informational — the hash is set on the package as a side effect of calculation
   }
 
   /**
@@ -322,6 +332,55 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         this.emit(eventName as any, ...args);
       });
     }
+  }
+
+  /**
+   * Source hash guard — determines whether a build is necessary by comparing
+   * the current source hash against the latest artifact manifest entry.
+   *
+   * Always calculates and sets the hash on the package (needed for artifact metadata).
+   * Returns skip info when the hash matches a previous build and `force` is not set.
+   */
+  private async checkSourceHash(
+    sfpmPackage: SfpmPackage,
+    projectDirectory: string,
+  ): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
+    if (!(sfpmPackage instanceof SfpmMetadataPackage)) {
+      return undefined;
+    }
+
+    const currentSourceHash = await sfpmPackage.calculateSourceHash();
+    this.logger?.debug(`Source hash: ${currentSourceHash}`);
+
+    if (this.options.force) {
+      this.logger?.info('Force build enabled — skipping source change detection');
+      return undefined;
+    }
+
+    const manifestPath = path.join(projectDirectory, 'artifacts', sfpmPackage.packageName, 'manifest.json');
+
+    if (!(await fs.pathExists(manifestPath))) {
+      this.logger?.info('No previous builds found, proceeding with build');
+      return undefined;
+    }
+
+    const manifest: ArtifactManifest = await fs.readJson(manifestPath);
+    const latestVersion = manifest.versions[manifest.latest];
+
+    if (!latestVersion?.sourceHash) {
+      this.logger?.info('No previous source hash found, proceeding with build');
+      return undefined;
+    }
+
+    if (latestVersion.sourceHash === currentSourceHash) {
+      this.logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected. `
+        + `Latest version: ${manifest.latest}, hash: ${currentSourceHash}`);
+      return {artifactPath: latestVersion.path, latestVersion: manifest.latest};
+    }
+
+    this.logger?.info('Source changes detected, proceeding with build');
+    this.logger?.debug(`Previous hash: ${latestVersion.sourceHash}, current: ${currentSourceHash}`);
+    return undefined;
   }
 
   /**
@@ -371,7 +430,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     }
   }
 
-  private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<boolean> {
+  private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<void> {
     this.emit('builder:start', {
       builderName,
       packageName: sfpmPackage.name,
@@ -396,26 +455,11 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     const postTasks = builderInstance.tasks.filter(t => t.phase === 'post');
 
     try {
-      const preSkip = await this.runTasks(sfpmPackage, preTasks, ctx, 'pre-build');
-      if (preSkip) {
-        this.emit('build:skipped', {
-          artifactPath: preSkip.artifactPath,
-          latestVersion: preSkip.latestVersion,
-          packageName: sfpmPackage.name,
-          packageType: sfpmPackage.type as PackageType,
-          reason: 'no-changes',
-          timestamp: new Date(),
-          version: sfpmPackage.version,
-        });
-        return false;
-      }
+      await this.runTasks(sfpmPackage, preTasks, ctx, 'pre-build');
 
       await builderInstance.exec();
 
-      const postSkip = await this.runTasks(sfpmPackage, postTasks, ctx, 'post-build');
-      if (postSkip) {
-        return false;
-      }
+      await this.runTasks(sfpmPackage, postTasks, ctx, 'post-build');
 
       this.emit('builder:complete', {
         builderName,
@@ -423,8 +467,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         packageType: sfpmPackage.type as PackageType,
         timestamp: new Date(),
       });
-
-      return true;
     } catch (error: any) {
       // Handle actual build errors
       this.emit('build:error', {
@@ -517,23 +559,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       this.logger,
     );
 
-    if (this.options.force && builderInstance.tasks) {
-      builderInstance.tasks = builderInstance.tasks.filter(t => {
-        const dummyCtx: BuildTaskContext = {
-          logger: this.logger,
-          projectDirectory: sfpmPackage.projectDirectory,
-          sfpmPackage,
-        };
-        try {
-          const task = t.factory(dummyCtx);
-          return task.name !== 'source-hash';
-        } catch {
-          return true;
-        }
-      });
-      this.logger?.info('Force build enabled - skipping source change detection');
-    }
-
     // Connect to the appropriate org based on mode
     if (this.options.buildOrg && (useSourceBuilder || modeConfig.validation !== false)) {
       await builderInstance.connect(this.options.buildOrg);
@@ -605,14 +630,13 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
   /**
    * Run task registrations sequentially, emitting lifecycle events.
-   * Returns a skip descriptor if any task signals the build should be skipped.
    */
   private async runTasks(
     sfpmPackage: SfpmPackage,
     registrations: BuildTaskRegistration[],
     ctx: BuildTaskContext,
     taskType: 'post-build' | 'pre-build',
-  ): Promise<BuildTaskResult['skip'] | undefined> {
+  ): Promise<void> {
     for (const registration of registrations) {
       const task = registration.factory(ctx);
       const taskName = task.name;
@@ -640,7 +664,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         // eslint-disable-next-line no-await-in-loop -- tasks run sequentially, stop on first failure
         const result = await task.exec();
 
-        // Apply enrichments to the package
         if (result?.enrichments) {
           this.applyEnrichments(sfpmPackage, result.enrichments);
         }
@@ -652,11 +675,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
           taskType,
           timestamp: new Date(),
         });
-
-        // Handle build-level skip
-        if (result?.skip) {
-          return result.skip;
-        }
       } catch (error) {
         this.emit('task:complete', {
           packageName: sfpmPackage.name,
@@ -669,7 +687,5 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         throw error;
       }
     }
-
-    return undefined;
   }
 }

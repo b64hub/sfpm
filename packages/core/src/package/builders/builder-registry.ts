@@ -26,7 +26,6 @@ export interface BuildTaskContext {
  * instead of mutating sfpmPackage directly.
  */
 export interface BuildTaskEnrichments {
-  sourceHash?: string;
   sourceTag?: string;
   testCoverage?: number;
 }
@@ -35,24 +34,18 @@ export interface BuildTaskEnrichments {
  * Structured result from task execution.
  *
  * - `enrichments` — data the pipeline should apply to the package
- * - `skip` — signals the pipeline to halt the entire build for this package
  */
 export interface BuildTaskResult {
   enrichments?: BuildTaskEnrichments;
-  skip?: {
-    artifactPath?: string;
-    latestVersion?: string;
-    reason: string;
-  };
 }
 
 /**
  * A discrete unit of work that runs before or after the core build step.
  *
  * Tasks follow these conventions:
- * - `name` — stable, human-readable identifier (e.g., 'source-hash', 'validation')
+ * - `name` — stable, human-readable identifier (e.g., 'validation', 'dependency-analysis')
  * - `canRun()` — optional runtime precondition check (e.g., "package has Apex").
- *   Return false to skip the task. Config-driven skips (e.g., skipValidation)
+ *   Return false to skip the task. Config-driven skips (e.g., validation disabled)
  *   should be handled at registration time by not adding the factory.
  * - `exec()` — perform the work. Return enrichments/skip or void.
  *   Do not mutate sfpmPackage; return enrichments instead.

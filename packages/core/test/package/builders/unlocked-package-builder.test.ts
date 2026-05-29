@@ -61,13 +61,6 @@ vi.mock('../../../src/artifacts/artifact-assembler.js', () => {
     };
 });
 
-vi.mock('../../../src/package/builders/tasks/source-hash-task.js', () => ({
-    sourceHashTask: () => () => ({
-        name: 'source-hash',
-        exec: vi.fn().mockResolvedValue(undefined),
-    }),
-}));
-
 vi.mock('../../../src/package/builders/tasks/assemble-artifact-task.js', () => ({
     assembleArtifactTask: () => () => ({
         name: 'assemble-artifact',

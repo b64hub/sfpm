@@ -16,7 +16,6 @@ import {
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 import {gitTagTask} from './tasks/git-tag-task.js';
-import {sourceHashTask} from './tasks/source-hash-task.js';
 
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Unlocked)
@@ -40,7 +39,6 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     this.logger = logger;
 
     this.tasks = [
-      {factory: sourceHashTask(), phase: 'pre'},
       ...(options.artifact === false ? [] : [{factory: assembleArtifactTask(), phase: 'post' as const}]),
       ...(options.gitTag === false ? [] : [{factory: gitTagTask(), phase: 'post' as const}]),
     ];

@@ -10,7 +10,6 @@ import {
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 import {dependencyAnalysisTask} from './tasks/dependency-analysis-task.js';
 import {gitTagTask} from './tasks/git-tag-task.js';
-import {sourceHashTask} from './tasks/source-hash-task.js';
 import {validationTask} from './tasks/validation-task.js';
 
 // eslint-disable-next-line new-cap
@@ -38,9 +37,6 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
     this.sfpmPackage = sfpmPackage;
     this.options = options;
     this.logger = logger;
-
-    // Pre-build: source hash check to prevent redundant builds
-    this.tasks.push({factory: sourceHashTask(), phase: 'pre'});
 
     // Pre-build: static dependency analysis when an analyzer is provided
     if (options.dependencyAnalysis?.dependencyAnalyzer) {
