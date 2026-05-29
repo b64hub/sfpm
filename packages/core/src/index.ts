@@ -33,10 +33,14 @@ export class SfpmCore extends EventEmitter<AllBuildEvents> {
     return core;
   }
 }
+export {ApexClassifier, type ApexClassInfo} from './apex/apex-classifier.js';
+export {
+  ApexTestService, type ClassCoverage, type RunTestsOptions, type TestClassResult, type TestMethodResult, type TestRunResult,
+} from './apex/apex-test-service.js';
 export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
+
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
 export {ArtifactResolver} from './artifacts/artifact-resolver.js';
-
 export {
   type ArtifactHistoryOptions, ArtifactService, type InstallTarget, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
 } from './artifacts/artifact-service.js';
@@ -85,6 +89,7 @@ export {type Package2, PackageService, type SubscriberPackage} from './package/p
 export {
   type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
 } from './package/services/validation-poller.js';
+export {type ResolveOptions, ValidationResolver} from './package/services/validation-resolver.js';
 export {
   isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';
@@ -108,6 +113,10 @@ export {
   type MigrateOptions, WorkspaceInitializer, type WorkspaceInitOptions, type WorkspaceInitResult,
 } from './project/workspace-init.js';
 export {WorkspaceSync, type WorkspaceSyncOptions} from './project/workspace-sync.js';
+export {
+  type DeployComponentError, type DeployOptions, type DeployProgress, type DeployResult,
+  type TestRunResult as DeployTestRunResult, MetadataDeployService, type TestFailure,
+} from './tooling/metadata-deploy-service.js';
 export * from './types/artifact.js';
 export * from './types/build-state.js';
 export * from './types/config.js';

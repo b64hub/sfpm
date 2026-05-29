@@ -2,7 +2,7 @@ import EventEmitter from 'node:events';
 
 import {DependencyAnalyzer} from '../../types/dependency-analysis.js';
 import {Logger} from '../../types/logger.js';
-import {PackageType} from '../../types/package.js';
+import {PackageType, PendingValidationDescriptor} from '../../types/package.js';
 import SfpmPackage from '../sfpm-package.js';
 
 // ============================================================================
@@ -83,6 +83,16 @@ export interface Builder {
   connect(username: string): Promise<void>;
   exec(): Promise<any>;
   tasks: BuildTaskRegistration[];
+  /**
+   * Optional validation step invoked after `exec()` completes but before post-build tasks.
+   * Implementations initiate validation (deploy + test for source, polling for unlocked)
+   * and set {@link ValidationState} on the domain model.
+   *
+   * Returns a {@link PendingValidationDescriptor} when validation was initiated asynchronously.
+   * The caller (PackageBuilder) decides whether to await resolution or proceed with pending state.
+   * Returns `undefined` when validation was skipped or not applicable.
+   */
+  validate?(): Promise<PendingValidationDescriptor | undefined>;
 }
 
 export interface DependencyAnalysis {

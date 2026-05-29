@@ -459,6 +459,13 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       await builderInstance.exec();
 
+      // Validation step — deploy + test (source) or verify creation (unlocked).
+      // Runs after the core build but before artifact assembly so that a sync
+      // validation failure prevents artifact creation (mirrors unlocked package behavior).
+      if (builderInstance.validate) {
+        await builderInstance.validate();
+      }
+
       await this.runTasks(sfpmPackage, postTasks, ctx, 'post-build');
 
       this.emit('builder:complete', {

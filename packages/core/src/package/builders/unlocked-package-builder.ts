@@ -9,7 +9,7 @@ import ProjectService from '../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
 import {UnlockedBuildEvents} from '../../types/events.js';
 import {Logger} from '../../types/logger.js';
-import {PackageType, PerPackageBuildConfig} from '../../types/package.js';
+import {PackageType, PendingValidationDescriptor, PerPackageBuildConfig} from '../../types/package.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
   Builder, BuilderOptions, BuildTaskRegistration, RegisterBuilder,
@@ -70,6 +70,22 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
   }
 
   /**
+   * Return the pending validation descriptor for the in-flight package version create.
+   *
+   * For unlocked packages, validation is handled server-side during `exec()`.
+   * This method surfaces the pending descriptor so the caller can resolve it
+   * via {@link ValidationResolver} when ready.
+   */
+  public async validate(): Promise<PendingValidationDescriptor | undefined> {
+    const state = this.sfpmPackage.validationState;
+    if (state?.status === 'pending') {
+      return state.pending;
+    }
+
+    return undefined;
+  }
+
+  /**
    * Apply a successful create result to the package — updates version,
    * emits the completion event, and enforces code coverage if required.
    *
@@ -86,12 +102,26 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     // Set validation state on the domain model
     const validated = this.options.validation !== false;
     const checks: Array<'dependencies' | 'deploy' | 'test'> = validated ? ['deploy', 'test', 'dependencies'] : [];
-    this.sfpmPackage.validationState = {
-      checks,
-      // Async validation means result is pending — passed is unknown until polled
-      passed: validated ? null : (result.HasPassedCodeCoverageCheck ?? true),
-      ...(result.CodeCoverage !== undefined && result.CodeCoverage !== null && {testCoverage: result.CodeCoverage}),
-    };
+
+    if (validated) {
+      this.sfpmPackage.validationState = {
+        checks,
+        pending: {
+          operationId: result.Id,
+          operationType: 'package-version-request',
+          packageName: this.sfpmPackage.packageName,
+          startedAt: new Date().toISOString(),
+          targetOrg: this.devhubOrg?.getUsername() ?? 'unknown',
+        },
+        status: 'pending',
+      };
+    } else {
+      this.sfpmPackage.validationState = {
+        checks,
+        status: 'passed',
+        ...(result.CodeCoverage !== undefined && result.CodeCoverage !== null && {testCoverage: result.CodeCoverage}),
+      };
+    }
 
     this.emit('unlocked:create:complete', {
       codeCoverage: result.CodeCoverage ?? undefined,

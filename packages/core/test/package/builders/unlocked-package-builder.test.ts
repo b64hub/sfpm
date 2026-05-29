@@ -131,6 +131,7 @@ describe('UnlockedPackageBuilder', () => {
         mockConnection = { getApiVersion: () => '50.0' };
         mockOrg = {
             getConnection: () => mockConnection,
+            getUsername: () => 'test-user',
             isDevHubOrg: () => true
         };
         (Org.create as any).mockResolvedValue(mockOrg);
@@ -201,9 +202,10 @@ describe('UnlockedPackageBuilder', () => {
 
             expect(mockSfpmPackage.packageVersionId).toBe(expectedVersionId);
             expect(mockSfpmPackage.validationState).toBeDefined();
+            expect(mockSfpmPackage.validationState!.status).toBe('pending');
             expect(mockSfpmPackage.validationState!.checks).toContain('test');
             expect(mockSfpmPackage.validationState!.checks).toContain('dependencies');
-            expect(mockSfpmPackage.validationState!.passed).toBeNull(); // async = pending
+            expect((mockSfpmPackage.validationState as any).pending.operationType).toBe('package-version-request');
             expect(mockLogger.debug).toHaveBeenCalledWith(expect.stringContaining('Package Result'));
             expect(mockLifecycle.removeAllListeners).toHaveBeenCalledWith('packageVersionCreate:progress');
         });
@@ -256,10 +258,12 @@ describe('UnlockedPackageBuilder', () => {
             await builder.connect('test-user');
 
             await expect(builder.exec()).resolves.not.toThrow();
-            expect(mockSfpmPackage.validationState).toEqual({
+            expect(mockSfpmPackage.validationState).toMatchObject({
                 checks: ['deploy', 'test', 'dependencies'],
-                passed: null,
-                testCoverage: 50,
+                status: 'pending',
+                pending: expect.objectContaining({
+                    operationType: 'package-version-request',
+                }),
             });
         });
 
@@ -280,7 +284,7 @@ describe('UnlockedPackageBuilder', () => {
 
             expect(mockSfpmPackage.validationState).toEqual({
                 checks: [],
-                passed: true,
+                status: 'passed',
             });
         });
     });
