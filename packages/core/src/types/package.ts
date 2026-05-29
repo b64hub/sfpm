@@ -101,7 +101,7 @@ export interface SfpmPackageContent {
 }
 
 export interface SfpmPackageOrchestration {
-  build?: SfpmPackageBuildOptions;
+  build?: PerPackageBuildConfig;
   creationDetails?: {duration?: number; timestamp?: number};
   install?: PackageInstallConfig;
   installation?: {
@@ -112,19 +112,44 @@ export interface SfpmPackageOrchestration {
   }[];
 }
 
-export interface SfpmPackageBuildOptions {
-  codeCoverage?: boolean;
+/**
+ * Per-package build configuration from project config (package.json / sfdx-project.json).
+ * These are static settings that travel with the package definition, not runtime build params.
+ */
+export interface PerPackageBuildConfig {
+  /** Scratch org definition file for unlocked package builds */
+  definitionFile?: string;
+  /** Installation key for the package version */
+  installationKey?: string;
+  /** Post-install Apex script class name */
+  postInstallScript?: string;
 }
 
-export interface SfpmUnlockedPackageBuildOptions extends SfpmPackageBuildOptions {
-  definitionFile?: string;
-  installationKey?: string;
-  isAsyncValidation?: boolean;
-  isSkipValidation?: boolean;
-  postInstallScript?: string;
-  /** Runtime-only: timeout in minutes for package version creation. Not persisted to artifacts. */
-  waitTime?: number;
+// ============================================================================
+// Validation State (build outcome, travels with the artifact)
+// ============================================================================
+
+/** Individual validation check that was performed during the build. */
+export type ValidationCheck = 'dependencies' | 'deploy' | 'test';
+
+/**
+ * Describes what validation was performed and the outcome.
+ * Set by builders after build/validation completes.
+ * Serialized into the artifact metadata so downstream processes
+ * (install, release) can make decisions based on validation status.
+ */
+export interface ValidationState {
+  /** Which validation checks were performed — empty means none */
+  checks: ValidationCheck[];
+  /** Whether all checks passed. `null` = pending (async unlocked build). */
+  passed: boolean | null;
+  /** Test coverage percentage (0–100), if measured */
+  testCoverage?: number;
 }
+
+// ============================================================================
+// Data Package Content
+// ============================================================================
 
 /**
  * Content descriptor for data packages.

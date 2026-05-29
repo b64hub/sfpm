@@ -6,6 +6,7 @@ import {GitService} from '../git/git-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {BuildOptions, PackageBuilder} from '../package/package-builder.js';
 import {ProjectGraph} from '../project/project-graph.js';
+import {IgnoreFilesConfig} from '../types/config.js';
 import {
   AllBuildEvents,
   OrchestrationEvents,
@@ -20,7 +21,10 @@ import {
   OrchestratorOptions,
 } from './orchestrator.js';
 
-export interface BuildOrchestratorOptions extends BuildOptions, OrchestratorOptions {}
+export interface BuildOrchestratorOptions extends BuildOptions, OrchestratorOptions {
+  /** Ignore files configuration resolved from sfpm config. */
+  ignoreFilesConfig?: IgnoreFilesConfig;
+}
 
 // ============================================================================
 // Task implementation
@@ -77,6 +81,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
       this.options,
       pkgLogger,
       gitService,
+      this.options.ignoreFilesConfig,
     );
 
     this.forwardBuilderEvents(builder, emitter);
@@ -106,9 +111,9 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
   }
 
   async setup(): Promise<GitService | undefined> {
-    // In validate mode, git service is not needed (no tagging or version bumps)
-    if (this.options.mode === 'validate') {
-      this.logger?.debug('Validate mode — skipping git service initialization');
+    // In dry-run mode, git service is not needed (no tagging or version bumps)
+    if (this.options.mode === 'build:dry-run') {
+      this.logger?.debug('Dry-run mode — skipping git service initialization');
       return undefined;
     }
 

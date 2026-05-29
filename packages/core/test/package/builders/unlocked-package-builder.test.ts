@@ -118,21 +118,21 @@ describe('UnlockedPackageBuilder', () => {
             },
             orchestration: {
                 build: {
-                    waitTime: 60,
-                    codeCoverage: true,
                     installationKey: '123',
-                    isSkipValidation: true,
-                    isAsyncValidation: true,
                     postInstallScript: 'scripts/postinstall.sh'
-                } as any
+                }
             }
         });
 
         // Set required staging directory for build
         mockSfpmPackage.workingDirectory = '/tmp/project';
 
-        // Builder options for assembly
-        builderOptions = {};
+        // Builder options — SF API params now flow through here
+        builderOptions = {
+            validation: true,
+            installationKey: '123',
+            waitTime: 60,
+        };
 
         // Setup Org Mock
         mockConnection = { getApiVersion: () => '50.0' };
@@ -199,7 +199,7 @@ describe('UnlockedPackageBuilder', () => {
                 expect.objectContaining({
                     installationkey: '123',
                     versionnumber: '1.0.0.0',
-                    skipvalidation: true,
+                    skipvalidation: false,
                     codecoverage: true,
                     asyncvalidation: true,
                 }),
@@ -207,6 +207,10 @@ describe('UnlockedPackageBuilder', () => {
             );
 
             expect(mockSfpmPackage.packageVersionId).toBe(expectedVersionId);
+            expect(mockSfpmPackage.validationState).toBeDefined();
+            expect(mockSfpmPackage.validationState!.checks).toContain('test');
+            expect(mockSfpmPackage.validationState!.checks).toContain('dependencies');
+            expect(mockSfpmPackage.validationState!.passed).toBeNull(); // async = pending
             expect(mockLogger.debug).toHaveBeenCalledWith(expect.stringContaining('Package Result'));
             expect(mockLifecycle.removeAllListeners).toHaveBeenCalledWith('packageVersionCreate:progress');
         });
@@ -248,48 +252,43 @@ describe('UnlockedPackageBuilder', () => {
     });
 
     describe('applyCreateResult', () => {
-        it('should throw error on low coverage when sync validation is enabled', async () => {
-            mockSfpmPackage = new SfpmUnlockedPackage('test-package', '/tmp/project', {
-                identity: {
-                    packageType: PackageType.Unlocked,
-                    versionNumber: '1.0.0.0',
-                    packageName: 'test-package',
-                    isOrgDependent: false
-                },
-                orchestration: {
-                    build: {
-                        waitTime: 60,
-                        codeCoverage: true,
-                        installationKey: '123',
-                        isSkipValidation: true,
-                        isAsyncValidation: false
-                    } as any
-                }
-            });
-            mockSfpmPackage.workingDirectory = '/tmp/project';
-            builder = new UnlockedPackageBuilder('/tmp/project', mockSfpmPackage, builderOptions, mockLogger);
-
+        it('should not throw on low coverage when validation is async', async () => {
             (PackageVersion.create as any).mockResolvedValue({
                 Status: 'Success',
                 SubscriberPackageVersionId: '04t...',
-                CodeCoverage: 50
-            });
-
-            await builder.connect('test-user');
-
-            await expect(builder.exec()).rejects.toThrow('minimum coverage requirement');
-        });
-
-        it('should skip coverage check if async validation is enabled', async () => {
-            (PackageVersion.create as any).mockResolvedValue({
-                Status: 'Success',
-                SubscriberPackageVersionId: '04t...',
-                CodeCoverage: null
+                CodeCoverage: 50,
+                HasPassedCodeCoverageCheck: false,
             });
 
             await builder.connect('test-user');
 
             await expect(builder.exec()).resolves.not.toThrow();
+            expect(mockSfpmPackage.validationState).toEqual({
+                checks: ['deploy', 'test', 'dependencies'],
+                passed: null,
+                testCoverage: 50,
+            });
+        });
+
+        it('should set empty checks when validation is skipped', async () => {
+            const skipBuilder = new UnlockedPackageBuilder('/tmp/project', mockSfpmPackage, {
+                validation: false,
+                installationKey: '123',
+            }, mockLogger);
+
+            (PackageVersion.create as any).mockResolvedValue({
+                Status: 'Success',
+                SubscriberPackageVersionId: '04t...',
+                CodeCoverage: null,
+            });
+
+            await skipBuilder.connect('test-user');
+            await skipBuilder.exec();
+
+            expect(mockSfpmPackage.validationState).toEqual({
+                checks: [],
+                passed: true,
+            });
         });
     });
 

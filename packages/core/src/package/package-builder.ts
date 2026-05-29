@@ -17,36 +17,75 @@ import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
   Builder, BuilderOptions, BuilderRegistry,
-  BuildTask, BuildTaskContext, BuildTaskRegistration, BuildTaskResult,
+  BuildTaskContext, BuildTaskRegistration, BuildTaskResult,
 } from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
 
-export type BuildMode = 'standard' | 'validate';
+export type BuildMode = 'build' | 'build:dry-run' | 'build:skip-validation';
+
+/**
+ * Internal configuration resolved from {@link BuildMode}.
+ * Maps a mode to the set of features and behaviors it enables.
+ * Consumers should never construct this directly — use `resolveModeConfig()`.
+ */
+interface ModeConfig {
+  /** Whether to always produce an artifact (false = skip artifact in dry-run CLI) */
+  artifact: boolean;
+  /** How dependency analysis should behave: 'warn' = log violations, 'error' = throw, 'skip' = don't run */
+  dependencyAnalysis: 'error' | 'skip' | 'warn';
+  /** Whether to create git tags */
+  gitTag: boolean;
+  /** Whether to run validation */
+  validation: 'local' | boolean;
+}
+
+const MODE_DEFAULTS: Record<BuildMode, ModeConfig> = {
+  build: {
+    artifact: true,
+    dependencyAnalysis: 'warn',
+    gitTag: true,
+    validation: true,
+  },
+  'build:dry-run': {
+    artifact: false,
+    dependencyAnalysis: 'error',
+    gitTag: false,
+    validation: 'local',
+  },
+  'build:skip-validation': {
+    artifact: true,
+    dependencyAnalysis: 'skip',
+    gitTag: true,
+    validation: false,
+  },
+};
+
+function resolveModeConfig(mode?: BuildMode): ModeConfig {
+  return MODE_DEFAULTS[mode ?? 'build'];
+}
 
 export interface BuildOptions {
+  /** Build number for version generation */
   buildNumber?: string;
-  /** Target org for source package validation (deploy + test). Required when validation is not skipped. */
+  /** Target org for source package validation (deploy + test). Required for `dry-run` mode. */
   buildOrg?: string;
-  /** Enable code coverage calculation during package version creation (required for promotion) */
-  codeCoverage?: boolean;
-  destructiveManifestPath?: string;
+  /** DevHub username or alias for unlocked package builds */
   devhubUsername?: string;
-  /** Force build even if no source changes detected */
+  /** Force build even if no source changes detected (skip hash check) */
   force?: boolean;
-  /** Ignore files configuration for assembly */
-  ignoreFilesConfig?: IgnoreFilesConfig;
+  /** Installation key for unlocked packages */
   installationKey?: string;
-  installationKeyBypass?: boolean;
-  /** Use async validation for unlocked packages — returns immediately with a creation request ID */
-  isAsyncValidation?: boolean;
-  isSkipValidation?: boolean;
   /**
-   * Build mode. `standard` (default) follows normal build pipelines per package type.
-   * `validate` forces all metadata packages through the source deploy+test pipeline —
-   * no real unlocked builds, no git tags, no artifact publishing.
+   * Build mode. Determines which builder pipeline, validation, and feature flags apply.
+   *
+   * - `build` (default) — production-ready artifact with full validation.
+   *   Source packages: deploy+test against buildOrg. Unlocked: SF API with async validation + code coverage.
+   * - `build:skip-validation` — fast build, no validation. Source: no deploy+test.
+   *   Unlocked: SF API with skipvalidation=true.
+   * - `dry-run` — maximum validation, no real SF API build, no git tags, no artifacts.
+   *   All packages go through the source pipeline with deploy+test.
    */
   mode?: BuildMode;
-  orgDefinitionPath?: string;
   /** Timeout in minutes for package version creation (default: 120) */
   waitTime?: number;
 }
@@ -56,16 +95,24 @@ export interface BuildOptions {
  */
 export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   private gitService?: GitService;
+  private ignoreFilesConfig?: IgnoreFilesConfig;
   private logger: Logger | undefined;
   private options: BuildOptions;
   private provider: ProjectDefinitionProvider;
 
-  constructor(provider: ProjectDefinitionProvider, options?: BuildOptions, logger?: Logger, gitService?: GitService) {
+  constructor(
+    provider: ProjectDefinitionProvider,
+    options?: BuildOptions,
+    logger?: Logger,
+    gitService?: GitService,
+    ignoreFilesConfig?: IgnoreFilesConfig,
+  ) {
     super();
     this.options = options || {};
     this.logger = logger;
     this.provider = provider;
     this.gitService = gitService;
+    this.ignoreFilesConfig = ignoreFilesConfig;
   }
 
   /**
@@ -88,7 +135,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
     this.handleBuildConfiguration(sfpmPackage);
     await this.handleSourceContext(sfpmPackage, projectDirectory);
-    this.handleOrchestrationOptions(sfpmPackage);
     await this.stagePackage(sfpmPackage);
 
     try {
@@ -209,9 +255,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
         sfpmPackage.name,
         this.provider,
         {
-          destructiveManifestPath: this.options.destructiveManifestPath,
-          ignoreFilesConfig: this.options.ignoreFilesConfig,
-          orgDefinitionPath: this.options.orgDefinitionPath,
+          ignoreFilesConfig: this.ignoreFilesConfig,
           versionNumber: sfpmPackage.version,
         },
         this.logger,
@@ -394,7 +438,7 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   }
 
   /**
-   * Merge package definition build options, assign build number, and set org definition path.
+   * Merge package definition build options and assign build number.
    */
   private handleBuildConfiguration(sfpmPackage: SfpmPackage): void {
     if (sfpmPackage.packageDefinition?.packageOptions?.build) {
@@ -413,14 +457,11 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       sfpmPackage.setBuildNumber(autoBuildNumber);
       this.logger?.debug(`Auto-assigned build number ${autoBuildNumber} for ${sfpmPackage.name}`);
     }
-
-    if (this.options.orgDefinitionPath) {
-      sfpmPackage.orgDefinitionPath = this.options.orgDefinitionPath;
-    }
   }
 
   /**
-   * Resolve and instantiate the appropriate builder for the package type, configure force mode and DevHub.
+   * Resolve and instantiate the appropriate builder for the package type.
+   * Uses {@link ModeConfig} to determine builder routing, validation, and feature flags.
    */
   private async handleBuilderSetup(sfpmPackage: SfpmPackage): Promise<Builder> {
     if (!sfpmPackage.workingDirectory) {
@@ -434,10 +475,15 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       throw error;
     }
 
-    const isValidateMode = this.options.mode === 'validate';
+    const modeConfig = resolveModeConfig(this.options.mode);
 
-    // In validate mode, force unlocked packages through SourcePackageBuilder
-    const BuilderClass = (isValidateMode && sfpmPackage.type === PackageType.Unlocked) ? BuilderRegistry.getBuilder(PackageType.Source) : BuilderRegistry.getBuilder(sfpmPackage.type);
+    // In dry-run mode (local validation), force all packages through SourcePackageBuilder
+    const useSourceBuilder = modeConfig.validation === 'local';
+    const builderType = (useSourceBuilder && sfpmPackage.type === PackageType.Unlocked)
+      ? PackageType.Source
+      : sfpmPackage.type;
+
+    const BuilderClass = BuilderRegistry.getBuilder(builderType);
 
     if (!BuilderClass) {
       const error = new Error(`No builder registered for package type: ${sfpmPackage.type}`);
@@ -451,9 +497,17 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     }
 
     const builderOptions: BuilderOptions = {
+      artifact: modeConfig.artifact,
       buildOrg: this.options.buildOrg,
-      ignoreFilesConfig: this.options.ignoreFilesConfig,
-      skipValidation: isValidateMode ? false : this.options.isSkipValidation,
+      gitTag: modeConfig.gitTag,
+      installationKey: this.options.installationKey,
+      validation: modeConfig.validation !== false,
+      waitTime: this.options.waitTime,
+      ...(modeConfig.dependencyAnalysis !== 'skip' && {
+        dependencyAnalysis: {
+          warnOnly: modeConfig.dependencyAnalysis === 'warn',
+        },
+      }),
     };
 
     const builderInstance: Builder = new BuilderClass(
@@ -465,7 +519,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
     if (this.options.force && builderInstance.tasks) {
       builderInstance.tasks = builderInstance.tasks.filter(t => {
-        // Instantiate the task to check its name, then discard
         const dummyCtx: BuildTaskContext = {
           logger: this.logger,
           projectDirectory: sfpmPackage.projectDirectory,
@@ -481,28 +534,14 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       this.logger?.info('Force build enabled - skipping source change detection');
     }
 
-    // In validate mode, connect to the build org instead of devhub
-    if (isValidateMode && this.options.buildOrg) {
+    // Connect to the appropriate org based on mode
+    if (this.options.buildOrg && (useSourceBuilder || modeConfig.validation !== false)) {
       await builderInstance.connect(this.options.buildOrg);
     } else if (this.options.devhubUsername) {
       await this.connectToDevHub(sfpmPackage, builderInstance, this.options.devhubUsername);
     }
 
     return builderInstance;
-  }
-
-  /**
-   * Apply orchestration options that each package type handles independently.
-   */
-  private handleOrchestrationOptions(sfpmPackage: SfpmPackage): void {
-    sfpmPackage.setOrchestrationOptions({
-      codeCoverage: this.options.codeCoverage,
-      installationkey: this.options.installationKey,
-      installationkeybypass: this.options.installationKeyBypass,
-      isAsyncValidation: this.options.isAsyncValidation,
-      isSkipValidation: this.options.isSkipValidation,
-      waitTime: this.options.waitTime,
-    });
   }
 
   /**

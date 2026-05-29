@@ -9,6 +9,7 @@ import {
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 import {dependencyAnalysisTask} from './tasks/dependency-analysis-task.js';
+import {gitTagTask} from './tasks/git-tag-task.js';
 import {sourceHashTask} from './tasks/source-hash-task.js';
 import {validationTask} from './tasks/validation-task.js';
 
@@ -41,24 +42,31 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
     // Pre-build: source hash check to prevent redundant builds
     this.tasks.push({factory: sourceHashTask(), phase: 'pre'});
 
-    // Pre-build: static dependency analysis when analyzer is provided
-    if (options.dependencyAnalyzer) {
+    // Pre-build: static dependency analysis when an analyzer is provided
+    if (options.dependencyAnalysis?.dependencyAnalyzer) {
       this.tasks.push({
         factory: dependencyAnalysisTask({
-          analyzer: options.dependencyAnalyzer,
-          warnOnly: options.warnOnMissingDependencies,
+          analyzer: options.dependencyAnalysis.dependencyAnalyzer,
+          warnOnly: options.dependencyAnalysis.warnOnly,
         }),
         phase: 'pre',
       });
     }
 
-    // Post-build: validation when not skipped and a build org is available
-    if (!options.skipValidation && options.buildOrg) {
+    // Post-build: validation when enabled and a build org is available
+    if (options.validation !== false && options.buildOrg) {
       this.tasks.push({factory: validationTask({validationOrg: options.buildOrg}), phase: 'post'});
     }
 
-    // Post-build: assemble artifact so source packages are installable
-    this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});
+    // Post-build: assemble artifact (conditional on mode)
+    if (options.artifact !== false) {
+      this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});
+    }
+
+    // Post-build: git tag (conditional on mode)
+    if (options.gitTag !== false) {
+      this.tasks.push({factory: gitTagTask(), phase: 'post'});
+    }
   }
 
   public async connect(username: string): Promise<void> {
@@ -66,7 +74,7 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
 
     // If validation was deferred (buildOrg provided at connect-time, not constructor-time),
     // insert the validation task before the assemble task
-    if (!this.options.skipValidation && !this.options.buildOrg && username) {
+    if (this.options.validation !== false && !this.options.buildOrg && username) {
       const assembleIdx = this.tasks.findIndex(t => t.phase === 'post' && t.factory.toString().includes('AssembleArtifactTask'));
 
       const registration: BuildTaskRegistration = {

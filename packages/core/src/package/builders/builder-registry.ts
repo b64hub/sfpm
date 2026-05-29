@@ -1,6 +1,5 @@
 import EventEmitter from 'node:events';
 
-import {IgnoreFilesConfig} from '../../types/config.js';
 import {DependencyAnalyzer} from '../../types/dependency-analysis.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
@@ -93,21 +92,30 @@ export interface Builder {
   tasks: BuildTaskRegistration[];
 }
 
+export interface DependencyAnalysis {
+  dependencyAnalyzer?: DependencyAnalyzer;
+  warnOnly?: boolean;
+}
+
 /**
  * Options passed to package builders.
- * Contains configuration from sfpm.config.ts that builders may need.
+ * Derived from {@link BuildOptions} and {@link ModeConfig} by the PackageBuilder.
  */
 export interface BuilderOptions {
+  /** Whether to produce a build artifact */
+  artifact?: boolean;
   /** Target org for source package validation (deploy + test) */
   buildOrg?: string;
-  /** Optional dependency analyzer for static dependency validation */
-  dependencyAnalyzer?: DependencyAnalyzer;
-  /** Ignore files configuration for assembly */
-  ignoreFilesConfig?: IgnoreFilesConfig;
-  /** Skip the deploy+test validation step */
-  skipValidation?: boolean;
-  /** Log dependency violations as warnings instead of throwing */
-  warnOnMissingDependencies?: boolean;
+  dependencyAnalysis?: DependencyAnalysis;
+  /** Whether to create git tags */
+  gitTag?: boolean;
+  /** Installation key for unlocked packages */
+  installationKey?: string;
+  /** Validation mode for package builds */
+  validation?: boolean;
+
+  /** Timeout in minutes for package version creation */
+  waitTime?: number;
 }
 
 /**

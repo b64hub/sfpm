@@ -116,7 +116,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   }
 
   // ------------------------------------------------------------------
-  // 3. Run BuildOrchestrator with async validation
+  // 3. Run BuildOrchestrator (build mode defaults to async validation)
   // ------------------------------------------------------------------
   const orchestrator = new BuildOrchestrator(
     projectConfig,
@@ -128,7 +128,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       includeDependencies: options.includeDependencies,
       installationKey: options.installationKey,
-      isAsyncValidation: true,
+      mode: 'build',
     },
     logger,
     projectDir,

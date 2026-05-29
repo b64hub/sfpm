@@ -5,7 +5,7 @@ import EventEmitter from 'node:events';
 import {ArtifactService} from '../../artifacts/artifact-service.js';
 import {Logger} from '../../types/logger.js';
 import {
-  InstallationMode, InstallationSource, PackageType, SfpmUnlockedPackageBuildOptions,
+  InstallationMode, InstallationSource, PackageType, PerPackageBuildConfig,
 } from '../../types/package.js';
 import {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {Installer, type InstallerExecResult, RegisterInstaller} from './installer-registry.js';
@@ -176,7 +176,7 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
       throw new Error(`Cannot version-install ${this.sfpmPackage.packageName}: no packageVersionId`);
     }
 
-    const buildOptions = this.sfpmPackage.metadata?.orchestration?.build as SfpmUnlockedPackageBuildOptions | undefined;
+    const buildOptions = this.sfpmPackage.metadata?.orchestration?.build as PerPackageBuildConfig | undefined;
 
     return {
       artifact: this.sfpmPackage.sourceHash && this.sfpmPackage.commitId
