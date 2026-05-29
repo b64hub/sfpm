@@ -1,4 +1,4 @@
-import {EventEmitter} from 'node:events';
+import type {InstallEventSink} from '../../../events/install-event-bus.js';
 
 import {MetadataDeployService} from '../../../tooling/metadata-deploy-service.js';
 import {Logger} from '../../../types/logger.js';
@@ -12,21 +12,21 @@ import {type SourceDeployable} from '../types.js';
  * {@link SourceDeployable} payload and deciding when this strategy applies.
  */
 export default class SourceDeployer {
-  private eventEmitter?: EventEmitter;
   private logger?: Logger;
+  private sink?: InstallEventSink;
 
-  constructor(logger?: Logger, eventEmitter?: EventEmitter) {
+  constructor(logger?: Logger, sink?: InstallEventSink) {
     this.logger = logger;
-    this.eventEmitter = eventEmitter;
+    this.sink = sink;
   }
 
   public async install(deployable: SourceDeployable, targetOrg: string, options?: {testLevel?: string}): Promise<{deployId?: string}> {
-    const {componentSet, packageName} = deployable;
+    const {componentSet} = deployable;
 
-    this.logger?.info(`Using source deployment strategy for package: ${packageName}`);
+    this.logger?.info(`Using source deployment strategy for package: ${deployable.packageName}`);
     this.logger?.info(`Deploying source to ${targetOrg}`);
 
-    this.emitStart(packageName);
+    this.sink?.deployStart({targetOrg});
 
     const deployService = new MetadataDeployService(this.logger);
 
@@ -35,42 +35,18 @@ export default class SourceDeployer {
     });
 
     const result = await deployService.awaitDeploy(deployId, targetOrg, progress => {
-      this.emitProgress(packageName, progress.status, progress.percentage);
+      this.sink?.deployProgress({status: progress.status});
     });
 
     if (!result.success) {
       const errorMessages = result.formatErrors() || 'Unknown deployment error';
-      this.emitComplete(packageName, false);
+      this.sink?.deployComplete({targetOrg});
       throw new Error(`Source deployment failed:\n${errorMessages}`);
     }
 
-    this.emitComplete(packageName, true);
+    this.sink?.deployComplete({targetOrg});
     this.logger?.info('Source deployment completed successfully');
 
     return {deployId};
-  }
-
-  private emitComplete(packageName: string, success: boolean): void {
-    this.eventEmitter?.emit('deployment:complete', {
-      packageName,
-      success,
-      timestamp: new Date(),
-    });
-  }
-
-  private emitProgress(packageName: string, status: string, percentComplete: number): void {
-    this.eventEmitter?.emit('deployment:progress', {
-      packageName,
-      percentComplete,
-      status,
-      timestamp: new Date(),
-    });
-  }
-
-  private emitStart(packageName: string): void {
-    this.eventEmitter?.emit('deployment:start', {
-      packageName,
-      timestamp: new Date(),
-    });
   }
 }

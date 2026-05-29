@@ -21,37 +21,48 @@ describe('createTracer', () => {
 
   it('should return a no-op tracer when OTEL_EXPORTER_OTLP_ENDPOINT is not set', async () => {
     const tracer = createTracer({serviceName: 'test'});
-    const emitter = new EventEmitter();
+    const buses = {
+      build: new EventEmitter(),
+      orchestration: new EventEmitter(),
+    };
 
-    tracer.subscribe(emitter);
+    tracer.subscribe(buses);
     await expect(tracer.shutdown()).resolves.toBeUndefined();
-    expect(emitter.listenerCount('orchestration:start')).toBe(0);
+    expect(buses.orchestration.listenerCount('start')).toBe(0);
   });
 
   it('should not attach listeners on subscribe when OTEL_EXPORTER_OTLP_ENDPOINT is not set', () => {
     const tracer = createTracer({serviceName: 'test'});
-    const emitter = new EventEmitter();
+    const buses = {
+      build: new EventEmitter(),
+      install: new EventEmitter(),
+      orchestration: new EventEmitter(),
+    };
 
-    tracer.subscribe(emitter);
+    tracer.subscribe(buses);
 
-    expect(emitter.listenerCount('orchestration:start')).toBe(0);
-    expect(emitter.listenerCount('build:start')).toBe(0);
-    expect(emitter.listenerCount('install:start')).toBe(0);
+    expect(buses.orchestration.listenerCount('start')).toBe(0);
+    expect(buses.build.listenerCount('start')).toBe(0);
+    expect(buses.install.listenerCount('start')).toBe(0);
   });
 
   it('should attach listeners on subscribe when OTEL_EXPORTER_OTLP_ENDPOINT is set', () => {
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://localhost:4318';
     const tracer = createTracer({serviceName: 'test'});
-    const emitter = new EventEmitter();
+    const buses = {
+      build: new EventEmitter(),
+      install: new EventEmitter(),
+      orchestration: new EventEmitter(),
+    };
 
-    tracer.subscribe(emitter);
+    tracer.subscribe(buses);
 
-    expect(emitter.listenerCount('orchestration:start')).toBe(1);
-    expect(emitter.listenerCount('orchestration:complete')).toBe(1);
-    expect(emitter.listenerCount('build:start')).toBe(1);
-    expect(emitter.listenerCount('build:complete')).toBe(1);
-    expect(emitter.listenerCount('install:start')).toBe(1);
-    expect(emitter.listenerCount('install:complete')).toBe(1);
+    expect(buses.orchestration.listenerCount('start')).toBe(1);
+    expect(buses.orchestration.listenerCount('complete')).toBe(1);
+    expect(buses.build.listenerCount('start')).toBe(1);
+    expect(buses.build.listenerCount('complete')).toBe(1);
+    expect(buses.install.listenerCount('start')).toBe(1);
+    expect(buses.install.listenerCount('complete')).toBe(1);
 
     tracer.shutdown().catch(() => {});
   });
@@ -59,10 +70,14 @@ describe('createTracer', () => {
   it('should remove listeners on shutdown', async () => {
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://localhost:4318';
     const tracer = createTracer({serviceName: 'test'});
-    const emitter = new EventEmitter();
+    const buses = {
+      build: new EventEmitter(),
+      install: new EventEmitter(),
+      orchestration: new EventEmitter(),
+    };
 
-    tracer.subscribe(emitter);
-    expect(emitter.listenerCount('orchestration:start')).toBe(1);
+    tracer.subscribe(buses);
+    expect(buses.orchestration.listenerCount('start')).toBe(1);
 
     try {
       await tracer.shutdown();
@@ -70,8 +85,8 @@ describe('createTracer', () => {
       // SDK shutdown may fail without real exporter — that's OK
     }
 
-    expect(emitter.listenerCount('orchestration:start')).toBe(0);
-    expect(emitter.listenerCount('build:start')).toBe(0);
-    expect(emitter.listenerCount('install:start')).toBe(0);
+    expect(buses.orchestration.listenerCount('start')).toBe(0);
+    expect(buses.build.listenerCount('start')).toBe(0);
+    expect(buses.install.listenerCount('start')).toBe(0);
   });
 });

@@ -6,7 +6,7 @@ import type {
   BuilderCompleteEvent,
   BuildErrorEvent,
   BuilderStartEvent,
-  BuildOrchestrator,
+  BuildEventBus,
   BuildSkippedEvent,
   BuildStartEvent,
   ConnectionCompleteEvent,
@@ -18,11 +18,11 @@ import type {
   HooksCompleteEvent,
   HooksStartEvent,
   OrchestrationCompleteEvent,
+  OrchestrationEventBus,
   OrchestrationLevelCompleteEvent,
   OrchestrationLevelStartEvent,
   OrchestrationPackageCompleteEvent,
   OrchestrationStartEvent,
-  PackageBuilder,
   StageCompleteEvent,
   StageStartEvent,
   TaskCompleteEvent,
@@ -73,25 +73,25 @@ export class BuildProgressRenderer {
     'analyzer:start': {description: 'Analyzer started', handler: this.handleAnalyzerStart.bind(this)},
     'analyzers:complete': {description: 'All analyzers complete', handler: this.handleAnalyzersComplete.bind(this)},
     'analyzers:start': {description: 'Analyzers started', handler: this.handleAnalyzersStart.bind(this)},
-    'build:complete': {description: 'Build completed', handler: this.handleBuildComplete.bind(this)},
-    'build:error': {description: 'Build failed', handler: this.handleBuildError.bind(this)},
-    'build:skipped': {description: 'Build skipped', handler: this.handleBuildSkipped.bind(this)},
-    'build:start': {description: 'Build started', handler: this.handleBuildStart.bind(this)},
     'builder:complete': {description: 'Builder complete', handler: this.handleBuilderComplete.bind(this)},
     'builder:start': {description: 'Builder started', handler: this.handleBuilderStart.bind(this)},
+    'complete': {description: 'Build completed', handler: this.handleBuildComplete.bind(this)},
     'connection:complete': {description: 'Connection complete', handler: this.handleConnectionComplete.bind(this)},
     'connection:start': {description: 'Connection started', handler: this.handleConnectionStart.bind(this)},
+    'create:complete': {description: 'Package creation complete', handler: this.handleCreateComplete.bind(this)},
+    'create:progress': {description: 'Package creation progress', handler: this.handleCreateProgress.bind(this)},
+    'create:start': {description: 'Package creation started', handler: this.handleCreateStart.bind(this)},
+    'error': {description: 'Build failed', handler: this.handleBuildError.bind(this)},
     'hook:complete': {description: 'Hook complete', handler: this.handleHookComplete.bind(this)},
     'hooks:complete': {description: 'All hooks complete', handler: this.handleHooksComplete.bind(this)},
     'hooks:start': {description: 'Hooks started', handler: this.handleHooksStart.bind(this)},
+    'skip': {description: 'Build skipped', handler: this.handleBuildSkipped.bind(this)},
     'stage:complete': {description: 'Staging complete', handler: this.handleStageComplete.bind(this)},
     'stage:start': {description: 'Staging package', handler: this.handleStageStart.bind(this)},
+    'start': {description: 'Build started', handler: this.handleBuildStart.bind(this)},
     'task:complete': {description: 'Task complete', handler: this.handleTaskComplete.bind(this)},
     'task:skipped': {description: 'Task skipped', handler: this.handleTaskSkipped.bind(this)},
     'task:start': {description: 'Task started', handler: this.handleTaskStart.bind(this)},
-    'unlocked:create:complete': {description: 'Package creation complete', handler: this.handleCreateComplete.bind(this)},
-    'unlocked:create:progress': {description: 'Package creation progress', handler: this.handleCreateProgress.bind(this)},
-    'unlocked:create:start': {description: 'Package creation started', handler: this.handleCreateStart.bind(this)},
   };
   private events: EventLog[] = [];
   /**
@@ -105,11 +105,11 @@ export class BuildProgressRenderer {
    * Event configuration for orchestration-level events
    */
   private orchestrationEventConfigs: Record<string, EventConfig> = {
-    'orchestration:complete': {description: 'Orchestration complete', handler: this.handleOrchestrationComplete.bind(this)},
-    'orchestration:level:complete': {description: 'Level complete', handler: this.handleOrchestrationLevelComplete.bind(this)},
-    'orchestration:level:start': {description: 'Level started', handler: this.handleOrchestrationLevelStart.bind(this)},
-    'orchestration:package:complete': {description: 'Package complete', handler: this.handleOrchestrationPackageComplete.bind(this)},
-    'orchestration:start': {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
+    'complete': {description: 'Orchestration complete', handler: this.handleOrchestrationComplete.bind(this)},
+    'level:complete': {description: 'Level complete', handler: this.handleOrchestrationLevelComplete.bind(this)},
+    'level:start': {description: 'Level started', handler: this.handleOrchestrationLevelStart.bind(this)},
+    'package:complete': {description: 'Package complete', handler: this.handleOrchestrationPackageComplete.bind(this)},
+    'start': {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
   };
   /**
    * Tracks running analyzer names per package for rolling title updates.
@@ -134,22 +134,24 @@ export class BuildProgressRenderer {
   }
 
   /**
-   * Attach this renderer to a PackageBuilder or BuildOrchestrator instance
+   * Attach this renderer to typed event buses.
    */
-  public attachTo(emitter: BuildOrchestrator | PackageBuilder): void {
+  public attachTo(buildBus: BuildEventBus, orchestrationBus?: OrchestrationEventBus): void {
     // Attach all configured build event handlers
     for (const [eventName, config] of Object.entries(this.eventConfigs)) {
-      (emitter as any).on(eventName, (data: any) => {
+      buildBus.on(eventName as any, (data: any) => {
         this.logEvent(eventName, data);
         config.handler(data);
       });
     }
 
-    // Attach orchestration event handlers (no-ops if emitter is a plain PackageBuilder)
-    for (const [eventName, config] of Object.entries(this.orchestrationEventConfigs)) {
-      (emitter as any).on(eventName, (data: any) => {
-        config.handler(data);
-      });
+    // Attach orchestration event handlers if an orchestration bus is provided
+    if (orchestrationBus) {
+      for (const [eventName, config] of Object.entries(this.orchestrationEventConfigs)) {
+        orchestrationBus.on(eventName as any, (data: any) => {
+          config.handler(data);
+        });
+      }
     }
   }
 

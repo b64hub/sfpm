@@ -1,5 +1,6 @@
 import {Org} from '@salesforce/core';
-import EventEmitter from 'node:events';
+
+import type {InstallEventSink} from '../../events/install-event-bus.js';
 
 import {ArtifactService} from '../../artifacts/artifact-service.js';
 import {Logger} from '../../types/logger.js';
@@ -27,20 +28,20 @@ export interface InstallTask {
  */
 // eslint-disable-next-line new-cap
 @RegisterInstaller(PackageType.Source)
-export default class SourcePackageInstaller extends EventEmitter implements Installer {
+export default class SourcePackageInstaller implements Installer {
   public postInstallTasks: InstallTask[] = [];
   public preInstallTasks: InstallTask[] = [];
   private readonly artifactService: ArtifactService;
   private readonly logger?: Logger;
   private org?: Org;
   private readonly sfpmPackage: SfpmSourcePackage;
+  private readonly sink?: InstallEventSink;
   private readonly source: InstallationSource;
   private readonly sourceDeployer: SourceDeployer;
   private readonly targetOrg: string;
   private readonly testLevel?: string;
 
-  constructor(targetOrg: string, sfpmPackage: SfpmSourcePackage, logger?: Logger, options?: SourcePackageInstallerOptions) {
-    super();
+  constructor(targetOrg: string, sfpmPackage: SfpmSourcePackage, logger?: Logger, options?: SourcePackageInstallerOptions, sink?: InstallEventSink) {
     if (!(sfpmPackage instanceof SfpmSourcePackage)) {
       throw new TypeError(`SourcePackageInstaller received incompatible package type: ${(sfpmPackage as unknown as {constructor: {name: string}}).constructor.name}`);
     }
@@ -48,12 +49,13 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
     this.targetOrg = targetOrg;
     this.sfpmPackage = sfpmPackage;
     this.logger = logger;
+    this.sink = sink;
 
     // Initialize artifact service
     this.artifactService = new ArtifactService(logger);
 
     // Source packages always use source deployment
-    this.sourceDeployer = new SourceDeployer(logger, this);
+    this.sourceDeployer = new SourceDeployer(logger, sink);
 
     // Determine source
     this.source = this.determineSource(options);
@@ -61,10 +63,7 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
   }
 
   public async connect(username: string): Promise<void> {
-    this.emit('connection:start', {
-      targetOrg: username,
-      timestamp: new Date(),
-    });
+    this.sink?.connectionStart({orgType: 'production', username});
 
     this.org = await Org.create({aliasOrUsername: username});
 
@@ -72,10 +71,7 @@ export default class SourcePackageInstaller extends EventEmitter implements Inst
       throw new Error('Unable to connect to org');
     }
 
-    this.emit('connection:complete', {
-      targetOrg: username,
-      timestamp: new Date(),
-    });
+    this.sink?.connectionComplete({username});
   }
 
   public async exec(): Promise<InstallerExecResult> {

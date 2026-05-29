@@ -5,6 +5,8 @@ import {InMemorySpanExporter, SimpleSpanProcessor} from '@opentelemetry/sdk-trac
 import {NodeTracerProvider} from '@opentelemetry/sdk-trace-node';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 
+import type {BusMap} from '../src/span-engine.js';
+
 import {SpanEngine} from '../src/span-engine.js';
 import {defaultSpanMappings} from '../src/span-map.js';
 
@@ -13,7 +15,7 @@ import type {SpanMapping} from '../src/span-map.js';
 describe('SpanEngine', () => {
   let exporter: InMemorySpanExporter;
   let provider: NodeTracerProvider;
-  let emitter: EventEmitter;
+  let buses: BusMap;
   let engine: SpanEngine;
 
   beforeEach(() => {
@@ -24,12 +26,16 @@ describe('SpanEngine', () => {
 
     const tracer = provider.getTracer('test');
     engine = new SpanEngine(tracer, defaultSpanMappings);
-    emitter = new EventEmitter();
-    engine.subscribe(emitter);
+    buses = {
+      build: new EventEmitter(),
+      install: new EventEmitter(),
+      orchestration: new EventEmitter(),
+    };
+    engine.subscribe(buses);
   });
 
   afterEach(async () => {
-    engine.unsubscribe(emitter);
+    engine.unsubscribe();
     await provider.shutdown();
   });
 
@@ -37,7 +43,7 @@ describe('SpanEngine', () => {
     it('should create an orchestration root span', () => {
       const orchestrationId = 'test-orch-1';
 
-      emitter.emit('orchestration:start', {
+      buses.orchestration!.emit('start', {
         includeDependencies: true,
         orchestrationId,
         packageNames: ['pkg-a', 'pkg-b'],
@@ -46,7 +52,7 @@ describe('SpanEngine', () => {
         totalPackages: 2,
       });
 
-      emitter.emit('orchestration:complete', {
+      buses.orchestration!.emit('complete', {
         orchestrationId,
         results: [],
         timestamp: new Date(),
@@ -66,7 +72,7 @@ describe('SpanEngine', () => {
     });
 
     it('should not create a span if only start event fires', () => {
-      emitter.emit('orchestration:start', {
+      buses.orchestration!.emit('start', {
         includeDependencies: true,
         orchestrationId: 'test-orch-2',
         packageNames: [],
@@ -84,7 +90,7 @@ describe('SpanEngine', () => {
     it('should create a build span as child of orchestration', () => {
       const orchestrationId = 'test-orch-3';
 
-      emitter.emit('orchestration:start', {
+      buses.orchestration!.emit('start', {
         includeDependencies: true,
         orchestrationId,
         packageNames: ['pkg-a'],
@@ -93,19 +99,19 @@ describe('SpanEngine', () => {
         totalPackages: 1,
       });
 
-      emitter.emit('build:start', {
+      buses.build!.emit('start', {
         packageName: 'pkg-a',
         packageType: 'source',
         timestamp: new Date(),
       });
 
-      emitter.emit('build:complete', {
+      buses.build!.emit('complete', {
         packageName: 'pkg-a',
         success: true,
         timestamp: new Date(),
       });
 
-      emitter.emit('orchestration:complete', {
+      buses.orchestration!.emit('complete', {
         orchestrationId,
         results: [],
         timestamp: new Date(),
@@ -131,7 +137,7 @@ describe('SpanEngine', () => {
     it('should set ERROR status on failed build', () => {
       const orchestrationId = 'test-orch-4';
 
-      emitter.emit('orchestration:start', {
+      buses.orchestration!.emit('start', {
         includeDependencies: true,
         orchestrationId,
         packageNames: ['pkg-b'],
@@ -140,20 +146,20 @@ describe('SpanEngine', () => {
         totalPackages: 1,
       });
 
-      emitter.emit('build:start', {
+      buses.build!.emit('start', {
         packageName: 'pkg-b',
         packageType: 'unlocked',
         timestamp: new Date(),
       });
 
-      emitter.emit('build:complete', {
+      buses.build!.emit('complete', {
         error: 'Package creation failed',
         packageName: 'pkg-b',
         success: false,
         timestamp: new Date(),
       });
 
-      emitter.emit('orchestration:complete', {
+      buses.orchestration!.emit('complete', {
         orchestrationId,
         results: [],
         timestamp: new Date(),
@@ -170,14 +176,14 @@ describe('SpanEngine', () => {
     });
 
     it('should record Error object as exception', () => {
-      emitter.emit('build:start', {
+      buses.build!.emit('start', {
         packageName: 'pkg-c',
         packageType: 'source',
         timestamp: new Date(),
       });
 
       const error = new Error('Something went wrong');
-      emitter.emit('build:complete', {
+      buses.build!.emit('complete', {
         error,
         packageName: 'pkg-c',
         success: false,
@@ -195,7 +201,7 @@ describe('SpanEngine', () => {
     it('should create an install span as child of orchestration', () => {
       const orchestrationId = 'test-orch-6';
 
-      emitter.emit('orchestration:start', {
+      buses.orchestration!.emit('start', {
         includeDependencies: true,
         orchestrationId,
         packageNames: ['pkg-d'],
@@ -204,18 +210,18 @@ describe('SpanEngine', () => {
         totalPackages: 1,
       });
 
-      emitter.emit('install:start', {
+      buses.install!.emit('start', {
         packageName: 'pkg-d',
         timestamp: new Date(),
       });
 
-      emitter.emit('install:complete', {
+      buses.install!.emit('complete', {
         packageName: 'pkg-d',
         success: true,
         timestamp: new Date(),
       });
 
-      emitter.emit('orchestration:complete', {
+      buses.orchestration!.emit('complete', {
         orchestrationId,
         results: [],
         timestamp: new Date(),
@@ -236,13 +242,13 @@ describe('SpanEngine', () => {
 
   describe('turbo mode (no orchestration)', () => {
     it('should create a root build span when no orchestration is active', () => {
-      emitter.emit('build:start', {
+      buses.build!.emit('start', {
         packageName: 'pkg-standalone',
         packageType: 'source',
         timestamp: new Date(),
       });
 
-      emitter.emit('build:complete', {
+      buses.build!.emit('complete', {
         packageName: 'pkg-standalone',
         success: true,
         timestamp: new Date(),
@@ -262,13 +268,13 @@ describe('SpanEngine', () => {
       const turboRootSpan = tracer.startSpan('sfpm.orchestration');
       engine.registerSpan('orchestration', turboRootSpan);
 
-      emitter.emit('build:start', {
+      buses.build!.emit('start', {
         packageName: 'pkg-turbo',
         packageType: 'source',
         timestamp: new Date(),
       });
 
-      emitter.emit('build:complete', {
+      buses.build!.emit('complete', {
         packageName: 'pkg-turbo',
         success: true,
         timestamp: new Date(),
@@ -290,7 +296,7 @@ describe('SpanEngine', () => {
     it('should clean up completed spans from registry', () => {
       const orchestrationId = 'test-orch-7';
 
-      emitter.emit('orchestration:start', {
+      buses.orchestration!.emit('start', {
         includeDependencies: true,
         orchestrationId,
         packageNames: [],
@@ -299,17 +305,16 @@ describe('SpanEngine', () => {
         totalPackages: 0,
       });
 
-      emitter.emit('orchestration:complete', {
+      buses.orchestration!.emit('complete', {
         orchestrationId,
         results: [],
         timestamp: new Date(),
         totalDuration: 100,
       });
 
-      // Second orchestration with same ID pattern — should create a new span
       const orchestrationId2 = 'test-orch-8';
 
-      emitter.emit('orchestration:start', {
+      buses.orchestration!.emit('start', {
         includeDependencies: false,
         orchestrationId: orchestrationId2,
         packageNames: [],
@@ -318,7 +323,7 @@ describe('SpanEngine', () => {
         totalPackages: 0,
       });
 
-      emitter.emit('orchestration:complete', {
+      buses.orchestration!.emit('complete', {
         orchestrationId: orchestrationId2,
         results: [],
         timestamp: new Date(),
@@ -330,7 +335,7 @@ describe('SpanEngine', () => {
     });
 
     it('should handle end event without matching start gracefully', () => {
-      emitter.emit('orchestration:complete', {
+      buses.orchestration!.emit('complete', {
         orchestrationId: 'nonexistent',
         results: [],
         timestamp: new Date(),
@@ -344,7 +349,7 @@ describe('SpanEngine', () => {
     it('should handle multiple concurrent build spans', () => {
       const orchestrationId = 'test-orch-9';
 
-      emitter.emit('orchestration:start', {
+      buses.orchestration!.emit('start', {
         includeDependencies: true,
         orchestrationId,
         packageNames: ['pkg-a', 'pkg-b'],
@@ -353,33 +358,31 @@ describe('SpanEngine', () => {
         totalPackages: 2,
       });
 
-      // Start both builds concurrently
-      emitter.emit('build:start', {
+      buses.build!.emit('start', {
         packageName: 'pkg-a',
         packageType: 'source',
         timestamp: new Date(),
       });
 
-      emitter.emit('build:start', {
+      buses.build!.emit('start', {
         packageName: 'pkg-b',
         packageType: 'unlocked',
         timestamp: new Date(),
       });
 
-      // Complete them in reverse order
-      emitter.emit('build:complete', {
+      buses.build!.emit('complete', {
         packageName: 'pkg-b',
         success: true,
         timestamp: new Date(),
       });
 
-      emitter.emit('build:complete', {
+      buses.build!.emit('complete', {
         packageName: 'pkg-a',
         success: true,
         timestamp: new Date(),
       });
 
-      emitter.emit('orchestration:complete', {
+      buses.orchestration!.emit('complete', {
         orchestrationId,
         results: [],
         timestamp: new Date(),
@@ -399,9 +402,9 @@ describe('SpanEngine', () => {
 
   describe('unsubscribe', () => {
     it('should stop creating spans after unsubscribe', () => {
-      engine.unsubscribe(emitter);
+      engine.unsubscribe();
 
-      emitter.emit('orchestration:start', {
+      buses.orchestration!.emit('start', {
         includeDependencies: true,
         orchestrationId: 'after-unsub',
         packageNames: [],
@@ -410,7 +413,7 @@ describe('SpanEngine', () => {
         totalPackages: 0,
       });
 
-      emitter.emit('orchestration:complete', {
+      buses.orchestration!.emit('complete', {
         orchestrationId: 'after-unsub',
         results: [],
         timestamp: new Date(),
@@ -430,6 +433,7 @@ describe('SpanEngine with custom mappings', () => {
 
     const tracer = provider.getTracer('custom-test');
     const customMapping: SpanMapping = {
+      bus: 'build',
       end: 'custom:end',
       name: 'custom.operation',
       spanKey: (evt) => `custom:${evt.id as string}`,
@@ -438,18 +442,18 @@ describe('SpanEngine with custom mappings', () => {
     };
 
     const engine = new SpanEngine(tracer, [customMapping]);
-    const emitter = new EventEmitter();
-    engine.subscribe(emitter);
+    const buildBus = new EventEmitter();
+    engine.subscribe({build: buildBus});
 
-    emitter.emit('custom:start', {id: 'op-1'});
-    emitter.emit('custom:end', {id: 'op-1', success: true});
+    buildBus.emit('custom:start', {id: 'op-1'});
+    buildBus.emit('custom:end', {id: 'op-1', success: true});
 
     const spans = exporter.getFinishedSpans();
     expect(spans).toHaveLength(1);
     expect(spans[0].name).toBe('custom.operation');
     expect(spans[0].attributes['custom.id']).toBe('op-1');
 
-    engine.unsubscribe(emitter);
+    engine.unsubscribe();
     await provider.shutdown();
   });
 });

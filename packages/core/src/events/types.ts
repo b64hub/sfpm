@@ -80,3 +80,18 @@ export interface HookEvents {
 // ============================================================================
 
 export {PackageType} from '../types/package.js';
+
+// ============================================================================
+// Hook Event Sink (used by LifecycleEngine — satisfied by both ScopedBuildSink and ScopedInstallSink)
+// ============================================================================
+
+/**
+ * Minimal write-only contract for emitting hook lifecycle events.
+ * Both {@link ScopedBuildSink} and {@link ScopedInstallSink} implement this
+ * since hook events are shared across build and install domains.
+ */
+export interface HookEventSink {
+  hookComplete(payload: HookCompletePayload): void;
+  hooksComplete(payload: HooksCompletePayload): void;
+  hooksStart(payload: HooksStartPayload): void;
+}

@@ -1,4 +1,5 @@
 import {
+  BuildEventBus,
   BuildOrchestrationTask, BuildOrchestrator, BuildStateStore,
   type CreateCompleteEvent, LifecycleEngine, type LocalBuildState,
   type LocalPackageBuildState, ProjectService,
@@ -9,7 +10,6 @@ import {
 } from '@oclif/core'
 import {ConfigAggregator} from '@salesforce/core'
 import {fork} from 'node:child_process'
-import EventEmitter from 'node:events'
 import path from 'node:path'
 import {fileURLToPath} from 'node:url'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
@@ -162,22 +162,23 @@ export default class Build extends SfpmCommand {
     // Designed for external orchestrators (Turbo, CI matrix) that handle
     // dependency ordering and parallelism themselves.
     if (packages.length === 1 && flags['no-dependencies']) {
+      const buildBus = new BuildEventBus()
       const task = new BuildOrchestrationTask(
         projectConfig,
         buildOptions,
         this.sfpmLogger,
         projectDir,
+        buildBus,
       )
 
-      const emitter = new EventEmitter()
-      renderer.attachTo(emitter as any)
+      renderer.attachTo(buildBus)
       if (flags['async-validation']) {
-        emitter.on('unlocked:create:complete', captureCreateComplete)
+        buildBus.on('create:complete', captureCreateComplete)
       }
 
       try {
         const context = await task.setup()
-        const result = await task.processSinglePackage(resolvedPackages[0], 0, context, emitter)
+        const result = await task.processSinglePackage(resolvedPackages[0], 0, context)
 
         if (flags.json) {
           this.logJson(result)
@@ -211,14 +212,14 @@ export default class Build extends SfpmCommand {
       projectDir,
     )
 
-    // Attach renderer to orchestrator — it forwards all builder events
-    renderer.attachTo(orchestrator as any)
+    // Attach renderer to orchestrator buses
+    renderer.attachTo(orchestrator.buildBus, orchestrator.orchestrationBus)
     if (flags['async-validation']) {
-      orchestrator.on('unlocked:create:complete', captureCreateComplete)
+      orchestrator.buildBus.on('create:complete', captureCreateComplete)
     }
 
     const tracer = createTracer({serviceName: 'sfpm-cli'})
-    tracer.subscribe(orchestrator)
+    tracer.subscribe({build: orchestrator.buildBus, orchestration: orchestrator.orchestrationBus})
 
     try {
       const result = await orchestrator.buildAll(resolvedPackages)

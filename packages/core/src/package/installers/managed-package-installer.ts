@@ -1,5 +1,6 @@
 import {Org} from '@salesforce/core';
-import EventEmitter from 'node:events';
+
+import type {InstallEventSink} from '../../events/install-event-bus.js';
 
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
@@ -17,24 +18,22 @@ import {ManagedPackageRef, type VersionInstallable} from './types.js';
  */
 // eslint-disable-next-line new-cap
 @RegisterInstaller(PackageType.Managed)
-export default class ManagedPackageInstaller extends EventEmitter implements Installer {
+export default class ManagedPackageInstaller implements Installer {
   private readonly installable: VersionInstallable;
   private readonly logger?: Logger;
   private org?: Org;
+  private readonly sink?: InstallEventSink;
   private readonly targetOrg: string;
 
-  constructor(targetOrg: string, managedPackage: ManagedPackageRef, logger?: Logger) {
-    super();
+  constructor(targetOrg: string, managedPackage: ManagedPackageRef, logger?: Logger, _options?: unknown, sink?: InstallEventSink) {
     this.targetOrg = targetOrg;
     this.installable = managedPackage;
     this.logger = logger;
+    this.sink = sink;
   }
 
   public async connect(username: string): Promise<void> {
-    this.emit('connection:start', {
-      targetOrg: username,
-      timestamp: new Date(),
-    });
+    this.sink?.connectionStart({orgType: 'production', username});
 
     this.org = await Org.create({aliasOrUsername: username});
 
@@ -42,14 +41,11 @@ export default class ManagedPackageInstaller extends EventEmitter implements Ins
       throw new Error('Unable to connect to org');
     }
 
-    this.emit('connection:complete', {
-      targetOrg: username,
-      timestamp: new Date(),
-    });
+    this.sink?.connectionComplete({username});
   }
 
   public async exec(): Promise<InstallerExecResult> {
     this.logger?.info(`Installing managed package: ${this.installable.packageName}`);
-    return new VersionInstaller(this.logger, this).install(this.installable, this.targetOrg);
+    return new VersionInstaller(this.logger, this.sink).install(this.installable, this.targetOrg);
   }
 }

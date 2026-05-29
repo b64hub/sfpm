@@ -1,7 +1,4 @@
-import {EventEmitter} from 'node:events';
-
 import ProjectService from './project/project-service.js';
-import {AllBuildEvents} from './types/events.js';
 // Import builders to trigger decorator registration
 import './package/builders/unlocked-package-builder.js';
 import './package/builders/source-package-builder.js';
@@ -16,12 +13,10 @@ import './package/analyzers/ft-analyzer.js';
 import './package/analyzers/manifest-analyzer.js';
 import './package/analyzers/picklist-analyzer.js';
 
-export class SfpmCore extends EventEmitter<AllBuildEvents> {
+export class SfpmCore {
   project!: ProjectService;
 
-  private constructor() {
-    super();
-  }
+  private constructor() {}
 
   /**
    * Creates and initializes a new SfpmCore instance.
@@ -64,7 +59,7 @@ export {LifecycleEngine} from './lifecycle/lifecycle-engine.js';
 export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions} from './orchestrator/build-orchestrator.js';
 export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './orchestrator/install-orchestrator.js';
 export {
-  type OrchestrationTask, Orchestrator, type OrchestratorEmitter, type OrchestratorOptions,
+  type OrchestrationTask, Orchestrator, type OrchestratorOptions,
 } from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
 export {
@@ -123,9 +118,6 @@ export * from './types/build-state.js';
 export * from './types/config.js';
 export * from './types/dependency-analysis.js';
 export * from './types/errors.js';
-export type {
-  AllBuildEvents, AssemblyEvents, SourceBuildEvents, UnlockedBuildEvents,
-} from './types/events.js';
 export * from './types/lifecycle.js';
 export * from './types/logger.js';
 export * from './types/npm.js';

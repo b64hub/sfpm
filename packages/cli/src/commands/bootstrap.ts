@@ -250,7 +250,7 @@ export default class Bootstrap extends SfpmCommand {
       },
       mode: ctx.mode,
     })
-    buildRenderer.attachTo(buildOrchestrator as unknown as Parameters<typeof buildRenderer.attachTo>[0])
+    buildRenderer.attachTo(buildOrchestrator.buildBus, buildOrchestrator.orchestrationBus)
 
     const buildResult = await buildOrchestrator.buildAll(packageNames)
 
@@ -401,7 +401,7 @@ export default class Bootstrap extends SfpmCommand {
       mode: ctx.mode,
       targetOrg: ctx.targetOrg,
     })
-    installRenderer.attachTo(installOrchestrator as unknown as Parameters<typeof installRenderer.attachTo>[0])
+    installRenderer.attachTo(installOrchestrator.installBus, installOrchestrator.orchestrationBus)
 
     const installResult = await installOrchestrator.installAll(packageNames)
 

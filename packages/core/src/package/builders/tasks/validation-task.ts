@@ -1,7 +1,6 @@
-import EventEmitter from 'node:events';
-
 import type {TestClassResult, ValidationResult, ValidationStrategy} from './validation/types.js';
 
+import {BuildEventSink} from '../../../events/build-event-bus.js';
 import {BuildError} from '../../../types/errors.js';
 import {Logger} from '../../../types/logger.js';
 import {SfpmMetadataPackage} from '../../sfpm-package.js';
@@ -43,10 +42,10 @@ export interface ValidationTaskOptions {
  */
 class ValidationTask implements BuildTask {
   public readonly name = 'validation';
-  private readonly eventEmitter?: EventEmitter;
   private readonly logger?: Logger;
   private readonly options: ValidationTaskOptions;
   private readonly sfpmPackage: SfpmMetadataPackage;
+  private readonly sink?: BuildEventSink;
   private readonly strategy: ValidationStrategy;
   private readonly validationOrg: string;
 
@@ -58,7 +57,7 @@ class ValidationTask implements BuildTask {
     this.sfpmPackage = ctx.sfpmPackage;
     this.validationOrg = options.validationOrg;
     this.logger = ctx.logger;
-    this.eventEmitter = ctx.eventEmitter;
+    this.sink = ctx.sink;
     this.options = options;
 
     const strategyCtx = {logger: this.logger, sfpmPackage: this.sfpmPackage, validationOrg: this.validationOrg};
@@ -80,10 +79,8 @@ class ValidationTask implements BuildTask {
 
     const result = await this.strategy.validate(testClasses, {
       onProgress: progress => {
-        this.eventEmitter?.emit('task:validation:progress', {
+        this.sink?.taskValidateProgress({
           ...progress,
-          packageName: this.sfpmPackage.packageName,
-          timestamp: new Date(),
         });
       },
     });
@@ -176,23 +173,19 @@ class ValidationTask implements BuildTask {
   // ==========================================================================
 
   private emitTestComplete(result: ValidationResult, coveragePercentage?: number): void {
-    this.eventEmitter?.emit('task:validation:complete', {
+    this.sink?.taskValidateComplete({
       coveragePercentage,
       coverageRequired: coveragePercentage === undefined ? undefined : COVERAGE_THRESHOLD,
       failed: result.tests.failed,
-      packageName: this.sfpmPackage.packageName,
       passed: result.tests.passed,
       testCount: result.tests.total,
-      timestamp: new Date(),
     });
   }
 
   private emitTestStart(testCount: number): void {
-    this.eventEmitter?.emit('task:validation:start', {
-      packageName: this.sfpmPackage.packageName,
+    this.sink?.taskValidateStart({
       testCount,
       testLevel: 'RunSpecifiedTests',
-      timestamp: new Date(),
     });
   }
 

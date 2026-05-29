@@ -1,5 +1,4 @@
-import EventEmitter from 'node:events';
-
+import type {BuildEventSink} from '../../events/build-event-bus.js';
 import {DependencyAnalyzer} from '../../types/dependency-analysis.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, PendingValidationDescriptor} from '../../types/package.js';
@@ -14,10 +13,10 @@ import SfpmPackage from '../sfpm-package.js';
  * Tasks receive this via their factory function — never construct it themselves.
  */
 export interface BuildTaskContext {
-  readonly eventEmitter?: EventEmitter;
   readonly logger?: Logger;
   readonly projectDirectory: string;
   readonly sfpmPackage: SfpmPackage;
+  readonly sink?: BuildEventSink;
 }
 
 /**
@@ -128,7 +127,8 @@ export type BuilderConstructor = new (
   workingDirectory: string,
   sfpmPackage: SfpmPackage,
   options: BuilderOptions,
-  logger?: Logger
+  logger?: Logger,
+  sink?: BuildEventSink,
 ) => Builder;
 
 /**

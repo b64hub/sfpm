@@ -6,13 +6,16 @@ import {
 
 import type {SpanMapping} from './span-map.js';
 
+/** Map of bus labels to their EventEmitter instances. */
+export type BusMap = Partial<Record<'build' | 'install' | 'orchestration', EventEmitter>>;
+
 /**
- * Subscribes to EventEmitter events and translates them into OpenTelemetry spans
+ * Subscribes to typed event bus events and translates them into OpenTelemetry spans
  * using a declarative {@link SpanMapping} registry.
  */
 export class SpanEngine {
   private readonly activeSpans = new Map<string, Span>();
-  private readonly listeners: Array<{event: string; fn: (...args: any[]) => void}> = [];
+  private readonly listeners: Array<{emitter: EventEmitter; event: string; fn: (...args: any[]) => void}> = [];
   private readonly mappings: SpanMapping[];
   private readonly tracer: Tracer;
 
@@ -42,10 +45,13 @@ export class SpanEngine {
   }
 
   /**
-   * Subscribe to all mapped events on the given emitter.
+   * Subscribe to all mapped events on the given buses.
    */
-  subscribe(emitter: EventEmitter): void {
+  subscribe(buses: BusMap): void {
     for (const mapping of this.mappings) {
+      const emitter = buses[mapping.bus];
+      if (!emitter) continue;
+
       const startFn = (evt: Record<string, unknown>) => this.onStartEvent(mapping, evt);
       const endFn = (evt: Record<string, unknown>) => this.onEndEvent(mapping, evt);
 
@@ -53,17 +59,17 @@ export class SpanEngine {
       emitter.on(mapping.end, endFn);
 
       this.listeners.push(
-        {event: mapping.start, fn: startFn},
-        {event: mapping.end, fn: endFn},
+        {emitter, event: mapping.start, fn: startFn},
+        {emitter, event: mapping.end, fn: endFn},
       );
     }
   }
 
   /**
-   * Unsubscribe all listeners from the emitter.
+   * Unsubscribe all listeners from their respective buses.
    */
-  unsubscribe(emitter: EventEmitter): void {
-    for (const {event, fn} of this.listeners) {
+  unsubscribe(): void {
+    for (const {emitter, event, fn} of this.listeners) {
       emitter.removeListener(event, fn);
     }
 

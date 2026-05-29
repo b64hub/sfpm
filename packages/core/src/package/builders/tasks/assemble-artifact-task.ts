@@ -34,6 +34,8 @@ class AssembleArtifactTask implements BuildTask {
       sfpmPackage,
       projectDirectory,
       assemblerOptions,
+      this.ctx.logger,
+      this.ctx.sink,
     ).assemble();
   }
 }

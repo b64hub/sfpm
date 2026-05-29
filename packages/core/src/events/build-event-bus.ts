@@ -30,6 +30,7 @@ export interface BuildCompletePayload {
   reason?: string;
   skipped?: boolean;
   success: boolean;
+  version?: string;
 }
 
 export interface BuildSkippedPayload {

@@ -1,6 +1,6 @@
 import {describe, it, expect, vi, beforeEach} from 'vitest';
-import EventEmitter from 'node:events';
 
+import {BuildEventBus} from '../../../../src/events/build-event-bus.js';
 import ValidationTask from '../../../../src/package/builders/tasks/validation-task.js';
 import {SfpmMetadataPackage} from '../../../../src/package/sfpm-package.js';
 import {BuildError} from '../../../../src/types/errors.js';
@@ -30,7 +30,7 @@ import {Org} from '@salesforce/core';
 describe('ValidationTask', () => {
   let mockSfpmPackage: any;
   let mockLogger: any;
-  let mockEventEmitter: EventEmitter;
+  let buildBus: BuildEventBus;
   let mockConnection: any;
   let mockDeploy: any;
 
@@ -56,7 +56,7 @@ describe('ValidationTask', () => {
       error: vi.fn(),
     };
 
-    mockEventEmitter = new EventEmitter();
+    buildBus = new BuildEventBus();
 
     mockConnection = {};
 
@@ -73,7 +73,7 @@ describe('ValidationTask', () => {
 
   function createTask(): ValidationTask {
     return new ValidationTask(
-      {sfpmPackage: mockSfpmPackage, projectDirectory: '/tmp/test', logger: mockLogger, eventEmitter: mockEventEmitter},
+      {sfpmPackage: mockSfpmPackage, projectDirectory: '/tmp/test', logger: mockLogger, sink: buildBus.forPackage(packageName)},
       {validationOrg: buildOrg},
     );
   }
@@ -237,8 +237,8 @@ describe('ValidationTask', () => {
 
     const startEvents: any[] = [];
     const completeEvents: any[] = [];
-    mockEventEmitter.on('task:validation:start', (evt) => startEvents.push(evt));
-    mockEventEmitter.on('task:validation:complete', (evt) => completeEvents.push(evt));
+    buildBus.on('task:validate:start', (evt) => startEvents.push(evt));
+    buildBus.on('task:validate:complete', (evt) => completeEvents.push(evt));
 
     const task = createTask();
     await task.exec();
@@ -297,7 +297,7 @@ describe('ValidationTask', () => {
   describe('test-only mode', () => {
     function createTestOnlyTask(): ValidationTask {
       return new ValidationTask(
-        {sfpmPackage: mockSfpmPackage, projectDirectory: '/tmp/test', logger: mockLogger, eventEmitter: mockEventEmitter},
+        {sfpmPackage: mockSfpmPackage, projectDirectory: '/tmp/test', logger: mockLogger, sink: buildBus.forPackage(packageName)},
         {validationOrg: buildOrg, testOnly: true},
       );
     }
@@ -426,7 +426,7 @@ describe('ValidationTask', () => {
       setupTestServiceMock();
 
       const startEvents: any[] = [];
-      mockEventEmitter.on('task:validation:start', (evt) => startEvents.push(evt));
+      buildBus.on('task:validate:start', (evt) => startEvents.push(evt));
 
       const task = createTestOnlyTask();
       await task.exec();

@@ -1,5 +1,6 @@
 import {Connection, Org} from '@salesforce/core';
-import {EventEmitter} from 'node:events';
+
+import type {InstallEventSink} from '../../../events/install-event-bus.js';
 
 import {Logger} from '../../../types/logger.js';
 import {type VersionInstallable} from '../types.js';
@@ -19,12 +20,12 @@ type PackageInstallRequest = {
  * {@link VersionInstallable} payload and deciding when this strategy applies.
  */
 export default class VersionInstaller {
-  private eventEmitter?: EventEmitter;
   private logger?: Logger;
+  private sink?: InstallEventSink;
 
-  constructor(logger?: Logger, eventEmitter?: EventEmitter) {
+  constructor(logger?: Logger, sink?: InstallEventSink) {
     this.logger = logger;
-    this.eventEmitter = eventEmitter;
+    this.sink = sink;
   }
 
   public async install(installable: VersionInstallable, targetOrg: string): Promise<{deployId?: string}> {
@@ -46,7 +47,7 @@ export default class VersionInstaller {
     }
 
     this.logger?.info('Starting package installation...');
-    this.emitStart(packageName, packageVersionId);
+    this.sink?.versionStart({packageVersionId});
 
     const requestId = await this.createInstallRequest(connection, packageVersionId, installationKey, packageName);
 
@@ -62,7 +63,7 @@ export default class VersionInstaller {
       // handleInstallFailure returns normally only on successful recovery
     }
 
-    this.emitComplete(packageName, true);
+    this.sink?.versionComplete({packageVersionId});
     this.logger?.info('Package installation completed successfully');
 
     return {deployId: requestId};
@@ -94,30 +95,34 @@ export default class VersionInstaller {
     return result.id as string;
   }
 
-  private emitComplete(packageName: string, success: boolean): void {
-    this.eventEmitter?.emit('version-install:complete', {
-      packageName,
-      success,
-      timestamp: new Date(),
-    });
-  }
+  private async pollInstallStatus(connection: Connection, requestId: string, packageName: string): Promise<PackageInstallRequest> {
+    const maxAttempts = 120; // 10 minutes with 5 second intervals
+    let attempts = 0;
 
-  private emitProgress(packageName: string, status: string, attempt: number, maxAttempts: number): void {
-    this.eventEmitter?.emit('version-install:progress', {
-      attempt,
-      maxAttempts,
-      packageName,
-      status,
-      timestamp: new Date(),
-    });
-  }
+    while (attempts < maxAttempts) {
+      // eslint-disable-next-line no-await-in-loop
+      const record = await connection.tooling.retrieve('PackageInstallRequest', requestId);
 
-  private emitStart(packageName: string, packageVersionId: string): void {
-    this.eventEmitter?.emit('version-install:start', {
-      packageName,
-      timestamp: new Date(),
-      versionId: packageVersionId,
-    });
+      if (!record) {
+        throw new Error(`Could not retrieve PackageInstallRequest: ${requestId}`);
+      }
+
+      const status = (record as Record<string, unknown>).Status as string;
+
+      this.logger?.info(`Installation status: ${status}`);
+      this.sink?.versionProgress({status});
+
+      if (status === 'SUCCESS' || status === 'ERROR') {
+        return record as PackageInstallRequest;
+      }
+
+      // Wait 5 seconds before next poll
+      // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      attempts++;
+    }
+
+    throw new Error(`Package installation timed out after ${maxAttempts * 5} seconds`);
   }
 
   /**
@@ -175,35 +180,5 @@ export default class VersionInstaller {
       this.logger?.debug(`Could not verify install status: ${verifyError instanceof Error ? verifyError.message : String(verifyError)}`);
       throw error;
     }
-  }
-
-  private async pollInstallStatus(connection: Connection, requestId: string, packageName: string): Promise<PackageInstallRequest> {
-    const maxAttempts = 120; // 10 minutes with 5 second intervals
-    let attempts = 0;
-
-    while (attempts < maxAttempts) {
-      // eslint-disable-next-line no-await-in-loop
-      const record = await connection.tooling.retrieve('PackageInstallRequest', requestId);
-
-      if (!record) {
-        throw new Error(`Could not retrieve PackageInstallRequest: ${requestId}`);
-      }
-
-      const status = (record as Record<string, unknown>).Status as string;
-
-      this.logger?.info(`Installation status: ${status}`);
-      this.emitProgress(packageName, status, attempts + 1, maxAttempts);
-
-      if (status === 'SUCCESS' || status === 'ERROR') {
-        return record as PackageInstallRequest;
-      }
-
-      // Wait 5 seconds before next poll
-      // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      attempts++;
-    }
-
-    throw new Error(`Package installation timed out after ${maxAttempts * 5} seconds`);
   }
 }

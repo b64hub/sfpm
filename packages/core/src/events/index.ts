@@ -74,6 +74,7 @@ export type {
   ConnectionStartPayload,
   HookCompleteEvent,
   HookCompletePayload,
+  HookEventSink,
   HookEvents,
   HooksCompleteEvent,
   HooksCompletePayload,

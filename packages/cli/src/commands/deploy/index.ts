@@ -1,9 +1,8 @@
 import {
-  InstallationSource, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger,
+  InstallationSource, InstallEventBus, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger,
   type ProjectDefinitionProvider, type ProjectGraph, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
-import EventEmitter from 'node:events'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
@@ -117,7 +116,7 @@ export default class Deploy extends SfpmCommand {
     );
 
     const renderer = this.createRenderer(mode, flags['target-org'])
-    renderer.attachTo(orchestrator as any)
+    renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
 
     await this.runOrchestrator(orchestrator, resolvedPackages, renderer, flags)
   }
@@ -187,19 +186,20 @@ export default class Deploy extends SfpmCommand {
       targetOrg: flags['target-org'],
     }
 
+    const installBus = new InstallEventBus()
     const task = new InstallOrchestrationTask(
       projectConfig,
       installOptions,
       logger,
+      installBus,
     )
 
     const renderer = this.createRenderer(mode, flags['target-org'])
-    const emitter = new EventEmitter()
-    renderer.attachTo(emitter as any)
+    renderer.attachTo(installBus)
 
     try {
       const context = await task.setup()
-      const result = await task.processSinglePackage(resolvedPackages[0], 0, context, emitter)
+      const result = await task.processSinglePackage(resolvedPackages[0], 0, context)
 
       if (flags.json) {
         this.logJson(result)

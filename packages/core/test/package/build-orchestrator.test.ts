@@ -90,9 +90,6 @@ describe('BuildOrchestrator', () => {
     mockBuildPackage = vi.fn().mockResolvedValue();
     vi.mocked(PackageBuilder).mockImplementation(function (this: any) {
       this.buildPackage = mockBuildPackage;
-      this.on = vi.fn().mockReturnValue(this);
-      this.removeAllListeners = vi.fn();
-      this.emit = vi.fn();
       return this;
     } as any);
 
@@ -268,7 +265,7 @@ describe('BuildOrchestrator', () => {
   describe('events', () => {
     it('should emit orchestration:start with package count and levels', async () => {
       const events: any[] = [];
-      orchestrator.on('orchestration:start', e => events.push(e));
+      orchestrator.orchestrationBus.on('start', e => events.push(e));
 
       await orchestrator.buildAll(['pkg-a', 'pkg-b']);
 
@@ -280,7 +277,7 @@ describe('BuildOrchestrator', () => {
 
     it('should emit orchestration:complete with results', async () => {
       const events: any[] = [];
-      orchestrator.on('orchestration:complete', e => events.push(e));
+      orchestrator.orchestrationBus.on('complete', e => events.push(e));
 
       await orchestrator.buildAll(['pkg-a', 'pkg-b']);
 
@@ -292,8 +289,8 @@ describe('BuildOrchestrator', () => {
     it('should emit orchestration:level:start and orchestration:level:complete', async () => {
       const levelStarts: any[] = [];
       const levelCompletes: any[] = [];
-      orchestrator.on('orchestration:level:start', e => levelStarts.push(e));
-      orchestrator.on('orchestration:level:complete', e => levelCompletes.push(e));
+      orchestrator.orchestrationBus.on('level:start', e => levelStarts.push(e));
+      orchestrator.orchestrationBus.on('level:complete', e => levelCompletes.push(e));
 
       await orchestrator.buildAll(['pkg-a', 'pkg-b']);
 
@@ -304,7 +301,7 @@ describe('BuildOrchestrator', () => {
 
     it('should emit orchestration:package:complete for each package', async () => {
       const packageCompletes: any[] = [];
-      orchestrator.on('orchestration:package:complete', e => packageCompletes.push(e));
+      orchestrator.orchestrationBus.on('package:complete', e => packageCompletes.push(e));
 
       await orchestrator.buildAll(['pkg-a', 'pkg-b']);
 

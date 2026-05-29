@@ -1,4 +1,4 @@
-import EventEmitter from 'node:events';
+import type {HookEventSink} from '../events/types.js';
 
 import {
   HookContext,
@@ -90,7 +90,7 @@ function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
  * await lifecycle.run('install', 'pre', context);
  * ```
  */
-export class LifecycleEngine extends EventEmitter {
+export class LifecycleEngine {
   private static initializedStage?: string;
   private static instance?: LifecycleEngine;
   private readonly _stage: string = DEFAULT_STAGE
@@ -98,7 +98,6 @@ export class LifecycleEngine extends EventEmitter {
   private insertionCounter = 0;
 
   private constructor(activeStage: string) {
-    super();
     this._stage = activeStage;
   }
 
@@ -250,7 +249,7 @@ export class LifecycleEngine extends EventEmitter {
    * @param timing - The timing within the operation (e.g., 'pre', 'post')
    * @param context - The hook context with package and environment information
    */
-  async run(operation: string, timing: string, context: HookContext): Promise<void> {
+  async run(operation: string, timing: string, context: HookContext, sink?: HookEventSink): Promise<void> {
     const enrichedContext = {...context, stage: this._stage};
     const matching = this.getMatchingHooks(operation, timing, enrichedContext);
 
@@ -265,12 +264,10 @@ export class LifecycleEngine extends EventEmitter {
       + ` on package '${packageName}'`
       + ` [stage=${this._stage}]`);
 
-    this.emit('hooks:start', {
+    sink?.hooksStart({
       hookCount: matching.length,
       hookNames,
       operation,
-      packageName,
-      timestamp: new Date(),
       timing,
     });
 
@@ -279,11 +276,9 @@ export class LifecycleEngine extends EventEmitter {
         // eslint-disable-next-line no-await-in-loop -- hooks must run sequentially in defined order
         await hook.handler(enrichedContext);
 
-        this.emit('hook:complete', {
+        sink?.hookComplete({
           hookName: hook.hooksName,
           operation,
-          packageName,
-          timestamp: new Date(),
           timing,
         });
       } catch (error) {
@@ -295,33 +290,31 @@ export class LifecycleEngine extends EventEmitter {
       }
     }
 
-    this.emit('hooks:complete', {
+    sink?.hooksComplete({
       completedCount: matching.length,
       operation,
-      packageName,
-      timestamp: new Date(),
       timing,
     });
   }
 
   /** Execute build:post hooks with stage-enriched context. */
-  async runBuildPost(context: HookContext): Promise<void> {
-    await this.run('build', 'post', context);
+  async runBuildPost(context: HookContext, sink?: HookEventSink): Promise<void> {
+    await this.run('build', 'post', context, sink);
   }
 
   /** Execute build:pre hooks with stage-enriched context. */
-  async runBuildPre(context: HookContext): Promise<void> {
-    await this.run('build', 'pre', context);
+  async runBuildPre(context: HookContext, sink?: HookEventSink): Promise<void> {
+    await this.run('build', 'pre', context, sink);
   }
 
   /** Execute install:post hooks with stage-enriched context. */
-  async runInstallPost(context: HookContext): Promise<void> {
-    await this.run('install', 'post', context);
+  async runInstallPost(context: HookContext, sink?: HookEventSink): Promise<void> {
+    await this.run('install', 'post', context, sink);
   }
 
   /** Execute install:pre hooks with stage-enriched context. */
-  async runInstallPre(context: HookContext): Promise<void> {
-    await this.run('install', 'pre', context);
+  async runInstallPre(context: HookContext, sink?: HookEventSink): Promise<void> {
+    await this.run('install', 'pre', context, sink);
   }
 
   /**

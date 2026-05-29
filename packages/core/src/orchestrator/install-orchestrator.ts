@@ -1,15 +1,15 @@
 import {Org} from '@salesforce/core';
-import EventEmitter from 'node:events';
+import {randomUUID} from 'node:crypto';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {ArtifactService} from '../artifacts/artifact-service.js';
+import {InstallEventBus} from '../events/install-event-bus.js';
 import {
-  InstallEvents,
-  OrchestrationEvents,
+  OrchestrationEventBus,
   OrchestrationResult,
   PackageResult,
-} from '../events/index.js';
+} from '../events/orchestration-event-bus.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import PackageInstaller, {InstallOptions} from '../package/package-installer.js';
 import {ProjectGraph} from '../project/project-graph.js';
@@ -18,7 +18,6 @@ import {InstallationSource} from '../types/package.js';
 import {
   OrchestrationTask,
   Orchestrator,
-  OrchestratorEmitter,
   OrchestratorOptions,
 } from './orchestrator.js';
 
@@ -42,8 +41,10 @@ interface InstallContext {
  *
  * Creates a shared Org connection and pre-cached ArtifactService, then
  * delegates individual package installs to PackageInstaller.
+ * Installers emit events directly on the shared InstallEventBus.
  */
 export class InstallOrchestrationTask implements OrchestrationTask<InstallContext> {
+  private readonly installBus: InstallEventBus;
   private readonly logger: Logger | undefined;
   private readonly options: InstallOptions;
   private readonly provider: ProjectDefinitionProvider;
@@ -52,17 +53,18 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     provider: ProjectDefinitionProvider,
     options: InstallOptions,
     logger?: Logger,
+    installBus?: InstallEventBus,
   ) {
     this.provider = provider;
     this.options = options;
     this.logger = logger;
+    this.installBus = installBus ?? new InstallEventBus();
   }
 
   async processSinglePackage(
     packageName: string,
     _level: number,
     context: InstallContext,
-    emitter: OrchestratorEmitter,
   ): Promise<PackageResult> {
     const start = Date.now();
     const pkgLogger = this.logger?.child?.({package: packageName}) ?? this.logger;
@@ -85,9 +87,8 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
       this.options,
       pkgLogger,
       context.org,
+      this.installBus,
     );
-
-    this.forwardInstallerEvents(installer, emitter);
 
     let success = true;
     let skipped = false;
@@ -102,8 +103,6 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
       success = false;
       error = error_ instanceof Error ? error_.message : String(error_);
     }
-
-    installer.removeAllListeners();
 
     const duration = Date.now() - start;
     return {
@@ -121,29 +120,6 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
 
     return {artifactService, org};
   }
-
-  private forwardInstallerEvents(installer: PackageInstaller, emitter: OrchestratorEmitter): void {
-    const events = [
-      'install:start',
-      'install:skip',
-      'install:complete',
-      'install:error',
-      'connection:start',
-      'connection:complete',
-      'deployment:start',
-      'deployment:progress',
-      'deployment:complete',
-      'version-install:start',
-      'version-install:progress',
-      'version-install:complete',
-    ] as const;
-
-    for (const event of events) {
-      installer.on(event, (...args: any[]) => {
-        emitter.emit(event, ...args);
-      });
-    }
-  }
 }
 
 // ============================================================================
@@ -156,10 +132,13 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
  * Composes the shared {@link Orchestrator} engine with an {@link InstallOrchestrationTask}
  * to handle install-specific setup and per-package processing.
  *
- * All installer and orchestration events are emitted through this instance,
- * so callers can subscribe with `orchestrator.on(event, handler)`.
+ * All events are emitted on typed buses:
+ * - {@link installBus} for install domain events (start, complete, deploy, version, etc.)
+ * - {@link orchestrationBus} for orchestration events (level start/complete, package complete)
  */
-export class InstallOrchestrator extends EventEmitter<InstallEvents & OrchestrationEvents> {
+export class InstallOrchestrator {
+  readonly installBus: InstallEventBus;
+  readonly orchestrationBus: OrchestrationEventBus;
   private readonly orchestrator: Orchestrator<InstallContext>;
 
   constructor(
@@ -168,9 +147,10 @@ export class InstallOrchestrator extends EventEmitter<InstallEvents & Orchestrat
     options: InstallOrchestratorOptions,
     logger?: Logger,
   ) {
-    super();
-    const task = new InstallOrchestrationTask(provider, options, logger);
-    this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: true}, task, logger, this);
+    this.installBus = new InstallEventBus();
+    this.orchestrationBus = new OrchestrationEventBus(randomUUID());
+    const task = new InstallOrchestrationTask(provider, options, logger, this.installBus);
+    this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: true}, task, logger, this.orchestrationBus);
   }
 
   // ========================================================================

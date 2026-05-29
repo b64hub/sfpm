@@ -1,8 +1,6 @@
-import EventEmitter from 'node:events';
-
+import type {BuildEventSink} from '../../events/build-event-bus.js';
 import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
 import {BuildError} from '../../types/errors.js';
-import {SourceBuildEvents} from '../../types/events.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, PendingValidationDescriptor, type ValidationCheck} from '../../types/package.js';
 import SfpmPackage, {SfpmMetadataPackage, SfpmSourcePackage} from '../sfpm-package.js';
@@ -15,12 +13,13 @@ import {gitTagTask} from './tasks/git-tag-task.js';
 
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Source)
-export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents> implements Builder {
+export default class SourcePackageBuilder implements Builder {
   public tasks: BuildTaskRegistration[] = [];
   private buildOrg?: string;
   private logger?: Logger;
   private options: BuilderOptions;
   private sfpmPackage: SfpmMetadataPackage;
+  private sink?: BuildEventSink;
   private workingDirectory: string;
 
   constructor(
@@ -28,8 +27,8 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
     sfpmPackage: SfpmPackage,
     options: BuilderOptions,
     logger?: Logger,
+    sink?: BuildEventSink,
   ) {
-    super();
     if (!(sfpmPackage instanceof SfpmMetadataPackage)) {
       throw new TypeError(`SourcePackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
@@ -38,6 +37,7 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
     this.sfpmPackage = sfpmPackage;
     this.options = options;
     this.logger = logger;
+    this.sink = sink;
 
     // Pre-build: static dependency analysis when an analyzer is provided
     if (options.dependencyAnalysis?.dependencyAnalyzer) {
@@ -66,19 +66,15 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
   }
 
   public async exec(): Promise<void> {
-    this.emit('source:assemble:start', {
-      packageName: this.sfpmPackage.packageName,
+    this.sink?.assembleStart({
       sourcePath: this.workingDirectory,
-      timestamp: new Date(),
     });
 
     this.handleApexTestClasses(this.sfpmPackage);
 
-    this.emit('source:assemble:complete', {
+    this.sink?.assembleComplete({
       artifactPath: this.workingDirectory,
-      packageName: this.sfpmPackage.packageName,
       sourcePath: this.workingDirectory,
-      timestamp: new Date(),
     });
   }
 
@@ -108,11 +104,9 @@ export default class SourcePackageBuilder extends EventEmitter<SourceBuildEvents
     this.logger?.info(`Validating '${this.sfpmPackage.packageName}' against ${targetOrg} [deploy+test]`);
     this.logger?.info(`Running ${testClasses.length} test class(es): ${testClasses.join(', ')}`);
 
-    this.emit('task:validation:start', {
-      packageName: this.sfpmPackage.packageName,
+    this.sink?.taskValidateStart({
       testCount: testClasses.length,
       testLevel: 'RunSpecifiedTests',
-      timestamp: new Date(),
     });
 
     const deployService = new MetadataDeployService(this.logger);

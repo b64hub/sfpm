@@ -144,18 +144,18 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   );
 
   const renderer = new ActionsProgressRenderer(logger);
-  renderer.attachToBuildOrchestrator(orchestrator);
+  renderer.attachToBuildOrchestrator(orchestrator.buildBus, orchestrator.orchestrationBus);
 
   // Collect coverage data from test completion events
   const coverageMap = new Map<string, number>();
-  orchestrator.on('task:validation:complete', (data: any) => {
-    if (data.packageName && data.coveragePercentage !== null) {
+  orchestrator.buildBus.on('task:validate:complete', (data) => {
+    if (data.packageName && data.coveragePercentage != null) {
       coverageMap.set(data.packageName, data.coveragePercentage);
     }
   });
 
   const tracer = createTracer({serviceName: 'sfpm-actions'});
-  tracer.subscribe(orchestrator);
+  tracer.subscribe({build: orchestrator.buildBus, orchestration: orchestrator.orchestrationBus});
 
   const orchResult = await orchestrator.buildAll(packageNames);
 

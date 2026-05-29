@@ -1,9 +1,9 @@
 import {
-  InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, PackageInstaller, ProjectService, type TestLevel,
+  InstallEventBus,
+  InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {Args, Flags} from '@oclif/core'
-import EventEmitter from 'node:events'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
@@ -107,18 +107,19 @@ export default class Install extends SfpmCommand {
     // Designed for external orchestrators (Turbo, CI matrix) that handle
     // dependency ordering themselves.
     if (resolvedPackages.length === 1 && flags['no-dependencies']) {
+      const installBus = new InstallEventBus()
       const task = new InstallOrchestrationTask(
         projectConfig,
         installOptions,
         this.sfpmLogger,
+        installBus,
       )
 
-      const emitter = new EventEmitter()
-      renderer.attachTo(emitter as any)
+      renderer.attachTo(installBus)
 
       try {
         const context = await task.setup()
-        const result = await task.processSinglePackage(resolvedPackages[0], 0, context, emitter)
+        const result = await task.processSinglePackage(resolvedPackages[0], 0, context)
 
         if (flags.json) {
           this.logJson(result)
@@ -150,11 +151,11 @@ export default class Install extends SfpmCommand {
       this.sfpmLogger,
     )
 
-    // Attach renderer to orchestrator — it forwards all installer events
-    renderer.attachTo(orchestrator as any)
+    // Attach renderer to orchestrator buses
+    renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
 
     const tracer = createTracer({serviceName: 'sfpm-cli'})
-    tracer.subscribe(orchestrator)
+    tracer.subscribe({install: orchestrator.installBus, orchestration: orchestrator.orchestrationBus})
 
     try {
       const result = await orchestrator.installAll(resolvedPackages)

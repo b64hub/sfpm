@@ -1,15 +1,14 @@
 import fs from 'fs-extra';
 import {merge} from 'lodash-es';
-import EventEmitter from 'node:events';
 import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
+import {BuildEventBus, BuildEventSink} from '../events/build-event-bus.js';
 import {GitService} from '../git/git-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {ArtifactManifest} from '../types/artifact.js';
 import {IgnoreFilesConfig} from '../types/config.js';
-import {AllBuildEvents} from '../types/events.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {PackageType, PendingValidationDescriptor} from '../types/package.js';
@@ -94,12 +93,14 @@ export interface BuildOptions {
 /**
  * Orchestrator for package builds
  */
-export class PackageBuilder extends EventEmitter<AllBuildEvents> {
+export class PackageBuilder {
+  private bus?: BuildEventBus;
   private gitService?: GitService;
   private ignoreFilesConfig?: IgnoreFilesConfig;
   private logger: Logger | undefined;
   private options: BuildOptions;
   private provider: ProjectDefinitionProvider;
+  private sink?: BuildEventSink;
 
   constructor(
     provider: ProjectDefinitionProvider,
@@ -107,13 +108,14 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     logger?: Logger,
     gitService?: GitService,
     ignoreFilesConfig?: IgnoreFilesConfig,
+    bus?: BuildEventBus,
   ) {
-    super();
     this.options = options || {};
     this.logger = logger;
     this.provider = provider;
     this.gitService = gitService;
     this.ignoreFilesConfig = ignoreFilesConfig;
+    this.bus = bus;
   }
 
   /**
@@ -126,11 +128,11 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     const packageFactory = new PackageFactory(this.provider);
     const sfpmPackage = packageFactory.createFromName(packageName);
 
-    this.emit('build:start', {
+    this.sink = this.bus?.forPackage(sfpmPackage.name);
+
+    this.sink?.start({
       buildNumber: this.options.buildNumber,
-      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
-      timestamp: new Date(),
       version: sfpmPackage.version,
     });
 
@@ -140,11 +142,9 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
     try {
       if (await this.isPackageEmpty(sfpmPackage)) {
-        this.emit('build:skipped', {
-          packageName: sfpmPackage.name,
+        this.sink?.skip({
           packageType: sfpmPackage.type as PackageType,
           reason: 'empty-package',
-          timestamp: new Date(),
           version: sfpmPackage.version,
         });
         return undefined;
@@ -152,13 +152,11 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       const hashSkip = await this.checkSourceHash(sfpmPackage, projectDirectory);
       if (hashSkip) {
-        this.emit('build:skipped', {
+        this.sink?.skip({
           artifactPath: hashSkip.artifactPath,
           latestVersion: hashSkip.latestVersion,
-          packageName: sfpmPackage.name,
           packageType: sfpmPackage.type as PackageType,
           reason: 'no-changes',
-          timestamp: new Date(),
           version: sfpmPackage.version,
         });
         return undefined;
@@ -175,11 +173,9 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       // Run post-build hooks
       await this.runLifecycleHooks('post', sfpmPackage, projectDirectory);
 
-      this.emit('build:complete', {
-        packageName: sfpmPackage.name,
+      this.sink?.complete({
         packageVersionId: 'packageVersionId' in sfpmPackage ? (sfpmPackage.packageVersionId as string) : undefined,
         success: true,
-        timestamp: new Date(),
       });
 
       return pendingValidation;
@@ -196,10 +192,8 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     const analyzers = AnalyzerRegistry.getAnalyzers(this.logger);
     const enabledAnalyzers = analyzers.filter(a => a.isEnabled(sfpmPackage));
 
-    this.emit('analyzers:start', {
+    this.sink?.analyzersStart({
       analyzerCount: enabledAnalyzers.length,
-      packageName: sfpmPackage.name,
-      timestamp: new Date(),
     });
 
     try {
@@ -207,31 +201,25 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       const analyzerPromises = enabledAnalyzers.map(async analyzer => {
         const analyzerName = analyzer.constructor.name;
 
-        this.emit('analyzer:start', {
+        this.sink?.analyzerStart({
           analyzerName,
-          packageName: sfpmPackage.name,
-          timestamp: new Date(),
         });
 
         try {
           const metadataContribution = await analyzer.analyze(sfpmPackage);
           merge(sfpmPackage.metadata, metadataContribution);
 
-          this.emit('analyzer:complete', {
+          this.sink?.analyzerComplete({
             analyzerName,
             findings: metadataContribution,
-            packageName: sfpmPackage.name,
-            timestamp: new Date(),
           });
 
           return {analyzerName, success: true};
         } catch (error) {
-          this.emit('analyzer:complete', {
+          this.sink?.analyzerComplete({
             analyzerName,
             error: error instanceof Error ? error.message : String(error),
             findings: {},
-            packageName: sfpmPackage.name,
-            timestamp: new Date(),
           });
 
           // Re-throw with analyzer context for better error messages
@@ -242,27 +230,21 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       await Promise.all(analyzerPromises);
 
-      this.emit('analyzers:complete', {
+      this.sink?.analyzersComplete({
         completedCount: enabledAnalyzers.length,
-        packageName: sfpmPackage.name,
-        timestamp: new Date(),
       });
     } catch (error: any) {
-      this.emit('build:error', {
+      this.sink?.error({
         error,
-        packageName: sfpmPackage.name,
         phase: 'analysis',
-        timestamp: new Date(),
       });
       throw error;
     }
   }
 
   public async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
-    this.emit('stage:start', {
-      packageName: sfpmPackage.name,
+    this.sink?.stageStart({
       stagingDirectory: sfpmPackage.workingDirectory,
-      timestamp: new Date(),
     });
 
     try {
@@ -278,18 +260,14 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
 
-      this.emit('stage:complete', {
+      this.sink?.stageComplete({
         componentCount: assemblyOutput.componentCount || 0,
-        packageName: sfpmPackage.name,
         stagingDirectory: assemblyOutput.stagingDirectory,
-        timestamp: new Date(),
       });
     } catch (error: any) {
-      this.emit('build:error', {
+      this.sink?.error({
         error,
-        packageName: sfpmPackage.name,
         phase: 'staging',
-        timestamp: new Date(),
       });
       throw error;
     }
@@ -303,36 +281,6 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
     if (enrichments.sourceTag !== undefined) {
       sfpmPackage.metadata.source.tag = enrichments.sourceTag;
-    }
-  }
-
-  /**
-   * Bubble up events from builder instances to PackageBuilder
-   */
-  private bubbleEvents(builderInstance: EventEmitter): void {
-    // Define which events to bubble up
-    const eventsToBubble = [
-      'unlocked:prune:start',
-      'unlocked:prune:complete',
-      'unlocked:create:start',
-      'unlocked:create:progress',
-      'unlocked:create:complete',
-      'unlocked:validation:start',
-      'unlocked:validation:complete',
-      'source:assemble:start',
-      'source:assemble:complete',
-      'task:start',
-      'task:complete',
-      'task:skipped',
-      'task:validation:start',
-      'task:validation:progress',
-      'task:validation:complete',
-    ];
-
-    for (const eventName of eventsToBubble) {
-      builderInstance.on(eventName, (...args: any[]) => {
-        this.emit(eventName as any, ...args);
-      });
     }
   }
 
@@ -406,51 +354,38 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
     builderInstance: Builder,
     devhubUsername: string,
   ): Promise<void> {
-    this.emit('connection:start', {
+    this.sink?.connectionStart({
       orgType: 'devhub',
-      packageName: sfpmPackage.name,
-      timestamp: new Date(),
       username: devhubUsername,
     });
 
     try {
       await builderInstance.connect(devhubUsername);
 
-      this.emit('connection:complete', {
-        packageName: sfpmPackage.name,
-        timestamp: new Date(),
+      this.sink?.connectionComplete({
         username: devhubUsername,
       });
     } catch (error: any) {
-      this.emit('build:error', {
+      this.sink?.error({
         error,
-        packageName: sfpmPackage.name,
         phase: 'connection',
-        timestamp: new Date(),
       });
       throw error;
     }
   }
 
   private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<PendingValidationDescriptor | undefined> {
-    this.emit('builder:start', {
+    this.sink?.builderStart({
       builderName,
-      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
-      timestamp: new Date(),
     });
-
-    // Bubble up events from builder if it's an EventEmitter
-    if (builderInstance instanceof EventEmitter) {
-      this.bubbleEvents(builderInstance);
-    }
 
     // Build task context — shared by all tasks for this package
     const ctx: BuildTaskContext = {
-      eventEmitter: this,
       logger: this.logger,
       projectDirectory: sfpmPackage.projectDirectory,
       sfpmPackage,
+      sink: this.sink,
     };
 
     const preTasks = builderInstance.tasks.filter(t => t.phase === 'pre');
@@ -471,21 +406,17 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       await this.runTasks(sfpmPackage, postTasks, ctx, 'post-build');
 
-      this.emit('builder:complete', {
+      this.sink?.builderComplete({
         builderName,
-        packageName: sfpmPackage.name,
         packageType: sfpmPackage.type as PackageType,
-        timestamp: new Date(),
       });
 
       return pendingValidation;
     } catch (error: any) {
       // Handle actual build errors
-      this.emit('build:error', {
+      this.sink?.error({
         error,
-        packageName: sfpmPackage.name,
         phase: 'build',
-        timestamp: new Date(),
       });
       throw error;
     }
@@ -520,11 +451,9 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   private async handleBuilderSetup(sfpmPackage: SfpmPackage): Promise<Builder> {
     if (!sfpmPackage.workingDirectory) {
       const error = new Error('Package must be staged for build');
-      this.emit('build:error', {
+      this.sink?.error({
         error,
-        packageName: sfpmPackage.name,
         phase: 'staging',
-        timestamp: new Date(),
       });
       throw error;
     }
@@ -541,11 +470,9 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
     if (!BuilderClass) {
       const error = new Error(`No builder registered for package type: ${sfpmPackage.type}`);
-      this.emit('build:error', {
+      this.sink?.error({
         error,
-        packageName: sfpmPackage.name,
         phase: 'build',
-        timestamp: new Date(),
       });
       throw error;
     }
@@ -600,9 +527,8 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
   /**
    * Run lifecycle hooks for the build operation if the engine is initialized.
    *
-   * The hooks receive the enriched {@link SfpmPackage} instance — the same one
-   * used for staging, analysis, and building — so hook handlers have access to
-   * the full package context (component set, metadata, working directory, etc.).
+   * Passes the scoped {@link BuildEventSink} directly as a HookEventSink,
+   * since it satisfies the same convenience method interface.
    */
   private async runLifecycleHooks(
     timing: HookTiming,
@@ -622,21 +548,10 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
       timing,
     };
 
-    const hookEvents = ['hooks:start', 'hook:complete', 'hooks:complete'] as const;
-    const forwarders = hookEvents.map(evt => {
-      const fn = (...args: any[]) => this.emit(evt as any, ...args);
-      lifecycle.on(evt, fn);
-      return {evt, fn};
-    });
-
-    try {
-      if (timing === 'pre') {
-        await lifecycle.runBuildPre(hookContext);
-      } else {
-        await lifecycle.runBuildPost(hookContext);
-      }
-    } finally {
-      for (const {evt, fn} of forwarders) lifecycle.removeListener(evt, fn);
+    if (timing === 'pre') {
+      await lifecycle.runBuildPre(hookContext, this.sink);
+    } else {
+      await lifecycle.runBuildPost(hookContext, this.sink);
     }
   }
 
@@ -655,21 +570,17 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
 
       // Check runtime precondition
       if (task.canRun && !task.canRun()) {
-        this.emit('task:skipped', {
-          packageName: sfpmPackage.name,
+        this.sink?.taskSkip({
           reason: `Precondition not met for task '${taskName}'`,
           taskName,
           taskType,
-          timestamp: new Date(),
         });
         continue;
       }
 
-      this.emit('task:start', {
-        packageName: sfpmPackage.name,
+      this.sink?.taskStart({
         taskName,
         taskType,
-        timestamp: new Date(),
       });
 
       try {
@@ -680,20 +591,16 @@ export class PackageBuilder extends EventEmitter<AllBuildEvents> {
           this.applyEnrichments(sfpmPackage, result.enrichments);
         }
 
-        this.emit('task:complete', {
-          packageName: sfpmPackage.name,
+        this.sink?.taskComplete({
           success: true,
           taskName,
           taskType,
-          timestamp: new Date(),
         });
       } catch (error) {
-        this.emit('task:complete', {
-          packageName: sfpmPackage.name,
+        this.sink?.taskComplete({
           success: false,
           taskName,
           taskType,
-          timestamp: new Date(),
         });
 
         throw error;

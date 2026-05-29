@@ -1,6 +1,7 @@
 
 import {Org} from '@salesforce/core';
-import EventEmitter from 'node:events';
+
+import type {InstallEventSink} from '../../events/install-event-bus.js';
 
 import {ArtifactService} from '../../artifacts/artifact-service.js';
 import {Logger} from '../../types/logger.js';
@@ -35,7 +36,7 @@ export interface InstallTask {
  */
 // eslint-disable-next-line new-cap
 @RegisterInstaller(PackageType.Unlocked)
-export default class UnlockedPackageInstaller extends EventEmitter implements Installer {
+export default class UnlockedPackageInstaller implements Installer {
   public postInstallTasks: InstallTask[] = [];
   public preInstallTasks: InstallTask[] = [];
   private readonly artifactService: ArtifactService;
@@ -43,13 +44,13 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
   private readonly mode?: InstallationMode;
   private org?: Org;
   private readonly sfpmPackage: SfpmUnlockedPackage;
+  private readonly sink?: InstallEventSink;
   private readonly source: InstallationSource;
   private readonly sourceDeployer: SourceDeployer;
   private readonly targetOrg: string;
   private readonly versionInstaller: VersionInstaller;
 
-  constructor(targetOrg: string, sfpmPackage: SfpmUnlockedPackage, logger?: Logger, options?: UnlockedPackageInstallerOptions) {
-    super();
+  constructor(targetOrg: string, sfpmPackage: SfpmUnlockedPackage, logger?: Logger, options?: UnlockedPackageInstallerOptions, sink?: InstallEventSink) {
     if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
       throw new TypeError(`UnlockedPackageInstaller received incompatible package type: ${(sfpmPackage as unknown as {constructor: {name: string}}).constructor.name}`);
     }
@@ -58,23 +59,21 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
     this.sfpmPackage = sfpmPackage;
     this.logger = logger;
     this.mode = options?.mode;
+    this.sink = sink;
 
     // Initialize artifact service
     this.artifactService = new ArtifactService(logger);
 
     // Create strategy instances (pure — no routing logic)
-    this.versionInstaller = new VersionInstaller(logger, this);
-    this.sourceDeployer = new SourceDeployer(logger, this);
+    this.versionInstaller = new VersionInstaller(logger, sink);
+    this.sourceDeployer = new SourceDeployer(logger, sink);
 
     // Determine source
     this.source = this.determineSource(options);
   }
 
   public async connect(username: string): Promise<void> {
-    this.emit('connection:start', {
-      targetOrg: username,
-      timestamp: new Date(),
-    });
+    this.sink?.connectionStart({orgType: 'production', username});
 
     this.org = await Org.create({aliasOrUsername: username});
 
@@ -82,10 +81,7 @@ export default class UnlockedPackageInstaller extends EventEmitter implements In
       throw new Error('Unable to connect to org');
     }
 
-    this.emit('connection:complete', {
-      targetOrg: username,
-      timestamp: new Date(),
-    });
+    this.sink?.connectionComplete({username});
   }
 
   public async exec(): Promise<InstallerExecResult> {

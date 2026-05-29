@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import PackageInstaller from '../../../src/package/package-installer.js';
+import { InstallEventBus } from '../../../src/events/install-event-bus.js';
 import { InstallerRegistry } from '../../../src/package/installers/installer-registry.js';
 import { PackageFactory } from '../../../src/package/sfpm-package.js';
 import { PackageType } from '../../../src/types/package.js';
@@ -36,6 +37,7 @@ vi.mock('../../../src/artifacts/artifact-service.js', () => ({
 
 describe('PackageInstaller', () => {
     let installer: PackageInstaller;
+    let installBus: InstallEventBus;
     let mockProvider: any;
     let mockLogger: any;
     let mockPackageFactory: any;
@@ -92,10 +94,14 @@ describe('PackageInstaller', () => {
         // Mock registry
         vi.spyOn(InstallerRegistry, 'getInstaller').mockReturnValue(mockInstallerConstructor);
 
+        installBus = new InstallEventBus();
+
         installer = new PackageInstaller(
             mockProvider,
             { targetOrg: 'testOrg', installationKey: 'test-key' },
-            mockLogger
+            mockLogger,
+            undefined,
+            installBus,
         );
 
         vi.clearAllMocks();
@@ -115,7 +121,7 @@ describe('PackageInstaller', () => {
 
         it('should emit install:start event', async () => {
             const startHandler = vi.fn();
-            installer.on('install:start', startHandler);
+            installBus.on('start', startHandler);
 
             await installer.installPackage('test-package');
 
@@ -130,7 +136,7 @@ describe('PackageInstaller', () => {
 
         it('should emit install:complete event on success', async () => {
             const completeHandler = vi.fn();
-            installer.on('install:complete', completeHandler);
+            installBus.on('complete', completeHandler);
 
             await installer.installPackage('test-package');
 
@@ -146,7 +152,7 @@ describe('PackageInstaller', () => {
 
         it('should emit install:error event on failure', async () => {
             const errorHandler = vi.fn();
-            installer.on('install:error', errorHandler);
+            installBus.on('error', errorHandler);
 
             const error = new Error('Installation failed');
             mockInstallerInstance.exec.mockRejectedValue(error);
@@ -193,6 +199,7 @@ describe('PackageInstaller', () => {
                     source: undefined,
                     testLevel: undefined,
                 }),
+                expect.anything(),
             );
         });
 
@@ -211,7 +218,7 @@ describe('PackageInstaller', () => {
 
         it('should handle non-Error exceptions', async () => {
             const errorHandler = vi.fn();
-            installer.on('install:error', errorHandler);
+            installBus.on('error', errorHandler);
 
             mockInstallerInstance.exec.mockRejectedValue('String error');
 

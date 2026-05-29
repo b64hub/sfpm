@@ -1,5 +1,3 @@
-import type EventEmitter from 'node:events';
-
 import {trace} from '@opentelemetry/api';
 import {OTLPTraceExporter} from '@opentelemetry/exporter-trace-otlp-http';
 import {Resource} from '@opentelemetry/resources';
@@ -9,6 +7,8 @@ import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 
 import type {SpanMapping} from './span-map.js';
+
+import type {BusMap} from './span-engine.js';
 
 import {SpanEngine} from './span-engine.js';
 import {defaultSpanMappings} from './span-map.js';
@@ -54,8 +54,8 @@ const noopTracer: SfpmTracer = {
 export interface SfpmTracer {
   /** Flush pending spans and shut down the OTel SDK. */
   shutdown(): Promise<void>;
-  /** Subscribe to events on the given emitter to produce spans. */
-  subscribe(emitter: EventEmitter): void;
+  /** Subscribe to typed event buses to produce spans. */
+  subscribe(buses: BusMap): void;
 }
 
 /**
@@ -86,7 +86,7 @@ export function createTracer(options: TracerOptions): SfpmTracer {
   const otelTracer = trace.getTracer(options.serviceName, version);
   const engine = new SpanEngine(otelTracer, options.mappings ?? defaultSpanMappings);
 
-  let subscribedEmitter: EventEmitter | undefined;
+  let subscribed = false;
   let hasTurboSpan = false;
 
   return {
@@ -96,16 +96,16 @@ export function createTracer(options: TracerOptions): SfpmTracer {
         hasTurboSpan = false;
       }
 
-      if (subscribedEmitter) {
-        engine.unsubscribe(subscribedEmitter);
-        subscribedEmitter = undefined;
+      if (subscribed) {
+        engine.unsubscribe();
+        subscribed = false;
       }
 
       await sdk.shutdown();
     },
-    subscribe(emitter: EventEmitter) {
-      subscribedEmitter = emitter;
-      engine.subscribe(emitter);
+    subscribe(buses: BusMap) {
+      engine.subscribe(buses);
+      subscribed = true;
 
       // In turbo mode, auto-create a root orchestration span so build/install
       // spans have a parent. TURBO_RUN_ID correlates spans across processes.

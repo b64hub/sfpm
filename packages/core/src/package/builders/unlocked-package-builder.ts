@@ -2,12 +2,11 @@ import {Lifecycle, Org, SfProject} from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
 import {PackageVersion, PackageVersionCreateRequestResult} from '@salesforce/packaging';
 import fs from 'fs-extra';
-import EventEmitter from 'node:events';
 import path from 'node:path';
 
+import type {BuildEventSink} from '../../events/build-event-bus.js';
 import ProjectService from '../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
-import {UnlockedBuildEvents} from '../../types/events.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, PendingValidationDescriptor, PerPackageBuildConfig} from '../../types/package.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
@@ -19,16 +18,16 @@ import {gitTagTask} from './tasks/git-tag-task.js';
 
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Unlocked)
-export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEvents> implements Builder {
+export default class UnlockedPackageBuilder implements Builder {
   public tasks: BuildTaskRegistration[] = [];
   private devhubOrg?: Org;
   private logger?: Logger;
   private options: BuilderOptions;
   private sfpmPackage: SfpmUnlockedPackage;
+  private sink?: BuildEventSink;
   private workingDirectory: string;
 
-  constructor(workingDirectory: string, sfpmPackage: SfpmPackage, options: BuilderOptions, logger?: Logger) {
-    super();
+  constructor(workingDirectory: string, sfpmPackage: SfpmPackage, options: BuilderOptions, logger?: Logger, sink?: BuildEventSink) {
     if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
       throw new TypeError(`UnlockedPackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
@@ -37,6 +36,7 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     this.sfpmPackage = sfpmPackage;
     this.options = options;
     this.logger = logger;
+    this.sink = sink;
 
     this.tasks = [
       ...(options.artifact === false ? [] : [{factory: assembleArtifactTask(), phase: 'post' as const}]),
@@ -123,18 +123,16 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       };
     }
 
-    this.emit('unlocked:create:complete', {
+    this.sink?.createComplete({
       codeCoverage: result.CodeCoverage ?? undefined,
       createdDate: result.CreatedDate ?? undefined,
       hasMetadataRemoved: result.HasMetadataRemoved ?? undefined,
       hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
       packageId: result.Package2Id ?? '',
-      packageName: this.sfpmPackage.packageName,
       packageVersionCreateRequestId: result.Id,
       packageVersionId: result.SubscriberPackageVersionId ?? '',
       status: result.Status,
       subscriberPackageVersionId: result.SubscriberPackageVersionId ?? '',
-      timestamp: new Date(),
       totalNumberOfMetadataFiles: result.TotalNumberOfMetadataFiles ?? undefined,
       totalSizeOfMetadataFiles: result.TotalSizeOfMetadataFiles ?? undefined,
       versionNumber: result.VersionNumber || this.sfpmPackage.version || '',
@@ -148,10 +146,8 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     const waitTime = Duration.minutes(this.options.waitTime || 120);
     const pollingFrequency = Duration.seconds(30);
 
-    this.emit('unlocked:create:start', {
+    this.sink?.createStart({
       packageId: this.sfpmPackage.packageId,
-      packageName: this.sfpmPackage.packageName,
-      timestamp: new Date(),
       versionNumber: this.sfpmPackage.version || '',
     });
 
@@ -325,11 +321,9 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
     if (data.Id) tracker.lastRequestId = data.Id;
     tracker.lastStatus = data.Status;
 
-    this.emit('unlocked:create:progress', {
+    this.sink?.createProgress({
       message: data.Status,
-      packageName: this.sfpmPackage.packageName,
       status: data.Status,
-      timestamp: new Date(),
     });
 
     if (this.logger) {
@@ -348,10 +342,8 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
       return;
     }
 
-    this.emit('unlocked:prune:start', {
-      packageName: this.sfpmPackage.packageName,
+    this.sink?.pruneStart({
       reason: 'Org-dependent package requires pruning',
-      timestamp: new Date(),
     });
 
     const projectService = await ProjectService.getInstance(this.workingDirectory);
@@ -361,10 +353,8 @@ export default class UnlockedPackageBuilder extends EventEmitter<UnlockedBuildEv
 
     await fs.writeJson(path.join(this.workingDirectory, 'sfdx-project.json'), toSalesforceProjectJson(prunedDefinition), {spaces: 4});
 
-    this.emit('unlocked:prune:complete', {
-      packageName: this.sfpmPackage.packageName,
+    this.sink?.pruneComplete({
       prunedFiles: 1,
-      timestamp: new Date(),
     });
   }
 

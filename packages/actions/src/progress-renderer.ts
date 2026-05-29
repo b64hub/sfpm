@@ -1,4 +1,4 @@
-import type {Logger} from '@b64hub/sfpm-core';
+import type {BuildEventBus, InstallEventBus, OrchestrationEventBus} from '@b64hub/sfpm-core';
 import type {EventEmitter} from 'node:events';
 
 import * as core from '@actions/core';
@@ -67,198 +67,193 @@ export class ActionsProgressRenderer {
   /**
    * Attach to a build orchestrator to render build progress.
    */
-  public attachToBuildOrchestrator(emitter: EventEmitter): void {
-    emitter.on('orchestration:start', (data: any) => {
+  public attachToBuildOrchestrator(buildBus: BuildEventBus, orchestrationBus: OrchestrationEventBus): void {
+    orchestrationBus.on('start', (data) => {
       this.startTime = new Date();
-      this.recordEvent('orchestration:start', data);
+      this.recordEvent('orchestration:start', data as unknown as Record<string, unknown>);
       this.logger.info(`Starting build of ${data.totalPackages} package(s)`);
     });
 
-    emitter.on('orchestration:level:start', (data: any) => {
-      this.recordEvent('orchestration:level:start', data);
+    orchestrationBus.on('level:start', (data) => {
+      this.recordEvent('orchestration:level:start', data as unknown as Record<string, unknown>);
       const names: string[] = data.packages ?? [];
       this.logger.info(`Level ${data.level}: ${names.join(', ')}`);
     });
 
-    emitter.on('build:start', (data: any) => {
-      this.recordEvent('build:start', data);
+    buildBus.on('start', (data) => {
+      this.recordEvent('build:start', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', `Building: ${data.packageName} (${data.packageType ?? 'unknown'})`);
     });
 
-    emitter.on('build:complete', (data: any) => {
-      this.recordEvent('build:complete', data);
+    buildBus.on('complete', (data) => {
+      this.recordEvent('build:complete', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', `Built: ${data.packageName} v${data.version ?? '?'}`);
     });
 
-    emitter.on('build:skipped', (data: any) => {
-      this.recordEvent('build:skipped', data);
+    buildBus.on('skip', (data) => {
+      this.recordEvent('build:skipped', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', `Skipped: ${data.packageName} (${data.reason ?? 'no changes'})`);
     });
 
-    emitter.on('build:error', (data: any) => {
-      this.recordEvent('build:error', data);
+    buildBus.on('error', (data) => {
+      this.recordEvent('build:error', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'error', `Failed: ${data.packageName} — ${data.error ?? 'unknown error'}`);
     });
 
-    emitter.on('stage:start', (data: any) => {
-      this.recordEvent('stage:start', data);
+    buildBus.on('stage:start', (data) => {
+      this.recordEvent('stage:start', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'debug', 'Staging package...');
     });
 
-    emitter.on('stage:complete', (data: any) => {
-      this.recordEvent('stage:complete', data);
+    buildBus.on('stage:complete', (data) => {
+      this.recordEvent('stage:complete', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'debug', `Staged (${data.componentCount ?? '?'} components)`);
     });
 
-    emitter.on('connection:start', (data: any) => {
-      this.recordEvent('connection:start', data);
+    buildBus.on('connection:start', (data) => {
+      this.recordEvent('connection:start', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'debug', `Connecting to ${data.username}...`);
     });
 
-    emitter.on('connection:complete', (data: any) => {
-      this.recordEvent('connection:complete', data);
+    buildBus.on('connection:complete', (data) => {
+      this.recordEvent('connection:complete', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'debug', 'Connected to DevHub');
     });
 
-    emitter.on('unlocked:create:start', (data: any) => {
-      this.recordEvent('unlocked:create:start', data);
+    buildBus.on('create:start', (data) => {
+      this.recordEvent('create:start', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', `Creating package version for ${data.packageName}...`);
     });
 
-    emitter.on('unlocked:create:progress', (data: any) => {
-      this.recordEvent('unlocked:create:progress', data);
+    buildBus.on('create:progress', (data) => {
+      this.recordEvent('create:progress', data as unknown as Record<string, unknown>);
       if (data.status) {
         this.bufferMessage(data.packageName, 'debug', `Package creation status: ${data.status}`);
       }
     });
 
-    emitter.on('unlocked:create:complete', (data: any) => {
-      this.recordEvent('unlocked:create:complete', data);
+    buildBus.on('create:complete', (data) => {
+      this.recordEvent('create:complete', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', `Package version created: ${data.packageVersionId ?? ''} (${data.versionNumber ?? ''})`);
     });
 
-    emitter.on('assembly:start', (data: any) => {
-      this.recordEvent('assembly:start', data);
+    buildBus.on('assemble:start', (data) => {
+      this.recordEvent('assemble:start', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'debug', 'Assembling artifact...');
     });
 
-    emitter.on('assembly:complete', (data: any) => {
-      this.recordEvent('assembly:complete', data);
+    buildBus.on('assemble:complete', (data) => {
+      this.recordEvent('assemble:complete', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', `Artifact assembled: ${data.artifactPath ?? ''}`);
     });
 
-    emitter.on('task:start', (data: any) => {
-      this.recordEvent('task:start', data);
-      this.bufferMessage(data.packageName, 'debug', `Running task: ${data.taskName ?? data.task ?? 'unknown'}`);
+    buildBus.on('task:start', (data) => {
+      this.recordEvent('task:start', data as unknown as Record<string, unknown>);
+      this.bufferMessage(data.packageName, 'debug', `Running task: ${data.taskName ?? 'unknown'}`);
     });
 
-    emitter.on('task:complete', (data: any) => {
-      this.recordEvent('task:complete', data);
-      this.bufferMessage(data.packageName, 'debug', `Task complete: ${data.taskName ?? data.task ?? 'unknown'}`);
+    buildBus.on('task:complete', (data) => {
+      this.recordEvent('task:complete', data as unknown as Record<string, unknown>);
+      this.bufferMessage(data.packageName, 'debug', `Task complete: ${data.taskName ?? 'unknown'}`);
     });
 
-    emitter.on('orchestration:package:complete', (data: any) => {
-      this.recordEvent('orchestration:package:complete', data);
-      this.flushPackageGroup('Build', data);
+    orchestrationBus.on('package:complete', (data) => {
+      this.recordEvent('orchestration:package:complete', data as unknown as Record<string, unknown>);
+      this.flushPackageGroup('Build', data as unknown as Record<string, unknown>);
     });
 
-    emitter.on('orchestration:complete', (data: any) => {
-      this.recordEvent('orchestration:complete', data);
+    orchestrationBus.on('complete', (data) => {
+      this.recordEvent('orchestration:complete', data as unknown as Record<string, unknown>);
     });
   }
 
   /**
    * Attach to an install orchestrator to render install progress.
    */
-  public attachToInstaller(emitter: EventEmitter): void {
-    emitter.on('orchestration:start', (data: any) => {
+  public attachToInstaller(installBus: InstallEventBus, orchestrationBus: OrchestrationEventBus): void {
+    orchestrationBus.on('start', (data) => {
       this.startTime = new Date();
-      this.recordEvent('orchestration:start', data);
+      this.recordEvent('orchestration:start', data as unknown as Record<string, unknown>);
       this.logger.info(`Starting installation of ${data.totalPackages} package(s)`);
     });
 
-    emitter.on('orchestration:level:start', (data: any) => {
-      this.recordEvent('orchestration:level:start', data);
+    orchestrationBus.on('level:start', (data) => {
+      this.recordEvent('orchestration:level:start', data as unknown as Record<string, unknown>);
       const names: string[] = data.packages ?? [];
       this.logger.info(`Level ${data.level}: ${names.join(', ')}`);
     });
 
-    emitter.on('orchestration:package:start', (data: any) => {
-      this.recordEvent('orchestration:package:start', data);
-      // No immediate output — buffered via child logger and event handlers
-    });
-
-    emitter.on('install:start', (data: any) => {
-      this.recordEvent('install:start', data);
+    installBus.on('start', (data) => {
+      this.recordEvent('install:start', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', `Package: ${data.packageName} (${data.packageType ?? 'unknown'})`);
     });
 
-    emitter.on('connection:start', (data: any) => {
-      this.recordEvent('connection:start', data);
+    installBus.on('connection:start', (data) => {
+      this.recordEvent('connection:start', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'debug', `Connecting to ${data.username}...`);
     });
 
-    emitter.on('connection:complete', (data: any) => {
-      this.recordEvent('connection:complete', data);
+    installBus.on('connection:complete', (data) => {
+      this.recordEvent('connection:complete', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'debug', `Connected to org ${data.orgId ?? data.username}`);
     });
 
-    emitter.on('deployment:start', (data: any) => {
-      this.recordEvent('deployment:start', data);
+    installBus.on('deploy:start', (data) => {
+      this.recordEvent('deploy:start', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', 'Source deployment started');
     });
 
-    emitter.on('deployment:progress', (data: any) => {
-      this.recordEvent('deployment:progress', data);
+    installBus.on('deploy:progress', (data) => {
+      this.recordEvent('deploy:progress', data as unknown as Record<string, unknown>);
       if (data.status) {
         this.bufferMessage(data.packageName, 'debug', `Deployment status: ${data.status}`);
       }
     });
 
-    emitter.on('deployment:complete', (data: any) => {
-      this.recordEvent('deployment:complete', data);
-      this.bufferMessage(data.packageName, 'info', `Deployment complete (${data.componentCount ?? '?'} components)`);
+    installBus.on('deploy:complete', (data) => {
+      this.recordEvent('deploy:complete', data as unknown as Record<string, unknown>);
+      this.bufferMessage(data.packageName, 'info', `Deployment complete (${data.numberComponentsDeployed ?? '?'} components)`);
     });
 
-    emitter.on('version-install:start', (data: any) => {
-      this.recordEvent('version-install:start', data);
+    installBus.on('version:start', (data) => {
+      this.recordEvent('version:start', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', `Installing package version ${data.packageVersionId ?? ''}`);
     });
 
-    emitter.on('version-install:progress', (data: any) => {
-      this.recordEvent('version-install:progress', data);
+    installBus.on('version:progress', (data) => {
+      this.recordEvent('version:progress', data as unknown as Record<string, unknown>);
       if (data.status) {
         this.bufferMessage(data.packageName, 'debug', `Version install status: ${data.status}`);
       }
     });
 
-    emitter.on('version-install:complete', (data: any) => {
-      this.recordEvent('version-install:complete', data);
+    installBus.on('version:complete', (data) => {
+      this.recordEvent('version:complete', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', 'Version install complete');
     });
 
-    emitter.on('install:skip', (data: any) => {
-      this.recordEvent('install:skip', data);
+    installBus.on('skip', (data) => {
+      this.recordEvent('install:skip', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'info', `Skipped: ${data.packageName} (${data.reason ?? 'already installed'})`);
     });
 
-    emitter.on('install:complete', (data: any) => {
-      this.recordEvent('install:complete', data);
-      this.bufferMessage(data.packageName, 'info', `Installed: ${data.packageName} v${data.version ?? '?'}`);
+    installBus.on('complete', (data) => {
+      this.recordEvent('install:complete', data as unknown as Record<string, unknown>);
+      this.bufferMessage(data.packageName, 'info', `Installed: ${data.packageName} v${data.versionNumber ?? '?'}`);
     });
 
-    emitter.on('install:error', (data: any) => {
-      this.recordEvent('install:error', data);
+    installBus.on('error', (data) => {
+      this.recordEvent('install:error', data as unknown as Record<string, unknown>);
       this.bufferMessage(data.packageName, 'error', `Failed: ${data.packageName} — ${data.error ?? 'unknown error'}`);
     });
 
-    emitter.on('orchestration:package:complete', (data: any) => {
-      this.recordEvent('orchestration:package:complete', data);
-      this.flushPackageGroup('Install', data);
+    orchestrationBus.on('package:complete', (data) => {
+      this.recordEvent('orchestration:package:complete', data as unknown as Record<string, unknown>);
+      this.flushPackageGroup('Install', data as unknown as Record<string, unknown>);
     });
 
-    emitter.on('orchestration:complete', (data: any) => {
-      this.recordEvent('orchestration:complete', data);
+    orchestrationBus.on('complete', (data) => {
+      this.recordEvent('orchestration:complete', data as unknown as Record<string, unknown>);
     });
   }
 

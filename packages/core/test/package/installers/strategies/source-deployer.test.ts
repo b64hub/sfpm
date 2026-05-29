@@ -104,24 +104,27 @@ describe('SourceDeployer', () => {
         .rejects.toThrow('Source deployment failed:\nUnknown deployment error');
     });
 
-    it('should emit deployment events', async () => {
-      const mockEmitter = {emit: vi.fn()};
-      const strategyWithEmitter = new SourceDeployer(mockLogger, mockEmitter as any);
+    it('should emit deployment events via sink', async () => {
+      const mockSink = {
+        deployComplete: vi.fn(),
+        deployProgress: vi.fn(),
+        deployStart: vi.fn(),
+      };
+      const strategyWithSink = new SourceDeployer(mockLogger, mockSink as any);
 
-      await strategyWithEmitter.install(mockDeployable, 'targetOrg');
+      await strategyWithSink.install(mockDeployable, 'targetOrg');
 
-      expect(mockEmitter.emit).toHaveBeenCalledWith('deployment:start', expect.objectContaining({
-        packageName: 'test-package',
-      }));
-      expect(mockEmitter.emit).toHaveBeenCalledWith('deployment:complete', expect.objectContaining({
-        packageName: 'test-package',
-        success: true,
-      }));
+      expect(mockSink.deployStart).toHaveBeenCalledWith({targetOrg: 'targetOrg'});
+      expect(mockSink.deployComplete).toHaveBeenCalledWith({targetOrg: 'targetOrg'});
     });
 
-    it('should emit failure event on deploy error', async () => {
-      const mockEmitter = {emit: vi.fn()};
-      const strategyWithEmitter = new SourceDeployer(mockLogger, mockEmitter as any);
+    it('should emit complete event on deploy error', async () => {
+      const mockSink = {
+        deployComplete: vi.fn(),
+        deployProgress: vi.fn(),
+        deployStart: vi.fn(),
+      };
+      const strategyWithSink = new SourceDeployer(mockLogger, mockSink as any);
 
       mockAwaitDeploy.mockResolvedValue({
         errors: [{fullName: 'X', problem: 'fail'}],
@@ -131,12 +134,10 @@ describe('SourceDeployer', () => {
         success: false,
       });
 
-      await expect(strategyWithEmitter.install(mockDeployable, 'targetOrg'))
+      await expect(strategyWithSink.install(mockDeployable, 'targetOrg'))
         .rejects.toThrow();
 
-      expect(mockEmitter.emit).toHaveBeenCalledWith('deployment:complete', expect.objectContaining({
-        success: false,
-      }));
+      expect(mockSink.deployComplete).toHaveBeenCalledWith({targetOrg: 'targetOrg'});
     });
   });
 });

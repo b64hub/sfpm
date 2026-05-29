@@ -2,11 +2,13 @@ import type {
   HookCompleteEvent,
   HooksCompleteEvent,
   HooksStartEvent,
-  InstallOrchestrator, InstallStartEvent, OrchestrationCompleteEvent,
+  InstallEventBus,
+  InstallStartEvent,
+  OrchestrationCompleteEvent,
+  OrchestrationEventBus,
   OrchestrationLevelCompleteEvent,
   OrchestrationLevelStartEvent,
   OrchestrationStartEvent,
-  PackageInstaller,
 } from '@b64hub/sfpm-core';
 
 import boxen from 'boxen';
@@ -41,21 +43,21 @@ export class InstallProgressRenderer {
    * Event configuration mapping events to handlers
    */
   private eventConfigs: Record<string, EventConfig> = {
+    'complete': {description: 'Install completed', handler: this.handleInstallComplete.bind(this)},
     'connection:complete': {description: 'Connected to org', handler: this.handleConnectionComplete.bind(this)},
     'connection:start': {description: 'Connecting to org', handler: this.handleConnectionStart.bind(this)},
-    'deployment:complete': {description: 'Deployment completed', handler: this.handleDeploymentComplete.bind(this)},
-    'deployment:progress': {description: 'Deployment progress', handler: this.handleDeploymentProgress.bind(this)},
-    'deployment:start': {description: 'Deployment started', handler: this.handleDeploymentStart.bind(this)},
+    'deploy:complete': {description: 'Deployment completed', handler: this.handleDeploymentComplete.bind(this)},
+    'deploy:progress': {description: 'Deployment progress', handler: this.handleDeploymentProgress.bind(this)},
+    'deploy:start': {description: 'Deployment started', handler: this.handleDeploymentStart.bind(this)},
+    'error': {description: 'Install error', handler: this.handleInstallError.bind(this)},
     'hook:complete': {description: 'Hook complete', handler: this.handleHookComplete.bind(this)},
     'hooks:complete': {description: 'All hooks complete', handler: this.handleHooksComplete.bind(this)},
     'hooks:start': {description: 'Hooks started', handler: this.handleHooksStart.bind(this)},
-    'install:complete': {description: 'Install completed', handler: this.handleInstallComplete.bind(this)},
-    'install:error': {description: 'Install error', handler: this.handleInstallError.bind(this)},
-    'install:skip': {description: 'Install skipped', handler: this.handleInstallSkip.bind(this)},
-    'install:start': {description: 'Install started', handler: this.handleInstallStart.bind(this)},
-    'version-install:complete': {description: 'Version install completed', handler: this.handleVersionInstallComplete.bind(this)},
-    'version-install:progress': {description: 'Version install progress', handler: this.handleVersionInstallProgress.bind(this)},
-    'version-install:start': {description: 'Version install started', handler: this.handleVersionInstallStart.bind(this)},
+    'skip': {description: 'Install skipped', handler: this.handleInstallSkip.bind(this)},
+    'start': {description: 'Install started', handler: this.handleInstallStart.bind(this)},
+    'version:complete': {description: 'Version install completed', handler: this.handleVersionInstallComplete.bind(this)},
+    'version:progress': {description: 'Version install progress', handler: this.handleVersionInstallProgress.bind(this)},
+    'version:start': {description: 'Version install started', handler: this.handleVersionInstallStart.bind(this)},
   };
   private events: EventLog[] = [];
   /**
@@ -73,10 +75,10 @@ export class InstallProgressRenderer {
    * Event configuration for orchestration-level events
    */
   private orchestrationEventConfigs: Record<string, EventConfig> = {
-    'orchestration:complete': {description: 'Orchestration complete', handler: this.handleOrchestrationComplete.bind(this)},
-    'orchestration:level:complete': {description: 'Level complete', handler: this.handleOrchestrationLevelComplete.bind(this)},
-    'orchestration:level:start': {description: 'Level started', handler: this.handleOrchestrationLevelStart.bind(this)},
-    'orchestration:start': {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
+    'complete': {description: 'Orchestration complete', handler: this.handleOrchestrationComplete.bind(this)},
+    'level:complete': {description: 'Level complete', handler: this.handleOrchestrationLevelComplete.bind(this)},
+    'level:start': {description: 'Level started', handler: this.handleOrchestrationLevelStart.bind(this)},
+    'start': {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
   };
   private spinner?: Ora;
   private targetOrg?: string;
@@ -94,21 +96,23 @@ export class InstallProgressRenderer {
   }
 
   /**
-   * Attach renderer to a PackageInstaller or InstallOrchestrator instance
+   * Attach renderer to typed event buses.
    */
-  public attachTo(emitter: InstallOrchestrator | PackageInstaller): void {
+  public attachTo(installBus: InstallEventBus, orchestrationBus?: OrchestrationEventBus): void {
     for (const [event, config] of Object.entries(this.eventConfigs)) {
-      (emitter as any).on(event, (data: any) => {
+      installBus.on(event as any, (data: any) => {
         this.logEvent(event, data);
         config.handler(data);
       });
     }
 
-    // Attach orchestration event handlers (no-ops if emitter is a plain PackageInstaller)
-    for (const [event, config] of Object.entries(this.orchestrationEventConfigs)) {
-      (emitter as any).on(event, (data: any) => {
-        config.handler(data);
-      });
+    // Attach orchestration event handlers if an orchestration bus is provided
+    if (orchestrationBus) {
+      for (const [event, config] of Object.entries(this.orchestrationEventConfigs)) {
+        orchestrationBus.on(event as any, (data: any) => {
+          config.handler(data);
+        });
+      }
     }
   }
 
