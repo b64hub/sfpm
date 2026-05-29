@@ -55,6 +55,7 @@ export {
   type RegistryPackageInfo,
   type RegistryVersionInfo,
 } from './artifacts/registry/index.js';
+export * from './events/index.js';
 export {GitService} from './git/git-service.js';
 export {default as Git} from './git/git.js';
 // Lifecycle engine and config
@@ -122,7 +123,9 @@ export * from './types/build-state.js';
 export * from './types/config.js';
 export * from './types/dependency-analysis.js';
 export * from './types/errors.js';
-export * from './types/events.js';
+export type {
+  AllBuildEvents, AssemblyEvents, SourceBuildEvents, UnlockedBuildEvents,
+} from './types/events.js';
 export * from './types/lifecycle.js';
 export * from './types/logger.js';
 export * from './types/npm.js';

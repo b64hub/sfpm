@@ -3,7 +3,7 @@ import {
 } from 'vitest';
 
 import type {DependencyResolution} from '../../src/project/project-graph.js';
-import type {OrchestrationResult, PackageResult} from '../../src/types/events.js';
+import type {OrchestrationResult, PackageResult} from '../../src/events/orchestration-event-bus.js';
 
 import {GitService} from '../../src/git/git-service.js';
 import {BuildOrchestrator} from '../../src/orchestrator/build-orchestrator.js';

@@ -1,12 +1,12 @@
 import {randomUUID} from 'node:crypto';
 import EventEmitter from 'node:events';
 
-import {DependencyResolution, PackageNode, ProjectGraph} from '../project/project-graph.js';
-import {DependencyError} from '../types/errors.js';
 import {
   OrchestrationResult,
   PackageResult,
-} from '../types/events.js';
+} from '../events/orchestration-event-bus.js';
+import {DependencyResolution, PackageNode, ProjectGraph} from '../project/project-graph.js';
+import {DependencyError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 
 // ============================================================================

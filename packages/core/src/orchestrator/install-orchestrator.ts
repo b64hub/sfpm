@@ -4,15 +4,15 @@ import EventEmitter from 'node:events';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {ArtifactService} from '../artifacts/artifact-service.js';
-import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
-import PackageInstaller, {InstallOptions} from '../package/package-installer.js';
-import {ProjectGraph} from '../project/project-graph.js';
 import {
   InstallEvents,
   OrchestrationEvents,
   OrchestrationResult,
   PackageResult,
-} from '../types/events.js';
+} from '../events/index.js';
+import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
+import PackageInstaller, {InstallOptions} from '../package/package-installer.js';
+import {ProjectGraph} from '../project/project-graph.js';
 import {Logger} from '../types/logger.js';
 import {InstallationSource} from '../types/package.js';
 import {

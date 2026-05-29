@@ -1,5 +1,13 @@
 import EventEmitter from 'node:events';
 
+import type {
+  BuildCompleteEvent,
+} from '../events/build-event-bus.js';
+import type {
+  OrchestrationEvents,
+  OrchestrationResult,
+  PackageResult,
+} from '../events/orchestration-event-bus.js';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {PendingValidationDescriptor} from '../types/package.js';
 
@@ -8,12 +16,7 @@ import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {BuildOptions, PackageBuilder} from '../package/package-builder.js';
 import {ProjectGraph} from '../project/project-graph.js';
 import {IgnoreFilesConfig} from '../types/config.js';
-import {
-  AllBuildEvents,
-  OrchestrationEvents,
-  OrchestrationResult,
-  PackageResult,
-} from '../types/events.js';
+import {AllBuildEvents} from '../types/events.js';
 import {Logger} from '../types/logger.js';
 import {
   OrchestrationTask,

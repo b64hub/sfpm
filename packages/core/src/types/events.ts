@@ -1,292 +1,66 @@
-import type {PendingValidationDescriptor} from './package.js';
-
-import {PackageType} from './package.js';
-
-// ============================================================================
-// Base Event Interfaces
-// ============================================================================
-
 /**
- * Base event that all build events extend
+ * @module types/events
+ *
+ * Legacy event maps that use OLD event names for the current
+ * `extends EventEmitter` pattern in builders / orchestrators.
+ * These will be removed when those classes migrate to domain event buses.
+ *
+ * For event type definitions, import from `@b64hub/sfpm-core` or `../events/`.
  */
-export interface BaseEvent {
-  packageName: string;
-  timestamp: Date;
-}
+
+import type {
+  AnalyzerCompleteEvent, AnalyzersCompleteEvent,
+  AnalyzersStartEvent, AnalyzerStartEvent,
+  ArtifactCompleteEvent, ArtifactErrorEvent, ArtifactPackEvent, ArtifactStartEvent,
+  AssembleCompleteEvent, AssembleStartEvent,
+  BuildCompleteEvent, BuilderCompleteEvent, BuildErrorEvent, BuilderStartEvent,
+  BuildSkippedEvent, BuildStartEvent,
+  CreateCompleteEvent, CreateProgressEvent, CreateStartEvent,
+  PruneCompleteEvent, PruneStartEvent,
+  StageCompleteEvent, StageStartEvent,
+  TaskCompleteEvent, TaskSkippedEvent, TaskStartEvent,
+  TaskValidationCompleteEvent, TaskValidationProgressEvent, TaskValidationStartEvent,
+  ValidationCompleteEvent, ValidationStartEvent,
+} from '../events/build-event-bus.js';
+import type {
+  ConnectionCompleteEvent, ConnectionStartEvent, HookCompleteEvent, HooksCompleteEvent, HooksStartEvent,
+} from '../events/types.js';
 
 // ============================================================================
-// Core Build Lifecycle Events
+// Legacy event maps (still used by current extends-EventEmitter classes)
 // ============================================================================
 
-export interface BuildStartEvent extends BaseEvent {
-  buildNumber?: string;
-  packageType: PackageType;
-  version?: string;
-}
-
-export interface BuildCompleteEvent extends BaseEvent {
-  artifactPath?: string;
-  packageVersionId?: string;
-  reason?: string;
-  skipped?: boolean;
-  success: boolean;
-}
-
-export interface BuildSkippedEvent extends BaseEvent {
-  artifactPath?: string;
-  latestVersion?: string;
-  packageType: PackageType;
-  reason: 'already-built' | 'empty-package' | 'no-changes';
-  sourceHash?: string;
-  version?: string;
-}
-
-export interface BuildErrorEvent extends BaseEvent {
-  error: Error;
-  phase: 'analysis' | 'build' | 'connection' | 'post-build' | 'staging';
-}
-
-// ============================================================================
-// Staging Events
-// ============================================================================
-
-export interface StageStartEvent extends BaseEvent {
-  stagingDirectory?: string;
-}
-
-export interface StageCompleteEvent extends BaseEvent {
-  componentCount: number;
-  stagingDirectory: string;
-}
-
-// ============================================================================
-// Analyzer Events
-// ============================================================================
-
-export interface AnalyzersStartEvent extends BaseEvent {
-  analyzerCount: number;
-}
-
-export interface AnalyzerStartEvent extends BaseEvent {
-  analyzerName: string;
-}
-
-export interface AnalyzerCompleteEvent extends BaseEvent {
-  analyzerName: string;
-  error?: string;
-  findings?: Record<string, any>;
-}
-
-export interface AnalyzersCompleteEvent extends BaseEvent {
-  completedCount: number;
-}
-
-// ============================================================================
-// Connection Events
-// ============================================================================
-
-export interface ConnectionStartEvent extends BaseEvent {
-  orgType: 'devhub' | 'production' | 'sandbox';
-  username: string;
-}
-
-export interface ConnectionCompleteEvent extends BaseEvent {
-  orgId?: string;
-  username: string;
-}
-
-// ============================================================================
-// Builder Execution Events
-// ============================================================================
-
-export interface BuilderStartEvent extends BaseEvent {
-  builderName: string;
-  packageType: PackageType;
-}
-
-export interface BuilderCompleteEvent extends BaseEvent {
-  builderName: string;
-  packageType: PackageType;
-}
-
-// ============================================================================
-// Unlocked Package Specific Events
-// ============================================================================
-
-export interface PruneStartEvent extends BaseEvent {
-  reason: string;
-}
-
-export interface PruneCompleteEvent extends BaseEvent {
-  prunedFiles: number;
-}
-
-export interface CreateStartEvent extends BaseEvent {
-  packageId?: string;
-  versionNumber: string;
-}
-
-export interface CreateProgressEvent extends BaseEvent {
-  message?: string;
-  percentComplete?: number;
-  status: string;
-}
-
-export interface CreateCompleteEvent extends BaseEvent {
-  codeCoverage?: null | number;
-  createdDate?: string;
-  hasMetadataRemoved?: boolean;
-  hasPassedCodeCoverageCheck?: boolean;
-  packageId?: string;
-  /** The Package2VersionCreateRequest ID — used to poll async validation status */
-  packageVersionCreateRequestId?: string;
-  packageVersionId: string;
-  status?: string;
-  subscriberPackageVersionId?: string;
-  totalNumberOfMetadataFiles?: number;
-  totalSizeOfMetadataFiles?: number;
-  versionNumber: string;
-}
-
-export interface ValidationStartEvent extends BaseEvent {
-  validationType: 'apex' | 'dependencies' | 'metadata';
-}
-
-export interface ValidationCompleteEvent extends BaseEvent {
-  details?: string;
-  passed: boolean;
-  validationType: 'apex' | 'dependencies' | 'metadata';
-}
-
-// ============================================================================
-// Source Package Specific Events
-// ============================================================================
-
-export interface SourceAssembleStartEvent extends BaseEvent {
-  sourcePath: string;
-}
-
-export interface SourceAssembleCompleteEvent extends BaseEvent {
-  artifactPath: string;
-  sourcePath: string;
-}
-
-// ============================================================================
-// Task Events
-// ============================================================================
-
-export interface TaskStartEvent extends BaseEvent {
-  taskName: string;
-  taskType: 'post-build' | 'pre-build';
-}
-
-export interface TaskCompleteEvent extends BaseEvent {
-  success: boolean;
-  taskName: string;
-  taskType: 'post-build' | 'pre-build';
-}
-
-export interface TaskSkippedEvent extends BaseEvent {
-  reason: string;
-  taskName: string;
-  taskType: 'post-build' | 'pre-build';
-}
-
-// ============================================================================
-// Task Domain Events (emitted by tasks via context.eventEmitter)
-// ============================================================================
-
-export interface TaskValidationStartEvent extends BaseEvent {
-  testCount: number;
-  testLevel?: string;
-}
-
-export interface TaskValidationProgressEvent extends BaseEvent {
-  methodsCompleted?: number;
-  methodsTotal?: number;
-  status: string;
-}
-
-export interface TaskValidationCompleteEvent extends BaseEvent {
-  coveragePercentage?: number;
-  coverageRequired?: number;
-  failed: number;
-  passed: number;
-  testCount: number;
-}
-
-// ============================================================================
-// Lifecycle Hook Events
-// ============================================================================
-
-export interface HooksStartEvent extends BaseEvent {
-  hookCount: number;
-  hookNames: string[];
-  operation: string;
-  packageName: string;
-  timing: string;
-}
-
-export interface HookCompleteEvent extends BaseEvent {
-  hookName: string;
-  operation: string;
-  packageName: string;
-  timing: string;
-}
-
-export interface HooksCompleteEvent extends BaseEvent {
-  completedCount: number;
-  operation: string;
-  packageName: string;
-  timing: string;
-}
-
-// ============================================================================
-// Event Type Maps (for type-safe EventEmitter usage)
-// ============================================================================
-
-/**
- * Core build events emitted by PackageBuilder
- */
-export interface BuildEvents {
+/** Combined event map with OLD event names — used by PackageBuilder, SfpmCore. */
+export interface AllBuildEvents {
   'analyzer:complete': [AnalyzerCompleteEvent];
   'analyzer:start': [AnalyzerStartEvent];
   'analyzers:complete': [AnalyzersCompleteEvent];
   'analyzers:start': [AnalyzersStartEvent];
-
+  'assembly:complete': [ArtifactCompleteEvent];
+  'assembly:error': [ArtifactErrorEvent];
+  'assembly:pack': [ArtifactPackEvent];
+  'assembly:start': [ArtifactStartEvent];
   'build:complete': [BuildCompleteEvent];
   'build:error': [BuildErrorEvent];
-
   'build:skipped': [BuildSkippedEvent];
   'build:start': [BuildStartEvent];
   'builder:complete': [BuilderCompleteEvent];
   'builder:start': [BuilderStartEvent];
-
   'connection:complete': [ConnectionCompleteEvent];
   'connection:start': [ConnectionStartEvent];
-
   'hook:complete': [HookCompleteEvent];
   'hooks:complete': [HooksCompleteEvent];
   'hooks:start': [HooksStartEvent];
-
+  'source:assemble:complete': [AssembleCompleteEvent];
+  'source:assemble:start': [AssembleStartEvent];
   'stage:complete': [StageCompleteEvent];
   'stage:start': [StageStartEvent];
-
   'task:complete': [TaskCompleteEvent];
   'task:skipped': [TaskSkippedEvent];
   'task:start': [TaskStartEvent];
   'task:validation:complete': [TaskValidationCompleteEvent];
   'task:validation:progress': [TaskValidationProgressEvent];
   'task:validation:start': [TaskValidationStartEvent];
-}
-
-/**
- * Unlocked package builder specific events
- */
-export interface UnlockedBuildEvents {
-  'task:complete': [TaskCompleteEvent];
-  'task:skipped': [TaskSkippedEvent];
-  'task:start': [TaskStartEvent];
   'unlocked:create:complete': [CreateCompleteEvent];
   'unlocked:create:progress': [CreateProgressEvent];
   'unlocked:create:start': [CreateStartEvent];
@@ -296,234 +70,9 @@ export interface UnlockedBuildEvents {
   'unlocked:validation:start': [ValidationStartEvent];
 }
 
-/**
- * Source package builder specific events
- */
-export interface SourceBuildEvents {
-  'source:assemble:complete': [SourceAssembleCompleteEvent];
-  'source:assemble:start': [SourceAssembleStartEvent];
-  'task:complete': [TaskCompleteEvent];
-  'task:skipped': [TaskSkippedEvent];
-  'task:start': [TaskStartEvent];
-  'task:validation:complete': [TaskValidationCompleteEvent];
-  'task:validation:progress': [TaskValidationProgressEvent];
-  'task:validation:start': [TaskValidationStartEvent];
-}
-
-// ============================================================================
-// Artifact Assembly Events
-// ============================================================================
-
-export interface AssemblyStartEvent extends BaseEvent {
-  version: string;
-}
-
-export interface AssemblyPackEvent extends BaseEvent {
-  tarballName: string;
-}
-
-export interface AssemblyCompleteEvent extends BaseEvent {
-  artifactHash: string;
-  artifactPath: string;
-  duration: number;
-  sourceHash: string;
-  version: string;
-}
-
-export interface AssemblyErrorEvent extends BaseEvent {
-  error: Error;
-  version: string;
-}
-
-/**
- * Artifact assembly events emitted by ArtifactAssembler
- */
-export interface AssemblyEvents {
-  'assembly:complete': [AssemblyCompleteEvent];
-  'assembly:error': [AssemblyErrorEvent];
-  'assembly:pack': [AssemblyPackEvent];
-  'assembly:start': [AssemblyStartEvent];
-}
-
-/**
- * Combined event map for all build events
- */
-export type AllBuildEvents = AssemblyEvents & BuildEvents & SourceBuildEvents & UnlockedBuildEvents;
-
-// ============================================================================
-// Install Events (typed)
-// ============================================================================
-
-export interface InstallStartEvent extends BaseEvent {
-  installReason?: string;
-  packageType: PackageType;
-  packageVersionId?: string;
-  source?: string;
-  targetOrg: string;
-  versionNumber?: string;
-}
-
-export interface InstallSkipEvent extends BaseEvent {
-  packageType: PackageType;
-  reason: string;
-  targetOrg: string;
-}
-
-export interface InstallCompleteEvent extends BaseEvent {
-  packageType: PackageType;
-  packageVersionId?: string;
-  source?: string;
-  success: boolean;
-  targetOrg: string;
-  versionNumber?: string;
-}
-
-export interface InstallErrorEvent extends BaseEvent {
-  error: string;
-  packageType: PackageType;
-  packageVersionId?: string;
-  targetOrg: string;
-  versionNumber?: string;
-}
-
-export interface DeploymentStartEvent extends BaseEvent {
-  targetOrg: string;
-}
-
-export interface DeploymentProgressEvent extends BaseEvent {
-  numberComponentsDeployed?: number;
-  numberComponentsTotal?: number;
-  status: string;
-}
-
-export interface DeploymentCompleteEvent extends BaseEvent {
-  numberComponentsDeployed?: number;
-  targetOrg: string;
-}
-
-export interface VersionInstallStartEvent extends BaseEvent {
-  packageVersionId: string;
-}
-
-export interface VersionInstallProgressEvent extends BaseEvent {
-  status: string;
-}
-
-export interface VersionInstallCompleteEvent extends BaseEvent {
-  packageVersionId: string;
-}
-
-/**
- * Install event map for type-safe EventEmitter usage
- */
-export interface InstallEvents {
-  'connection:complete': [ConnectionCompleteEvent];
-  'connection:start': [ConnectionStartEvent];
-  'deployment:complete': [DeploymentCompleteEvent];
-  'deployment:progress': [DeploymentProgressEvent];
-  'deployment:start': [DeploymentStartEvent];
-  'hook:complete': [HookCompleteEvent];
-  'hooks:complete': [HooksCompleteEvent];
-  'hooks:start': [HooksStartEvent];
-  'install:complete': [InstallCompleteEvent];
-  'install:error': [InstallErrorEvent];
-  'install:skip': [InstallSkipEvent];
-  'install:start': [InstallStartEvent];
-  'version-install:complete': [VersionInstallCompleteEvent];
-  'version-install:progress': [VersionInstallProgressEvent];
-  'version-install:start': [VersionInstallStartEvent];
-}
-
-// ============================================================================
-// Orchestration Events
-// ============================================================================
-
-/**
- * Result of a single package build/install within an orchestration run
- */
-export interface PackageResult {
-  duration: number;
-  error?: string;
-  packageName: string;
-  /** Pending validation descriptor when validation was initiated but not yet resolved */
-  pendingValidation?: PendingValidationDescriptor;
-  skipped: boolean;
-  success: boolean;
-}
-
-export interface OrchestrationStartEvent {
-  includeDependencies: boolean;
-  orchestrationId: string;
-  packageNames: string[];
-  timestamp: Date;
-  totalLevels: number;
-  totalPackages: number;
-}
-
-export interface OrchestrationLevelStartEvent {
-  level: number;
-  orchestrationId: string;
-  /** Enriched package info for display purposes */
-  packageDetails: Array<{isManaged: boolean; name: string; version?: string;}>;
-  packages: string[];
-  timestamp: Date;
-}
-
-export interface OrchestrationPackageCompleteEvent {
-  duration: number;
-  error?: string;
-  level: number;
-  orchestrationId: string;
-  packageName: string;
-  skipped: boolean;
-  success: boolean;
-  timestamp: Date;
-}
-
-export interface OrchestrationLevelCompleteEvent {
-  failed: string[];
-  level: number;
-  orchestrationId: string;
-  skipped: string[];
-  succeeded: string[];
-  timestamp: Date;
-}
-
-export interface OrchestrationCompleteEvent {
-  orchestrationId: string;
-  results: PackageResult[];
-  timestamp: Date;
-  totalDuration: number;
-}
-
-export interface OrchestrationErrorEvent {
-  error: Error;
-  orchestrationId: string;
-  packageName?: string;
-  timestamp: Date;
-}
-
-/**
- * Event map for orchestration-level events
- */
-export interface OrchestrationEvents {
-  'orchestration:complete': [OrchestrationCompleteEvent];
-  'orchestration:error': [OrchestrationErrorEvent];
-  'orchestration:level:complete': [OrchestrationLevelCompleteEvent];
-  'orchestration:level:start': [OrchestrationLevelStartEvent];
-  'orchestration:package:complete': [OrchestrationPackageCompleteEvent];
-  'orchestration:start': [OrchestrationStartEvent];
-}
-
-/**
- * Aggregated result of a multi-package orchestration run
- */
-export interface OrchestrationResult {
-  duration: number;
-  failedPackages: string[];
-  /** Pending validation descriptors from packages that initiated async validation */
-  pendingValidations: PendingValidationDescriptor[];
-  results: PackageResult[];
-  skippedPackages: string[];
-  success: boolean;
-}
+/** Event subset for UnlockedPackageBuilder. */
+export type UnlockedBuildEvents = Pick<AllBuildEvents, 'task:complete' | 'task:skipped' | 'task:start' | 'unlocked:create:complete' | 'unlocked:create:progress' | 'unlocked:create:start' | 'unlocked:prune:complete' | 'unlocked:prune:start' | 'unlocked:validation:complete' | 'unlocked:validation:start'>;
+/** Event subset for SourcePackageBuilder. */
+export type SourceBuildEvents = Pick<AllBuildEvents, 'source:assemble:complete' | 'source:assemble:start' | 'task:complete' | 'task:skipped' | 'task:start' | 'task:validation:complete' | 'task:validation:progress' | 'task:validation:start'>;
+/** Event subset for assembly pipeline. */
+export type AssemblyEvents = Pick<AllBuildEvents, 'assembly:complete' | 'assembly:error' | 'assembly:pack' | 'assembly:start'>;
