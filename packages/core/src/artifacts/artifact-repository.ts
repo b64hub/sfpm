@@ -7,7 +7,7 @@ import {ArtifactManifest, ArtifactVersionEntry} from '../types/artifact.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 import {NpmPackageJson} from '../types/npm.js';
-import {SfpmPackageMetadataBase} from '../types/package.js';
+import {SfpmPackageMetadataBase, ValidationState} from '../types/package.js';
 import {splitPackageName} from '../utils/scope-utils.js';
 import {extractPackageVersionId, extractSourceHash, fromNpmPackageJson} from './npm-package-adapter.js';
 
@@ -362,6 +362,69 @@ export class ArtifactRepository {
   public async removeVersion(packageName: string, version: string): Promise<void> {
     const versionPath = this.getVersionPath(packageName, version);
     await fs.remove(versionPath);
+  }
+
+  /**
+   * Update the validation state inside an existing artifact tarball.
+   *
+   * Extracts `package/package.json` from the tarball, patches the
+   * `sfpm.validation` field with the resolved state, repacks the tarball,
+   * and recalculates the artifact hash in the manifest.
+   *
+   * @param packageName - Scoped npm name of the package
+   * @param version - Version of the artifact to update
+   * @param validationState - The resolved validation state to write
+   */
+  public async updateArtifactValidation(
+    packageName: string,
+    version: string,
+    validationState: ValidationState,
+  ): Promise<void> {
+    const artifactPath = this.getArtifactPath(packageName, version);
+
+    if (!await fs.pathExists(artifactPath)) {
+      throw new ArtifactError(packageName, 'update', `Artifact not found at ${artifactPath}`, {version});
+    }
+
+    const tempDir = path.join(path.dirname(artifactPath), '.repack-tmp');
+
+    try {
+      // 1. Extract tarball into temp directory
+      await fs.ensureDir(tempDir);
+      execSync(`tar -xzf "${artifactPath}" -C "${tempDir}"`, {timeout: 30_000});
+
+      // 2. Read and patch package.json
+      const packageJsonPath = path.join(tempDir, 'package', 'package.json');
+      const packageJson: NpmPackageJson = await fs.readJson(packageJsonPath);
+
+      packageJson.sfpm = {
+        ...packageJson.sfpm,
+        validation: validationState,
+      };
+
+      await fs.writeJson(packageJsonPath, packageJson, {spaces: 2});
+
+      // 3. Repack tarball (overwrite original)
+      execSync(`tar -czf "${artifactPath}" -C "${tempDir}" package`, {timeout: 60_000});
+
+      // 4. Recalculate artifact hash and update manifest
+      const newHash = await this.calculateFileHash(artifactPath);
+
+      const manifest = await this.getManifest(packageName);
+      if (manifest?.versions[version]) {
+        manifest.versions[version].artifactHash = newHash;
+        await this.saveManifest(packageName, manifest);
+      }
+
+      this.logger?.info(`Updated validation state for ${packageName}@${version} to '${validationState.status}'`);
+    } catch (error) {
+      throw new ArtifactError(packageName, 'update', 'Failed to update artifact validation state', {
+        cause: error instanceof Error ? error : new Error(String(error)),
+        version,
+      });
+    } finally {
+      await fs.remove(tempDir);
+    }
   }
 
   /**
