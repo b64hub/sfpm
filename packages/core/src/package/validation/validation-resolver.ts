@@ -22,8 +22,6 @@ const DEFAULT_COVERAGE_THRESHOLD = 75;
 export interface ResolveOptions {
   /** Minimum code coverage percentage required (default: 75) */
   coverageThreshold?: number;
-  /** An existing MetadataDeployService instance that holds the pending deploy in its registry. */
-  deployService?: MetadataDeployService;
   /** Maximum time to wait for resolution in milliseconds (default: 7_200_000 = 120 min) */
   maxWaitMs?: number;
   /** Polling interval in milliseconds (default: 30_000 = 30s) */
@@ -89,8 +87,10 @@ export class ValidationResolver {
   }
 
   /**
-   * Resolve multiple pending validations in sequence.
-   * Sequential to avoid flooding the DevHub/org with concurrent queries.
+   * Resolve multiple pending validations with optimal concurrency.
+   *
+   * - Deploy-type descriptors are resolved sequentially (they target the same org).
+   * - Package-version-request descriptors are resolved in parallel (independent server-side).
    */
   async resolveAll(
     descriptors: PendingValidationDescriptor[],
@@ -98,10 +98,26 @@ export class ValidationResolver {
   ): Promise<Map<string, ValidationStateFailed | ValidationStatePassed>> {
     const results = new Map<string, ValidationStateFailed | ValidationStatePassed>();
 
-    for (const descriptor of descriptors) {
+    const deploys = descriptors.filter(d => d.operationType === 'deploy');
+    const versionRequests = descriptors.filter(d => d.operationType === 'package-version-request');
+
+    // Deploy-type: sequential (same org)
+    for (const descriptor of deploys) {
       // eslint-disable-next-line no-await-in-loop -- sequential resolution is intentional
       const result = await this.resolve(descriptor, options);
       results.set(descriptor.packageName, result);
+    }
+
+    // Package-version-request-type: parallel (independent server-side processes)
+    if (versionRequests.length > 0) {
+      const parallelResults = await Promise.all(versionRequests.map(async descriptor => {
+        const result = await this.resolve(descriptor, options);
+        return {packageName: descriptor.packageName, result};
+      }));
+
+      for (const {packageName, result} of parallelResults) {
+        results.set(packageName, result);
+      }
     }
 
     return results;
@@ -158,17 +174,8 @@ export class ValidationResolver {
     descriptor: PendingValidationDescriptor,
     options?: ResolveOptions,
   ): Promise<ValidationStateFailed | ValidationStatePassed> {
-    const deployService = options?.deployService;
-    if (!deployService) {
-      return {
-        checks: ['deploy', 'test'],
-        error: `Cannot resolve deploy '${descriptor.operationId}' — no deployService provided. `
-          + 'Pass the same MetadataDeployService instance that initiated the deploy.',
-        status: 'failed',
-      };
-    }
-
     const threshold = options?.coverageThreshold ?? DEFAULT_COVERAGE_THRESHOLD;
+    const deployService = new MetadataDeployService(this.logger);
 
     this.logger?.info(`Awaiting deploy '${descriptor.operationId}' for '${descriptor.packageName}'`);
     const result = await deployService.awaitDeploy(descriptor.operationId, descriptor.targetOrg);

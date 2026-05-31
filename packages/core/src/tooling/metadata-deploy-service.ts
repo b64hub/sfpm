@@ -106,32 +106,24 @@ export class MetadataDeployService {
   /**
    * Wait for a previously started deployment to complete.
    * Polls the Salesforce API until the deployment finishes.
+   *
+   * Supports two modes:
+   * - **In-process**: If the deploy was started by this instance, uses the live `MetadataApiDeploy` handle.
+   * - **Fresh-polling**: If the deployId is not in the local registry (e.g., resolution from a different
+   *   process), creates a fresh org connection and polls `checkDeployStatus` directly.
    */
   async awaitDeploy(
     deployId: string,
-    _targetOrg: string,
+    targetOrg: string,
     onProgress?: (progress: DeployProgress) => void,
   ): Promise<DeployResult> {
     const deploy = this.pendingDeploys.get(deployId);
-    if (!deploy) {
-      throw new Error(`No pending deployment found for ID: ${deployId}. Was it started by this service instance?`);
+
+    if (deploy) {
+      return this.awaitInProcess(deploy, deployId, onProgress);
     }
 
-    deploy.onUpdate(status => {
-      const deployed = status.numberComponentsDeployed;
-      const total = status.numberComponentsTotal;
-      const pct = total > 0 ? Math.round((deployed / total) * 100) : 0;
-
-      onProgress?.({
-        deployed, percentage: pct, status: String(status.status), total,
-      });
-      this.logger?.debug(`Deploy progress: ${pct}% (${deployed}/${total}) — ${status.status}`);
-    });
-
-    const result = await deploy.pollStatus();
-    this.pendingDeploys.delete(deployId);
-
-    return this.mapResult(result.response);
+    return this.awaitFreshPoll(deployId, targetOrg, onProgress);
   }
 
   /**
@@ -169,6 +161,68 @@ export class MetadataDeployService {
     this.pendingDeploys.set(deployId, deploy);
 
     return deployId;
+  }
+
+  private async awaitFreshPoll(
+    deployId: string,
+    targetOrg: string,
+    onProgress?: (progress: DeployProgress) => void,
+    pollingIntervalMs = 5000,
+    maxWaitMs = 7_200_000,
+  ): Promise<DeployResult> {
+    this.logger?.info(`Fresh-polling deploy '${deployId}' against ${targetOrg}`);
+
+    const org = await Org.create({aliasOrUsername: targetOrg});
+    const connection = org.getConnection();
+
+    const deadline = Date.now() + maxWaitMs;
+
+    while (Date.now() < deadline) {
+      // eslint-disable-next-line no-await-in-loop -- intentional polling loop
+      const status = await connection.metadata.checkDeployStatus(deployId, true) as unknown as MetadataApiDeployStatus;
+
+      const deployed = status.numberComponentsDeployed ?? 0;
+      const total = status.numberComponentsTotal ?? 0;
+      const pct = total > 0 ? Math.round((deployed / total) * 100) : 0;
+
+      onProgress?.({
+        deployed, percentage: pct, status: String(status.status), total,
+      });
+      this.logger?.debug(`Deploy progress: ${pct}% (${deployed}/${total}) — ${status.status}`);
+
+      if (status.done) {
+        return this.mapResult(status);
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(resolve => {
+        setTimeout(resolve, pollingIntervalMs);
+      });
+    }
+
+    throw new Error(`Deploy '${deployId}' timed out after ${maxWaitMs / 60_000} minutes`);
+  }
+
+  private async awaitInProcess(
+    deploy: MetadataApiDeploy,
+    deployId: string,
+    onProgress?: (progress: DeployProgress) => void,
+  ): Promise<DeployResult> {
+    deploy.onUpdate(status => {
+      const deployed = status.numberComponentsDeployed;
+      const total = status.numberComponentsTotal;
+      const pct = total > 0 ? Math.round((deployed / total) * 100) : 0;
+
+      onProgress?.({
+        deployed, percentage: pct, status: String(status.status), total,
+      });
+      this.logger?.debug(`Deploy progress: ${pct}% (${deployed}/${total}) — ${status.status}`);
+    });
+
+    const result = await deploy.pollStatus();
+    this.pendingDeploys.delete(deployId);
+
+    return this.mapResult(result.response);
   }
 
   private extractTestResults(response: MetadataApiDeployStatus): TestRunResult | undefined {

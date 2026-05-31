@@ -21,7 +21,7 @@ import {
 } from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
 
-export type BuildMode = 'build' | 'build:dry-run' | 'build:skip-validation';
+export type BuildMode = 'default' | 'dry-run';
 
 /**
  * Internal configuration resolved from {@link BuildMode}.
@@ -40,28 +40,27 @@ interface ModeConfig {
 }
 
 const MODE_DEFAULTS: Record<BuildMode, ModeConfig> = {
-  build: {
+  default: {
     artifact: true,
     dependencyAnalysis: 'warn',
     gitTag: true,
     validation: true,
   },
-  'build:dry-run': {
+  'dry-run': {
     artifact: false,
     dependencyAnalysis: 'error',
     gitTag: false,
     validation: 'local',
   },
-  'build:skip-validation': {
-    artifact: true,
-    dependencyAnalysis: 'skip',
-    gitTag: true,
-    validation: false,
-  },
 };
 
-function resolveModeConfig(mode?: BuildMode): ModeConfig {
-  return MODE_DEFAULTS[mode ?? 'build'];
+function resolveModeConfig(mode?: BuildMode, skipValidation?: boolean): ModeConfig {
+  const base = MODE_DEFAULTS[mode ?? 'default'];
+  if (skipValidation) {
+    return {...base, dependencyAnalysis: 'skip', validation: false};
+  }
+
+  return base;
 }
 
 export interface BuildOptions {
@@ -78,14 +77,20 @@ export interface BuildOptions {
   /**
    * Build mode. Determines which builder pipeline, validation, and feature flags apply.
    *
-   * - `build` (default) — production-ready artifact with full validation.
+   * - `default` — production-ready artifact with full validation.
    *   Source packages: deploy+test against buildOrg. Unlocked: SF API with async validation + code coverage.
-   * - `build:skip-validation` — fast build, no validation. Source: no deploy+test.
-   *   Unlocked: SF API with skipvalidation=true.
    * - `dry-run` — maximum validation, no real SF API build, no git tags, no artifacts.
    *   All packages go through the source pipeline with deploy+test.
    */
   mode?: BuildMode;
+  /**
+   * Skip validation entirely. Acts as an overlay on the active mode:
+   * forces `validation: false` and `dependencyAnalysis: 'skip'`.
+   *
+   * Combine with `mode: 'default'` for a fast build without quality gates.
+   * Combine with `mode: 'dry-run'` for a pure artifact-only build (no tags, no validation).
+   */
+  skipValidation?: boolean;
   /** Timeout in minutes for package version creation (default: 120) */
   waitTime?: number;
 }
@@ -458,7 +463,7 @@ export class PackageBuilder {
       throw error;
     }
 
-    const modeConfig = resolveModeConfig(this.options.mode);
+    const modeConfig = resolveModeConfig(this.options.mode, this.options.skipValidation);
 
     // In dry-run mode (local validation), force all packages through SourcePackageBuilder
     const useSourceBuilder = modeConfig.validation === 'local';

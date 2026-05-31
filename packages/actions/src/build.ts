@@ -116,7 +116,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   }
 
   // ------------------------------------------------------------------
-  // 3. Run BuildOrchestrator (build mode defaults to async validation)
+  // 3. Run BuildOrchestrator (default mode with full validation)
   // ------------------------------------------------------------------
   const orchestrator = new BuildOrchestrator(
     projectConfig,
@@ -128,7 +128,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       includeDependencies: options.includeDependencies,
       installationKey: options.installationKey,
-      mode: 'build',
+      mode: 'default',
     },
     logger,
     projectDir,
@@ -136,7 +136,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
 
   // Collect creation request IDs from create:complete events
   const createRequestIds = new Map<string, {packageVersionCreateRequestId: string; packageVersionId: string; version: string}>();
-  orchestrator.buildBus.on('create:complete', (event) => {
+  orchestrator.buildBus.on('create:complete', event => {
     if (event.packageVersionCreateRequestId) {
       createRequestIds.set(event.packageName, {
         packageVersionCreateRequestId: event.packageVersionCreateRequestId,

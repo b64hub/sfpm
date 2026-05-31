@@ -137,7 +137,7 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
       continueOnError: true,
       devhubUsername: options.devhubUsername,
       includeDependencies: true,
-      mode: 'build:dry-run',
+      mode: 'dry-run',
     },
     logger,
     projectDir,
@@ -148,8 +148,8 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
 
   // Collect coverage data from test completion events
   const coverageMap = new Map<string, number>();
-  orchestrator.buildBus.on('task:validate:complete', (data) => {
-    if (data.packageName && data.coveragePercentage != null) {
+  orchestrator.buildBus.on('task:validate:complete', data => {
+    if (data.packageName && data.coveragePercentage !== null) {
       coverageMap.set(data.packageName, data.coveragePercentage);
     }
   });

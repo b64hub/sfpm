@@ -96,6 +96,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     const skipHandler = (evt: any) => {
       if (evt.packageName === packageName) skipped = true;
     };
+
     this.buildBus.on('skip', skipHandler);
 
     try {
@@ -115,7 +116,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
 
   async setup(): Promise<GitService | undefined> {
     // In dry-run mode, git service is not needed (no tagging or version bumps)
-    if (this.options.mode === 'build:dry-run') {
+    if (this.options.mode === 'dry-run') {
       this.logger?.debug('Dry-run mode — skipping git service initialization');
       return undefined;
     }
