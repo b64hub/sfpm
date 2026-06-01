@@ -44,11 +44,11 @@ describe('GitTagTask', () => {
         };
         vi.mocked(Git.initiateRepo).mockResolvedValue(mockGitInstance);
 
-        task = new GitTagTask(mockSfpmPackage, '/artifact/dir', mockLogger);
+        task = new GitTagTask({sfpmPackage: mockSfpmPackage, projectDirectory: '/artifact/dir', logger: mockLogger});
     });
 
     it('should create a tag with the correct convention', async () => {
-        await task.exec();
+        const result = await task.exec();
 
         expect(toVersionFormat).toHaveBeenCalledWith(version, 'semver');
         expect(Git.initiateRepo).toHaveBeenCalledWith(mockLogger);
@@ -58,7 +58,7 @@ describe('GitTagTask', () => {
             expect.stringContaining(`sfpm package ${normalizedVersion}`)
         );
 
-        expect(mockSfpmPackage.metadata.source.tag).toBe(expectedTag);
+        expect(result).toEqual({enrichments: {sourceTag: expectedTag}});
         expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining(`Successfully tagged`));
     });
 

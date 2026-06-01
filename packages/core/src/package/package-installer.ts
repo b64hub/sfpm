@@ -1,13 +1,13 @@
 import {Org} from '@salesforce/core';
 import fs from 'fs-extra';
 import {execSync} from 'node:child_process';
-import EventEmitter from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {ArtifactService, InstallTarget} from '../artifacts/artifact-service.js';
+import {InstallEventBus, InstallEventSink} from '../events/install-event-bus.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {ArtifactResolutionOptions} from '../types/artifact.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
@@ -79,23 +79,26 @@ export interface InstallTask {
 /**
  * Orchestrator for package installations
  */
-export default class PackageInstaller extends EventEmitter {
+export default class PackageInstaller {
+  private bus?: InstallEventBus;
   private logger: Logger | undefined;
   private options: InstallOptions;
   private org?: Org;
   private provider: ProjectDefinitionProvider;
+  private sink?: InstallEventSink;
 
   constructor(
     provider: ProjectDefinitionProvider,
     options: InstallOptions,
     logger?: Logger,
     org?: Org,
+    bus?: InstallEventBus,
   ) {
-    super();
     this.options = options;
     this.logger = logger;
     this.provider = provider;
     this.org = org;
+    this.bus = bus;
   }
 
   /**
@@ -130,7 +133,7 @@ export default class PackageInstaller extends EventEmitter {
     }
 
     try {
-      return this.installSfpmPackage(sfpmPackage);
+      return await this.installSfpmPackage(sfpmPackage);
     } catch (error) {
       this.logger?.error(`Failed to install ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
@@ -138,126 +141,77 @@ export default class PackageInstaller extends EventEmitter {
   }
 
   private emitComplete(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
-    this.emit('install:complete', {
-      packageName: sfpmPackage.name,
+    this.sink?.complete({
       packageType: sfpmPackage.type as PackageType,
       source: installTarget.resolved.source,
       success: true,
       targetOrg: this.options.targetOrg,
-      timestamp: new Date(),
       versionNumber: sfpmPackage.version,
     });
   }
 
   private emitError(sfpmPackage: SfpmPackage, error: Error): void {
-    this.emit('install:error', {
+    this.sink?.error({
       error: error instanceof Error ? error.message : String(error),
-      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       targetOrg: this.options.targetOrg,
-      timestamp: new Date(),
       versionNumber: sfpmPackage.version,
     });
   }
 
   private emitManagedComplete(packageName: string, packageVersionId: string, success: boolean): void {
-    this.emit('install:complete', {
-      packageName,
+    this.sinkFor(packageName)?.complete({
       packageType: PackageType.Managed,
       packageVersionId,
       source: 'managed',
       success,
       targetOrg: this.options.targetOrg,
-      timestamp: new Date(),
     });
   }
 
   private emitManagedError(packageName: string, packageVersionId: string): void {
-    this.emit('install:error', {
-      packageName,
+    this.sinkFor(packageName)?.error({
+      error: `Installation failed for ${packageVersionId}`,
       packageType: PackageType.Managed,
       packageVersionId,
-      source: 'managed',
-      success: false,
       targetOrg: this.options.targetOrg,
-      timestamp: new Date(),
     });
   }
 
-  private emitManagedSkip(packageName: string, packageVersionId: string, reason: string): void {
-    this.emit('install:skip', {
-      packageName,
+  private emitManagedSkip(packageName: string, _packageVersionId: string, reason: string): void {
+    this.sinkFor(packageName)?.skip({
       packageType: PackageType.Managed,
-      packageVersionId,
       reason,
-      source: 'managed',
       targetOrg: this.options.targetOrg,
-      timestamp: new Date(),
     });
   }
 
   private emitManagedStart(packageName: string, packageVersionId: string): void {
-    this.emit('install:start', {
+    this.sinkFor(packageName)?.start({
       installReason: 'managed dependency',
-      packageName,
       packageType: PackageType.Managed,
       packageVersionId,
       source: 'managed',
       targetOrg: this.options.targetOrg,
-      timestamp: new Date(),
     });
   }
 
   private emitSkip(sfpmPackage: SfpmPackage, reason: string): void {
-    this.emit('install:skip', {
-      packageName: sfpmPackage.name,
+    this.sink?.skip({
       packageType: sfpmPackage.type as PackageType,
       reason,
       targetOrg: this.options.targetOrg,
-      timestamp: new Date(),
-      versionNumber: sfpmPackage.version,
     });
   }
 
   private emitStart(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
-    this.emit('install:start', {
+    this.sink?.start({
       installReason: installTarget.installReason,
-      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       source: installTarget.resolved.source,
       targetOrg: this.options.targetOrg,
-      timestamp: new Date(),
       versionNumber: sfpmPackage.version,
     });
-  }
-
-  /**
-   * Forward sub-events from a concrete installer (e.g. ManagedPackageInstaller)
-   * through this PackageInstaller so they propagate to the orchestrator/renderer.
-   * Injects `packageName` into each event payload since concrete installers may omit it.
-   */
-  private forwardInstallerEvents(installer: EventEmitter | Installer, packageName: string): void {
-    // Guard: concrete installers extend EventEmitter, but the Installer interface
-    // does not require it. Only forward when the installer actually emits events.
-    if (typeof (installer as any).on !== 'function') return;
-
-    const emitter = installer as EventEmitter;
-    const events = [
-      'connection:start',
-      'connection:complete',
-      'version-install:start',
-      'version-install:progress',
-      'version-install:complete',
-      'deployment:start',
-      'deployment:progress',
-      'deployment:complete',
-    ];
-
-    for (const event of events) {
-      emitter.on(event, (data: any) => {
-        this.emit(event, {...data, packageName});
-      });
-    }
   }
 
   /**
@@ -266,6 +220,9 @@ export default class PackageInstaller extends EventEmitter {
    */
   private async installFromSource(sfpmPackage: SfpmPackage): Promise<InstallResult> {
     const packageName = sfpmPackage.name;
+
+    // Create scoped sink for this package
+    this.sink = this.bus?.forPackage(packageName);
 
     if (!this.org) {
       this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
@@ -281,13 +238,11 @@ export default class PackageInstaller extends EventEmitter {
     await this.resolveOrgAliasForDeploy(sfpmPackage);
 
     this.logger?.info(`Deploying ${packageName} from local source`);
-    this.emit('install:start', {
+    this.sink?.start({
       installReason: 'source deploy',
-      packageName: sfpmPackage.name,
       packageType: sfpmPackage.type as PackageType,
       source: InstallationSource.Local,
       targetOrg: this.options.targetOrg,
-      timestamp: new Date(),
       versionNumber: sfpmPackage.version,
     });
 
@@ -306,19 +261,16 @@ export default class PackageInstaller extends EventEmitter {
       const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
         source: InstallationSource.Local,
         testLevel: this.options.deployment?.testLevel,
-      });
-      this.forwardInstallerEvents(installer, packageName);
+      }, this.sink);
 
       await installer.connect(this.options.targetOrg);
       const execResult = await installer.exec();
 
-      this.emit('install:complete', {
-        packageName: sfpmPackage.name,
+      this.sink?.complete({
         packageType: sfpmPackage.type as PackageType,
         source: InstallationSource.Local,
         success: true,
         targetOrg: this.options.targetOrg,
-        timestamp: new Date(),
         versionNumber: sfpmPackage.version,
       });
       this.logger?.info(`Successfully deployed ${packageName}`);
@@ -411,12 +363,7 @@ export default class PackageInstaller extends EventEmitter {
         throw new Error('No installer registered for package type: managed');
       }
 
-      const installer = new InstallerConstructor(this.options.targetOrg, managedRef, this.logger);
-
-      // Forward sub-events (connection:*, version-install:*) from the managed
-      // installer through this PackageInstaller so they reach the renderer.
-      // Inject packageName into payloads since ManagedPackageInstaller omits it.
-      this.forwardInstallerEvents(installer, packageName);
+      const installer = new InstallerConstructor(this.options.targetOrg, managedRef, this.logger, undefined, this.sinkFor(packageName));
 
       await installer.connect(this.options.targetOrg);
       await installer.exec();
@@ -449,6 +396,9 @@ export default class PackageInstaller extends EventEmitter {
     }
 
     const packageName = sfpmPackage.name;
+
+    // Create scoped sink for this package
+    this.sink = this.bus?.forPackage(packageName);
 
     if (!this.org) {
       this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
@@ -507,11 +457,7 @@ export default class PackageInstaller extends EventEmitter {
       const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
         source: this.options.source,
         testLevel: this.options.deployment?.testLevel,
-      });
-
-      // Forward sub-events (connection:*, deployment:*, version-install:*) from the
-      // concrete installer through this PackageInstaller so they reach the renderer.
-      this.forwardInstallerEvents(installer, packageName);
+      }, this.sink);
 
       await installer.connect(this.options.targetOrg);
       const execResult = await installer.exec();
@@ -610,22 +556,16 @@ export default class PackageInstaller extends EventEmitter {
       timing,
     };
 
-    const hookEvents = ['hooks:start', 'hook:complete', 'hooks:complete'] as const;
-    const forwarders = hookEvents.map(evt => {
-      const fn = (...args: any[]) => this.emit(evt as any, ...args);
-      lifecycle.on(evt, fn);
-      return {evt, fn};
-    });
-
-    try {
-      if (timing === 'pre') {
-        await lifecycle.runInstallPre(hookContext);
-      } else {
-        await lifecycle.runInstallPost(hookContext);
-      }
-    } finally {
-      for (const {evt, fn} of forwarders) lifecycle.removeListener(evt, fn);
+    if (timing === 'pre') {
+      await lifecycle.runInstallPre(hookContext, this.sink);
+    } else {
+      await lifecycle.runInstallPost(hookContext, this.sink);
     }
+  }
+
+  /** Create a scoped sink for a managed package by name. */
+  private sinkFor(packageName: string): InstallEventSink | undefined {
+    return this.bus?.forPackage(packageName);
   }
 
   /**

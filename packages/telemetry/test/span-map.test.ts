@@ -14,16 +14,19 @@ describe('defaultSpanMappings', () => {
 
   it('should map correct event pairs', () => {
     const orch = defaultSpanMappings.find(m => m.name === 'sfpm.orchestration')!;
-    expect(orch.start).toBe('orchestration:start');
-    expect(orch.end).toBe('orchestration:complete');
+    expect(orch.bus).toBe('orchestration');
+    expect(orch.start).toBe('start');
+    expect(orch.end).toBe('complete');
 
     const build = defaultSpanMappings.find(m => m.name === 'sfpm.build')!;
-    expect(build.start).toBe('build:start');
-    expect(build.end).toBe('build:complete');
+    expect(build.bus).toBe('build');
+    expect(build.start).toBe('start');
+    expect(build.end).toBe('complete');
 
     const install = defaultSpanMappings.find(m => m.name === 'sfpm.install')!;
-    expect(install.start).toBe('install:start');
-    expect(install.end).toBe('install:complete');
+    expect(install.bus).toBe('install');
+    expect(install.start).toBe('start');
+    expect(install.end).toBe('complete');
   });
 
   it('should generate unique span keys per package', () => {

@@ -1,7 +1,6 @@
 import fs from 'fs-extra';
 import {execSync} from 'node:child_process';
 import crypto from 'node:crypto';
-import {EventEmitter} from 'node:events';
 import path from 'node:path';
 
 import type {WorkspacePackageJson} from '../project/providers/types/workspace.js';
@@ -12,6 +11,17 @@ import {Logger} from '../types/logger.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {ArtifactRepository} from './artifact-repository.js';
 import {toNpmPackageJson} from './npm-package-adapter.js';
+
+/**
+ * Write-only contract for artifact assembly events.
+ * Satisfied by {@link ScopedBuildSink} — the assembler doesn't need the full bus.
+ */
+export interface ArtifactEventSink {
+  artifactComplete(payload: {artifactHash: string; artifactPath: string; duration: number; sourceHash: string; version: string}): void;
+  artifactError(payload: {error: Error; version: string}): void;
+  artifactPack(payload: {tarballName: string}): void;
+  artifactStart(payload: {version: string}): void;
+}
 
 /**
  * Interface for providing changelogs.
@@ -57,11 +67,12 @@ export interface ArtifactAssemblerOptions {
  * 6. Update manifest and symlink
  * 7. Clean up staging directory
  */
-export default class ArtifactAssembler extends EventEmitter {
+export default class ArtifactAssembler {
   private changelogProvider: ChangelogProvider;
   private options: ArtifactAssemblerOptions;
   private packageVersionNumber: string;
   private repository: ArtifactRepository;
+  private sink?: ArtifactEventSink;
   private versionDirectory: string;
 
   constructor(
@@ -69,9 +80,10 @@ export default class ArtifactAssembler extends EventEmitter {
     private projectDirectory: string,
     options: ArtifactAssemblerOptions,
     private logger?: Logger,
+    sink?: ArtifactEventSink,
   ) {
-    super();
     this.options = options;
+    this.sink = sink;
     this.packageVersionNumber = toVersionFormat(sfpmPackage.version || '0.0.0.1', 'semver');
 
     // Create repository for artifact operations
@@ -196,10 +208,8 @@ export default class ArtifactAssembler extends EventEmitter {
 
       this.logger?.debug(`Tarball created: ${tarballName}`);
 
-      this.emit('assembly:pack', {
-        packageName: this.sfpmPackage.name,
+      this.sink?.artifactPack({
         tarballName,
-        timestamp: new Date(),
       });
 
       return tarballName;
@@ -214,32 +224,26 @@ export default class ArtifactAssembler extends EventEmitter {
 
   private emitComplete(artifactPath: string, sourceHash: string, artifactHash: string, startTime: number): void {
     this.logger?.info(`Artifact successfully stored at ${artifactPath}`);
-    this.emit('assembly:complete', {
+    this.sink?.artifactComplete({
       artifactHash,
       artifactPath,
       duration: Date.now() - startTime,
-      packageName: this.sfpmPackage.name,
       sourceHash,
-      timestamp: new Date(),
       version: this.packageVersionNumber,
     });
   }
 
   private emitError(error: any): void {
     this.logger?.error(`Failed to assemble artifact: ${error.message}`);
-    this.emit('assembly:error', {
+    this.sink?.artifactError({
       error: error instanceof Error ? error : new Error(String(error)),
-      packageName: this.sfpmPackage.name,
-      timestamp: new Date(),
       version: this.packageVersionNumber,
     });
   }
 
   private emitStart(): void {
     this.logger?.info(`Assembling artifact for ${this.sfpmPackage.name}@${this.packageVersionNumber}`);
-    this.emit('assembly:start', {
-      packageName: this.sfpmPackage.name,
-      timestamp: new Date(),
+    this.sink?.artifactStart({
       version: this.packageVersionNumber,
     });
   }

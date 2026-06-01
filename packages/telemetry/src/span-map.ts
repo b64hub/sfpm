@@ -1,11 +1,13 @@
 /**
- * Declarative mapping from EventEmitter event pairs to OpenTelemetry spans.
+ * Declarative mapping from typed event bus event pairs to OpenTelemetry spans.
  *
  * Each entry defines a start event, an end event, a unique span key derivation,
  * optional parent key resolution, and attribute extractors.
  */
 
 export interface SpanMapping {
+  /** Which bus to subscribe to: 'build', 'install', or 'orchestration' */
+  bus: 'build' | 'install' | 'orchestration';
   /** Event name that ends the span */
   end: string;
   /** Extractor for span attributes from the end event */
@@ -32,13 +34,14 @@ export interface SpanMapping {
  */
 export const defaultSpanMappings: SpanMapping[] = [
   {
-    end: 'orchestration:complete',
+    bus: 'orchestration',
+    end: 'complete',
     endAttributes: evt => ({
       'sfpm.orchestration.total_duration_ms': evt.totalDuration as number,
     }),
     name: 'sfpm.orchestration',
     spanKey: () => 'orchestration',
-    start: 'orchestration:start',
+    start: 'start',
     startAttributes(evt) {
       const attrs: Record<string, boolean | number | string> = {
         'sfpm.orchestration.id': evt.orchestrationId as string,
@@ -56,7 +59,8 @@ export const defaultSpanMappings: SpanMapping[] = [
     },
   },
   {
-    end: 'build:complete',
+    bus: 'build',
+    end: 'complete',
     endAttributes: evt => ({
       'sfpm.build.skipped': (evt.skipped ?? false) as boolean,
       'sfpm.build.success': evt.success as boolean,
@@ -64,7 +68,7 @@ export const defaultSpanMappings: SpanMapping[] = [
     name: 'sfpm.build',
     parentKey: () => 'orchestration',
     spanKey: evt => `build:${evt.packageName as string}`,
-    start: 'build:start',
+    start: 'start',
     startAttributes(evt) {
       const attrs: Record<string, boolean | number | string> = {
         'sfpm.package.name': evt.packageName as string,
@@ -85,14 +89,15 @@ export const defaultSpanMappings: SpanMapping[] = [
     },
   },
   {
-    end: 'install:complete',
+    bus: 'install',
+    end: 'complete',
     endAttributes: evt => ({
       'sfpm.install.success': evt.success as boolean,
     }),
     name: 'sfpm.install',
     parentKey: () => 'orchestration',
     spanKey: evt => `install:${evt.packageName as string}`,
-    start: 'install:start',
+    start: 'start',
     startAttributes(evt) {
       const attrs: Record<string, boolean | number | string> = {
         'sfpm.package.name': evt.packageName as string,

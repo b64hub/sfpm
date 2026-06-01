@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 import fs from 'fs-extra';
+import { execSync } from 'node:child_process';
 import { ArtifactRepository } from '../../src/artifacts/artifact-repository.js';
 import { ArtifactManifest } from '../../src/types/artifact.js';
-import { PackageType } from '../../src/types/package.js';
+import { PackageType, ValidationState } from '../../src/types/package.js';
 
 // Mock package.json content for tgz extraction (flat sfpm metadata structure)
 const mockPackageJson = {
@@ -24,7 +25,7 @@ const mockPackageJson = {
 
 // Mock external dependencies
 vi.mock('fs-extra');
-vi.mock('child_process', () => ({
+vi.mock('node:child_process', () => ({
     execSync: vi.fn().mockImplementation(() => JSON.stringify(mockPackageJson))
 }));
 
@@ -280,6 +281,130 @@ describe('ArtifactRepository', () => {
             expect(fs.remove).toHaveBeenCalledWith(
                 repository.getVersionPath('@testorg/test-package', '1.0.0-1')
             );
+        });
+    });
+
+    describe('updateArtifactValidation', () => {
+        const packageName = '@testorg/test-package';
+        const version = '1.0.0-1';
+
+        it('should extract, patch, repack and update manifest hash', async () => {
+            const passedState: ValidationState = {
+                status: 'passed',
+                checks: [{ type: 'deploy', status: 'passed' }],
+                testCoverage: 85,
+            };
+
+            const manifest = createMockManifest();
+
+            // Artifact exists
+            vi.mocked(fs.pathExists).mockImplementation(async (p: any) => {
+                if (p.endsWith('artifact.tgz')) return true;
+                if (p.endsWith('manifest.json')) return true;
+                return false;
+            });
+
+            // ensureDir for temp directory
+            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+
+            // readJson for package.json inside extracted tarball and manifest
+            vi.mocked(fs.readJson).mockImplementation(async (p: any) => {
+                if (p.endsWith('package.json')) {
+                    return { ...mockPackageJson };
+                }
+                return manifest;
+            });
+
+            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
+            vi.mocked(fs.remove).mockResolvedValue(undefined as any);
+            vi.mocked(fs.move).mockResolvedValue(undefined as any);
+
+            // Mock execSync for tar commands
+            const { execSync: mockExec } = await import('node:child_process');
+
+            // Mock calculateFileHash — it uses createReadStream internally
+            const hashSpy = vi.spyOn(repository, 'calculateFileHash').mockResolvedValue('newhash789');
+
+            await repository.updateArtifactValidation(packageName, version, passedState);
+
+            // Verify tar extract was called
+            expect(mockExec).toHaveBeenCalledWith(
+                expect.stringContaining('tar -xzf'),
+                expect.objectContaining({ timeout: 30_000 }),
+            );
+
+            // Verify package.json was written with validation state
+            expect(fs.writeJson).toHaveBeenCalledWith(
+                expect.stringContaining('package.json'),
+                expect.objectContaining({
+                    sfpm: expect.objectContaining({
+                        validation: passedState,
+                    }),
+                }),
+                { spaces: 2 },
+            );
+
+            // Verify tar repack was called
+            expect(mockExec).toHaveBeenCalledWith(
+                expect.stringContaining('tar -czf'),
+                expect.objectContaining({ timeout: 60_000 }),
+            );
+
+            // Verify manifest was updated with new hash
+            expect(fs.writeJson).toHaveBeenCalledWith(
+                expect.stringContaining('.tmp'),
+                expect.objectContaining({
+                    versions: expect.objectContaining({
+                        [version]: expect.objectContaining({
+                            artifactHash: 'newhash789',
+                        }),
+                    }),
+                }),
+                { spaces: 4 },
+            );
+
+            // Verify temp dir cleanup
+            expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('.repack-tmp'));
+
+            hashSpy.mockRestore();
+        });
+
+        it('should throw if artifact does not exist', async () => {
+            vi.mocked(fs.pathExists).mockResolvedValue(false);
+
+            const state: ValidationState = {
+                status: 'passed',
+                checks: [],
+            };
+
+            await expect(
+                repository.updateArtifactValidation(packageName, version, state),
+            ).rejects.toThrow('Artifact not found');
+        });
+
+        it('should clean up temp directory even on error', async () => {
+            vi.mocked(fs.pathExists).mockResolvedValue(true);
+            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+            vi.mocked(fs.remove).mockResolvedValue(undefined as any);
+
+            // Make tar extract fail
+            const { execSync: mockExec } = await import('node:child_process');
+            vi.mocked(mockExec).mockImplementation(() => {
+                throw new Error('tar failed');
+            });
+
+            const state: ValidationState = {
+                status: 'failed',
+                checks: [],
+                error: 'Deploy failed',
+            };
+
+            await expect(
+                repository.updateArtifactValidation(packageName, version, state),
+            ).rejects.toThrow('Failed to update artifact validation state');
+
+            // Verify cleanup still happened
+            expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('.repack-tmp'));
         });
     });
 });

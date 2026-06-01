@@ -106,9 +106,6 @@ describe('InstallOrchestrator', () => {
     mockInstallPackage = vi.fn().mockResolvedValue({skipped: false});
     vi.mocked(PackageInstaller).mockImplementation(function (this: any) {
       this.installPackage = mockInstallPackage;
-      this.on = vi.fn().mockReturnValue(this);
-      this.removeAllListeners = vi.fn();
-      this.emit = vi.fn();
       return this;
     } as any);
 
@@ -242,7 +239,7 @@ describe('InstallOrchestrator', () => {
   describe('events', () => {
     it('should emit orchestration:start with package count and levels', async () => {
       const events: any[] = [];
-      orchestrator.on('orchestration:start', e => events.push(e));
+      orchestrator.orchestrationBus.on('start', e => events.push(e));
 
       await orchestrator.installAll(['pkg-a', 'pkg-b']);
 
@@ -253,7 +250,7 @@ describe('InstallOrchestrator', () => {
 
     it('should emit orchestration:complete with results', async () => {
       const events: any[] = [];
-      orchestrator.on('orchestration:complete', e => events.push(e));
+      orchestrator.orchestrationBus.on('complete', e => events.push(e));
 
       await orchestrator.installAll(['pkg-a', 'pkg-b']);
 
@@ -264,7 +261,7 @@ describe('InstallOrchestrator', () => {
 
     it('should emit orchestration:package:complete for each package', async () => {
       const packageCompletes: any[] = [];
-      orchestrator.on('orchestration:package:complete', e => packageCompletes.push(e));
+      orchestrator.orchestrationBus.on('package:complete', e => packageCompletes.push(e));
 
       await orchestrator.installAll(['pkg-a', 'pkg-b']);
 

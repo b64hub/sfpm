@@ -38,7 +38,7 @@ export default class DeployArtifact extends Deploy {
     );
 
     const renderer = this.createRenderer(ctx.mode, flags['target-org'])
-    renderer.attachTo(orchestrator as any)
+    renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
 
     await this.runOrchestrator(orchestrator, ctx.resolvedPackages, renderer, flags)
   }

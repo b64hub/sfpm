@@ -17,9 +17,9 @@ import {
   SfpmPackageMetadata,
   SfpmPackageMetadataBase,
   SfpmPackageOrchestration,
-  SfpmUnlockedPackageBuildOptions,
   SfpmUnlockedPackageMetadata,
   type TestLevel,
+  type ValidationState,
   VersionFormat,
 } from '../types/package.js';
 import {OrgAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
@@ -239,14 +239,6 @@ export default abstract class SfpmPackage {
   }
 
   /**
-   * @description Set orchestration options for the package build.
-   * Subclasses can override to handle type-specific options.
-   */
-  public setOrchestrationOptions(options: any): void {
-    // Base implementation does nothing - subclasses override as needed
-  }
-
-  /**
    * @description This is the package-agnostic metadata that describes the SFPM package.
    * The ArtifactAssembler is responsible for constructing the full package.json.
    *
@@ -262,6 +254,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   protected _componentSet?: ComponentSet;
   declare protected _metadata: SfpmPackageMetadata;
   private _customFields?: SourceComponent[];
+  private _validationState?: ValidationState;
 
   constructor(packageName: string, projectDirectory: string, metadata?: Partial<SfpmPackageMetadata>) {
     super(packageName, projectDirectory, metadata);
@@ -428,6 +421,14 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     .filter(c => c.type.id === 'apextrigger');
   }
 
+  get validationState(): undefined | ValidationState {
+    return this._validationState;
+  }
+
+  set validationState(state: ValidationState) {
+    this._validationState = state;
+  }
+
   /**
    * Alias for the version property, satisfying the SourceDeployable interface.
    */
@@ -521,18 +522,13 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
       content,
       orchestration: {
         ...orchestration,
-        // Persist only build properties that describe artifact state, not runtime parameters
-        build: {
-          ...(this._metadata.orchestration?.build?.codeCoverage !== undefined && {
-            codeCoverage: this._metadata.orchestration.build.codeCoverage,
-          }),
-        },
         install: {
           ...orchestration.install,
         },
       },
       packageName: this.name || content.payload?.Package?.fullName,
       packageType: this.type || this.packageDefinition?.type,
+      ...(this._validationState && {validation: this._validationState}),
       versionNumber: this.version || this.packageDefinition?.version,
     });
 
@@ -759,26 +755,6 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
   }
 
   override setBuildNumber(buildNumber: string): void {}
-
-  override setOrchestrationOptions(options: Partial<SfpmUnlockedPackageBuildOptions>): void {
-    if (options.installationKey === undefined) {
-      set(this.metadata, 'orchestration.build.installationKeyBypass', true);
-    } else {
-      set(this.metadata, 'orchestration.build.installationKey', options.installationKey);
-    }
-
-    if (options.isSkipValidation !== undefined) {
-      set(this.metadata, 'orchestration.build.isSkipValidation', options.isSkipValidation);
-    }
-
-    if (options.isAsyncValidation !== undefined) {
-      set(this.metadata, 'orchestration.build.isAsyncValidation', options.isAsyncValidation);
-    }
-
-    if (options.codeCoverage !== undefined) {
-      set(this.metadata, 'orchestration.build.codeCoverage', options.codeCoverage);
-    }
-  }
 
   /**
    * Override to ensure unlocked-package-specific identity fields are populated.

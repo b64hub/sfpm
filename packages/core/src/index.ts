@@ -1,7 +1,4 @@
-import {EventEmitter} from 'node:events';
-
 import ProjectService from './project/project-service.js';
-import {AllBuildEvents} from './types/events.js';
 // Import builders to trigger decorator registration
 import './package/builders/unlocked-package-builder.js';
 import './package/builders/source-package-builder.js';
@@ -16,12 +13,10 @@ import './package/analyzers/ft-analyzer.js';
 import './package/analyzers/manifest-analyzer.js';
 import './package/analyzers/picklist-analyzer.js';
 
-export class SfpmCore extends EventEmitter<AllBuildEvents> {
+export class SfpmCore {
   project!: ProjectService;
 
-  private constructor() {
-    super();
-  }
+  private constructor() {}
 
   /**
    * Creates and initializes a new SfpmCore instance.
@@ -33,10 +28,14 @@ export class SfpmCore extends EventEmitter<AllBuildEvents> {
     return core;
   }
 }
+export {ApexClassifier, type ApexClassInfo} from './apex/apex-classifier.js';
+export {
+  ApexTestService, type ClassCoverage, type RunTestsOptions, type TestClassResult, type TestMethodResult, type TestRunResult,
+} from './apex/apex-test-service.js';
 export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
+
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
 export {ArtifactResolver} from './artifacts/artifact-resolver.js';
-
 export {
   type ArtifactHistoryOptions, ArtifactService, type InstallTarget, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
 } from './artifacts/artifact-service.js';
@@ -51,6 +50,7 @@ export {
   type RegistryPackageInfo,
   type RegistryVersionInfo,
 } from './artifacts/registry/index.js';
+export * from './events/index.js';
 export {GitService} from './git/git-service.js';
 export {default as Git} from './git/git.js';
 // Lifecycle engine and config
@@ -59,13 +59,17 @@ export {LifecycleEngine} from './lifecycle/lifecycle-engine.js';
 export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions} from './orchestrator/build-orchestrator.js';
 export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './orchestrator/install-orchestrator.js';
 export {
-  type OrchestrationTask, Orchestrator, type OrchestratorEmitter, type OrchestratorOptions,
+  type OrchestrationTask, Orchestrator, type OrchestratorOptions,
 } from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
 export {
-  type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry, type BuildTask, RegisterBuilder,
+  type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry,
+  type BuildTask, type BuildTaskContext, type BuildTaskEnrichments,
+  type BuildTaskRegistration, type BuildTaskResult,
+  type DependencyAnalysis,
+  RegisterBuilder,
 } from './package/builders/builder-registry.js';
-export {default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
+export {assembleArtifactTask, default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
 export {
   type Installer, type InstallerConstructor, type InstallerExecResult, InstallerRegistry, RegisterInstaller,
 } from './package/installers/installer-registry.js';
@@ -74,16 +78,17 @@ export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
 export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from './package/org-alias-resolver.js';
-export {PackageBuilder} from './package/package-builder.js'; // Avoid export * due to BuildOptions name conflict with types/project.ts
+export {type BuildMode, type BuildOptions, PackageBuilder} from './package/package-builder.js'; // Named exports to avoid BuildOptions name conflict with types/project.ts
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
 export {
-  type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
-} from './package/services/validation-poller.js';
-export {
   isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';
+export {
+  type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
+} from './package/validation/validation-poller.js';
+export {type ResolveOptions, ValidationResolver} from './package/validation/validation-resolver.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
@@ -104,17 +109,26 @@ export {
   type MigrateOptions, WorkspaceInitializer, type WorkspaceInitOptions, type WorkspaceInitResult,
 } from './project/workspace-init.js';
 export {WorkspaceSync, type WorkspaceSyncOptions} from './project/workspace-sync.js';
+export {
+  type DeployComponentError, type DeployOptions, type DeployProgress, type DeployResult,
+  type TestRunResult as DeployTestRunResult, MetadataDeployService, type TestFailure,
+} from './tooling/metadata-deploy-service.js';
 export * from './types/artifact.js';
-export * from './types/build-state.js';
+export {
+  type LocalBuildState,
+  type LocalPackageBuildState,
+  type LocalValidationResult,
+} from './types/build-state.js';
 export * from './types/config.js';
+export * from './types/dependency-analysis.js';
 export * from './types/errors.js';
-export * from './types/events.js';
 export * from './types/lifecycle.js';
 export * from './types/logger.js';
 export * from './types/npm.js';
 export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
+export * from './types/watcher.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
 export {getPipelineRunId} from './utils/pipeline.js';
@@ -124,3 +138,8 @@ export {
   formatVersion, getVersionSuffix, stripBuildSegment, toSalesforceVersionWithToken, toVersionFormat,
 } from './utils/version-utils.js';
 export type {VersionFormatOptions} from './utils/version-utils.js';
+export {ApexTestPollingStrategy} from './watcher/strategies/apex-test-strategy.js';
+export {BuildPollingStrategy} from './watcher/strategies/build-strategy.js';
+export {DeployPollingStrategy} from './watcher/strategies/deploy-strategy.js';
+export {registeredJobTypes, resolveStrategy} from './watcher/strategy-registry.js';
+export {WatcherStateStore} from './watcher/watcher-state-store.js';

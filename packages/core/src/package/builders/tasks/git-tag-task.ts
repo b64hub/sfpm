@@ -2,16 +2,19 @@ import Git from '../../../git/git.js';
 import {Logger} from '../../../types/logger.js';
 import {toVersionFormat} from '../../../utils/version-utils.js';
 import SfpmPackage from '../../sfpm-package.js';
-import {BuildTask} from '../builder-registry.js';
+import {BuildTask, BuildTaskContext, BuildTaskResult} from '../builder-registry.js';
 
-export default class GitTagTask implements BuildTask {
-  public constructor(
-    private sfpmPackage: SfpmPackage,
-    private artifactDirectory: string,
-    private logger?: Logger,
-  ) { }
+class GitTagTask implements BuildTask {
+  public readonly name = 'git-tag';
+  private readonly logger?: Logger;
+  private readonly sfpmPackage: SfpmPackage;
 
-  public async exec(): Promise<void> {
+  public constructor(ctx: BuildTaskContext) {
+    this.sfpmPackage = ctx.sfpmPackage;
+    this.logger = ctx.logger;
+  }
+
+  public async exec(): Promise<BuildTaskResult | void> {
     const normalizedVersion = toVersionFormat(this.sfpmPackage.version || '0.0.0.1', 'semver');
     const tagname = `${this.sfpmPackage.packageName}@${normalizedVersion}`;
 
@@ -23,7 +26,15 @@ export default class GitTagTask implements BuildTask {
       `${this.sfpmPackage.packageName} sfpm package ${normalizedVersion}`,
     );
 
-    this.sfpmPackage.metadata.source.tag = tagname;
     this.logger?.info(`Successfully tagged ${this.sfpmPackage.packageName} as ${tagname}`);
+
+    return {enrichments: {sourceTag: tagname}};
   }
 }
+
+/** Factory for GitTagTask — no task-specific options needed. */
+export function gitTagTask(): (ctx: BuildTaskContext) => BuildTask {
+  return (ctx: BuildTaskContext) => new GitTagTask(ctx);
+}
+
+export default GitTagTask;

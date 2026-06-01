@@ -1,0 +1,44 @@
+{
+  "name": "@b64hub/sfpm-static-analyzer",
+  "version": "0.1.0",
+  "description": "Static metadata dependency analysis for SFPM",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "sfpm",
+    "salesforce",
+    "static-analysis",
+    "dependency-analysis",
+    "apex",
+    "typescript"
+  ],
+  "author": "b64",
+  "license": "MIT",
+  "dependencies": {
+    "@b64hub/sfpm-core": "workspace:^0.1.0",
+    "@salesforce/source-deploy-retrieve": "^12.31.7",
+    "fs-extra": "^11.3.3"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "vitest": "^4.0.17"
+  },
+  "optionalDependencies": {
+    "@prettier-apex/apex-ast-serializer-linux-x64": "^2.2.6"
+  }
+}

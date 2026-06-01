@@ -1,23 +1,36 @@
 import {
-  BuildOrchestrationTask, BuildOrchestrator, BuildStateStore,
-  type CreateCompleteEvent, LifecycleEngine, type LocalBuildState,
-  type LocalPackageBuildState, ProjectService,
+  BuildEventBus,
+  BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions,
+  type BuildWatcherPayload,
+  LifecycleEngine,
+  type OrchestrationResult,
+  type PendingValidationDescriptor, ProjectService, ValidationResolver,
+  type WatcherState,
 } from '@b64hub/sfpm-core'
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {
   Args, Flags,
 } from '@oclif/core'
 import {ConfigAggregator} from '@salesforce/core'
-import {fork} from 'node:child_process'
-import EventEmitter from 'node:events'
-import path from 'node:path'
-import {fileURLToPath} from 'node:url'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
+import {forkWatcher} from '../../utils/watcher.js'
+
+interface ResolvedBuildFlags {
+  async: boolean;
+  buildOptions: BuildOrchestratorOptions;
+  mode: OutputMode;
+  noDependencies: boolean;
+  packages: string[];
+  projectDir: string;
+  resolvedPackages: string[];
+  sfpmConfig: any;
+  waitMinutes: number;
+}
 
 export default class Build extends SfpmCommand {
   static override args = {
@@ -42,14 +55,16 @@ export default class Build extends SfpmCommand {
     '<%= config.bin %> <%= command.id %> package-a package-b -v my-devhub',
   ]
   static override flags = {
-    'async-validation': Flags.boolean({description: 'return immediately after creating unlocked package versions without waiting for validation to complete'}),
+    async: Flags.boolean({description: 'return immediately without waiting for validation results', exclusive: ['dry-run']}),
     'build-number': Flags.string({char: 'b', description: 'build number'}),
+    'build-org': Flags.string({char: 'o', description: 'target org for source package validation (deploy + test)'}),
+    'dry-run': Flags.boolean({description: 'validate without producing artifacts or git tags (requires --build-org)', exclusive: ['async']}),
     force: Flags.boolean({char: 'f', description: 'build even if no source changes detected', env: 'SFPM_FORCE_BUILD'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     'no-dependencies': Flags.boolean({default: false, description: 'build the specified packages without their transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
-    'skip-validation': Flags.boolean({description: 'skip validation'}),
+    'skip-validation': Flags.boolean({description: 'skip validation (no deploy+test for source, skipvalidation=true for unlocked)'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
     'target-dev-hub': Flags.string({
       char: 'v',
@@ -64,7 +79,7 @@ export default class Build extends SfpmCommand {
       description: 'target dev hub username',
       env: 'SF_DEV_HUB',
     }),
-    turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies --skip-validation)'}),
+    turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies)'}),
     wait: Flags.integer({
       char: 'w', default: 120, description: 'timeout in minutes for package version creation', min: 1,
     }),
@@ -72,160 +87,53 @@ export default class Build extends SfpmCommand {
   static override strict = false
 
   public async execute(): Promise<void> {
-    const {args, argv, flags} = await this.parse(Build)
-
-    // Get package names from arguments - use argv for multiple packages
-    const packages = argv.length > 0 ? argv as string[] : [args.packages]
-
-    if (!packages || packages.length === 0) {
-      this.error('At least one package name is required')
-    }
-
-    // --turbo: single-package mode for external orchestrators (Turbo, CI matrix)
-    if (flags.turbo) {
-      if (packages.length !== 1) {
-        this.error('--turbo requires exactly one package name', {exit: 1})
-      }
-
-      flags['no-dependencies'] = true
-      flags['skip-validation'] = true
-    }
-
-    // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
-    const projectService = await ProjectService.getInstance(projectDir);
-
-    const projectConfig = projectService.getDefinitionProvider();
-    const projectGraph = projectService.getProjectGraph();
-
-    // Resolve user input (scoped or unscoped) to canonical scoped package names
-    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: flags.json})
-
-    // Determine output mode
-    const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
-
-    const sfpmConfig = projectService.getSfpmConfig();
+    const resolved = await this.resolveFlags()
 
     // Create lifecycle engine and register hooks from config
     const lifecycle = LifecycleEngine.stage('build');
-    for (const hooks of sfpmConfig.hooks ?? []) {
+    for (const hooks of resolved.sfpmConfig.hooks ?? []) {
       lifecycle.use(hooks);
     }
 
-    // Resolve devhub: use flag if provided, otherwise fall back to SF CLI default
-    let devhubUsername = flags['target-dev-hub']
-    if (!devhubUsername) {
-      const configAggregator = await ConfigAggregator.create()
-      devhubUsername = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined
+    // Route to single-package or orchestrated build
+    if (resolved.resolvedPackages.length === 1 && resolved.noDependencies) {
+      await this.buildSingle(resolved)
+    } else {
+      await this.buildOrchestrated(resolved)
     }
+  }
 
-    if (!devhubUsername) {
-      this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1})
-    }
+  private async buildOrchestrated(resolved: ResolvedBuildFlags): Promise<void> {
+    const projectService = await ProjectService.getInstance(resolved.projectDir);
+    const projectConfig = projectService.getDefinitionProvider();
+    const projectGraph = projectService.getProjectGraph();
 
-    const buildOptions = {
-      buildNumber: flags['build-number'],
-      devhubUsername,
-      force: flags.force,
-      ignoreFilesConfig: sfpmConfig.ignoreFiles,
-      installationKey: flags['installation-key'],
-      isAsyncValidation: flags['async-validation'],
-      isSkipValidation: flags['skip-validation'],
-      waitTime: flags.wait,
-    }
+    const orchestrator = new BuildOrchestrator(
+      projectConfig,
+      projectGraph,
+      {...resolved.buildOptions, includeDependencies: !resolved.noDependencies},
+      this.sfpmLogger,
+      resolved.projectDir,
+    )
 
-    // Create and attach progress renderer
     const renderer = new BuildProgressRenderer({
       logger: {
         error: (msgOrError: Error | string) => this.error(msgOrError),
         log: (msg: string) => this.log(msg),
       },
-      mode,
+      mode: resolved.mode,
     });
 
-    // Track unlocked package creation results for async validation watcher
-    const asyncPackages: LocalPackageBuildState[] = [];
-    const captureCreateComplete = (event: CreateCompleteEvent) => {
-      if (event.packageVersionCreateRequestId) {
-        asyncPackages.push({
-          packageName: event.packageName,
-          packageType: 'Unlocked',
-          packageVersionCreateRequestId: event.packageVersionCreateRequestId,
-          packageVersionId: event.packageVersionId,
-          version: event.versionNumber,
-        });
-      }
-    };
-
-    // Single-package mode: build exactly one package without orchestration.
-    // Activates when a single package is specified with --no-dependencies.
-    // Designed for external orchestrators (Turbo, CI matrix) that handle
-    // dependency ordering and parallelism themselves.
-    if (packages.length === 1 && flags['no-dependencies']) {
-      const task = new BuildOrchestrationTask(
-        projectConfig,
-        buildOptions,
-        this.sfpmLogger,
-        projectDir,
-      )
-
-      const emitter = new EventEmitter()
-      renderer.attachTo(emitter as any)
-      if (flags['async-validation']) {
-        emitter.on('unlocked:create:complete', captureCreateComplete)
-      }
-
-      try {
-        const context = await task.setup()
-        const result = await task.processSinglePackage(resolvedPackages[0], 0, context, emitter)
-
-        if (flags.json) {
-          this.logJson(result)
-        }
-
-        if (!result.success) {
-          this.error(`Build failed for: ${resolvedPackages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 1})
-        }
-
-        // Start async validation watcher if applicable
-        if (flags['async-validation'] && asyncPackages.length > 0) {
-          await this.startValidationWatcher(asyncPackages, devhubUsername, projectDir, flags.wait, mode)
-        }
-      } catch (error) {
-        renderer.handleError(error as Error)
-        if (flags.json) {
-          this.logJson({error: (error as Error).message, success: false})
-        }
-
-        throw error
-      }
-
-      return
-    }
-
-    const orchestrator = new BuildOrchestrator(
-      projectConfig,
-      projectGraph,
-      {...buildOptions, includeDependencies: !flags['no-dependencies']},
-      this.sfpmLogger,
-      projectDir,
-    )
-
-    // Attach renderer to orchestrator — it forwards all builder events
-    renderer.attachTo(orchestrator as any)
-    if (flags['async-validation']) {
-      orchestrator.on('unlocked:create:complete', captureCreateComplete)
-    }
+    renderer.attachTo(orchestrator.buildBus, orchestrator.orchestrationBus)
 
     const tracer = createTracer({serviceName: 'sfpm-cli'})
-    tracer.subscribe(orchestrator)
+    tracer.subscribe({build: orchestrator.buildBus, orchestration: orchestrator.orchestrationBus})
 
     try {
-      const result = await orchestrator.buildAll(resolvedPackages)
-
+      const result = await orchestrator.buildAll(resolved.resolvedPackages)
       await tracer.shutdown()
 
-      if (flags.json) {
+      if (resolved.mode === 'json') {
         this.logJson(result)
       }
 
@@ -234,13 +142,57 @@ export default class Build extends SfpmCommand {
         this.error(`Build failed for: ${failedNames}`, {exit: 1})
       }
 
-      // Start async validation watcher if applicable
-      if (flags['async-validation'] && asyncPackages.length > 0) {
-        await this.startValidationWatcher(asyncPackages, devhubUsername, projectDir, flags.wait, mode)
-      }
+      await this.handleValidationResults(result.pendingValidations, resolved)
     } catch (error) {
       renderer.handleError(error as Error)
-      if (flags.json) {
+      if (resolved.mode === 'json') {
+        this.logJson({error: (error as Error).message, success: false})
+      }
+
+      throw error
+    }
+  }
+
+  private async buildSingle(resolved: ResolvedBuildFlags): Promise<void> {
+    const projectService = await ProjectService.getInstance(resolved.projectDir);
+    const projectConfig = projectService.getDefinitionProvider();
+
+    const buildBus = new BuildEventBus()
+    const task = new BuildOrchestrationTask(
+      projectConfig,
+      resolved.buildOptions,
+      this.sfpmLogger,
+      resolved.projectDir,
+      buildBus,
+    )
+
+    const renderer = new BuildProgressRenderer({
+      logger: {
+        error: (msgOrError: Error | string) => this.error(msgOrError),
+        log: (msg: string) => this.log(msg),
+      },
+      mode: resolved.mode,
+    });
+
+    renderer.attachTo(buildBus)
+
+    try {
+      const context = await task.setup()
+      const result = await task.processSinglePackage(resolved.resolvedPackages[0], 0, context)
+
+      if (resolved.mode === 'json') {
+        this.logJson(result)
+      }
+
+      if (!result.success) {
+        this.error(`Build failed for: ${resolved.resolvedPackages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 1})
+      }
+
+      const pendingValidations = result.pendingValidation ? [result.pendingValidation] : []
+      await this.handleValidationResults(pendingValidations, resolved)
+    } catch (error) {
+      renderer.handleError(error as Error)
+      if (resolved.mode === 'json') {
         this.logJson({error: (error as Error).message, success: false})
       }
 
@@ -249,60 +201,155 @@ export default class Build extends SfpmCommand {
   }
 
   /**
-   * Save async build state and fork a background watcher process
-   * that polls Salesforce for validation results.
+   * Handle pending validations: resolve inline or fork a background watcher.
+   *
+   * - No `--async`: resolve inline with ValidationResolver, fail on any failures.
+   * - `--async`: fork watcher process for background polling.
    */
-  private async startValidationWatcher(
-    packages: LocalPackageBuildState[],
-    devhubUsername: string,
-    projectDir: string,
-    waitMinutes: number,
-    mode: OutputMode,
+  private async handleValidationResults(
+    pendingValidations: PendingValidationDescriptor[],
+    resolved: ResolvedBuildFlags,
   ): Promise<void> {
-    const store = new BuildStateStore(projectDir);
+    if (pendingValidations.length === 0) return
 
-    const state: LocalBuildState = {
-      createdAt: Date.now(),
-      devhubUsername,
-      packages,
-      projectDir,
-      updatedAt: Date.now(),
-      waitTimeMs: waitMinutes * 60 * 1000,
-      watcherStatus: 'starting',
-    };
+    if (resolved.async) {
+      const payload: BuildWatcherPayload = {
+        targets: pendingValidations.map(pv => ({
+          packageName: pv.packageName,
+          packageVersionCreateRequestId: pv.operationId,
+        })),
+      };
 
-    const id = await store.save(state);
-    const stateFilePath = store.getFilePath(id);
+      const state: WatcherState = {
+        auth: {username: resolved.buildOptions.devhubUsername ?? ''},
+        createdAt: Date.now(),
+        jobType: 'build',
+        payload,
+        projectDir: resolved.projectDir,
+        timeoutMs: resolved.waitMinutes * 60 * 1000,
+        updatedAt: Date.now(),
+        watcherStatus: 'starting',
+      };
 
-    // Resolve the watcher script path relative to this file
-    const thisDir = path.dirname(fileURLToPath(import.meta.url));
-    const watcherScript = path.resolve(thisDir, '..', 'utils', 'validation-watcher.js');
+      const {id, pid} = await forkWatcher(state);
+      const pkgNames = pendingValidations.map(pv => pv.packageName).join(', ');
 
-    // Fork the watcher as a detached, unref'd child process so this process can exit
-    const child = fork(watcherScript, [stateFilePath, id], {
-      detached: true,
-      stdio: 'ignore',
+      if (resolved.mode === 'json') {
+        this.logJson({
+          packages: pkgNames,
+          stateId: id,
+          watcherPid: pid,
+        });
+      } else if (resolved.mode !== 'quiet') {
+        this.log(`\nValidation watcher started (PID ${pid}) for: ${pkgNames}`);
+        this.log('Run \'sfpm watch status\' to check progress.');
+      }
+
+      return
+    }
+
+    // Inline resolution — await all pending validations
+    if (resolved.mode !== 'quiet') {
+      this.log(`\nResolving ${pendingValidations.length} pending validation(s)...`)
+    }
+
+    const resolver = new ValidationResolver(this.sfpmLogger);
+    const results = await resolver.resolveAll(pendingValidations, {
+      maxWaitMs: resolved.waitMinutes * 60 * 1000,
     });
 
-    child.unref();
+    const failures: string[] = [];
+    for (const [packageName, result] of results) {
+      if (result.status === 'failed') {
+        failures.push(`${packageName}: ${result.error}`);
+      } else if (resolved.mode !== 'quiet') {
+        const coverage = result.testCoverage === null ? '' : ` (coverage: ${result.testCoverage}%)`;
+        this.log(`  ✓ ${packageName} — validation passed${coverage}`);
+      }
+    }
 
-    // Update state with the watcher PID
-    state.watcherPid = child.pid;
-    state.watcherStatus = 'polling';
-    await store.update(id, state);
+    if (failures.length > 0) {
+      for (const failure of failures) {
+        this.log(`  ✗ ${failure}`);
+      }
 
-    const pkgNames = packages.map(p => p.packageName).join(', ');
+      this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1})
+    }
+  }
 
-    if (mode === 'json') {
-      this.logJson({
-        packages: pkgNames,
-        stateFile: stateFilePath,
-        stateId: id,
-        watcherPid: child.pid,
-      });
-    } else if (mode !== 'quiet') {
-      this.log(`\nValidation watcher started (PID ${child.pid}) for: ${pkgNames}`);
-      this.log('Run \'sfpm build status\' to check progress.');
+  /**
+   * Parse and validate flags, resolve project context, compose BuildOptions.
+   */
+  private async resolveFlags(): Promise<ResolvedBuildFlags> {
+    const {args, argv, flags} = await this.parse(Build)
+
+    const packages = argv.length > 0 ? argv as string[] : [args.packages]
+    if (!packages || packages.length === 0) {
+      this.error('At least one package name is required')
+    }
+
+    // --turbo: single-package mode for external orchestrators
+    if (flags.turbo) {
+      if (packages.length !== 1) {
+        this.error('--turbo requires exactly one package name', {exit: 1})
+      }
+
+      flags['no-dependencies'] = true
+    }
+
+    // --dry-run requires --build-org
+    if (flags['dry-run'] && !flags['build-org']) {
+      this.error('--dry-run requires --build-org to specify the validation target org', {exit: 1})
+    }
+
+    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectService = await ProjectService.getInstance(projectDir);
+    const projectConfig = projectService.getDefinitionProvider();
+    const sfpmConfig = projectService.getSfpmConfig();
+
+    // Resolve user input to canonical scoped package names
+    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: flags.json})
+
+    // Resolve devhub (not required in dry-run mode)
+    let devhubUsername = flags['target-dev-hub']
+    if (!devhubUsername && !flags['dry-run']) {
+      const configAggregator = await ConfigAggregator.create()
+      devhubUsername = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined
+    }
+
+    if (!devhubUsername && !flags['dry-run']) {
+      this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1})
+    }
+
+    // Warn if source packages present but no build-org in default mode
+    if (!flags['dry-run'] && !flags['build-org'] && !flags['skip-validation']) {
+      this.log('Warning: No --build-org provided. Source package validation will be skipped (no org to deploy against).')
+    }
+
+    const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
+
+    const buildOptions: BuildOrchestratorOptions = {
+      buildNumber: flags['build-number'],
+      buildOrg: flags['build-org'],
+      devhubUsername,
+      force: flags.force,
+      ignoreFilesConfig: sfpmConfig.ignoreFiles,
+      installationKey: flags['installation-key'],
+      mode: flags['dry-run'] ? 'dry-run' : 'default',
+      skipValidation: flags['skip-validation'],
+      waitTime: flags.wait,
+    }
+
+    return {
+      async: flags.async ?? false,
+      buildOptions,
+      mode,
+      noDependencies: flags['no-dependencies'],
+      packages,
+      projectDir,
+      resolvedPackages,
+      sfpmConfig,
+      waitMinutes: flags.wait,
     }
   }
 }

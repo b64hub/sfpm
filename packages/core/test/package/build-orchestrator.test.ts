@@ -3,7 +3,7 @@ import {
 } from 'vitest';
 
 import type {DependencyResolution} from '../../src/project/project-graph.js';
-import type {OrchestrationResult, PackageResult} from '../../src/types/events.js';
+import type {OrchestrationResult, PackageResult} from '../../src/events/orchestration-event-bus.js';
 
 import {GitService} from '../../src/git/git-service.js';
 import {BuildOrchestrator} from '../../src/orchestrator/build-orchestrator.js';
@@ -90,9 +90,6 @@ describe('BuildOrchestrator', () => {
     mockBuildPackage = vi.fn().mockResolvedValue();
     vi.mocked(PackageBuilder).mockImplementation(function (this: any) {
       this.buildPackage = mockBuildPackage;
-      this.on = vi.fn().mockReturnValue(this);
-      this.removeAllListeners = vi.fn();
-      this.emit = vi.fn();
       return this;
     } as any);
 
@@ -171,6 +168,39 @@ describe('BuildOrchestrator', () => {
       expect(pkgBResult?.skipped).toBe(true);
     });
 
+    it('should not skip dependents when continueOnError is true', async () => {
+      // A is leaf, B depends on A — A fails, but with continueOnError B should still run
+      mockResolution = createResolution(
+        [['pkg-a'], ['pkg-b']],
+        {'pkg-b': ['pkg-a']},
+      );
+
+      const continueOrchestrator = new BuildOrchestrator(
+        mockProvider,
+        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
+        {continueOnError: true, devHub: 'test-hub'},
+        mockLogger,
+        '/test/project',
+      );
+
+      // Make pkg-a fail, pkg-b succeed
+      mockBuildPackage
+      .mockRejectedValueOnce(new Error('Build failed'))
+      .mockResolvedValueOnce();
+
+      const result = await continueOrchestrator.buildAll(['pkg-b']);
+
+      expect(result.success).toBe(false);
+      expect(result.failedPackages).toContain('pkg-a');
+      // B should NOT be skipped — it should have been built
+      expect(result.skippedPackages).not.toContain('pkg-b');
+      expect(mockBuildPackage).toHaveBeenCalledTimes(2);
+
+      const pkgBResult = result.results.find(r => r.packageName === 'pkg-b');
+      expect(pkgBResult?.skipped).toBeFalsy();
+      expect(pkgBResult?.success).toBe(true);
+    });
+
     it('should throw DependencyError on circular dependencies', async () => {
       const circularResolution: DependencyResolution = {
         allPackages: [],
@@ -235,7 +265,7 @@ describe('BuildOrchestrator', () => {
   describe('events', () => {
     it('should emit orchestration:start with package count and levels', async () => {
       const events: any[] = [];
-      orchestrator.on('orchestration:start', e => events.push(e));
+      orchestrator.orchestrationBus.on('start', e => events.push(e));
 
       await orchestrator.buildAll(['pkg-a', 'pkg-b']);
 
@@ -247,7 +277,7 @@ describe('BuildOrchestrator', () => {
 
     it('should emit orchestration:complete with results', async () => {
       const events: any[] = [];
-      orchestrator.on('orchestration:complete', e => events.push(e));
+      orchestrator.orchestrationBus.on('complete', e => events.push(e));
 
       await orchestrator.buildAll(['pkg-a', 'pkg-b']);
 
@@ -259,8 +289,8 @@ describe('BuildOrchestrator', () => {
     it('should emit orchestration:level:start and orchestration:level:complete', async () => {
       const levelStarts: any[] = [];
       const levelCompletes: any[] = [];
-      orchestrator.on('orchestration:level:start', e => levelStarts.push(e));
-      orchestrator.on('orchestration:level:complete', e => levelCompletes.push(e));
+      orchestrator.orchestrationBus.on('level:start', e => levelStarts.push(e));
+      orchestrator.orchestrationBus.on('level:complete', e => levelCompletes.push(e));
 
       await orchestrator.buildAll(['pkg-a', 'pkg-b']);
 
@@ -271,7 +301,7 @@ describe('BuildOrchestrator', () => {
 
     it('should emit orchestration:package:complete for each package', async () => {
       const packageCompletes: any[] = [];
-      orchestrator.on('orchestration:package:complete', e => packageCompletes.push(e));
+      orchestrator.orchestrationBus.on('package:complete', e => packageCompletes.push(e));
 
       await orchestrator.buildAll(['pkg-a', 'pkg-b']);
 

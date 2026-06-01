@@ -1,26 +1,30 @@
-import EventEmitter from 'node:events';
+import {randomUUID} from 'node:crypto';
 
+import type {
+  OrchestrationResult,
+  PackageResult,
+} from '../events/orchestration-event-bus.js';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+import type {PendingValidationDescriptor} from '../types/package.js';
 
+import {BuildEventBus} from '../events/build-event-bus.js';
+import {OrchestrationEventBus} from '../events/orchestration-event-bus.js';
 import {GitService} from '../git/git-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {BuildOptions, PackageBuilder} from '../package/package-builder.js';
 import {ProjectGraph} from '../project/project-graph.js';
-import {
-  AllBuildEvents,
-  OrchestrationEvents,
-  OrchestrationResult,
-  PackageResult,
-} from '../types/events.js';
+import {IgnoreFilesConfig} from '../types/config.js';
 import {Logger} from '../types/logger.js';
 import {
   OrchestrationTask,
   Orchestrator,
-  OrchestratorEmitter,
   OrchestratorOptions,
 } from './orchestrator.js';
 
-export interface BuildOrchestratorOptions extends BuildOptions, OrchestratorOptions {}
+export interface BuildOrchestratorOptions extends BuildOptions, OrchestratorOptions {
+  /** Ignore files configuration resolved from sfpm config. */
+  ignoreFilesConfig?: IgnoreFilesConfig;
+}
 
 // ============================================================================
 // Task implementation
@@ -30,31 +34,33 @@ export interface BuildOrchestratorOptions extends BuildOptions, OrchestratorOpti
  * {@link OrchestrationTask} for package builds.
  *
  * Initialises a shared GitService and delegates individual package builds
- * to PackageBuilder, forwarding all builder events through the emitter.
+ * to PackageBuilder. Builders emit events directly on the shared BuildEventBus.
  */
 export class BuildOrchestrationTask implements OrchestrationTask<GitService | undefined> {
+  private readonly buildBus: BuildEventBus;
   private readonly logger: Logger | undefined;
-  private readonly options: BuildOptions;
+  private readonly options: BuildOrchestratorOptions;
   private readonly projectDirectory: string;
   private readonly provider: ProjectDefinitionProvider;
 
   constructor(
     provider: ProjectDefinitionProvider,
-    options: BuildOptions,
+    options: BuildOrchestratorOptions,
     logger?: Logger,
     projectDirectory: string = process.cwd(),
+    buildBus?: BuildEventBus,
   ) {
     this.provider = provider;
     this.options = options;
     this.logger = logger;
     this.projectDirectory = projectDirectory;
+    this.buildBus = buildBus ?? new BuildEventBus();
   }
 
   async processSinglePackage(
     packageName: string,
     _level: number,
     gitService: GitService | undefined,
-    emitter: OrchestratorEmitter,
   ): Promise<PackageResult> {
     const start = Date.now();
     const pkgLogger = this.logger?.child?.({package: packageName}) ?? this.logger;
@@ -77,78 +83,45 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
       this.options,
       pkgLogger,
       gitService,
+      this.options.ignoreFilesConfig,
+      this.buildBus,
     );
-
-    this.forwardBuilderEvents(builder, emitter);
 
     let success = true;
     let skipped = false;
     let error: string | undefined;
+    let pendingValidation: PendingValidationDescriptor | undefined;
 
-    // Detect build-skip before the call so the flag is captured
-    builder.on('build:skipped', () => {
-      skipped = true;
-    });
+    // Detect build-skip via the shared bus
+    const skipHandler = (evt: any) => {
+      if (evt.packageName === packageName) skipped = true;
+    };
+
+    this.buildBus.on('skip', skipHandler);
 
     try {
-      await builder.buildPackage(packageName, this.projectDirectory);
+      pendingValidation = await builder.buildPackage(packageName, this.projectDirectory);
     } catch (error_) {
       success = false;
       error = error_ instanceof Error ? error_.message : String(error_);
     }
 
-    builder.removeAllListeners();
+    this.buildBus.off('skip', skipHandler);
 
     const duration = Date.now() - start;
     return {
-      duration, error, packageName, skipped, success,
+      duration, error, packageName, pendingValidation, skipped, success,
     };
   }
 
   async setup(): Promise<GitService | undefined> {
-    return GitService.initialize(this.projectDirectory, this.logger);
-  }
-
-  private forwardBuilderEvents(builder: PackageBuilder, emitter: OrchestratorEmitter): void {
-    const events: (keyof AllBuildEvents)[] = [
-      'build:start',
-      'build:complete',
-      'build:skipped',
-      'build:error',
-      'stage:start',
-      'stage:complete',
-      'analyzers:start',
-      'analyzer:start',
-      'analyzer:complete',
-      'analyzers:complete',
-      'connection:start',
-      'connection:complete',
-      'builder:start',
-      'builder:complete',
-      'task:start',
-      'task:complete',
-      'unlocked:prune:start',
-      'unlocked:prune:complete',
-      'unlocked:create:start',
-      'unlocked:create:progress',
-      'unlocked:create:complete',
-      'unlocked:validation:start',
-      'unlocked:validation:complete',
-      'source:assemble:start',
-      'source:assemble:complete',
-      'source:test:start',
-      'source:test:complete',
-      'assembly:start',
-      'assembly:pack',
-      'assembly:complete',
-      'assembly:error',
-    ];
-
-    for (const event of events) {
-      builder.on(event, (...args: any[]) => {
-        emitter.emit(event, ...args);
-      });
+    // In dry-run mode, git service is not needed (no tagging or version bumps)
+    if (this.options.mode === 'dry-run') {
+      this.logger?.debug('Dry-run mode — skipping git service initialization');
+      return undefined;
     }
+
+    return GitService.initialize(this.projectDirectory, this.logger);
   }
 }
 
@@ -162,10 +135,13 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
  * Composes the shared {@link Orchestrator} engine with a {@link BuildOrchestrationTask}
  * to handle build-specific setup and per-package processing.
  *
- * All builder and orchestration events are emitted through this instance,
- * so callers can subscribe with `orchestrator.on(event, handler)`.
+ * All events are emitted on typed buses:
+ * - {@link buildBus} for build domain events (start, complete, stage, analyzer, etc.)
+ * - {@link orchestrationBus} for orchestration events (level start/complete, package complete)
  */
-export class BuildOrchestrator extends EventEmitter<AllBuildEvents & OrchestrationEvents> {
+export class BuildOrchestrator {
+  readonly buildBus: BuildEventBus;
+  readonly orchestrationBus: OrchestrationEventBus;
   private readonly orchestrator: Orchestrator<GitService | undefined>;
 
   constructor(
@@ -175,9 +151,10 @@ export class BuildOrchestrator extends EventEmitter<AllBuildEvents & Orchestrati
     logger?: Logger,
     projectDirectory: string = process.cwd(),
   ) {
-    super();
-    const task = new BuildOrchestrationTask(provider, options, logger, projectDirectory);
-    this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: false}, task, logger, this);
+    this.buildBus = new BuildEventBus();
+    this.orchestrationBus = new OrchestrationEventBus(randomUUID());
+    const task = new BuildOrchestrationTask(provider, options, logger, projectDirectory, this.buildBus);
+    this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: false}, task, logger, this.orchestrationBus);
   }
 
   /**

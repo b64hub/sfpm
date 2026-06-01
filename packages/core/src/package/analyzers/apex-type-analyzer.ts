@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import {ApexParser} from '../../apex/apex-parser.js';
+import {ApexClassifier} from '../../apex/apex-classifier.js';
 import {PackageType, SfpmPackageContent} from '../../types/package.js';
 import {SfpmMetadataPackage} from '../sfpm-package.js';
 import {PackageAnalyzer, RegisterAnalyzer} from './analyzer-registry.js';
@@ -17,8 +17,8 @@ export class ApexTypeAnalyzer implements PackageAnalyzer {
 
     const filePaths = components.map(ac => ac.content as string);
 
-    const parser = new ApexParser();
-    const classification = await parser.classifyBulk(filePaths);
+    const classifier = new ApexClassifier();
+    const classification = await classifier.classifyBulk(filePaths);
 
     // Use SourceComponent.name for reliable names (parser returns "Unknown" on heuristic fallback)
     // Use relative path from staging directory for portable artifact paths
@@ -31,21 +31,14 @@ export class ApexTypeAnalyzer implements PackageAnalyzer {
     }));
 
     const classes = enriched
-    .filter(info => info.type === 'Class' && !info.isTest)
-    .map(info => ({
-      name: info.name,
-      path: info.path,
-    }));
-
-    const triggers = enriched
-    .filter(info => info.type === 'Trigger')
+    .filter(info => !info.isTest)
     .map(info => ({
       name: info.name,
       path: info.path,
     }));
 
     const testClasses = enriched
-    .filter(info => info.type === 'Class' && info.isTest)
+    .filter(info => info.isTest)
     .map(info => ({
       name: info.name,
       path: info.path,
@@ -57,7 +50,6 @@ export class ApexTypeAnalyzer implements PackageAnalyzer {
           classes,
           tests: testClasses,
         },
-        triggers,
       },
     };
   }

@@ -2,6 +2,7 @@ import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
+import type {HookEventSink} from '../../src/events/types.js';
 import {LifecycleEngine} from '../../src/lifecycle/lifecycle-engine.js';
 import type SfpmPackage from '../../src/package/sfpm-package.js';
 import {HookContext, LifecycleHooks} from '../../src/types/lifecycle.js';
@@ -582,6 +583,78 @@ describe('LifecycleEngine', () => {
       expect(buildPost).toHaveBeenCalledTimes(1);
       expect(installPre).toHaveBeenCalledTimes(1);
       expect(installPost).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // HookEventSink integration
+  // --------------------------------------------------------------------------
+
+  describe('HookEventSink integration', () => {
+    function createSink(): HookEventSink & {calls: Record<string, unknown[][]>} {
+      const calls: Record<string, unknown[][]> = {
+        hookComplete: [],
+        hooksComplete: [],
+        hooksStart: [],
+      };
+      return {
+        calls,
+        hookComplete: (p) => calls.hookComplete.push([p]),
+        hooksComplete: (p) => calls.hooksComplete.push([p]),
+        hooksStart: (p) => calls.hooksStart.push([p]),
+      };
+    }
+
+    it('should emit hooksStart, hookComplete, and hooksComplete to sink', async () => {
+      const sink = createSink();
+
+      engine.use(createHooks({
+        hooks: [{handler: vi.fn(), operation: 'build', timing: 'pre'}],
+        name: 'my-hook',
+      }));
+
+      await engine.run('build', 'pre', createContext({operation: 'build', timing: 'pre'}), sink);
+
+      expect(sink.calls.hooksStart).toHaveLength(1);
+      expect(sink.calls.hooksStart[0][0]).toEqual({
+        hookCount: 1,
+        hookNames: ['my-hook'],
+        operation: 'build',
+        timing: 'pre',
+      });
+
+      expect(sink.calls.hookComplete).toHaveLength(1);
+      expect(sink.calls.hookComplete[0][0]).toEqual({
+        hookName: 'my-hook',
+        operation: 'build',
+        timing: 'pre',
+      });
+
+      expect(sink.calls.hooksComplete).toHaveLength(1);
+      expect(sink.calls.hooksComplete[0][0]).toEqual({
+        completedCount: 1,
+        operation: 'build',
+        timing: 'pre',
+      });
+    });
+
+    it('should not call sink when no hooks match', async () => {
+      const sink = createSink();
+
+      await engine.run('install', 'pre', createContext(), sink);
+
+      expect(sink.calls.hooksStart).toHaveLength(0);
+      expect(sink.calls.hookComplete).toHaveLength(0);
+      expect(sink.calls.hooksComplete).toHaveLength(0);
+    });
+
+    it('should work without a sink (backwards compatible)', async () => {
+      engine.use(createHooks({
+        hooks: [{handler: vi.fn(), operation: 'install', timing: 'pre'}],
+      }));
+
+      // Should not throw
+      await expect(engine.run('install', 'pre', createContext())).resolves.toBeUndefined();
     });
   });
 });

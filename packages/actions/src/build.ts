@@ -116,7 +116,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   }
 
   // ------------------------------------------------------------------
-  // 3. Run BuildOrchestrator with async validation
+  // 3. Run BuildOrchestrator (default mode with full validation)
   // ------------------------------------------------------------------
   const orchestrator = new BuildOrchestrator(
     projectConfig,
@@ -128,15 +128,15 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       includeDependencies: options.includeDependencies,
       installationKey: options.installationKey,
-      isAsyncValidation: true,
+      mode: 'default',
     },
     logger,
     projectDir,
   );
 
-  // Collect creation request IDs from unlocked:create:complete events
+  // Collect creation request IDs from create:complete events
   const createRequestIds = new Map<string, {packageVersionCreateRequestId: string; packageVersionId: string; version: string}>();
-  orchestrator.on('unlocked:create:complete', (event: CreateCompleteEvent) => {
+  orchestrator.buildBus.on('create:complete', event => {
     if (event.packageVersionCreateRequestId) {
       createRequestIds.set(event.packageName, {
         packageVersionCreateRequestId: event.packageVersionCreateRequestId,
@@ -147,10 +147,10 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   });
 
   const renderer = new ActionsProgressRenderer(logger);
-  renderer.attachToBuildOrchestrator(orchestrator);
+  renderer.attachToBuildOrchestrator(orchestrator.buildBus, orchestrator.orchestrationBus);
 
   const tracer = createTracer({serviceName: 'sfpm-actions'});
-  tracer.subscribe(orchestrator);
+  tracer.subscribe({build: orchestrator.buildBus, orchestration: orchestrator.orchestrationBus});
 
   const orchResult = await orchestrator.buildAll(packageNames);
 

@@ -1,12 +1,12 @@
 import {randomUUID} from 'node:crypto';
-import EventEmitter from 'node:events';
 
-import {DependencyResolution, PackageNode, ProjectGraph} from '../project/project-graph.js';
-import {DependencyError} from '../types/errors.js';
 import {
+  OrchestrationEventBus,
   OrchestrationResult,
   PackageResult,
-} from '../types/events.js';
+} from '../events/orchestration-event-bus.js';
+import {DependencyResolution, PackageNode, ProjectGraph} from '../project/project-graph.js';
+import {DependencyError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 
 // ============================================================================
@@ -14,19 +14,12 @@ import {Logger} from '../types/logger.js';
 // ============================================================================
 
 export interface OrchestratorOptions {
+  /** Continue orchestration even if a package fails. Defaults to false (fail fast). */
+  continueOnError?: boolean;
   /** Include transitive dependencies. Defaults to true. */
   includeDependencies?: boolean;
   /** Include managed (external) packages in orchestration. Defaults to true. */
   includeManagedPackages?: boolean;
-}
-
-/**
- * Minimal event-emitting contract used by {@link OrchestrationTask} implementations
- * to forward domain-specific events (build, install, etc.) through the
- * orchestrator's event bus.
- */
-export interface OrchestratorEmitter {
-  emit(eventName: string | symbol, ...args: any[]): boolean;
 }
 
 /**
@@ -45,14 +38,13 @@ export interface OrchestrationTask<TContext = void> {
    * Process a single package. Must return a {@link PackageResult}.
    *
    * Implementations should catch their own errors and return a failed result
-   * rather than throwing. Domain-specific events (build, install, etc.) should
-   * be forwarded through the provided `emitter`.
+   * rather than throwing. Domain-specific events are emitted via the shared
+   * event bus — no forwarding through the orchestrator needed.
    */
   processSinglePackage(
     packageName: string,
     level: number,
     context: TContext,
-    emitter: OrchestratorEmitter,
   ): Promise<PackageResult>;
 
   /**
@@ -97,17 +89,15 @@ interface LevelOutcome {
  * propagates failures to skip dependents.
  *
  * Domain-specific behaviour is supplied via an {@link OrchestrationTask}.
- * All orchestration and domain events are emitted through the provided
- * {@link OrchestratorEmitter}.
+ * Orchestration events are emitted through the {@link OrchestrationEventBus}.
  *
  * @typeParam TContext — Shared context created by the task's `setup()` call.
  */
 export class Orchestrator<TContext = void> {
-  private readonly emitter: OrchestratorEmitter;
+  readonly bus: OrchestrationEventBus;
   private readonly graph: ProjectGraph;
   private readonly logger: Logger | undefined;
   private readonly options: OrchestratorOptions;
-  private orchestrationId = '';
   private readonly task: OrchestrationTask<TContext>;
 
   constructor(
@@ -115,13 +105,13 @@ export class Orchestrator<TContext = void> {
     options: OrchestratorOptions,
     task: OrchestrationTask<TContext>,
     logger?: Logger,
-    emitter: OrchestratorEmitter = new EventEmitter(),
+    bus?: OrchestrationEventBus,
   ) {
     this.graph = graph;
     this.options = options;
     this.task = task;
     this.logger = logger;
-    this.emitter = emitter;
+    this.bus = bus ?? new OrchestrationEventBus(randomUUID());
   }
 
   // ========================================================================
@@ -139,8 +129,6 @@ export class Orchestrator<TContext = void> {
   public async executeAll(packageNames: string[]): Promise<OrchestrationResult> {
     const orchestrationStart = Date.now();
     const includeDeps = this.options.includeDependencies !== false;
-
-    this.orchestrationId = randomUUID();
 
     const levels = this.resolveLevels(packageNames);
     this.emitOrchestrationStart(levels, includeDeps);
@@ -173,18 +161,23 @@ export class Orchestrator<TContext = void> {
     orchestrationStart: number,
   ): OrchestrationResult {
     const totalDuration = Date.now() - orchestrationStart;
+
+    // Collect pending validations from all successful package results
+    const pendingValidations = tracker.results
+    .filter(r => r.pendingValidation)
+    .map(r => r.pendingValidation!);
+
     const result: OrchestrationResult = {
       duration: totalDuration,
       failedPackages: [...tracker.failedPackages],
+      pendingValidations,
       results: tracker.results,
       skippedPackages: [...tracker.skippedPackages],
       success: tracker.failedPackages.size === 0,
     };
 
-    this.emitter.emit('orchestration:complete', {
-      orchestrationId: this.orchestrationId,
+    this.bus.complete({
       results: tracker.results,
-      timestamp: new Date(),
       totalDuration,
     });
 
@@ -261,11 +254,9 @@ export class Orchestrator<TContext = void> {
    * Emit the orchestration:start event with totals computed from the resolved levels.
    */
   private emitOrchestrationStart(levels: PackageNode[][], includeDependencies: boolean): void {
-    this.emitter.emit('orchestration:start', {
+    this.bus.start({
       includeDependencies,
-      orchestrationId: this.orchestrationId,
       packageNames: levels.flat().map(n => n.name),
-      timestamp: new Date(),
       totalLevels: levels.length,
       totalPackages: levels.reduce((sum, l) => sum + l.length, 0),
     });
@@ -303,25 +294,21 @@ export class Orchestrator<TContext = void> {
     const eligible = this.skipFailedDependents(level, levelIndex, tracker);
     if (eligible.length === 0) return;
 
-    this.emitter.emit('orchestration:level:start', {
+    this.bus.levelStart({
       level: levelIndex,
-      orchestrationId: this.orchestrationId,
       packageDetails: eligible.map(n => ({isManaged: n.isManaged, name: n.name, version: n.version})),
       packages: eligible.map(n => n.name),
-      timestamp: new Date(),
     });
 
     const settled = await Promise.allSettled(eligible.map(node => this.processPackageWithTracking(node.name, levelIndex, context)));
 
     const outcome = this.collectLevelResults(settled, eligible, level, tracker);
 
-    this.emitter.emit('orchestration:level:complete', {
+    this.bus.levelComplete({
       failed: outcome.failed,
       level: levelIndex,
-      orchestrationId: this.orchestrationId,
       skipped: outcome.skipped,
       succeeded: outcome.succeeded,
-      timestamp: new Date(),
     });
   }
 
@@ -337,7 +324,7 @@ export class Orchestrator<TContext = void> {
     let result: PackageResult;
 
     try {
-      result = await this.task.processSinglePackage(packageName, level, context, this.emitter);
+      result = await this.task.processSinglePackage(packageName, level, context);
     } catch (error_) {
       const errorMessage = error_ instanceof Error ? error_.message : String(error_);
       result = {
@@ -349,15 +336,13 @@ export class Orchestrator<TContext = void> {
       };
     }
 
-    this.emitter.emit('orchestration:package:complete', {
+    this.bus.packageComplete({
       duration: result.duration,
       error: result.error,
       level,
-      orchestrationId: this.orchestrationId,
       packageName,
       skipped: result.skipped,
       success: result.success,
-      timestamp: new Date(),
     });
 
     return result;
@@ -399,6 +384,10 @@ export class Orchestrator<TContext = void> {
     levelIndex: number,
     tracker: LevelTracker,
   ): PackageNode[] {
+    if (this.options.continueOnError) {
+      return level;
+    }
+
     return level.filter(node => {
       const hasFailedDep = [...node.dependencies].some(dep => tracker.failedPackages.has(dep.name));
       if (!hasFailedDep) return true;
@@ -411,14 +400,13 @@ export class Orchestrator<TContext = void> {
         skipped: true,
         success: false,
       });
-      this.emitter.emit('orchestration:package:complete', {
+      this.bus.packageComplete({
         duration: 0,
         error: 'Skipped because a dependency failed',
         level: levelIndex,
         packageName: node.name,
         skipped: true,
         success: false,
-        timestamp: new Date(),
       });
       return false;
     });

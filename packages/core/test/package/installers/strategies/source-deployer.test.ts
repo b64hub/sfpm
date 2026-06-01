@@ -1,4 +1,3 @@
-import {Org} from '@salesforce/core';
 import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest';
@@ -6,13 +5,14 @@ import {
 import SourceDeployer from '../../../../src/package/installers/strategies/source-deployer.js';
 import {type SourceDeployable} from '../../../../src/package/installers/types.js';
 
-// Mocks
-vi.mock('@salesforce/core', async importOriginal => {
-  const actual = await importOriginal<typeof import('@salesforce/core')>();
+const mockDeploy = vi.fn();
+const mockAwaitDeploy = vi.fn();
+
+vi.mock('../../../../src/tooling/metadata-deploy-service.js', () => {
   return {
-    ...actual,
-    Org: {
-      create: vi.fn(),
+    MetadataDeployService: class {
+      awaitDeploy = mockAwaitDeploy;
+      deploy = mockDeploy;
     },
   };
 });
@@ -33,191 +33,111 @@ describe('SourceDeployer', () => {
 
   describe('install', () => {
     let mockDeployable: SourceDeployable;
-    let mockOrg: any;
-    let mockConnection: any;
-    let mockDeploy: any;
-    let mockComponentSet: any;
 
     beforeEach(() => {
-      mockDeploy = {
-        id: 'deploy123',
-        onUpdate: vi.fn(),
-        pollStatus: vi.fn().mockResolvedValue({
-          response: {
-            details: {},
-            success: true,
-          },
-        }),
-      };
-
-      mockComponentSet = {
-        deploy: vi.fn().mockResolvedValue(mockDeploy),
-        size: 10,
-      };
-
       mockDeployable = {
-        componentSet: mockComponentSet as any,
+        componentSet: {size: 10} as any,
         packageName: 'test-package',
         versionNumber: '1.0.0.1',
       };
 
-      mockConnection = {
-        tooling: {},
-      };
-
-      mockOrg = {
-        getConnection: vi.fn().mockReturnValue(mockConnection),
-      };
-
-      vi.mocked(Org.create).mockResolvedValue(mockOrg as any);
+      mockDeploy.mockResolvedValue('deploy123');
+      mockAwaitDeploy.mockResolvedValue({
+        errors: [],
+        formatErrors: () => '',
+        hasTestFailures: () => false,
+        meetsCoverageThreshold: () => true,
+        success: true,
+      });
     });
 
     it('should successfully deploy package source', async () => {
-      await strategy.install(mockDeployable, 'targetOrg');
+      const result = await strategy.install(mockDeployable, 'targetOrg');
 
-      expect(Org.create).toHaveBeenCalledWith({aliasOrUsername: 'targetOrg'});
-      expect(mockComponentSet.deploy).toHaveBeenCalledWith({
-        usernameOrConnection: mockConnection,
-      });
-      expect(mockDeploy.pollStatus).toHaveBeenCalled();
+      expect(mockDeploy).toHaveBeenCalledWith(
+        mockDeployable.componentSet,
+        'targetOrg',
+        {testLevel: undefined},
+      );
+      expect(mockAwaitDeploy).toHaveBeenCalledWith(
+        'deploy123',
+        'targetOrg',
+        expect.any(Function),
+      );
+      expect(result.deployId).toBe('deploy123');
       expect(mockLogger.info).toHaveBeenCalledWith('Source deployment completed successfully');
     });
 
-    it('should throw error if connection is not available', async () => {
-      mockOrg.getConnection.mockReturnValue(null);
+    it('should pass test level when provided', async () => {
+      await strategy.install(mockDeployable, 'targetOrg', {testLevel: 'RunLocalTests'});
 
-      await expect(strategy.install(mockDeployable, 'targetOrg')).rejects.toThrow('Unable to connect to org: targetOrg');
+      expect(mockDeploy).toHaveBeenCalledWith(
+        mockDeployable.componentSet,
+        'targetOrg',
+        {testLevel: 'RunLocalTests'},
+      );
     });
 
     it('should throw error if deployment fails', async () => {
-      mockDeploy.pollStatus.mockResolvedValue({
-        response: {
-          details: {
-            componentFailures: [
-              {fullName: 'ApexClass.Test', problem: 'Syntax error'},
-            ],
-          },
-          success: false,
-        },
+      mockAwaitDeploy.mockResolvedValue({
+        errors: [{fullName: 'ApexClass.Test', problem: 'Syntax error'}],
+        formatErrors: () => 'ApexClass.Test: Syntax error',
+        hasTestFailures: () => false,
+        meetsCoverageThreshold: () => true,
+        success: false,
       });
 
-      await expect(strategy.install(mockDeployable, 'targetOrg')).rejects.toThrow('Source deployment failed:\nApexClass.Test: Syntax error');
-    });
-
-    it('should handle single failure object', async () => {
-      mockDeploy.pollStatus.mockResolvedValue({
-        response: {
-          details: {
-            componentFailures: {fullName: 'ApexClass.Test', problem: 'Error'},
-          },
-          success: false,
-        },
-      });
-
-      await expect(strategy.install(mockDeployable, 'targetOrg')).rejects.toThrow('Source deployment failed:\nApexClass.Test: Error');
+      await expect(strategy.install(mockDeployable, 'targetOrg'))
+        .rejects.toThrow('Source deployment failed:\nApexClass.Test: Syntax error');
     });
 
     it('should handle deployment failure with no specific errors', async () => {
-      mockDeploy.pollStatus.mockResolvedValue({
-        response: {
-          details: {},
-          success: false,
-        },
-      });
-
-      await expect(strategy.install(mockDeployable, 'targetOrg')).rejects.toThrow('Source deployment failed:\nUnknown deployment error');
-    });
-  });
-
-  describe('handleDeployFailure', () => {
-    let mockDeployable: SourceDeployable;
-    let mockOrg: any;
-    let mockConnection: any;
-    let mockDeploy: any;
-    let mockComponentSet: any;
-
-    beforeEach(() => {
-      mockDeploy = {
-        id: 'deploy123',
-        onUpdate: vi.fn(),
-        pollStatus: vi.fn(),
-      };
-
-      mockComponentSet = {
-        deploy: vi.fn().mockResolvedValue(mockDeploy),
-        size: 10,
-      };
-
-      mockDeployable = {
-        componentSet: mockComponentSet as any,
-        packageName: 'test-package',
-        versionNumber: '1.0.0.1',
-      };
-
-      mockConnection = {
-        metadata: {
-          checkDeployStatus: vi.fn(),
-        },
-      };
-
-      mockOrg = {
-        getConnection: vi.fn().mockReturnValue(mockConnection),
-      };
-
-      vi.mocked(Org.create).mockResolvedValue(mockOrg as any);
-    });
-
-    it('should recover when server-side deploy succeeded despite client error', async () => {
-      mockDeploy.pollStatus.mockRejectedValue(new Error('socket hang up'));
-      mockConnection.metadata.checkDeployStatus.mockResolvedValue({
-        done: true,
-        success: true,
-      });
-
-      const result = await strategy.install(mockDeployable, 'targetOrg');
-
-      expect(result.deployId).toBe('deploy123');
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining('succeeded server-side'),
-      );
-    });
-
-    it('should throw with component errors when server-side deploy failed', async () => {
-      mockDeploy.pollStatus.mockRejectedValue(new Error('socket hang up'));
-      mockConnection.metadata.checkDeployStatus.mockResolvedValue({
-        details: {
-          componentFailures: [{fullName: 'MyClass', problem: 'Compile error'}],
-        },
-        done: true,
+      mockAwaitDeploy.mockResolvedValue({
+        errors: [],
+        formatErrors: () => '',
+        hasTestFailures: () => false,
+        meetsCoverageThreshold: () => true,
         success: false,
       });
 
       await expect(strategy.install(mockDeployable, 'targetOrg'))
-        .rejects.toThrow('Source deployment failed:\nMyClass: Compile error');
+        .rejects.toThrow('Source deployment failed:\nUnknown deployment error');
     });
 
-    it('should throw with deploy ID when deployment is still in progress', async () => {
-      mockDeploy.pollStatus.mockRejectedValue(new Error('socket hang up'));
-      mockConnection.metadata.checkDeployStatus.mockResolvedValue({
-        done: false,
-        status: 'InProgress',
+    it('should emit deployment events via sink', async () => {
+      const mockSink = {
+        deployComplete: vi.fn(),
+        deployProgress: vi.fn(),
+        deployStart: vi.fn(),
+      };
+      const strategyWithSink = new SourceDeployer(mockLogger, mockSink as any);
+
+      await strategyWithSink.install(mockDeployable, 'targetOrg');
+
+      expect(mockSink.deployStart).toHaveBeenCalledWith({targetOrg: 'targetOrg'});
+      expect(mockSink.deployComplete).toHaveBeenCalledWith({targetOrg: 'targetOrg'});
+    });
+
+    it('should emit complete event on deploy error', async () => {
+      const mockSink = {
+        deployComplete: vi.fn(),
+        deployProgress: vi.fn(),
+        deployStart: vi.fn(),
+      };
+      const strategyWithSink = new SourceDeployer(mockLogger, mockSink as any);
+
+      mockAwaitDeploy.mockResolvedValue({
+        errors: [{fullName: 'X', problem: 'fail'}],
+        formatErrors: () => 'X: fail',
+        hasTestFailures: () => false,
+        meetsCoverageThreshold: () => true,
         success: false,
       });
 
-      const error = await strategy.install(mockDeployable, 'targetOrg').catch((e: Error) => e);
-      expect(error).toBeInstanceOf(Error);
-      expect(error!.message).toContain('still in progress');
-      expect(error!.message).toContain('deploy123');
-    });
+      await expect(strategyWithSink.install(mockDeployable, 'targetOrg'))
+        .rejects.toThrow();
 
-    it('should throw original error when verify query also fails', async () => {
-      mockDeploy.pollStatus.mockRejectedValue(new Error('socket hang up'));
-      mockConnection.metadata.checkDeployStatus.mockRejectedValue(
-        new Error('connection refused'),
-      );
-
-      await expect(strategy.install(mockDeployable, 'targetOrg'))
-        .rejects.toThrow('socket hang up');
+      expect(mockSink.deployComplete).toHaveBeenCalledWith({targetOrg: 'targetOrg'});
     });
   });
 });
