@@ -149,7 +149,7 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   // Collect coverage data from test completion events
   const coverageMap = new Map<string, number>();
   orchestrator.buildBus.on('task:validate:complete', data => {
-    if (data.packageName && data.coveragePercentage !== null) {
+    if (data.packageName && data.coveragePercentage !== undefined) {
       coverageMap.set(data.packageName, data.coveragePercentage);
     }
   });
