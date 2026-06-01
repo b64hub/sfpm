@@ -5,9 +5,10 @@ import {
   WatcherStateStore,
 } from '@b64hub/sfpm-core';
 import {Flags} from '@oclif/core';
-import chalk from 'chalk';
+import {printTable} from '@oclif/table';
 
 import SfpmCommand from '../../sfpm-command.js';
+import {colorizeStatus, formatAge, truncate} from '../../ui/table.js';
 
 export default class WatchStatus extends SfpmCommand {
   static override description = 'check the status of async watcher jobs';
@@ -47,25 +48,11 @@ export default class WatchStatus extends SfpmCommand {
     }
 
     if (flags.json) {
-      this.logJson({
-        watchers: entries.map(e => ({
-          createdAt: new Date(e.state.createdAt).toISOString(),
-          error: e.state.error,
-          id: e.id,
-          jobType: e.state.jobType,
-          result: e.state.result,
-          updatedAt: new Date(e.state.updatedAt).toISOString(),
-          watcherPid: e.state.watcherPid,
-          watcherStatus: e.state.watcherStatus,
-        })),
-      });
+      this.logJson({watchers: entries.map(e => toJsonRow(e.id, e.state))});
       return;
     }
 
-    this.log('');
-    for (const entry of entries) {
-      this.renderEntry(entry.id, entry.state);
-    }
+    this.printWatcherTable(entries);
   }
 
   private async pollEntries(
@@ -73,7 +60,7 @@ export default class WatchStatus extends SfpmCommand {
     store: WatcherStateStore,
     jsonMode?: boolean,
   ): Promise<void> {
-    const results: Array<{error?: string; id: string; jobType: string; result: unknown; status: string}> = [];
+    const rows: Array<{error: string; id: string; status: string; type: string}> = [];
 
     for (const entry of entries) {
       const strategy = resolveStrategy(entry.state.jobType);
@@ -84,15 +71,13 @@ export default class WatchStatus extends SfpmCommand {
         // eslint-disable-next-line no-await-in-loop
         const outcome = await strategy.poll(connection, entry.state.payload);
 
-        results.push({
-          error: outcome.status === 'failed' ? outcome.error : undefined,
-          id: entry.id,
-          jobType: entry.state.jobType,
-          result: outcome.status === 'pending' ? undefined : outcome.result,
+        rows.push({
+          error: outcome.status === 'failed' ? outcome.error : '',
+          id: truncate(entry.id, 20),
           status: outcome.status,
+          type: entry.state.jobType,
         });
 
-        // Update state file if terminal
         if (outcome.status === 'completed' || outcome.status === 'failed') {
           entry.state.watcherStatus = outcome.status === 'completed' ? 'completed' : 'error';
           entry.state.result = outcome.result;
@@ -105,79 +90,76 @@ export default class WatchStatus extends SfpmCommand {
           await store.update(entry.id, entry.state);
         }
       } catch (error) {
-        results.push({
+        rows.push({
           error: error instanceof Error ? error.message : String(error),
-          id: entry.id,
-          jobType: entry.state.jobType,
-          result: undefined,
+          id: truncate(entry.id, 20),
           status: 'error',
+          type: entry.state.jobType,
         });
       }
     }
 
     if (jsonMode) {
-      this.logJson({watchers: results});
-    } else {
-      for (const r of results) {
-        const icon = r.status === 'completed' ? chalk.green('ok') : r.status === 'failed' ? chalk.red('failed') : chalk.yellow(r.status);
-        this.log(`${chalk.cyan(r.id)}  [${r.jobType}]  ${icon}`);
-        if (r.error) this.log(`  ${chalk.red(r.error)}`);
-        this.log('');
-      }
+      this.logJson({watchers: rows});
+      return;
     }
+
+    printTable({
+      borderStyle: 'headers-only-with-underline',
+      columns: [
+        {key: 'id', name: 'ID'},
+        {key: 'type', name: 'Type'},
+        {key: 'status', name: 'Status'},
+        {key: 'error', name: 'Error'},
+      ],
+      data: rows.map(r => ({
+        ...r,
+        error: r.error ? truncate(r.error, 50) : '',
+        status: colorizeStatus(r.status),
+      })),
+    });
   }
 
-  private renderEntry(id: string, state: WatcherState): void {
-    const age = formatAge(Date.now() - state.createdAt);
-    const statusColor = statusToColor(state.watcherStatus);
-    const pidInfo = state.watcherPid ? ` (PID ${state.watcherPid})` : '';
-
-    this.log(`${chalk.cyan(id)}  [${state.jobType}]  ${statusColor(state.watcherStatus)}${pidInfo}  ${chalk.gray(age)} ago`);
-
-    if (state.error) {
-      this.log(`  ${chalk.red(state.error)}`);
-    }
-
-    if (state.result) {
-      this.log(`  Result: ${JSON.stringify(state.result)}`);
-    }
-
-    this.log('');
+  private printWatcherTable(entries: Array<{id: string; state: WatcherState}>): void {
+    printTable({
+      borderStyle: 'headers-only-with-underline',
+      columns: [
+        {key: 'id', name: 'ID'},
+        {key: 'type', name: 'Type'},
+        {key: 'status', name: 'Status'},
+        {key: 'pid', name: 'PID'},
+        {key: 'age', name: 'Age'},
+        {key: 'error', name: 'Error'},
+      ],
+      data: entries.map(e => toTableRow(e.id, e.state)),
+    });
   }
 }
 
 // ============================================================================
-// Helpers
+// Row mappers
 // ============================================================================
 
-function formatAge(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return `${hours}h ${remainingMinutes}m`;
+function toTableRow(id: string, state: WatcherState) {
+  return {
+    age: `${formatAge(Date.now() - state.createdAt)} ago`,
+    error: state.error ? truncate(state.error, 50) : '',
+    id: truncate(id, 20),
+    pid: state.watcherPid ? String(state.watcherPid) : '',
+    status: colorizeStatus(state.watcherStatus),
+    type: state.jobType,
+  };
 }
 
-function statusToColor(status: string): (text: string) => string {
-  switch (status) {
-  case 'cancelled': {return chalk.gray;
-  }
-
-  case 'completed': {return chalk.green;
-  }
-
-  case 'error': {return chalk.red;
-  }
-
-  case 'polling': {return chalk.yellow;
-  }
-
-  case 'starting': {return chalk.cyan;
-  }
-
-  default: {return chalk.gray;
-  }
-  }
+function toJsonRow(id: string, state: WatcherState) {
+  return {
+    createdAt: new Date(state.createdAt).toISOString(),
+    error: state.error,
+    id,
+    jobType: state.jobType,
+    result: state.result,
+    updatedAt: new Date(state.updatedAt).toISOString(),
+    watcherPid: state.watcherPid,
+    watcherStatus: state.watcherStatus,
+  };
 }

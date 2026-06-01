@@ -8,6 +8,11 @@
  * Usage (forked by forkWatcher):
  *   node watcher-runner.js <state-file-path> <state-id>
  */
+import type {
+  Logger, PollingStrategy, PollOutcome, WatcherState,
+} from '@b64hub/sfpm-core';
+import type {Connection} from '@salesforce/core';
+
 import {
   createConsoleLogger,
   resolveStrategy,
@@ -43,125 +48,152 @@ async function run(): Promise<void> {
     throw new Error(`State file not found: ${stateId}`);
   }
 
-  // Update state with our PID and status
   state.watcherPid = process.pid;
   state.watcherStatus = 'polling';
   await store.update(stateId, state);
 
   try {
-    // Resolve the polling strategy
     const strategy = resolveStrategy(state.jobType);
-
-    // Connect to Salesforce
     logger.info(`Connecting to ${state.auth.username} for ${state.jobType} watcher`);
     const connection = await strategy.connect(state.auth);
-
-    // Calculate timing
-    const intervalMs = state.intervalMs ?? strategy.defaultIntervalMs;
-    const timeoutMs = state.timeoutMs ?? strategy.defaultTimeoutMs;
-    const deadline = Date.now() + timeoutMs;
-
-    let consecutiveErrors = 0;
-
-    // Poll loop
-    while (Date.now() < deadline) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const outcome = await strategy.poll(connection, state.payload);
-
-        consecutiveErrors = 0; // Reset on successful poll
-
-        if (outcome.status === 'completed') {
-          state.result = outcome.result;
-          state.watcherStatus = 'completed';
-          state.updatedAt = Date.now();
-          // eslint-disable-next-line no-await-in-loop
-          await store.update(stateId, state);
-
-          // eslint-disable-next-line no-await-in-loop
-          await sendNotification({
-            message: `${state.jobType} job completed successfully.`,
-            title: `SFPM: ${capitalize(state.jobType)} Complete`,
-          });
-
-          return;
-        }
-
-        if (outcome.status === 'failed') {
-          state.result = outcome.result;
-          state.error = outcome.error;
-          state.watcherStatus = 'error';
-          state.updatedAt = Date.now();
-          // eslint-disable-next-line no-await-in-loop
-          await store.update(stateId, state);
-
-          // eslint-disable-next-line no-await-in-loop
-          await sendNotification({
-            message: outcome.error,
-            title: `SFPM: ${capitalize(state.jobType)} Failed`,
-          });
-
-          throw new Error(outcome.error);
-        }
-
-        // Still pending — log progress and continue
-        if (outcome.message) {
-          logger.info(`[${state.jobType}] ${outcome.message}`);
-        }
-      } catch (error) {
-        // Re-throw terminal errors (already persisted above)
-        if (state.watcherStatus === 'error') throw error;
-
-        consecutiveErrors++;
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.warn(`Poll error (${consecutiveErrors}/${MAX_RETRIES}): ${errorMessage}`);
-
-        if (consecutiveErrors >= MAX_RETRIES) {
-          throw new Error(`Polling failed after ${MAX_RETRIES} consecutive errors: ${errorMessage}`);
-        }
-
-        // Backoff before retrying
-        // eslint-disable-next-line no-await-in-loop
-        await sleep(RETRY_BACKOFF_MS * consecutiveErrors);
-        continue;
-      }
-
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(intervalMs);
-    }
-
-    // Timed out
-    state.error = `Timed out after ${Math.round(timeoutMs / 60_000)} minutes`;
-    state.watcherStatus = 'error';
-    state.updatedAt = Date.now();
-    await store.update(stateId, state);
-
-    await sendNotification({
-      message: state.error,
-      title: `SFPM: ${capitalize(state.jobType)} Timed Out`,
-    });
-
-    throw new Error(state.error);
+    await pollUntilDone(strategy, connection, state, store, stateId, logger);
   } catch (error) {
-    // Unexpected error — update state and notify
-    if (state.watcherStatus !== 'completed' && state.watcherStatus !== 'error') {
-      state.watcherStatus = 'error';
-      state.error = error instanceof Error ? error.message : String(error);
-      state.updatedAt = Date.now();
-      await store.update(stateId, state);
-
-      await sendNotification({
-        message: state.error,
-        title: `SFPM: ${capitalize(state.jobType)} Watcher Error`,
-      });
-    }
-
+    await handleFatalError(error, state, store, stateId);
     throw error;
   }
 }
 
 // ============================================================================
-// Helpers
+// Poll loop
+// ============================================================================
+
+async function pollUntilDone(
+  strategy: PollingStrategy,
+  connection: Connection,
+  state: WatcherState,
+  store: WatcherStateStore,
+  stateId: string,
+  logger: Logger,
+): Promise<void> {
+  const intervalMs = state.intervalMs ?? strategy.defaultIntervalMs;
+  const timeoutMs = state.timeoutMs ?? strategy.defaultTimeoutMs;
+  const deadline = Date.now() + timeoutMs;
+  let consecutiveErrors = 0;
+
+  while (Date.now() < deadline) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const outcome = await strategy.poll(connection, state.payload);
+      consecutiveErrors = 0;
+
+      // eslint-disable-next-line no-await-in-loop
+      const handled = await handleOutcome(outcome, state, store, stateId, logger);
+      if (handled) return;
+    } catch (error) {
+      if (state.watcherStatus === 'error') throw error;
+
+      consecutiveErrors++;
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.warn(`Poll error (${consecutiveErrors}/${MAX_RETRIES}): ${msg}`);
+
+      if (consecutiveErrors >= MAX_RETRIES) {
+        throw new Error(`Polling failed after ${MAX_RETRIES} consecutive errors: ${msg}`);
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(RETRY_BACKOFF_MS * consecutiveErrors);
+      continue;
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(intervalMs);
+  }
+
+  await markError(state, store, stateId, `Timed out after ${Math.round(timeoutMs / 60_000)} minutes`);
+  await notify(state, 'Timed Out', state.error!);
+  throw new Error(state.error);
+}
+
+// ============================================================================
+// Outcome handling
+// ============================================================================
+
+/**
+ * Process a single poll outcome. Returns `true` if the poll loop should exit.
+ */
+async function handleOutcome(
+  outcome: PollOutcome,
+  state: WatcherState,
+  store: WatcherStateStore,
+  stateId: string,
+  logger: Logger,
+): Promise<boolean> {
+  if (outcome.status === 'completed') {
+    state.result = outcome.result;
+    state.watcherStatus = 'completed';
+    state.updatedAt = Date.now();
+    await store.update(stateId, state);
+    await notify(state, 'Complete', `${state.jobType} job completed successfully.`);
+    return true;
+  }
+
+  if (outcome.status === 'failed') {
+    await markError(state, store, stateId, outcome.error, outcome.result);
+    await notify(state, 'Failed', outcome.error);
+    throw new Error(outcome.error);
+  }
+
+  if (outcome.message) {
+    logger.info(`[${state.jobType}] ${outcome.message}`);
+  }
+
+  return false;
+}
+
+// ============================================================================
+// State helpers
+// ============================================================================
+
+async function markError(
+  state: WatcherState,
+  store: WatcherStateStore,
+  stateId: string,
+  error: string,
+  result?: unknown,
+): Promise<void> {
+  state.watcherStatus = 'error';
+  state.error = error;
+  if (result !== undefined) state.result = result;
+  state.updatedAt = Date.now();
+  await store.update(stateId, state);
+}
+
+async function handleFatalError(
+  error: unknown,
+  state: WatcherState,
+  store: WatcherStateStore,
+  stateId: string,
+): Promise<void> {
+  if (state.watcherStatus === 'completed' || state.watcherStatus === 'error') return;
+
+  const message = error instanceof Error ? error.message : String(error);
+  await markError(state, store, stateId, message);
+  await notify(state, 'Watcher Error', message);
+}
+
+// ============================================================================
+// Notification helper
+// ============================================================================
+
+async function notify(state: WatcherState, label: string, message: string): Promise<void> {
+  await sendNotification({
+    message,
+    title: `SFPM: ${capitalize(state.jobType)} ${label}`,
+  });
+}
+
+// ============================================================================
+// Utilities
 // ============================================================================
 
 function sleep(ms: number): Promise<void> {
