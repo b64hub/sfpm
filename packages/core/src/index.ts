@@ -114,7 +114,11 @@ export {
   type TestRunResult as DeployTestRunResult, MetadataDeployService, type TestFailure,
 } from './tooling/metadata-deploy-service.js';
 export * from './types/artifact.js';
-export * from './types/build-state.js';
+export {
+  type LocalBuildState,
+  type LocalPackageBuildState,
+  type LocalValidationResult,
+} from './types/build-state.js';
 export * from './types/config.js';
 export * from './types/dependency-analysis.js';
 export * from './types/errors.js';
@@ -124,6 +128,7 @@ export * from './types/npm.js';
 export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
+export * from './types/watcher.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
 export {getPipelineRunId} from './utils/pipeline.js';
@@ -133,3 +138,8 @@ export {
   formatVersion, getVersionSuffix, stripBuildSegment, toSalesforceVersionWithToken, toVersionFormat,
 } from './utils/version-utils.js';
 export type {VersionFormatOptions} from './utils/version-utils.js';
+export {ApexTestPollingStrategy} from './watcher/strategies/apex-test-strategy.js';
+export {BuildPollingStrategy} from './watcher/strategies/build-strategy.js';
+export {DeployPollingStrategy} from './watcher/strategies/deploy-strategy.js';
+export {registeredJobTypes, resolveStrategy} from './watcher/strategy-registry.js';
+export {WatcherStateStore} from './watcher/watcher-state-store.js';

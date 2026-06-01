@@ -1,25 +1,24 @@
 import {
   BuildEventBus,
   BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions,
-  BuildStateStore,
-  LifecycleEngine, type LocalBuildState,
-  type LocalPackageBuildState, type OrchestrationResult,
+  type BuildWatcherPayload,
+  LifecycleEngine,
+  type OrchestrationResult,
   type PendingValidationDescriptor, ProjectService, ValidationResolver,
+  type WatcherState,
 } from '@b64hub/sfpm-core'
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {
   Args, Flags,
 } from '@oclif/core'
 import {ConfigAggregator} from '@salesforce/core'
-import {fork} from 'node:child_process'
-import path from 'node:path'
-import {fileURLToPath} from 'node:url'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
+import {forkWatcher} from '../../utils/watcher.js'
 
 interface ResolvedBuildFlags {
   async: boolean;
@@ -214,20 +213,38 @@ export default class Build extends SfpmCommand {
     if (pendingValidations.length === 0) return
 
     if (resolved.async) {
-      const asyncPackages: LocalPackageBuildState[] = pendingValidations.map(pv => ({
-        packageName: pv.packageName,
-        packageType: pv.operationType === 'package-version-request' ? 'Unlocked' : 'Source',
-        packageVersionCreateRequestId: pv.operationId,
-        version: '',
-      }));
+      const payload: BuildWatcherPayload = {
+        targets: pendingValidations.map(pv => ({
+          packageName: pv.packageName,
+          packageVersionCreateRequestId: pv.operationId,
+        })),
+      };
 
-      await this.startValidationWatcher(
-        asyncPackages,
-        resolved.buildOptions.devhubUsername ?? '',
-        resolved.projectDir,
-        resolved.waitMinutes,
-        resolved.mode,
-      )
+      const state: WatcherState = {
+        auth: {username: resolved.buildOptions.devhubUsername ?? ''},
+        createdAt: Date.now(),
+        jobType: 'build',
+        payload,
+        projectDir: resolved.projectDir,
+        timeoutMs: resolved.waitMinutes * 60 * 1000,
+        updatedAt: Date.now(),
+        watcherStatus: 'starting',
+      };
+
+      const {id, pid} = await forkWatcher(state);
+      const pkgNames = pendingValidations.map(pv => pv.packageName).join(', ');
+
+      if (resolved.mode === 'json') {
+        this.logJson({
+          packages: pkgNames,
+          stateId: id,
+          watcherPid: pid,
+        });
+      } else if (resolved.mode !== 'quiet') {
+        this.log(`\nValidation watcher started (PID ${pid}) for: ${pkgNames}`);
+        this.log('Run \'sfpm watch status\' to check progress.');
+      }
+
       return
     }
 
@@ -333,64 +350,6 @@ export default class Build extends SfpmCommand {
       resolvedPackages,
       sfpmConfig,
       waitMinutes: flags.wait,
-    }
-  }
-
-  /**
-   * Save async build state and fork a background watcher process
-   * that polls Salesforce for validation results.
-   */
-  private async startValidationWatcher(
-    packages: LocalPackageBuildState[],
-    devhubUsername: string,
-    projectDir: string,
-    waitMinutes: number,
-    mode: OutputMode,
-  ): Promise<void> {
-    const store = new BuildStateStore(projectDir);
-
-    const state: LocalBuildState = {
-      createdAt: Date.now(),
-      devhubUsername,
-      packages,
-      projectDir,
-      updatedAt: Date.now(),
-      waitTimeMs: waitMinutes * 60 * 1000,
-      watcherStatus: 'starting',
-    };
-
-    const id = await store.save(state);
-    const stateFilePath = store.getFilePath(id);
-
-    // Resolve the watcher script path relative to this file
-    const thisDir = path.dirname(fileURLToPath(import.meta.url));
-    const watcherScript = path.resolve(thisDir, '..', 'utils', 'validation-watcher.js');
-
-    // Fork the watcher as a detached, unref'd child process so this process can exit
-    const child = fork(watcherScript, [stateFilePath, id], {
-      detached: true,
-      stdio: 'ignore',
-    });
-
-    child.unref();
-
-    // Update state with the watcher PID
-    state.watcherPid = child.pid;
-    state.watcherStatus = 'polling';
-    await store.update(id, state);
-
-    const pkgNames = packages.map(p => p.packageName).join(', ');
-
-    if (mode === 'json') {
-      this.logJson({
-        packages: pkgNames,
-        stateFile: stateFilePath,
-        stateId: id,
-        watcherPid: child.pid,
-      });
-    } else if (mode !== 'quiet') {
-      this.log(`\nValidation watcher started (PID ${child.pid}) for: ${pkgNames}`);
-      this.log('Run \'sfpm build status\' to check progress.');
     }
   }
 }
