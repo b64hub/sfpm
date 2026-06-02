@@ -237,7 +237,7 @@ export default class Bootstrap extends SfpmCommand {
       projectService.getDefinitionProvider(),
       projectService.getProjectGraph(),
       {
-        codeCoverage: true, devhubUsername: ctx.targetOrg, force, includeDependencies: true,
+        devhubUsername: ctx.targetOrg, force, includeDependencies: true,
       },
       ctx.logger,
       projectService.getDefinitionProvider().projectDir,

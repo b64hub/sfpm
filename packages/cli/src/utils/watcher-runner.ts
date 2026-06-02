@@ -122,7 +122,7 @@ async function pollUntilDone(
  * Process a single poll outcome. Returns `true` if the poll loop should exit.
  */
 async function handleOutcome(
-  outcome: PollOutcome,
+  outcome: PollOutcome<unknown>,
   state: WatcherState,
   store: WatcherStateStore,
   stateId: string,
