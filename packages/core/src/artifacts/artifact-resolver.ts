@@ -1,5 +1,4 @@
 import fs from 'fs-extra';
-import {EventEmitter} from 'node:events';
 import * as semver from 'semver';
 
 import {ArtifactManifest, ArtifactResolutionOptions, ResolvedArtifact} from '../types/artifact.js';
@@ -9,20 +8,6 @@ import {toVersionFormat} from '../utils/version-utils.js';
 import {ArtifactRepository} from './artifact-repository.js';
 import {RegistryClient} from './registry/index.js';
 import {PnpmRegistryClient} from './registry/pnpm-registry-client.js';
-
-/**
- * Events emitted by the ArtifactResolver
- */
-export interface ArtifactResolverEvents {
-  'resolve:cache-hit': {packageName: string; timestamp: Date; version: string;};
-  'resolve:complete': {packageName: string; registry: 'local' | 'remote'; timestamp: Date; version: string;};
-  'resolve:download:complete': {artifactPath: string; packageName: string; timestamp: Date; version: string;};
-  'resolve:download:start': {packageName: string; timestamp: Date; version: string;};
-  'resolve:error': {error: string; packageName: string; timestamp: Date};
-  'resolve:remote-check': {packageName: string; timestamp: Date};
-  'resolve:remote-versions': {packageName: string; timestamp: Date; versions: string[];};
-  'resolve:start': {packageName: string; timestamp: Date; version?: string;};
-}
 
 /**
  * Default TTL for remote checks in minutes
@@ -47,13 +32,12 @@ const DEFAULT_TTL_MINUTES = 60;
  * - Local-only: no registry client, works only with the local artifact
  * - Remote-enabled: with registry client, can fetch from npm/other registries
  */
-export class ArtifactResolver extends EventEmitter {
+export class ArtifactResolver {
   private logger?: Logger;
   private registryClient?: RegistryClient;
   private repository: ArtifactRepository;
 
   constructor(repository: ArtifactRepository, registryClient?: RegistryClient, logger?: Logger) {
-    super();
     this.repository = repository;
     this.registryClient = registryClient;
     this.logger = logger;
@@ -123,8 +107,6 @@ export class ArtifactResolver extends EventEmitter {
   public async resolve(packageName: string, options: ArtifactResolutionOptions = {}): Promise<ResolvedArtifact> {
     const {forceRefresh = false, includePrerelease = true, ttlMinutes = DEFAULT_TTL_MINUTES, version} = options;
 
-    this.emit('resolve:start', {packageName, timestamp: new Date(), version});
-
     try {
       const manifest = await this.repository.getManifest();
 
@@ -137,7 +119,6 @@ export class ArtifactResolver extends EventEmitter {
       // Check remote and resolve
       return await this.resolveWithRemoteCheck(packageName, manifest, version, includePrerelease);
     } catch (error) {
-      this.emitError(packageName, error);
       this.wrapAndThrow(packageName, error, version, {forceRefresh, ttlMinutes});
     }
   }
@@ -154,8 +135,6 @@ export class ArtifactResolver extends EventEmitter {
       });
     }
 
-    this.emit('resolve:download:start', {packageName, timestamp: new Date(), version});
-
     const artifactsDir = this.repository.getArtifactsDir();
     await fs.ensureDir(artifactsDir);
 
@@ -163,13 +142,6 @@ export class ArtifactResolver extends EventEmitter {
       const {tarballPath} = await this.registryClient.downloadPackage(packageName, version, artifactsDir);
 
       const localized = await this.repository.localizeTarball(tarballPath, packageName, version);
-
-      this.emit('resolve:download:complete', {
-        artifactPath: localized.artifactPath,
-        packageName,
-        timestamp: new Date(),
-        version,
-      });
 
       return {
         artifactPath: localized.artifactPath,
@@ -190,17 +162,6 @@ export class ArtifactResolver extends EventEmitter {
   // =========================================================================
   // Private — Local Resolution
   // =========================================================================
-
-  private emitComplete(packageName: string, version: string, registry: 'local' | 'remote'): void {
-    this.emit('resolve:complete', {
-      packageName, registry, timestamp: new Date(), version,
-    });
-  }
-
-  private emitError(packageName: string, error: unknown): void {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    this.emit('resolve:error', {error: errorMessage, packageName, timestamp: new Date()});
-  }
 
   // =========================================================================
   // Private — Remote Resolution
@@ -285,9 +246,7 @@ export class ArtifactResolver extends EventEmitter {
     requestedVersion: string | undefined,
     includePrerelease: boolean,
   ): Promise<ResolvedArtifact> {
-    this.emit('resolve:remote-check', {packageName, timestamp: new Date()});
     const remoteVersions = await this.fetchRemoteVersions(packageName);
-    this.emit('resolve:remote-versions', {packageName, timestamp: new Date(), versions: remoteVersions});
 
     const localVersion = manifest?.version;
 
@@ -303,7 +262,6 @@ export class ArtifactResolver extends EventEmitter {
         const local = this.resolveFromLocal(packageName, manifest, requestedVersion);
         if (local) {
           await this.repository.updateLastCheckedRemote();
-          this.emitComplete(packageName, local.version, 'local');
           return local;
         }
       }
@@ -326,7 +284,6 @@ export class ArtifactResolver extends EventEmitter {
       await this.repository.updateLastCheckedRemote();
       const local = this.resolveFromLocal(packageName, manifest!, requestedVersion);
       if (local) {
-        this.emitComplete(packageName, local.version, 'local');
         return local;
       }
     }
@@ -334,7 +291,6 @@ export class ArtifactResolver extends EventEmitter {
     // Best version is remote — download it
     try {
       const result = await this.download(packageName, bestVersion);
-      this.emitComplete(packageName, result.version, 'remote');
       return result;
     } catch (downloadError) {
       this.logger?.warn(`Failed to download ${packageName}@${bestVersion}: ${downloadError instanceof Error ? downloadError.message : String(downloadError)}`);
@@ -344,7 +300,6 @@ export class ArtifactResolver extends EventEmitter {
         const fallback = this.resolveFromLocal(packageName, manifest, requestedVersion);
         if (fallback) {
           this.logger?.warn(`Falling back to local version: ${packageName}@${fallback.version}`);
-          this.emitComplete(packageName, fallback.version, 'local');
           return fallback;
         }
       }
@@ -427,8 +382,6 @@ export class ArtifactResolver extends EventEmitter {
       return undefined;
     }
 
-    this.emit('resolve:cache-hit', {packageName, timestamp: new Date(), version: result.version});
-    this.emitComplete(packageName, result.version, 'local');
     return result;
   }
 

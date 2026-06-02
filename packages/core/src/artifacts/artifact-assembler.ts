@@ -74,7 +74,6 @@ export default class ArtifactAssembler {
   private packageVersionNumber: string;
   private repository: ArtifactRepository;
   private sink?: ArtifactEventSink;
-  private versionDirectory: string;
 
   constructor(
     private sfpmPackage: SfpmPackage,
@@ -96,7 +95,7 @@ export default class ArtifactAssembler {
     }
 
     const packageWorkspacePath = resolvePackageWorkspacePath(projectDirectory, sourcePath);
-    this.repository = new ArtifactRepository(packageWorkspacePath, logger);
+    this.repository = new ArtifactRepository(packageWorkspacePath, logger, sfpmPackage.name);
 
     this.changelogProvider = options.changelogProvider || new StubChangelogProvider();
   }

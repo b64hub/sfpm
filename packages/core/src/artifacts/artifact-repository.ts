@@ -8,7 +8,6 @@ import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 import {NpmPackageJson} from '../types/npm.js';
 import {SfpmPackageMetadataBase, ValidationState} from '../types/package.js';
-import {splitPackageName} from '../utils/scope-utils.js';
 import {extractPackageVersionId, extractSourceHash, fromNpmPackageJson} from './npm-package-adapter.js';
 
 /**
@@ -37,12 +36,14 @@ const ARTIFACTS_DIR = 'artifacts';
  * - ArtifactResolver (for reading and remote localization)
  */
 export class ArtifactRepository {
+  public readonly packageName?: string;
   private readonly artifactsDir: string;
   private readonly logger?: Logger;
   private readonly packageWorkspacePath: string;
 
-  constructor(packageWorkspacePath: string, logger?: Logger) {
+  constructor(packageWorkspacePath: string, logger?: Logger, packageName?: string) {
     this.logger = logger;
+    this.packageName = packageName;
     this.packageWorkspacePath = packageWorkspacePath;
     this.artifactsDir = path.join(packageWorkspacePath, ARTIFACTS_DIR);
   }
@@ -300,22 +301,17 @@ export class ArtifactRepository {
    * `sfpm.validation` field with the resolved state, repacks the tarball,
    * and recalculates the artifact hash in the manifest.
    *
-   * @param packageName - Scoped npm name of the package
-   * @param version - Version of the artifact to update
    * @param validationState - The resolved validation state to write
    */
-  public async updateArtifactValidation(
-    packageName: string,
-    version: string,
-    validationState: ValidationState,
-  ): Promise<void> {
-    const artifactPath = this.getArtifactPath(packageName, version);
+  public async updateArtifactValidation(validationState: ValidationState): Promise<void> {
+    const artifactPath = this.getArtifactPath();
+    const name = this.packageName ?? 'unknown';
 
     if (!await fs.pathExists(artifactPath)) {
-      throw new ArtifactError(packageName, 'update', `Artifact not found at ${artifactPath}`, {version});
+      throw new ArtifactError(name, 'update', `Artifact not found at ${artifactPath}`);
     }
 
-    const tempDir = path.join(path.dirname(artifactPath), '.repack-tmp');
+    const tempDir = path.join(this.artifactsDir, '.repack-tmp');
 
     try {
       // 1. Extract tarball into temp directory
@@ -339,17 +335,16 @@ export class ArtifactRepository {
       // 4. Recalculate artifact hash and update manifest
       const newHash = await this.calculateFileHash(artifactPath);
 
-      const manifest = await this.getManifest(packageName);
-      if (manifest?.versions[version]) {
-        manifest.versions[version].artifactHash = newHash;
-        await this.saveManifest(packageName, manifest);
+      const manifest = await this.getManifest();
+      if (manifest) {
+        manifest.artifactHash = newHash;
+        await this.saveManifest(manifest);
       }
 
-      this.logger?.info(`Updated validation state for ${packageName}@${version} to '${validationState.status}'`);
+      this.logger?.info(`Updated validation state for ${name} to '${validationState.status}'`);
     } catch (error) {
-      throw new ArtifactError(packageName, 'update', 'Failed to update artifact validation state', {
+      throw new ArtifactError(name, 'update', 'Failed to update artifact validation state', {
         cause: error instanceof Error ? error : new Error(String(error)),
-        version,
       });
     } finally {
       await fs.remove(tempDir);

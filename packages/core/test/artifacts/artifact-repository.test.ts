@@ -286,9 +286,6 @@ describe('ArtifactRepository', () => {
     });
 
     describe('updateArtifactValidation', () => {
-        const packageName = '@testorg/test-package';
-        const version = '1.0.0-1';
-
         it('should extract, patch, repack and update manifest hash', async () => {
             const passedState: ValidationState = {
                 status: 'passed',
@@ -326,7 +323,7 @@ describe('ArtifactRepository', () => {
             // Mock calculateFileHash — it uses createReadStream internally
             const hashSpy = vi.spyOn(repository, 'calculateFileHash').mockResolvedValue('newhash789');
 
-            await repository.updateArtifactValidation(packageName, version, passedState);
+            await repository.updateArtifactValidation(passedState);
 
             // Verify tar extract was called
             expect(mockExec).toHaveBeenCalledWith(
@@ -351,15 +348,11 @@ describe('ArtifactRepository', () => {
                 expect.objectContaining({ timeout: 60_000 }),
             );
 
-            // Verify manifest was updated with new hash
+            // Verify manifest was updated with new artifact hash (flat shape)
             expect(fs.writeJson).toHaveBeenCalledWith(
                 expect.stringContaining('.tmp'),
                 expect.objectContaining({
-                    versions: expect.objectContaining({
-                        [version]: expect.objectContaining({
-                            artifactHash: 'newhash789',
-                        }),
-                    }),
+                    artifactHash: 'newhash789',
                 }),
                 { spaces: 4 },
             );
@@ -379,7 +372,7 @@ describe('ArtifactRepository', () => {
             };
 
             await expect(
-                repository.updateArtifactValidation(packageName, version, state),
+                repository.updateArtifactValidation(state),
             ).rejects.toThrow('Artifact not found');
         });
 
@@ -401,7 +394,7 @@ describe('ArtifactRepository', () => {
             };
 
             await expect(
-                repository.updateArtifactValidation(packageName, version, state),
+                repository.updateArtifactValidation(state),
             ).rejects.toThrow('Failed to update artifact validation state');
 
             // Verify cleanup still happened

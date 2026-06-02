@@ -13,6 +13,7 @@ import {HookContext, HookTiming} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {PackageType, PendingValidationDescriptor} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
+import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
@@ -312,7 +313,21 @@ export class PackageBuilder {
       return undefined;
     }
 
-    const manifestPath = path.join(projectDirectory, 'artifacts', sfpmPackage.packageName, 'manifest.json');
+    const sourcePath = sfpmPackage.packageDefinition?.path;
+    if (!sourcePath) {
+      this.logger?.info('No package definition path, proceeding with build');
+      return undefined;
+    }
+
+    let packageWorkspacePath: string;
+    try {
+      packageWorkspacePath = resolvePackageWorkspacePath(projectDirectory, sourcePath);
+    } catch {
+      this.logger?.info('Could not resolve package workspace path, proceeding with build');
+      return undefined;
+    }
+
+    const manifestPath = path.join(packageWorkspacePath, 'artifacts', 'manifest.json');
 
     if (!(await fs.pathExists(manifestPath))) {
       this.logger?.info('No previous builds found, proceeding with build');
@@ -320,21 +335,20 @@ export class PackageBuilder {
     }
 
     const manifest: ArtifactManifest = await fs.readJson(manifestPath);
-    const latestVersion = manifest.versions[manifest.latest];
 
-    if (!latestVersion?.sourceHash) {
+    if (!manifest.sourceHash) {
       this.logger?.info('No previous source hash found, proceeding with build');
       return undefined;
     }
 
-    if (latestVersion.sourceHash === currentSourceHash) {
+    if (manifest.sourceHash === currentSourceHash) {
       this.logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected. `
-        + `Latest version: ${manifest.latest}, hash: ${currentSourceHash}`);
-      return {artifactPath: latestVersion.path, latestVersion: manifest.latest};
+        + `Latest version: ${manifest.version}, hash: ${currentSourceHash}`);
+      return {artifactPath: path.join(packageWorkspacePath, 'artifacts', 'artifact.tgz'), latestVersion: manifest.version};
     }
 
     this.logger?.info('Source changes detected, proceeding with build');
-    this.logger?.debug(`Previous hash: ${latestVersion.sourceHash}, current: ${currentSourceHash}`);
+    this.logger?.debug(`Previous hash: ${manifest.sourceHash}, current: ${currentSourceHash}`);
     return undefined;
   }
 

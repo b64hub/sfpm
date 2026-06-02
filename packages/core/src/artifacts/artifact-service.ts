@@ -232,8 +232,8 @@ export class ArtifactService {
    * Use this for lower-level artifact operations like reading manifests,
    * checking if artifacts exist, getting metadata, etc.
    */
-  public getRepository(packageWorkspacePath: string): ArtifactRepository {
-    return new ArtifactRepository(packageWorkspacePath, this.logger);
+  public getRepository(packageWorkspacePath: string, packageName?: string): ArtifactRepository {
+    return new ArtifactRepository(packageWorkspacePath, this.logger, packageName);
   }
 
   /**
