@@ -15,6 +15,7 @@ import {Logger} from '../types/logger.js';
 import {
   InstallationMode, InstallationSource, PackageType, type TestLevel,
 } from '../types/package.js';
+import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {Installer, InstallerRegistry} from './installers/installer-registry.js';
 import {ManagedPackageRef} from './installers/types.js';
 import {PackageService} from './package-service.js';
@@ -415,8 +416,17 @@ export default class PackageInstaller {
     .setOrg(this.org)
     .setLogger(this.logger);
 
+    // Derive package workspace path for artifact resolution
+    const sourcePath = sfpmPackage.packageDefinition?.path;
+    let packageWorkspacePath: string;
+    if (sourcePath) {
+      packageWorkspacePath = resolvePackageWorkspacePath(sfpmPackage.projectDirectory, sourcePath);
+    } else {
+      packageWorkspacePath = sfpmPackage.projectDirectory;
+    }
+
     const installTarget = await artifactService.resolveInstallTarget(
-      sfpmPackage.projectDirectory,
+      packageWorkspacePath,
       packageName,
       this.options.artifact?.resolution,
     );
@@ -576,7 +586,7 @@ export default class PackageInstaller {
 
     // Set version from resolved artifact
     sfpmPackage.version = resolved.version;
-    sfpmPackage.sourceHash = resolved.versionEntry.sourceHash;
+    sfpmPackage.sourceHash = resolved.manifest.sourceHash;
 
     // For unlocked packages, set the packageVersionId
     if (sfpmPackage instanceof SfpmUnlockedPackage && resolved.packageVersionId) {

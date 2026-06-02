@@ -8,6 +8,7 @@ import {Logger} from '../../types/logger.js';
 import {
   InstallationMode, InstallationSource, PackageType, PerPackageBuildConfig,
 } from '../../types/package.js';
+import {resolvePackageWorkspacePath} from '../../utils/workspace-path.js';
 import {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {Installer, type InstallerExecResult, RegisterInstaller} from './installer-registry.js';
 // Import strategy implementations
@@ -104,8 +105,12 @@ export default class UnlockedPackageInstaller implements Installer {
     }
 
     // Auto-detect: if artifacts exist, use artifact; otherwise local
-    const repo = this.artifactService.getRepository(this.sfpmPackage.projectDirectory);
-    if (repo.hasArtifacts(this.sfpmPackage.packageName)) {
+    const sourcePath = this.sfpmPackage.packageDefinition?.path;
+    const workspacePath = sourcePath
+      ? resolvePackageWorkspacePath(this.sfpmPackage.projectDirectory, sourcePath)
+      : this.sfpmPackage.projectDirectory;
+    const repo = this.artifactService.getRepository(workspacePath);
+    if (repo.hasArtifact()) {
       return InstallationSource.Artifact;
     }
 

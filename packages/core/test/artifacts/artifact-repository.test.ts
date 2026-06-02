@@ -31,7 +31,7 @@ vi.mock('node:child_process', () => ({
 
 describe('ArtifactRepository', () => {
     let repository: ArtifactRepository;
-    const projectDirectory = '/test/project';
+    const packageWorkspacePath = '/test/project/packages/my-pkg';
 
     const mockLogger = {
         warn: vi.fn(),
@@ -43,23 +43,20 @@ describe('ArtifactRepository', () => {
 
     const createMockManifest = (overrides?: Partial<ArtifactManifest>): ArtifactManifest => ({
         name: '@testorg/test-package',
-        latest: '1.0.0-1',
+        version: '1.0.0-1',
+        sourceHash: 'abc123',
+        artifactHash: 'def456',
+        generatedAt: Date.now() - 60000,
+        schemaVersion: 2,
+        source: 'local',
+        commit: 'commit123',
         lastCheckedRemote: Date.now() - 30 * 60 * 1000,
-        versions: {
-            '1.0.0-1': {
-                path: 'test-package/1.0.0-1/artifact.tgz',
-                sourceHash: 'abc123',
-                artifactHash: 'def456',
-                generatedAt: Date.now() - 60000,
-                commit: 'commit123',
-            },
-        },
         ...overrides,
     });
 
     beforeEach(() => {
         vi.clearAllMocks();
-        repository = new ArtifactRepository(projectDirectory, mockLogger);
+        repository = new ArtifactRepository(packageWorkspacePath, mockLogger);
     });
 
     afterEach(() => {
@@ -67,58 +64,42 @@ describe('ArtifactRepository', () => {
     });
 
     describe('path resolution', () => {
-        it('should return correct artifacts root', () => {
-            expect(repository.getArtifactsRoot()).toBe(path.join(projectDirectory, 'artifacts'));
-        });
-
-        it('should return correct package artifact path', () => {
-            expect(repository.getPackageArtifactPath('@testorg/my-package')).toBe(
-                path.join(projectDirectory, 'artifacts', '@testorg/my-package')
+        it('should return correct artifact path', () => {
+            expect(repository.getArtifactPath()).toBe(
+                path.join(packageWorkspacePath, 'artifacts', 'artifact.tgz')
             );
         });
 
-        it('should return correct version path', () => {
-            expect(repository.getVersionPath('@testorg/my-package', '1.0.0-1')).toBe(
-                path.join(projectDirectory, 'artifacts', '@testorg/my-package', '1.0.0-1')
+        it('should return correct artifacts dir', () => {
+            expect(repository.getArtifactsDir()).toBe(
+                path.join(packageWorkspacePath, 'artifacts')
             );
         });
 
-        it('should return correct artifact tgz path', () => {
-            expect(repository.getArtifactPath('@testorg/my-package', '1.0.0-1')).toBe(
-                path.join(projectDirectory, 'artifacts', '@testorg/my-package', '1.0.0-1', 'artifact.tgz')
-            );
-        });
-
-        it('should return correct manifest path', () => {
-            expect(repository.getManifestPath('@testorg/my-package')).toBe(
-                path.join(projectDirectory, 'artifacts', '@testorg/my-package', 'manifest.json')
-            );
+        it('should return correct package workspace path', () => {
+            expect(repository.getPackageWorkspacePath()).toBe(packageWorkspacePath);
         });
     });
 
     describe('existence checks', () => {
         it('should return true if manifest exists', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
-            expect(repository.hasArtifacts('@testorg/test-package')).toBe(true);
+            expect(repository.hasArtifact()).toBe(true);
         });
 
         it('should return false if manifest does not exist', () => {
             vi.mocked(fs.existsSync).mockReturnValue(false);
-            expect(repository.hasArtifacts('@testorg/test-package')).toBe(false);
+            expect(repository.hasArtifact()).toBe(false);
         });
 
-        it('should check if version exists in manifest', () => {
-            const manifest = createMockManifest();
+        it('should check if tarball exists', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-
-            expect(repository.hasVersion('@testorg/test-package', '1.0.0-1')).toBe(true);
-            expect(repository.hasVersion('@testorg/test-package', '2.0.0-1')).toBe(false);
+            expect(repository.hasTarball()).toBe(true);
         });
 
-        it('should check if artifact tgz exists', () => {
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            expect(repository.artifactExists('@testorg/test-package', '1.0.0-1')).toBe(true);
+        it('should return false if tarball does not exist', () => {
+            vi.mocked(fs.existsSync).mockReturnValue(false);
+            expect(repository.hasTarball()).toBe(false);
         });
     });
 
@@ -128,14 +109,14 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.pathExists).mockResolvedValue(true);
             vi.mocked(fs.readJson).mockResolvedValue(manifest);
 
-            const result = await repository.getManifest('@testorg/test-package');
+            const result = await repository.getManifest();
             expect(result).toEqual(manifest);
         });
 
         it('should return undefined if manifest does not exist', async () => {
             vi.mocked(fs.pathExists).mockResolvedValue(false);
 
-            const result = await repository.getManifest('@testorg/test-package');
+            const result = await repository.getManifest();
             expect(result).toBeUndefined();
         });
 
@@ -144,8 +125,15 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
             vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
 
-            const result = repository.getManifestSync('@testorg/test-package');
+            const result = repository.getManifestSync();
             expect(result).toEqual(manifest);
+        });
+
+        it('should return undefined for sync when manifest does not exist', () => {
+            vi.mocked(fs.existsSync).mockReturnValue(false);
+
+            const result = repository.getManifestSync();
+            expect(result).toBeUndefined();
         });
 
         it('should save manifest atomically', async () => {
@@ -154,132 +142,145 @@ describe('ArtifactRepository', () => {
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
             vi.mocked(fs.move).mockResolvedValue(undefined as any);
 
-            await repository.saveManifest('@testorg/test-package', manifest);
+            await repository.saveManifest(manifest);
 
+            expect(fs.ensureDir).toHaveBeenCalledWith(
+                path.join(packageWorkspacePath, 'artifacts')
+            );
             expect(fs.writeJson).toHaveBeenCalled();
             expect(fs.move).toHaveBeenCalled();
         });
 
-        it('should get latest version', () => {
+        it('should update lastCheckedRemote timestamp', async () => {
             const manifest = createMockManifest();
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
+            vi.mocked(fs.pathExists).mockResolvedValue(true);
+            vi.mocked(fs.readJson).mockResolvedValue(manifest);
+            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
+            vi.mocked(fs.move).mockResolvedValue(undefined as any);
 
-            expect(repository.getLatestVersion('@testorg/test-package')).toBe('1.0.0-1');
-        });
+            await repository.updateLastCheckedRemote();
 
-        it('should get all versions', () => {
-            const manifest = createMockManifest({
-                versions: {
-                    '1.0.0-1': { path: 'test', generatedAt: Date.now() },
-                    '1.0.0-2': { path: 'test', generatedAt: Date.now() },
-                },
-            });
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-
-            const versions = repository.getVersions('@testorg/test-package');
-            expect(versions).toHaveLength(2);
-            expect(versions).toContain('1.0.0-1');
-            expect(versions).toContain('1.0.0-2');
+            // Verify saveManifest was called (via writeJson)
+            expect(fs.writeJson).toHaveBeenCalled();
         });
     });
 
-    describe('metadata operations', () => {
-        it('should get metadata from artifact tgz', () => {
-            const manifest = createMockManifest();
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-            vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-                return p.endsWith('manifest.json') || p.endsWith('artifact.tgz');
-            });
+    describe('finalizeArtifact', () => {
+        it('should write manifest with correct fields', async () => {
+            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
+            vi.mocked(fs.move).mockResolvedValue(undefined as any);
 
-            const metadata = repository.getMetadata('@testorg/test-package');
+            await repository.finalizeArtifact(
+                '@testorg/test-package',
+                '1.0.0-1',
+                'artifacthash',
+                'sourcehash',
+                { commit: 'abc123', packageVersionId: '04t000' }
+            );
+
+            expect(fs.writeJson).toHaveBeenCalledWith(
+                expect.stringContaining('manifest.json.tmp'),
+                expect.objectContaining({
+                    name: '@testorg/test-package',
+                    version: '1.0.0-1',
+                    artifactHash: 'artifacthash',
+                    sourceHash: 'sourcehash',
+                    commit: 'abc123',
+                    packageVersionId: '04t000',
+                    schemaVersion: 2,
+                    source: 'local',
+                    generatedAt: expect.any(Number),
+                }),
+                { spaces: 4 }
+            );
+        });
+
+        it('should write manifest without optional fields', async () => {
+            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
+            vi.mocked(fs.move).mockResolvedValue(undefined as any);
+
+            await repository.finalizeArtifact(
+                '@testorg/test-package',
+                '1.0.0-1',
+                'artifacthash',
+                'sourcehash',
+            );
+
+            expect(fs.writeJson).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    name: '@testorg/test-package',
+                    schemaVersion: 2,
+                    source: 'local',
+                }),
+                { spaces: 4 }
+            );
+        });
+    });
+
+    describe('localizeTarball', () => {
+        it('should move tarball, calculate hash, and write manifest', async () => {
+            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+            vi.mocked(fs.move).mockResolvedValue(undefined as any);
+            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
+            // Mock createReadStream for hash calculation
+            const mockStream = {
+                on: vi.fn().mockImplementation(function(this: any, event: string, cb: Function) {
+                    if (event === 'end') setTimeout(cb, 0);
+                    return this;
+                }),
+            };
+            vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
+
+            const result = await repository.localizeTarball(
+                '/tmp/download.tgz',
+                '@testorg/test-package',
+                '1.0.0-1'
+            );
+
+            expect(result.artifactPath).toBe(
+                path.join(packageWorkspacePath, 'artifacts', 'artifact.tgz')
+            );
+            expect(result.manifest.source).toBe('remote');
+            expect(result.manifest.schemaVersion).toBe(2);
+            expect(result.manifest.version).toBe('1.0.0-1');
+            expect(fs.move).toHaveBeenCalledWith(
+                '/tmp/download.tgz',
+                path.join(packageWorkspacePath, 'artifacts', 'artifact.tgz'),
+                { overwrite: true }
+            );
+        });
+    });
+
+    describe('metadata extraction', () => {
+        it('should extract metadata from tarball', () => {
+            vi.mocked(fs.existsSync).mockReturnValue(true);
+
+            const metadata = repository.getMetadata();
+            // execSync is mocked to return mockPackageJson
             expect(metadata).toBeDefined();
             expect(metadata?.packageVersionId).toBe('04t1234567890');
         });
 
-        it('should extract packageVersionId', () => {
-            const manifest = createMockManifest();
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-            vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-                return p.endsWith('manifest.json') || p.endsWith('artifact.tgz');
-            });
+        it('should return undefined when tarball does not exist', () => {
+            vi.mocked(fs.existsSync).mockReturnValue(false);
 
-            const versionId = repository.extractPackageVersionId('@testorg/test-package');
-            expect(versionId).toBe('04t1234567890');
-        });
-
-        it('should get comprehensive artifact info', () => {
-            const manifest = createMockManifest();
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-            vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-                return p.endsWith('manifest.json') || p.endsWith('artifact.tgz');
-            });
-
-            const info = repository.getArtifactInfo('@testorg/test-package');
-            expect(info.version).toBe('1.0.0-1');
-            expect(info.manifest).toBeDefined();
-            expect(info.metadata).toBeDefined();
-            expect(info.versionInfo).toBeDefined();
+            const metadata = repository.getMetadata();
+            expect(metadata).toBeUndefined();
         });
     });
 
-    describe('symlink management', () => {
-        it('should update latest symlink', async () => {
-            vi.mocked(fs.pathExists).mockResolvedValue(false);
-            vi.mocked(fs.symlink).mockResolvedValue(undefined as any);
-
-            await repository.updateLatestSymlink('@testorg/test-package', '1.0.0-2');
-
-            expect(fs.symlink).toHaveBeenCalledWith(
-                '1.0.0-2',
-                expect.stringContaining('latest'),
-                'junction'
-            );
-        });
-
-        it('should remove existing symlink before creating new one', async () => {
-            vi.mocked(fs.pathExists).mockResolvedValue(true);
-            vi.mocked(fs.remove).mockResolvedValue(undefined as any);
-            vi.mocked(fs.symlink).mockResolvedValue(undefined as any);
-
-            await repository.updateLatestSymlink('@testorg/test-package', '1.0.0-2');
-
-            expect(fs.remove).toHaveBeenCalled();
-            expect(fs.symlink).toHaveBeenCalled();
-        });
-
-        it('should fallback to version file if symlink fails', async () => {
-            vi.mocked(fs.pathExists).mockResolvedValue(false);
-            vi.mocked(fs.symlink).mockRejectedValue(new Error('Symlink not supported'));
-            vi.mocked(fs.writeFile).mockResolvedValue(undefined as any);
-
-            await repository.updateLatestSymlink('@testorg/test-package', '1.0.0-2');
-
-            expect(fs.writeFile).toHaveBeenCalledWith(
-                expect.stringContaining('latest.version'),
-                '1.0.0-2'
-            );
-        });
-    });
-
-    describe('directory management', () => {
-        it('should ensure version directory exists', async () => {
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-
-            const result = await repository.ensureVersionDir('@testorg/test-package', '1.0.0-1');
-
-            expect(fs.ensureDir).toHaveBeenCalled();
-            expect(result).toBe(repository.getVersionPath('@testorg/test-package', '1.0.0-1'));
-        });
-
-        it('should remove version directory', async () => {
+    describe('clean', () => {
+        it('should remove the artifacts directory', async () => {
             vi.mocked(fs.remove).mockResolvedValue(undefined as any);
 
-            await repository.removeVersion('@testorg/test-package', '1.0.0-1');
+            await repository.clean();
 
             expect(fs.remove).toHaveBeenCalledWith(
-                repository.getVersionPath('@testorg/test-package', '1.0.0-1')
+                path.join(packageWorkspacePath, 'artifacts')
             );
         });
     });

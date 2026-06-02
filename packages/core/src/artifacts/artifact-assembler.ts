@@ -9,6 +9,7 @@ import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 import {toVersionFormat} from '../utils/version-utils.js';
+import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {ArtifactRepository} from './artifact-repository.js';
 import {toNpmPackageJson} from './npm-package-adapter.js';
 
@@ -86,11 +87,16 @@ export default class ArtifactAssembler {
     this.sink = sink;
     this.packageVersionNumber = toVersionFormat(sfpmPackage.version || '0.0.0.1', 'semver');
 
-    // Create repository for artifact operations
-    this.repository = new ArtifactRepository(projectDirectory, logger);
+    // Create package-scoped repository
+    const sourcePath = sfpmPackage.packageDefinition?.path;
+    if (!sourcePath) {
+      throw new ArtifactError(sfpmPackage.name, 'assembly', 'Package definition path is not set', {
+        version: this.packageVersionNumber,
+      });
+    }
 
-    // artifacts/<package_name>/<version>
-    this.versionDirectory = this.repository.getVersionPath(sfpmPackage.name, this.packageVersionNumber);
+    const packageWorkspacePath = resolvePackageWorkspacePath(projectDirectory, sourcePath);
+    this.repository = new ArtifactRepository(packageWorkspacePath, logger);
 
     this.changelogProvider = options.changelogProvider || new StubChangelogProvider();
   }
@@ -255,12 +261,8 @@ export default class ArtifactAssembler {
     const artifactHash = await this.repository.calculateFileHash(artifactPath);
     this.logger?.debug(`Artifact hash: ${artifactHash}`);
 
-    await this.repository.finalizeArtifact(this.sfpmPackage.name, this.packageVersionNumber, {
-      artifactHash,
+    await this.repository.finalizeArtifact(this.sfpmPackage.name, this.packageVersionNumber, artifactHash, sourceHash, {
       commit: this.sfpmPackage.commitId,
-      generatedAt: Date.now(),
-      path: this.repository.getRelativeArtifactPath(this.sfpmPackage.name, this.packageVersionNumber),
-      sourceHash,
     });
 
     return artifactHash;
@@ -304,13 +306,13 @@ export default class ArtifactAssembler {
   }
 
   /**
-   * Move the tarball from the workspace to the version directory.
+   * Move the tarball from the workspace to the artifacts directory.
    */
   private async moveTarball(workspaceDir: string, tarballName: string): Promise<string> {
     const sourcePath = path.join(workspaceDir, tarballName);
-    const targetPath = this.repository.getArtifactPath(this.sfpmPackage.name, this.packageVersionNumber);
+    const targetPath = this.repository.getArtifactPath();
 
-    // Ensure version directory exists
+    // Ensure artifacts directory exists
     await fs.ensureDir(path.dirname(targetPath));
 
     // Move the tarball

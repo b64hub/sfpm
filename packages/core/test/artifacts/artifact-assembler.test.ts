@@ -7,15 +7,12 @@ import { PackageType } from '../../src/types/package.js';
 
 // Create a mock repository instance that we can control
 const mockRepository = {
-    getVersionPath: vi.fn(),
     getArtifactPath: vi.fn(),
-    getRelativeArtifactPath: vi.fn(),
-    getArtifactZipPath: vi.fn(),
-    getArtifactTgzPath: vi.fn(),
+    getArtifactsDir: vi.fn(),
+    getPackageWorkspacePath: vi.fn(),
     getManifest: vi.fn(),
     getManifestSync: vi.fn(),
     saveManifest: vi.fn(),
-    updateLatestSymlink: vi.fn(),
     calculateFileHash: vi.fn(),
     finalizeArtifact: vi.fn(),
 };
@@ -60,6 +57,11 @@ vi.mock('../../src/utils/version-utils.js', () => ({
     toVersionFormat: vi.fn()
 }));
 
+// Mock workspace-path to return a predictable path
+vi.mock('../../src/utils/workspace-path.js', () => ({
+    resolvePackageWorkspacePath: vi.fn().mockReturnValue('/project/packages/my-package'),
+}));
+
 // Import after mocks are set up
 import ArtifactAssembler, { ArtifactAssemblerOptions } from '../../src/artifacts/artifact-assembler.js';
 
@@ -77,16 +79,13 @@ describe('ArtifactAssembler', () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        // Configure mock repository for this test
-        mockRepository.getVersionPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}`);
-        mockRepository.getArtifactPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}/artifact.tgz`);
-        mockRepository.getRelativeArtifactPath.mockImplementation((pkg: string, ver: string) => `${pkg}/${ver}/artifact.tgz`);
-        mockRepository.getArtifactTgzPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}/artifact.tgz`);
-        mockRepository.getArtifactZipPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}/artifact.zip`);
+        // Configure mock repository for this test (flat paths)
+        mockRepository.getArtifactPath.mockReturnValue('/project/packages/my-package/artifacts/artifact.tgz');
+        mockRepository.getArtifactsDir.mockReturnValue('/project/packages/my-package/artifacts');
+        mockRepository.getPackageWorkspacePath.mockReturnValue('/project/packages/my-package');
         mockRepository.getManifest.mockResolvedValue(undefined);
         mockRepository.getManifestSync.mockReturnValue(undefined);
         mockRepository.saveManifest.mockResolvedValue(undefined);
-        mockRepository.updateLatestSymlink.mockResolvedValue(undefined);
         mockRepository.calculateFileHash.mockResolvedValue('mockhash123');
         mockRepository.finalizeArtifact.mockResolvedValue(undefined);
 
@@ -153,8 +152,7 @@ describe('ArtifactAssembler', () => {
         );
     });
 
-    it('should initialize with correct paths', () => {
-        expect((assembler as any).versionDirectory).toBe(`/project/artifacts/${scopedName}/${version}`);
+    it('should initialize with correct repository', () => {
         expect((assembler as any).repository).toBeDefined();
         expect((assembler as any).options).toBeDefined();
     });
@@ -187,8 +185,8 @@ describe('ArtifactAssembler', () => {
 
             const result = await assembler.assemble();
 
-            // Should return path to tgz file
-            expect(result).toBe(`/project/artifacts/${scopedName}/${version}/artifact.tgz`);
+            // Should return path to tgz file (flat path)
+            expect(result).toBe('/project/packages/my-package/artifacts/artifact.tgz');
             
             // Should generate package.json in the package directory
             expect(fs.writeJson).toHaveBeenCalledWith(
@@ -207,14 +205,14 @@ describe('ArtifactAssembler', () => {
                 expect.objectContaining({ cwd: '/tmp/builds/test-build' })
             );
             
-            // Should finalize artifact (update manifest and symlink)
+            // Should finalize artifact with new signature (packageName, version, hash, sourceHash)
             expect(mockRepository.finalizeArtifact).toHaveBeenCalledWith(
                 scopedName,
                 version,
+                'mockhash123',
+                expect.any(String),
                 expect.objectContaining({
-                    path: `${scopedName}/${version}/artifact.tgz`,
-                    sourceHash: expect.any(String),
-                    artifactHash: 'mockhash123'
+                    commit: undefined,
                 })
             );
             
@@ -380,19 +378,19 @@ describe('ArtifactAssembler', () => {
     });
 
     describe('moveTarball', () => {
-        it('should move tarball to version directory', async () => {
+        it('should move tarball to artifacts directory (flat path)', async () => {
             vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
             vi.mocked(fs.move).mockResolvedValue(undefined as any);
 
             const result = await (assembler as any).moveTarball('/tmp/workspace', 'test-1.0.0-1.tgz');
 
-            expect(fs.ensureDir).toHaveBeenCalledWith(`/project/artifacts/${scopedName}/${version}`);
+            expect(fs.ensureDir).toHaveBeenCalledWith('/project/packages/my-package/artifacts');
             expect(fs.move).toHaveBeenCalledWith(
                 '/tmp/workspace/test-1.0.0-1.tgz',
-                `/project/artifacts/${scopedName}/${version}/artifact.tgz`,
+                '/project/packages/my-package/artifacts/artifact.tgz',
                 { overwrite: true }
             );
-            expect(result).toBe(`/project/artifacts/${scopedName}/${version}/artifact.tgz`);
+            expect(result).toBe('/project/packages/my-package/artifacts/artifact.tgz');
         });
     });
 });

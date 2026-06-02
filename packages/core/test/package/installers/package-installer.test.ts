@@ -26,7 +26,7 @@ vi.mock('../../../src/artifacts/artifact-service.js', () => ({
                 resolved: {
                     source: 'local',
                     version: '1.0.0',
-                    versionEntry: { sourceHash: 'abc123' },
+                    manifest: { sourceHash: 'abc123', schemaVersion: 2, source: 'local' },
                 },
             }),
             upsertArtifact: vi.fn().mockResolvedValue(undefined),

@@ -228,12 +228,12 @@ export class ArtifactService {
   }
 
   /**
-   * Get an ArtifactRepository for the given project directory.
+   * Get an ArtifactRepository for the given package workspace path.
    * Use this for lower-level artifact operations like reading manifests,
    * checking if artifacts exist, getting metadata, etc.
    */
-  public getRepository(projectDirectory: string): ArtifactRepository {
-    return new ArtifactRepository(projectDirectory, this.logger);
+  public getRepository(packageWorkspacePath: string): ArtifactRepository {
+    return new ArtifactRepository(packageWorkspacePath, this.logger);
   }
 
   /**
@@ -291,19 +291,19 @@ export class ArtifactService {
    * Uses npm config (.npmrc) for registry and auth token resolution,
    * including support for scoped registries (e.g., @myorg packages).
    *
-   * @param projectDirectory - Root project directory for artifact storage
+   * @param packageWorkspacePath - Package workspace directory (contains artifacts/)
    * @param packageName - Fully scoped name of the package to resolve
    * @param options - Resolution options (version, forceRefresh, etc.)
    * @returns InstallTarget with resolved artifact and install decision
    */
   public async resolveInstallTarget(
-    projectDirectory: string,
+    packageWorkspacePath: string,
     packageName: string,
     options?: ArtifactResolutionOptions,
   ): Promise<InstallTarget> {
     // 1. Create resolver for this specific package (handles scoped registries)
-    const resolver = await ArtifactResolver.create(
-      projectDirectory,
+    const resolver = ArtifactResolver.create(
+      packageWorkspacePath,
       {
         localOnly: options?.localOnly,
       },
@@ -457,14 +457,11 @@ export class ArtifactService {
 
     // Compare versions
     if (orgStatus.installedVersion !== resolved.version) {
-      // Version mismatch - check if upgrade or downgrade
-      // For simplicity, we'll just say it needs install if versions differ
-      // A more sophisticated approach could use semver comparison
       return {installReason: 'version-upgrade', needsInstall: true};
     }
 
     // Same version - check source hash if available
-    if (resolved.versionEntry.sourceHash && orgStatus.installedSourceHash && resolved.versionEntry.sourceHash !== orgStatus.installedSourceHash) {
+    if (resolved.manifest.sourceHash && orgStatus.installedSourceHash && resolved.manifest.sourceHash !== orgStatus.installedSourceHash) {
       return {installReason: 'hash-mismatch', needsInstall: true};
     }
 

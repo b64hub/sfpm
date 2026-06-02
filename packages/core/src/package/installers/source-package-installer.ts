@@ -5,6 +5,7 @@ import type {InstallEventSink} from '../../events/install-event-bus.js';
 import {ArtifactService} from '../../artifacts/artifact-service.js';
 import {Logger} from '../../types/logger.js';
 import {InstallationSource, PackageType} from '../../types/package.js';
+import {resolvePackageWorkspacePath} from '../../utils/workspace-path.js';
 import {SfpmSourcePackage} from '../sfpm-package.js';
 import {Installer, type InstallerExecResult, RegisterInstaller} from './installer-registry.js';
 // Import strategy implementation
@@ -94,8 +95,12 @@ export default class SourcePackageInstaller implements Installer {
     }
 
     // Auto-detect: if artifacts exist, use artifact; otherwise local
-    const repo = this.artifactService.getRepository(this.sfpmPackage.projectDirectory);
-    if (repo.hasArtifacts(this.sfpmPackage.packageName)) {
+    const sourcePath = this.sfpmPackage.packageDefinition?.path;
+    const workspacePath = sourcePath
+      ? resolvePackageWorkspacePath(this.sfpmPackage.projectDirectory, sourcePath)
+      : this.sfpmPackage.projectDirectory;
+    const repo = this.artifactService.getRepository(workspacePath);
+    if (repo.hasArtifact()) {
       return InstallationSource.Artifact;
     }
 

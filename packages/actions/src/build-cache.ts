@@ -43,8 +43,6 @@ export interface PackageBuildState {
  * Stored as JSON in the GitHub Actions cache, keyed by run ID.
  */
 export interface CachedBuildState {
-  /** Artifact base directory (relative to project root) */
-  artifactsDir: string;
   /** When this cache entry was created */
   cachedAt: number;
   /** DevHub username used for unlocked package builds */
