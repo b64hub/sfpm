@@ -5,6 +5,7 @@ import fs from 'fs-extra';
 import path from 'node:path';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+
 import ProjectService from '../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
 import {Logger} from '../../types/logger.js';
@@ -14,7 +15,6 @@ import {
   Builder, BuilderOptions, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
-import {gitTagTask} from './tasks/git-tag-task.js';
 
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Unlocked)
@@ -40,7 +40,6 @@ export default class UnlockedPackageBuilder implements Builder {
 
     this.tasks = [
       ...(options.artifact === false ? [] : [{factory: assembleArtifactTask(), phase: 'post' as const}]),
-      ...(options.gitTag === false ? [] : [{factory: gitTagTask(), phase: 'post' as const}]),
     ];
   }
 

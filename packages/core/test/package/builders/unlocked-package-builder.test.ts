@@ -68,17 +68,6 @@ vi.mock('../../../src/package/builders/tasks/assemble-artifact-task.js', () => (
     }),
 }));
 
-vi.mock('../../../src/package/builders/tasks/git-tag-task.js', () => ({
-    default: class {
-        name = 'git-tag';
-        exec = vi.fn().mockResolvedValue(undefined);
-    },
-    gitTagTask: () => () => ({
-        name: 'git-tag',
-        exec: vi.fn().mockResolvedValue(undefined),
-    }),
-}));
-
 describe('UnlockedPackageBuilder', () => {
     let builder: UnlockedPackageBuilder;
     let mockSfpmPackage: SfpmUnlockedPackage;

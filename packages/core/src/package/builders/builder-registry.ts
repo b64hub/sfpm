@@ -1,4 +1,5 @@
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+
 import {DependencyAnalyzer} from '../../types/dependency-analysis.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, PendingValidationDescriptor} from '../../types/package.js';
@@ -25,7 +26,6 @@ export interface BuildTaskContext {
  * instead of mutating sfpmPackage directly.
  */
 export interface BuildTaskEnrichments {
-  sourceTag?: string;
   testCoverage?: number;
 }
 
@@ -109,8 +109,6 @@ export interface BuilderOptions {
   /** Target org for source package validation (deploy + test) */
   buildOrg?: string;
   dependencyAnalysis?: DependencyAnalysis;
-  /** Whether to create git tags */
-  gitTag?: boolean;
   /** Installation key for unlocked packages */
   installationKey?: string;
   /** Validation mode for package builds */

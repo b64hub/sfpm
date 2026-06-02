@@ -58,7 +58,7 @@ describe('GitTagTask', () => {
             expect.stringContaining(`sfpm package ${normalizedVersion}`)
         );
 
-        expect(result).toEqual({enrichments: {sourceTag: expectedTag}});
+        expect(result).toBeUndefined();
         expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining(`Successfully tagged`));
     });
 

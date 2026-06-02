@@ -34,8 +34,6 @@ interface ModeConfig {
   artifact: boolean;
   /** How dependency analysis should behave: 'warn' = log violations, 'error' = throw, 'skip' = don't run */
   dependencyAnalysis: 'error' | 'skip' | 'warn';
-  /** Whether to create git tags */
-  gitTag: boolean;
   /** Whether to run validation */
   validation: 'local' | boolean;
 }
@@ -44,13 +42,11 @@ const MODE_DEFAULTS: Record<BuildMode, ModeConfig> = {
   default: {
     artifact: true,
     dependencyAnalysis: 'warn',
-    gitTag: true,
     validation: true,
   },
   'dry-run': {
     artifact: false,
     dependencyAnalysis: 'error',
-    gitTag: false,
     validation: 'local',
   },
 };
@@ -80,7 +76,7 @@ export interface BuildOptions {
    *
    * - `default` — production-ready artifact with full validation.
    *   Source packages: deploy+test against buildOrg. Unlocked: SF API with async validation + code coverage.
-   * - `dry-run` — maximum validation, no real SF API build, no git tags, no artifacts.
+   * - `dry-run` — maximum validation, no real SF API build, no artifacts.
    *   All packages go through the source pipeline with deploy+test.
    */
   mode?: BuildMode;
@@ -283,10 +279,6 @@ export class PackageBuilder {
   private applyEnrichments(sfpmPackage: SfpmPackage, enrichments: NonNullable<BuildTaskResult['enrichments']>): void {
     if (enrichments.testCoverage !== undefined && 'testCoverage' in sfpmPackage) {
       (sfpmPackage as SfpmMetadataPackage).testCoverage = enrichments.testCoverage;
-    }
-
-    if (enrichments.sourceTag !== undefined) {
-      sfpmPackage.metadata.source.tag = enrichments.sourceTag;
     }
   }
 
@@ -499,7 +491,6 @@ export class PackageBuilder {
     const builderOptions: BuilderOptions = {
       artifact: modeConfig.artifact,
       buildOrg: this.options.buildOrg,
-      gitTag: modeConfig.gitTag,
       installationKey: this.options.installationKey,
       validation: modeConfig.validation !== false,
       waitTime: this.options.waitTime,

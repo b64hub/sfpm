@@ -1,4 +1,5 @@
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+
 import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
 import {BuildError} from '../../types/errors.js';
 import {Logger} from '../../types/logger.js';
@@ -9,7 +10,6 @@ import {
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 import {dependencyAnalysisTask} from './tasks/dependency-analysis-task.js';
-import {gitTagTask} from './tasks/git-tag-task.js';
 
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Source)
@@ -53,11 +53,6 @@ export default class SourcePackageBuilder implements Builder {
     // Post-build: assemble artifact (conditional on mode)
     if (options.artifact !== false) {
       this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});
-    }
-
-    // Post-build: git tag (conditional on mode)
-    if (options.gitTag !== false) {
-      this.tasks.push({factory: gitTagTask(), phase: 'post'});
     }
   }
 
