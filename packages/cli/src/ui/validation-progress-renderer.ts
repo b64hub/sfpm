@@ -33,7 +33,9 @@ interface PackageState {
  *
  * Standalone component — attach to a {@link ValidationEventBus} via
  * {@link attachTo}. Uses a single spinner with rolling text that
- * reflects the current polling state.
+ * reflects the current polling state. The spinner is created once
+ * on `resolve:start` and only its text is updated — never destroyed
+ * and recreated — to avoid orphaned spinner lines in the terminal.
  */
 export class ValidationProgressRenderer {
   private readonly log: OutputLogger;
@@ -63,7 +65,8 @@ export class ValidationProgressRenderer {
   // ========================================================================
 
   private onComplete(event: ResolveCompleteEvent): void {
-    this.stopSpinner();
+    this.spinner?.stop();
+    this.spinner = undefined;
 
     if (this.mode === 'json') return;
 
@@ -82,10 +85,8 @@ export class ValidationProgressRenderer {
 
     if (this.mode === 'quiet' || this.mode === 'json') return;
 
-    this.stopSpinner();
     const coverage = event.codeCoverage === undefined ? '' : chalk.dim(` (${event.codeCoverage}%)`);
-    this.log.log(`  ${chalk.red('✖')} ${chalk.bold(name)}${coverage} ${chalk.dim('—')} ${chalk.red(event.error)}`);
-    this.resumeSpinner();
+    this.writeResult(`${chalk.red('✖')} ${chalk.bold(name)}${coverage} ${chalk.dim('—')} ${chalk.red(event.error)}`);
   }
 
   private onPassed(event: ResolvePassedEvent): void {
@@ -94,10 +95,8 @@ export class ValidationProgressRenderer {
 
     if (this.mode === 'quiet' || this.mode === 'json') return;
 
-    this.stopSpinner();
     const coverage = event.codeCoverage === undefined ? '' : chalk.dim(` (${event.codeCoverage}% coverage)`);
-    this.log.log(`  ${chalk.green('✔')} ${chalk.bold(name)}${coverage}`);
-    this.resumeSpinner();
+    this.writeResult(`${chalk.green('✔')} ${chalk.bold(name)}${coverage}`);
   }
 
   private onStart(event: ResolveStartEvent): void {
@@ -140,34 +139,39 @@ export class ValidationProgressRenderer {
 
     if (this.mode === 'quiet' || this.mode === 'json') return;
 
-    this.stopSpinner();
-    this.log.log(`  ${chalk.yellow('⚠')} ${chalk.bold(name)} ${chalk.yellow('timed out')} ${chalk.dim(`after ${formatDuration(event.elapsedMs)}`)}`);
-    this.resumeSpinner();
+    this.writeResult(`${chalk.yellow('⚠')} ${chalk.bold(name)} ${chalk.yellow('timed out')} ${chalk.dim(`after ${formatDuration(event.elapsedMs)}`)}`);
   }
 
   // ========================================================================
-  // Spinner helpers
+  // Output helpers
   // ========================================================================
 
-  private resumeSpinner(): void {
-    if (this.mode !== 'interactive') return;
-
-    const remaining = [...this.packages.entries()]
-    .filter(([, s]) => s.status === 'polling' || s.status === 'queued')
-    .map(([n]) => n);
-
-    if (remaining.length > 0) {
-      this.spinner = ora({
-        prefixText: '',
-        text: `Resolving ${chalk.cyan(String(remaining.length))} remaining...`,
-      }).start();
-    }
-  }
-
-  private stopSpinner(): void {
+  /**
+   * Write a result line while preserving the single spinner.
+   *
+   * Clears the spinner line, writes the result, then restarts the
+   * spinner with an updated "remaining" count — all on the same
+   * {@link Ora} instance to avoid orphaned terminal lines.
+   */
+  private writeResult(line: string): void {
     if (this.spinner) {
+      this.spinner.clear();
+      // Temporarily stop so the log line isn't overwritten by the spinner frame
       this.spinner.stop();
-      this.spinner = undefined;
+    }
+
+    this.log.log(`  ${line}`);
+
+    // Resume the same spinner with an updated remaining count
+    if (this.spinner && this.mode === 'interactive') {
+      const remaining = [...this.packages.values()]
+      .filter(s => s.status === 'polling' || s.status === 'queued')
+      .length;
+
+      if (remaining > 0) {
+        this.spinner.text = `Resolving ${chalk.cyan(String(remaining))} remaining...`;
+        this.spinner.start();
+      }
     }
   }
 }

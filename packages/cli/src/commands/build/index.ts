@@ -5,7 +5,7 @@ import {
   LifecycleEngine,
   type OrchestrationResult,
   PackageType,
-  type PendingValidationDescriptor, ProjectService, ValidationResolver,
+  type PendingValidationDescriptor, ProjectService, ValidationEventBus, ValidationResolver,
   type WatcherState,
 } from '@b64hub/sfpm-core'
 import {ScratchOrgProvider} from '@b64hub/sfpm-orgs'
@@ -22,6 +22,7 @@ import ora from 'ora'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
+import {ValidationProgressRenderer} from '../../ui/validation-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
 import {forkWatcher} from '../../utils/watcher.js'
 
@@ -313,75 +314,73 @@ export default class Build extends SfpmCommand {
     if (pendingValidations.length === 0) return
 
     if (resolved.async) {
-      const payload: BuildWatcherPayload = {
-        ...(resolved.autoCreatedBuildOrg && {
-          cleanupBuildOrg: {
-            devhubUsername: resolved.buildOptions.devhubUsername!,
-            username: resolved.autoCreatedBuildOrg.username,
-          },
-        }),
-        targets: pendingValidations.map(pv => ({
-          packageName: pv.packageName,
-          packageVersionCreateRequestId: pv.operationId,
-        })),
-      };
-
-      const state: WatcherState = {
-        auth: {username: resolved.buildOptions.devhubUsername ?? ''},
-        createdAt: Date.now(),
-        jobType: 'build',
-        payload,
-        projectDir: resolved.projectDir,
-        timeoutMs: resolved.waitMinutes * 60 * 1000,
-        updatedAt: Date.now(),
-        watcherStatus: 'starting',
-      };
-
-      const {id, pid} = await forkWatcher(state);
-      const pkgNames = pendingValidations.map(pv => pv.packageName).join(', ');
-
-      if (resolved.mode === 'json') {
-        this.logJson({
-          packages: pkgNames,
-          stateId: id,
-          watcherPid: pid,
-        });
-      } else if (resolved.mode !== 'quiet') {
-        this.log(chalk.yellow(`\nValidation watcher started ${chalk.dim(`(PID ${pid})`)} for: ${chalk.bold(pkgNames)}`));
-        this.log(chalk.dim('Run \'sfpm watch status\' to check progress.'));
-      }
-
-      return
+      await this.handleValidationResutlsAsync(pendingValidations, resolved);
+      return;
     }
 
-    // Inline resolution — await all pending validations
-    const validationSpinner = resolved.mode === 'interactive'
-      ? ora(`Resolving ${pendingValidations.length} pending validation(s)...`).start()
-      : undefined
+    const validationBus = new ValidationEventBus()
+    const renderer = new ValidationProgressRenderer(resolved.mode, {
+      error: msg => this.error(msg),
+      log: msg => this.log(msg),
+    })
+    renderer.attachTo(validationBus)
 
-    const resolver = new ValidationResolver(this.sfpmLogger);
+    const resolver = new ValidationResolver(this.sfpmLogger, validationBus);
     const results = await resolver.resolveAll(pendingValidations, {
       maxWaitMs: resolved.waitMinutes * 60 * 1000,
     });
-
-    validationSpinner?.stop()
 
     const failures: string[] = [];
     for (const [packageName, result] of results) {
       if (result.status === 'failed') {
         failures.push(`${packageName}: ${result.error}`);
-      } else if (resolved.mode !== 'quiet') {
-        const coverage = result.testCoverage === null ? '' : chalk.dim(` (${result.testCoverage}% coverage)`);
-        this.log(chalk.green(`  ✔ ${chalk.bold(packageName)}`) + chalk.green(' — validation passed') + coverage);
       }
     }
 
     if (failures.length > 0) {
-      for (const failure of failures) {
-        this.log(chalk.red(`  ✖ ${failure}`));
-      }
-
       this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1})
+    }
+  }
+
+  private async handleValidationResutlsAsync(pendingValidations: PendingValidationDescriptor[], resolved: ResolvedBuildFlags): Promise<void> {
+    this.log(chalk.yellow('\nValidation results will be available asynchronously.'));
+
+    const payload: BuildWatcherPayload = {
+      ...(resolved.autoCreatedBuildOrg && {
+        cleanupBuildOrg: {
+          devhubUsername: resolved.buildOptions.devhubUsername!,
+          username: resolved.autoCreatedBuildOrg.username,
+        },
+      }),
+      targets: pendingValidations.map(pv => ({
+        packageName: pv.packageName,
+        packageVersionCreateRequestId: pv.operationId,
+      })),
+    };
+
+    const state: WatcherState = {
+      auth: {username: resolved.buildOptions.devhubUsername ?? ''},
+      createdAt: Date.now(),
+      jobType: 'build',
+      payload,
+      projectDir: resolved.projectDir,
+      timeoutMs: resolved.waitMinutes * 60 * 1000,
+      updatedAt: Date.now(),
+      watcherStatus: 'starting',
+    };
+
+    const {id, pid} = await forkWatcher(state);
+    const pkgNames = pendingValidations.map(pv => pv.packageName).join(', ');
+
+    if (resolved.mode === 'json') {
+      this.logJson({
+        packages: pkgNames,
+        stateId: id,
+        watcherPid: pid,
+      });
+    } else if (resolved.mode !== 'quiet') {
+      this.log(chalk.yellow(`\nValidation watcher started ${chalk.dim(`(PID ${pid})`)} for: ${chalk.bold(pkgNames)}`));
+      this.log(chalk.dim('Run \'sfpm watch status\' to check progress.'));
     }
   }
 
