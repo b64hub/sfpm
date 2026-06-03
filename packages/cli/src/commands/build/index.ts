@@ -4,16 +4,19 @@ import {
   type BuildWatcherPayload,
   LifecycleEngine,
   type OrchestrationResult,
+  PackageType,
   type PendingValidationDescriptor, ProjectService, ValidationResolver,
   type WatcherState,
 } from '@b64hub/sfpm-core'
+import {ScratchOrgProvider} from '@b64hub/sfpm-orgs'
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {
   Args, Flags,
 } from '@oclif/core'
-import {ConfigAggregator} from '@salesforce/core'
+import {ConfigAggregator, Org} from '@salesforce/core'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
+import path from 'node:path'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
@@ -22,6 +25,7 @@ import {forkWatcher} from '../../utils/watcher.js'
 
 interface ResolvedBuildFlags {
   async: boolean;
+  autoCreatedBuildOrg?: {hubOrg: Org; username: string};
   buildOptions: BuildOrchestratorOptions;
   mode: OutputMode;
   noDependencies: boolean;
@@ -58,7 +62,7 @@ export default class Build extends SfpmCommand {
     async: Flags.boolean({description: 'return immediately without waiting for validation results', exclusive: ['dry-run']}),
     'build-number': Flags.string({char: 'b', description: 'build number'}),
     'build-org': Flags.string({char: 'o', description: 'target org for source package validation (deploy + test)'}),
-    'dry-run': Flags.boolean({description: 'validate without producing artifacts or git tags (requires --build-org)', exclusive: ['async']}),
+    'dry-run': Flags.boolean({description: 'validate without producing artifacts (auto-creates a scratch org if --build-org not provided)', exclusive: ['async']}),
     force: Flags.boolean({char: 'f', description: 'build even if no source changes detected', env: 'SFPM_FORCE_BUILD'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
@@ -89,17 +93,27 @@ export default class Build extends SfpmCommand {
   public async execute(): Promise<void> {
     const resolved = await this.resolveFlags()
 
+    // Auto-create a scratch org for source validation if needed
+    await this.ensureBuildOrg(resolved)
+
     // Create lifecycle engine and register hooks from config
     const lifecycle = LifecycleEngine.stage('build');
     for (const hooks of resolved.sfpmConfig.hooks ?? []) {
       lifecycle.use(hooks);
     }
 
-    // Route to single-package or orchestrated build
-    if (resolved.resolvedPackages.length === 1 && resolved.noDependencies) {
-      await this.buildSingle(resolved)
-    } else {
-      await this.buildOrchestrated(resolved)
+    try {
+      // Route to single-package or orchestrated build
+      if (resolved.resolvedPackages.length === 1 && resolved.noDependencies) {
+        await this.buildSingle(resolved)
+      } else {
+        await this.buildOrchestrated(resolved)
+      }
+    } finally {
+      // Clean up auto-created scratch org (skip if --async defers to watcher)
+      if (resolved.autoCreatedBuildOrg && !resolved.async) {
+        await this.cleanupBuildOrg(resolved)
+      }
     }
   }
 
@@ -201,6 +215,89 @@ export default class Build extends SfpmCommand {
   }
 
   /**
+   * Delete an auto-created scratch org after the build completes.
+   */
+  private async cleanupBuildOrg(resolved: ResolvedBuildFlags): Promise<void> {
+    if (!resolved.autoCreatedBuildOrg) return
+
+    const {hubOrg, username} = resolved.autoCreatedBuildOrg
+
+    try {
+      if (resolved.mode === 'interactive') {
+        this.log(`Deleting auto-created build org: ${username}`)
+      }
+
+      const scratchOrg = await Org.create({aliasOrUsername: username})
+      await scratchOrg.deleteFrom(hubOrg)
+
+      if (resolved.mode === 'interactive') {
+        this.log('Build org deleted successfully.')
+      }
+    } catch (error) {
+      this.sfpmLogger?.warn(`Failed to delete auto-created build org ${username}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * Auto-create a scratch org for source package validation when no --build-org is provided.
+   *
+   * Only creates an org when:
+   * - No explicit --build-org flag
+   * - Validation is not skipped
+   * - At least one resolved package is a Source package
+   */
+  private async ensureBuildOrg(resolved: ResolvedBuildFlags): Promise<void> {
+    if (resolved.buildOptions.buildOrg || resolved.buildOptions.skipValidation) return
+
+    // Check if any resolved package is a Source package
+    const projectService = await ProjectService.getInstance(resolved.projectDir)
+    const projectConfig = projectService.getDefinitionProvider()
+    const hasSourcePackage = resolved.resolvedPackages.some(pkg => {
+      try {
+        return projectConfig.getPackageType(pkg) === PackageType.Source
+      } catch {
+        return false
+      }
+    })
+
+    if (!hasSourcePackage) return
+
+    if (!resolved.buildOptions.devhubUsername) {
+      this.error('A target dev hub is required to auto-create a build org for source validation. Specify one with --target-dev-hub (-v).', {exit: 1})
+    }
+
+    if (resolved.mode === 'interactive') {
+      this.log('No --build-org specified. Creating a scratch org for source validation...')
+    }
+
+    const hubOrg = await Org.create({aliasOrUsername: resolved.buildOptions.devhubUsername})
+    const provider = new ScratchOrgProvider(hubOrg)
+
+    const scratchDefPath = path.join(resolved.projectDir, 'config', 'project-scratch-def.json')
+    const alias = `sfpm-build-${Date.now()}`
+
+    const scratchOrg = await provider.createOrg({
+      alias,
+      definitionfile: scratchDefPath,
+      durationDays: 1,
+      noancestors: true,
+      nonamespace: true,
+    })
+
+    const {username} = scratchOrg.auth
+    if (!username) {
+      this.error('Failed to create scratch org: no username returned', {exit: 1})
+    }
+
+    if (resolved.mode === 'interactive') {
+      this.log(`Scratch org created: ${username} (alias: ${alias})`)
+    }
+
+    resolved.buildOptions.buildOrg = username
+    resolved.autoCreatedBuildOrg = {hubOrg, username}
+  }
+
+  /**
    * Handle pending validations: resolve inline or fork a background watcher.
    *
    * - No `--async`: resolve inline with ValidationResolver, fail on any failures.
@@ -214,6 +311,12 @@ export default class Build extends SfpmCommand {
 
     if (resolved.async) {
       const payload: BuildWatcherPayload = {
+        ...(resolved.autoCreatedBuildOrg && {
+          cleanupBuildOrg: {
+            devhubUsername: resolved.buildOptions.devhubUsername!,
+            username: resolved.autoCreatedBuildOrg.username,
+          },
+        }),
         targets: pendingValidations.map(pv => ({
           packageName: pv.packageName,
           packageVersionCreateRequestId: pv.operationId,
@@ -297,11 +400,6 @@ export default class Build extends SfpmCommand {
       flags['no-dependencies'] = true
     }
 
-    // --dry-run requires --build-org
-    if (flags['dry-run'] && !flags['build-org']) {
-      this.error('--dry-run requires --build-org to specify the validation target org', {exit: 1})
-    }
-
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
     const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getDefinitionProvider();
@@ -319,11 +417,6 @@ export default class Build extends SfpmCommand {
 
     if (!devhubUsername && !flags['dry-run']) {
       this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1})
-    }
-
-    // Warn if source packages present but no build-org in default mode
-    if (!flags['dry-run'] && !flags['build-org'] && !flags['skip-validation']) {
-      this.log('Warning: No --build-org provided. Source package validation will be skipped (no org to deploy against).')
     }
 
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
