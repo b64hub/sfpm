@@ -59,7 +59,7 @@ export interface ResolveOptions {
  * const bus = new ValidationEventBus();
  * const resolver = new ValidationResolver(logger, bus);
  * renderer.attachTo(bus);
- * const results = await resolver.resolveAll(descriptors);
+ * const results = await resolver.resolve(descriptors);
  * ```
  */
 export class ValidationResolver {
@@ -74,62 +74,37 @@ export class ValidationResolver {
   }
 
   /**
-   * Resolve a pending validation into a terminal state (passed or failed).
-   */
-  async resolve(
-    descriptor: PendingValidationDescriptor,
-    options?: ResolveOptions,
-  ): Promise<ValidationStateFailed | ValidationStatePassed> {
-    this.logger?.info(`Resolving pending validation for '${descriptor.packageName}' (${descriptor.operationType})`);
-
-    switch (descriptor.operationType) {
-    case 'deploy': {
-      return this.resolveDeploy(descriptor, options);
-    }
-
-    case 'package-version-request': {
-      return this.resolvePackageVersion(descriptor, options);
-    }
-
-    default: {
-      return {
-        checks: [],
-        error: `Unknown operation type: ${descriptor.operationType}`,
-        status: 'failed',
-      };
-    }
-    }
-  }
-
-  /**
    * Resolve multiple pending validations with optimal concurrency.
    *
    * - Deploy-type descriptors are resolved sequentially (they target the same org).
    * - Package-version-request descriptors are resolved in parallel (independent server-side).
    */
-  async resolveAll(
+  async resolve(
     descriptors: PendingValidationDescriptor[],
     options?: ResolveOptions,
   ): Promise<Map<string, ValidationStateFailed | ValidationStatePassed>> {
     const packageNames = descriptors.map(d => d.packageName);
     this.sink?.start({packageNames});
 
-    const deploys = descriptors.filter(d => d.operationType === 'deploy');
-    const versionRequests = descriptors.filter(d => d.operationType === 'package-version-request');
-
-    const deployOutcomes = await this.resolveDeploysSequentially(deploys, options);
-    const versionOutcomes = await this.resolveVersionRequestsInParallel(versionRequests, options);
-
     const results = new Map<string, ValidationStateFailed | ValidationStatePassed>();
-    for (const {packageName, result} of [...deployOutcomes, ...versionOutcomes]) {
-      results.set(packageName, result);
-    }
 
-    const passed = [...results.values()].filter(r => r.status === 'passed').length;
-    const failed = [...results.values()].filter(r => r.status === 'failed').length;
-    this.sink?.complete({
-      failed, passed, timedOut: 0, total: results.size,
-    });
+    try {
+      const deploys = descriptors.filter(d => d.operationType === 'deploy');
+      const versionRequests = descriptors.filter(d => d.operationType === 'package-version-request');
+
+      const deployOutcomes = await this.resolveDeploysSequentially(deploys, options);
+      const versionOutcomes = await this.resolveVersionRequestsInParallel(versionRequests, options);
+
+      for (const {packageName, result} of [...deployOutcomes, ...versionOutcomes]) {
+        results.set(packageName, result);
+      }
+    } finally {
+      const passed = [...results.values()].filter(r => r.status === 'passed').length;
+      const failed = [...results.values()].filter(r => r.status === 'failed').length;
+      this.sink?.complete({
+        failed, passed, timedOut: 0, total: results.size,
+      });
+    }
 
     return results;
   }
@@ -216,13 +191,39 @@ export class ValidationResolver {
       sink?.status({status: 'polling'});
 
       // eslint-disable-next-line no-await-in-loop -- sequential resolution is intentional
-      const result = await this.resolve(descriptor, options);
-
-      if (sink) this.emitOutcome(sink, result);
+      const result = await this.resolveSingle(descriptor, sink, options);
       outcomes.push({packageName: descriptor.packageName, result});
     }
 
     return outcomes;
+  }
+
+  /**
+   * Route a single descriptor to the appropriate resolution strategy.
+   */
+  private async resolveDescriptor(
+    descriptor: PendingValidationDescriptor,
+    options?: ResolveOptions,
+  ): Promise<ValidationStateFailed | ValidationStatePassed> {
+    this.logger?.info(`Resolving pending validation for '${descriptor.packageName}' (${descriptor.operationType})`);
+
+    switch (descriptor.operationType) {
+    case 'deploy': {
+      return this.resolveDeploy(descriptor, options);
+    }
+
+    case 'package-version-request': {
+      return this.resolvePackageVersion(descriptor, options);
+    }
+
+    default: {
+      return {
+        checks: [],
+        error: `Unknown operation type: ${descriptor.operationType}`,
+        status: 'failed',
+      };
+    }
+    }
   }
 
   private async resolvePackageVersion(
@@ -259,6 +260,35 @@ export class ValidationResolver {
   }
 
   /**
+   * Resolve a single descriptor with error handling.
+   * Catches thrown errors and converts them to a failed validation state,
+   * ensuring the scoped sink always emits a terminal event.
+   */
+  private async resolveSingle(
+    descriptor: PendingValidationDescriptor,
+    sink: ScopedValidationSink | undefined,
+    options?: ResolveOptions,
+  ): Promise<ValidationStateFailed | ValidationStatePassed> {
+    try {
+      const result = await this.resolveDescriptor(descriptor, options);
+      if (sink) this.emitOutcome(sink, result);
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.error(`Validation resolution error for '${descriptor.packageName}': ${message}`);
+
+      const failed: ValidationStateFailed = {
+        checks: [],
+        error: message,
+        status: 'failed',
+      };
+
+      sink?.failed({error: message});
+      return failed;
+    }
+  }
+
+  /**
    * Resolve package-version-request descriptors in parallel (independent server-side).
    * Each descriptor gets its own scoped sink for per-package event emission.
    */
@@ -272,9 +302,7 @@ export class ValidationResolver {
       const sink = this.sinkFor(descriptor.packageName);
       sink?.status({status: 'polling'});
 
-      const result = await this.resolve(descriptor, options);
-
-      if (sink) this.emitOutcome(sink, result);
+      const result = await this.resolveSingle(descriptor, sink, options);
       return {packageName: descriptor.packageName, result};
     }));
   }

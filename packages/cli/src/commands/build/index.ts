@@ -326,7 +326,7 @@ export default class Build extends SfpmCommand {
     renderer.attachTo(validationBus)
 
     const resolver = new ValidationResolver(this.sfpmLogger, validationBus);
-    const results = await resolver.resolveAll(pendingValidations, {
+    const results = await resolver.resolve(pendingValidations, {
       maxWaitMs: resolved.waitMinutes * 60 * 1000,
     });
 
