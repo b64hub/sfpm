@@ -74,10 +74,20 @@ export type {
   ConnectionStartPayload,
   HookCompleteEvent,
   HookCompletePayload,
-  HookEventSink,
   HookEvents,
+  HookEventSink,
   HooksCompleteEvent,
   HooksCompletePayload,
   HooksStartEvent,
   HooksStartPayload,
 } from './types.js';
+export {ScopedValidationSink, ValidationEventBus} from './validation-event-bus.js';
+export type {
+  ResolveCompleteEvent, ResolveCompletePayload,
+  ResolveFailedEvent, ResolveFailedPayload,
+  ResolvePassedEvent, ResolvePassedPayload,
+  ResolveStartEvent, ResolveStartPayload,
+  ResolveStatusEvent, ResolveStatusPayload,
+  ResolveTimeoutEvent, ResolveTimeoutPayload,
+  ValidationEvents, ValidationEventSink,
+} from './validation-event-bus.js';

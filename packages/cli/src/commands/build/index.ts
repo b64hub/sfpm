@@ -16,7 +16,9 @@ import {
 import {ConfigAggregator, Org} from '@salesforce/core'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
+import chalk from 'chalk'
 import path from 'node:path'
+import ora from 'ora'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
@@ -221,19 +223,16 @@ export default class Build extends SfpmCommand {
     if (!resolved.autoCreatedBuildOrg) return
 
     const {hubOrg, username} = resolved.autoCreatedBuildOrg
+    const spinner = resolved.mode === 'interactive'
+      ? ora(`Deleting build org ${chalk.cyan(username)}...`).start()
+      : undefined
 
     try {
-      if (resolved.mode === 'interactive') {
-        this.log(`Deleting auto-created build org: ${username}`)
-      }
-
       const scratchOrg = await Org.create({aliasOrUsername: username})
       await scratchOrg.deleteFrom(hubOrg)
-
-      if (resolved.mode === 'interactive') {
-        this.log('Build org deleted successfully.')
-      }
+      spinner?.succeed(`Build org ${chalk.cyan(username)} deleted`)
     } catch (error) {
+      spinner?.fail(`Failed to delete build org ${chalk.cyan(username)}`)
       this.sfpmLogger?.warn(`Failed to delete auto-created build org ${username}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -266,9 +265,9 @@ export default class Build extends SfpmCommand {
       this.error('A target dev hub is required to auto-create a build org for source validation. Specify one with --target-dev-hub (-v).', {exit: 1})
     }
 
-    if (resolved.mode === 'interactive') {
-      this.log('No --build-org specified. Creating a scratch org for source validation...')
-    }
+    const spinner = resolved.mode === 'interactive'
+      ? ora('Creating scratch org for source validation...').start()
+      : undefined
 
     const hubOrg = await Org.create({aliasOrUsername: resolved.buildOptions.devhubUsername})
     const provider = new ScratchOrgProvider(hubOrg)
@@ -276,25 +275,29 @@ export default class Build extends SfpmCommand {
     const scratchDefPath = path.join(resolved.projectDir, 'config', 'project-scratch-def.json')
     const alias = `sfpm-build-${Date.now()}`
 
-    const scratchOrg = await provider.createOrg({
-      alias,
-      definitionfile: scratchDefPath,
-      durationDays: 1,
-      noancestors: true,
-      nonamespace: true,
-    })
+    try {
+      const scratchOrg = await provider.createOrg({
+        alias,
+        definitionfile: scratchDefPath,
+        durationDays: 1,
+        noancestors: true,
+        nonamespace: true,
+      })
 
-    const {username} = scratchOrg.auth
-    if (!username) {
-      this.error('Failed to create scratch org: no username returned', {exit: 1})
+      const {username} = scratchOrg.auth
+      if (!username) {
+        spinner?.fail('Failed to create scratch org: no username returned')
+        this.error('Failed to create scratch org: no username returned', {exit: 1})
+      }
+
+      spinner?.succeed(`Build org created: ${chalk.cyan(username)}`)
+
+      resolved.buildOptions.buildOrg = username
+      resolved.autoCreatedBuildOrg = {hubOrg, username}
+    } catch (error) {
+      spinner?.fail('Failed to create scratch org')
+      throw error
     }
-
-    if (resolved.mode === 'interactive') {
-      this.log(`Scratch org created: ${username} (alias: ${alias})`)
-    }
-
-    resolved.buildOptions.buildOrg = username
-    resolved.autoCreatedBuildOrg = {hubOrg, username}
   }
 
   /**
@@ -344,36 +347,38 @@ export default class Build extends SfpmCommand {
           watcherPid: pid,
         });
       } else if (resolved.mode !== 'quiet') {
-        this.log(`\nValidation watcher started (PID ${pid}) for: ${pkgNames}`);
-        this.log('Run \'sfpm watch status\' to check progress.');
+        this.log(chalk.yellow(`\nValidation watcher started ${chalk.dim(`(PID ${pid})`)} for: ${chalk.bold(pkgNames)}`));
+        this.log(chalk.dim('Run \'sfpm watch status\' to check progress.'));
       }
 
       return
     }
 
     // Inline resolution — await all pending validations
-    if (resolved.mode !== 'quiet') {
-      this.log(`\nResolving ${pendingValidations.length} pending validation(s)...`)
-    }
+    const validationSpinner = resolved.mode === 'interactive'
+      ? ora(`Resolving ${pendingValidations.length} pending validation(s)...`).start()
+      : undefined
 
     const resolver = new ValidationResolver(this.sfpmLogger);
     const results = await resolver.resolveAll(pendingValidations, {
       maxWaitMs: resolved.waitMinutes * 60 * 1000,
     });
 
+    validationSpinner?.stop()
+
     const failures: string[] = [];
     for (const [packageName, result] of results) {
       if (result.status === 'failed') {
         failures.push(`${packageName}: ${result.error}`);
       } else if (resolved.mode !== 'quiet') {
-        const coverage = result.testCoverage === null ? '' : ` (coverage: ${result.testCoverage}%)`;
-        this.log(`  ✓ ${packageName} — validation passed${coverage}`);
+        const coverage = result.testCoverage === null ? '' : chalk.dim(` (${result.testCoverage}% coverage)`);
+        this.log(chalk.green(`  ✔ ${chalk.bold(packageName)}`) + chalk.green(' — validation passed') + coverage);
       }
     }
 
     if (failures.length > 0) {
       for (const failure of failures) {
-        this.log(`  ✗ ${failure}`);
+        this.log(chalk.red(`  ✖ ${failure}`));
       }
 
       this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1})
