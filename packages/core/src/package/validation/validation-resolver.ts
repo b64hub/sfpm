@@ -113,10 +113,15 @@ export class ValidationResolver {
    * Emit the terminal result (passed or failed) through a scoped sink.
    */
   private emitOutcome(sink: ScopedValidationSink, result: ValidationStateFailed | ValidationStatePassed): void {
+    const components = {
+      componentsDeployed: result.componentsDeployed,
+      componentsTotal: result.componentsTotal,
+    };
+
     if (result.status === 'passed') {
-      sink.passed({checks: result.checks, codeCoverage: result.testCoverage});
+      sink.passed({...components, checks: result.checks, codeCoverage: result.testCoverage});
     } else {
-      sink.failed({codeCoverage: result.testCoverage, error: result.error ?? 'Unknown error'});
+      sink.failed({...components, codeCoverage: result.testCoverage, error: result.error ?? 'Unknown error'});
     }
   }
 
@@ -125,8 +130,14 @@ export class ValidationResolver {
     packageName: string,
     coverageThreshold: number,
   ): ValidationStateFailed | ValidationStatePassed {
+    const componentFields = {
+      componentsDeployed: result.deployed,
+      componentsTotal: result.total,
+    };
+
     if (!result.success) {
       return {
+        ...componentFields,
         checks: ['deploy'],
         error: result.formatErrors() || 'Unknown deployment error',
         status: 'failed',
@@ -139,6 +150,7 @@ export class ValidationResolver {
       .join('\n');
 
       return {
+        ...componentFields,
         checks: ['deploy', 'test'],
         error: `${result.testResults!.failed} Apex test(s) failed:\n${failureDetails}`,
         status: 'failed',
@@ -148,6 +160,7 @@ export class ValidationResolver {
 
     if (!result.meetsCoverageThreshold(coverageThreshold)) {
       return {
+        ...componentFields,
         checks: ['deploy', 'test'],
         error: `Coverage ${result.testResults!.coverage}% is below required ${coverageThreshold}%`,
         status: 'failed',
@@ -157,6 +170,7 @@ export class ValidationResolver {
 
     this.logger?.info(`Validation passed for '${packageName}' (coverage: ${result.testResults?.coverage ?? 'N/A'}%)`);
     return {
+      ...componentFields,
       checks: ['deploy', 'test'],
       status: 'passed',
       testCoverage: result.testResults?.coverage,

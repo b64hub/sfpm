@@ -178,6 +178,10 @@ export interface ValidationStatePending {
 export interface ValidationStatePassed {
   /** Which validation checks were performed */
   checks: ValidationCheck[];
+  /** Number of components successfully deployed */
+  componentsDeployed?: number;
+  /** Total number of components in the deployment */
+  componentsTotal?: number;
   status: 'passed';
   /** Test coverage percentage (0–100), if measured */
   testCoverage?: number;
@@ -186,6 +190,10 @@ export interface ValidationStatePassed {
 export interface ValidationStateFailed {
   /** Which validation checks were attempted */
   checks: ValidationCheck[];
+  /** Number of components successfully deployed */
+  componentsDeployed?: number;
+  /** Total number of components in the deployment */
+  componentsTotal?: number;
   /** Human-readable error description */
   error?: string;
   status: 'failed';

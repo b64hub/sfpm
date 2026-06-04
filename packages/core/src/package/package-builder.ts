@@ -140,7 +140,7 @@ export class PackageBuilder {
 
     this.handleBuildConfiguration(sfpmPackage);
     await this.handleSourceContext(sfpmPackage, projectDirectory);
-    await this.stagePackage(sfpmPackage);
+    const componentCount = await this.stagePackage(sfpmPackage);
 
     try {
       if (await this.isPackageEmpty(sfpmPackage)) {
@@ -170,7 +170,7 @@ export class PackageBuilder {
       await this.runLifecycleHooks('pre', sfpmPackage, projectDirectory);
 
       const builderInstance = await this.handleBuilderSetup(sfpmPackage);
-      const pendingValidation = await this.executeBuilder(sfpmPackage, builderInstance, builderInstance.constructor.name);
+      const pendingValidation = await this.executeBuilder(sfpmPackage, builderInstance, builderInstance.constructor.name, componentCount);
 
       // Run post-build hooks
       await this.runLifecycleHooks('post', sfpmPackage, projectDirectory);
@@ -244,7 +244,7 @@ export class PackageBuilder {
     }
   }
 
-  public async stagePackage(sfpmPackage: SfpmPackage): Promise<void> {
+  public async stagePackage(sfpmPackage: SfpmPackage): Promise<number> {
     this.sink?.stageStart({
       stagingDirectory: sfpmPackage.workingDirectory,
     });
@@ -266,6 +266,8 @@ export class PackageBuilder {
         componentCount: assemblyOutput.componentCount || 0,
         stagingDirectory: assemblyOutput.stagingDirectory,
       });
+
+      return assemblyOutput.componentCount || 0;
     } catch (error: any) {
       this.sink?.error({
         error,
@@ -385,7 +387,7 @@ export class PackageBuilder {
     }
   }
 
-  private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string): Promise<PendingValidationDescriptor | undefined> {
+  private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string, componentCount?: number): Promise<PendingValidationDescriptor | undefined> {
     this.sink?.builderStart({
       builderName,
       packageType: sfpmPackage.type as PackageType,
@@ -419,6 +421,7 @@ export class PackageBuilder {
 
       this.sink?.builderComplete({
         builderName,
+        componentCount,
         packageType: sfpmPackage.type as PackageType,
       });
 

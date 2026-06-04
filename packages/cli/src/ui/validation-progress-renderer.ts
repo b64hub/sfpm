@@ -64,6 +64,45 @@ export class ValidationProgressRenderer {
   // Event Handlers
   // ========================================================================
 
+  /**
+   * Color a coverage percentage: red (<75), yellow (75–89), green (90+).
+   */
+  private colorCoverage(coverage: number): string {
+    const label = `${coverage}%`;
+    if (coverage >= 90) return chalk.dim.green(label);
+    if (coverage >= 75) return chalk.dim.yellow(label);
+    return chalk.dim.red(label);
+  }
+
+  /**
+   * Build a dimmed parenthetical detail string with component counts and coverage.
+   * e.g. ` (42/42 deployed, 87%)` or ` (87%)` or ``
+   */
+  private formatDetails(deployed?: number, total?: number, coverage?: number): string {
+    const parts: string[] = [];
+
+    if (deployed !== undefined && total !== undefined) {
+      parts.push(`${deployed}/${total} deployed`);
+    }
+
+    if (coverage !== undefined) {
+      parts.push(this.colorCoverage(coverage));
+    }
+
+    if (parts.length === 0) return '';
+
+    // coverage is already colored, so build the string with dim for everything else
+    if (deployed !== undefined && total !== undefined && coverage !== undefined) {
+      return ` ${chalk.dim(`(${deployed}/${total} deployed,`)} ${this.colorCoverage(coverage)}${chalk.dim(')')}`;
+    }
+
+    if (coverage !== undefined) {
+      return ` ${chalk.dim('(')}${this.colorCoverage(coverage)}${chalk.dim(')')}`;
+    }
+
+    return chalk.dim(` (${parts.join(', ')})`);
+  }
+
   private onComplete(event: ResolveCompleteEvent): void {
     this.spinner?.stop();
     this.spinner = undefined;
@@ -76,7 +115,7 @@ export class ValidationProgressRenderer {
     if (event.timedOut > 0) parts.push(chalk.yellow(`${event.timedOut} timed out`));
 
     const summary = parts.join(chalk.dim(', '));
-    this.log.log(`\n${chalk.bold('Validation')} ${summary} ${chalk.dim(`(${event.total} total)`)}`);
+    this.log.log(`\n  ${chalk.bold('Validation')} ${summary} ${chalk.dim(`(${event.total} total)`)}`);
   }
 
   private onFailed(event: ResolveFailedEvent): void {
@@ -85,8 +124,8 @@ export class ValidationProgressRenderer {
 
     if (this.mode === 'quiet' || this.mode === 'json') return;
 
-    const coverage = event.codeCoverage === undefined ? '' : chalk.dim(` (${event.codeCoverage}%)`);
-    this.writeResult(`${chalk.red('✖')} ${chalk.bold(name)}${coverage} ${chalk.dim('—')} ${chalk.red(event.error)}`);
+    const details = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
+    this.writeResult(`${chalk.red('✖')} ${chalk.cyan(name)}${details} ${chalk.dim('—')} ${chalk.red(event.error)}`);
   }
 
   private onPassed(event: ResolvePassedEvent): void {
@@ -95,8 +134,8 @@ export class ValidationProgressRenderer {
 
     if (this.mode === 'quiet' || this.mode === 'json') return;
 
-    const coverage = event.codeCoverage === undefined ? '' : chalk.dim(` (${event.codeCoverage}% coverage)`);
-    this.writeResult(`${chalk.green('✔')} ${chalk.bold(name)}${coverage}`);
+    const details = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
+    this.writeResult(`${chalk.green('✔')} ${chalk.cyan(name)}${details}`);
   }
 
   private onStart(event: ResolveStartEvent): void {
@@ -104,15 +143,23 @@ export class ValidationProgressRenderer {
       this.packages.set(name, {startedAt: Date.now(), status: 'queued'});
     }
 
-    if (this.mode !== 'interactive') return;
+    if (this.mode === 'json') return;
 
     const count = event.packageNames.length;
     const label = count === 1 ? 'validation' : 'validations';
+    this.log.log(`\n\n${chalk.bold('Resolving')} ${chalk.cyan(String(count))} ${label}`);
+
+    if (this.mode !== 'interactive') return;
+
     this.spinner = ora({
       prefixText: '',
-      text: `Resolving ${chalk.cyan(String(count))} ${label}...`,
+      text: 'Waiting for results...',
     }).start();
   }
+
+  // ========================================================================
+  // Formatting helpers
+  // ========================================================================
 
   private onStatus(event: ResolveStatusEvent): void {
     const name = (event as any).packageName ?? 'unknown';

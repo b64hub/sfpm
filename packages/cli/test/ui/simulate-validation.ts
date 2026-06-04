@@ -41,7 +41,7 @@ const timeline: TimelineEntry<ValidationEvents>[] = [
   {
     delay: 2000,
     event: 'resolve:passed',
-    payload: {checks: ['deploy', 'test'], codeCoverage: 87, packageName: 'core-data'} as any,
+    payload: {checks: ['deploy', 'test'], codeCoverage: 87, componentsDeployed: 42, componentsTotal: 42, packageName: 'core-data'} as any,
   },
   {
     delay: 500,
@@ -56,12 +56,12 @@ const timeline: TimelineEntry<ValidationEvents>[] = [
   {
     delay: 1500,
     event: 'resolve:passed',
-    payload: {checks: ['deploy', 'test', 'dependencies'], codeCoverage: 92, packageName: 'analytics'} as any,
+    payload: {checks: ['deploy', 'test', 'dependencies'], codeCoverage: 92, componentsDeployed: 24, componentsTotal: 24, packageName: 'analytics'} as any,
   },
   {
     delay: 2000,
     event: 'resolve:failed',
-    payload: {codeCoverage: 68, error: 'Coverage 68% below required 75%', packageName: 'ui-components'} as any,
+    payload: {codeCoverage: 68, componentsDeployed: 15, componentsTotal: 15, error: 'Coverage 68% below required 75%', packageName: 'ui-components'} as any,
   },
   {
     delay: 300,

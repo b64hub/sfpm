@@ -21,10 +21,14 @@ export interface ResolveStatusPayload {
 export interface ResolvePassedPayload {
   checks: string[];
   codeCoverage?: number;
+  componentsDeployed?: number;
+  componentsTotal?: number;
 }
 
 export interface ResolveFailedPayload {
   codeCoverage?: number;
+  componentsDeployed?: number;
+  componentsTotal?: number;
   error: string;
 }
 

@@ -93,6 +93,7 @@ export interface BuilderStartPayload {
 
 export interface BuilderCompletePayload {
   builderName: string;
+  componentCount?: number;
   packageType: PackageType;
 }
 
