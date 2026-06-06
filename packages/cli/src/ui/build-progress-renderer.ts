@@ -125,6 +125,7 @@ export class BuildProgressRenderer {
     'package:complete': {description: 'Package complete', handler: this.handleOrchestrationPackageComplete.bind(this)},
     start: {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
   };
+  private packageVersions: Map<string, string> = new Map();
   /**
    * Tracks running analyzer names per package for rolling title updates.
    */
@@ -278,6 +279,7 @@ export class BuildProgressRenderer {
     const duration = calculateDuration(this.timings.buildStart, event.timestamp);
 
     if (this.isOrchestrating()) {
+      if (event.version) this.packageVersions.set(event.packageName, event.version);
       const version = event.version ? ` @ ${event.version}` : '';
       // Update build sub-task to show artifact line
       this.listr.updateBuildTitle(event.packageName, `artifact${chalk.dim(version)}`);
@@ -593,9 +595,11 @@ export class BuildProgressRenderer {
 
       this.listr.resolvePackage(event.packageName);
     } else if (event.success) {
+      const version = this.packageVersions.get(event.packageName);
+      const versionSuffix = version ? ` @ ${version}` : '';
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} ${chalk.gray(`(${duration})`)}`,
+        `${chalk.cyan(event.packageName)}${chalk.dim(versionSuffix)} ${chalk.gray(`(${duration})`)}`,
       );
 
       this.listr.resolvePackage(event.packageName);
