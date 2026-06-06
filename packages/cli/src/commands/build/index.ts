@@ -22,6 +22,7 @@ import ora from 'ora'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
+import {renderBuildSummary} from '../../ui/build-summary.js'
 import {ValidationProgressRenderer} from '../../ui/validation-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
 import {forkWatcher} from '../../utils/watcher.js'
@@ -160,6 +161,21 @@ export default class Build extends SfpmCommand {
       }
 
       await this.handleValidationResults(result.pendingValidations, resolved)
+
+      // Render build summary line
+      const summaryLogger = {
+        error: (msgOrError: Error | string) => this.error(msgOrError),
+        log: (msg: string) => this.log(msg),
+      }
+      renderBuildSummary(
+        result.results.map(r => ({
+          failed: !r.success && !r.skipped,
+          packageName: r.packageName,
+          skipped: r.skipped ?? false,
+        })),
+        result.duration,
+        summaryLogger,
+      )
     } catch (error) {
       renderer.handleError(error as Error)
       if (resolved.mode === 'json') {

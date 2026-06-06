@@ -415,6 +415,12 @@ export class PackageBuilder {
       let pendingValidation: PendingValidationDescriptor | undefined;
       if (builderInstance.validate) {
         pendingValidation = await builderInstance.validate();
+        if (pendingValidation) {
+          this.sink?.validateQueued({
+            operationId: pendingValidation.operationId,
+            operationType: pendingValidation.operationType,
+          });
+        }
       }
 
       await this.runTasks(sfpmPackage, postTasks, ctx, 'post-build');

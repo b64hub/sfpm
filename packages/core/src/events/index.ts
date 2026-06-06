@@ -31,8 +31,7 @@ export type {
   TaskValidationCompleteEvent, TaskValidationCompletePayload,
   TaskValidationProgressEvent, TaskValidationProgressPayload,
   TaskValidationStartEvent, TaskValidationStartPayload,
-  ValidationCompleteEvent, ValidationCompletePayload,
-  ValidationStartEvent, ValidationStartPayload,
+  ValidationQueuedEvent, ValidationQueuedPayload,
 } from './build-event-bus.js';
 export {ScopedEventSink} from './event-sink.js';
 export type {EventSink} from './event-sink.js';

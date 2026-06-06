@@ -43,18 +43,18 @@ export class InstallProgressRenderer {
    * Event configuration mapping events to handlers
    */
   private eventConfigs: Record<string, EventConfig> = {
-    'complete': {description: 'Install completed', handler: this.handleInstallComplete.bind(this)},
+    complete: {description: 'Install completed', handler: this.handleInstallComplete.bind(this)},
     'connection:complete': {description: 'Connected to org', handler: this.handleConnectionComplete.bind(this)},
     'connection:start': {description: 'Connecting to org', handler: this.handleConnectionStart.bind(this)},
     'deploy:complete': {description: 'Deployment completed', handler: this.handleDeploymentComplete.bind(this)},
     'deploy:progress': {description: 'Deployment progress', handler: this.handleDeploymentProgress.bind(this)},
     'deploy:start': {description: 'Deployment started', handler: this.handleDeploymentStart.bind(this)},
-    'error': {description: 'Install error', handler: this.handleInstallError.bind(this)},
+    error: {description: 'Install error', handler: this.handleInstallError.bind(this)},
     'hook:complete': {description: 'Hook complete', handler: this.handleHookComplete.bind(this)},
     'hooks:complete': {description: 'All hooks complete', handler: this.handleHooksComplete.bind(this)},
     'hooks:start': {description: 'Hooks started', handler: this.handleHooksStart.bind(this)},
-    'skip': {description: 'Install skipped', handler: this.handleInstallSkip.bind(this)},
-    'start': {description: 'Install started', handler: this.handleInstallStart.bind(this)},
+    skip: {description: 'Install skipped', handler: this.handleInstallSkip.bind(this)},
+    start: {description: 'Install started', handler: this.handleInstallStart.bind(this)},
     'version:complete': {description: 'Version install completed', handler: this.handleVersionInstallComplete.bind(this)},
     'version:progress': {description: 'Version install progress', handler: this.handleVersionInstallProgress.bind(this)},
     'version:start': {description: 'Version install started', handler: this.handleVersionInstallStart.bind(this)},
@@ -75,10 +75,10 @@ export class InstallProgressRenderer {
    * Event configuration for orchestration-level events
    */
   private orchestrationEventConfigs: Record<string, EventConfig> = {
-    'complete': {description: 'Orchestration complete', handler: this.handleOrchestrationComplete.bind(this)},
+    complete: {description: 'Orchestration complete', handler: this.handleOrchestrationComplete.bind(this)},
     'level:complete': {description: 'Level complete', handler: this.handleOrchestrationLevelComplete.bind(this)},
     'level:start': {description: 'Level started', handler: this.handleOrchestrationLevelStart.bind(this)},
-    'start': {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
+    start: {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
   };
   private spinner?: Ora;
   private targetOrg?: string;
@@ -88,11 +88,7 @@ export class InstallProgressRenderer {
     this.logger = options.logger;
     this.mode = options.mode;
     this.targetOrg = options.targetOrg;
-    this.listr = new OrchestrationListrManager(event => {
-      const count = event.packages.length;
-      const pkgText = count === 1 ? 'package' : 'packages';
-      return `Installing ${chalk.cyan(String(count))} ${pkgText} to ${chalk.yellow(this.targetOrg)}`;
-    });
+    this.listr = new OrchestrationListrManager();
   }
 
   /**
@@ -165,26 +161,17 @@ export class InstallProgressRenderer {
   }
 
   /**
-   * Look up the Listr sub-task for a package within the active orchestration level.
-   * Returns undefined when running in standalone (non-orchestration) mode.
-   */
-  private getPackageTask(packageName: string): any | undefined {
-    return this.listr.getPackageTask(packageName);
-  }
-
-  /**
    * Handle connection complete event
    */
   private handleConnectionComplete(event: any): void {
     if (!this.isInteractive()) return;
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
-      this.listr.updatePackageTitle(
+    if (this.isOrchestrating()) {
+      this.listr.updateBuildTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} - Connected to ${chalk.yellow(event.username)}`,
+        `connected to ${chalk.yellow(event.username)}`,
       );
-    } else if (!this.isOrchestrating()) {
+    } else {
       this.spinner?.succeed(chalk.green(`Connected to org ${chalk.yellow(event.username)}`));
     }
 
@@ -198,13 +185,9 @@ export class InstallProgressRenderer {
     this.timings.connectionStart = new Date();
     if (!this.isInteractive()) return;
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
-      this.listr.updatePackageTitle(
-        event.packageName,
-        `${chalk.cyan(event.packageName)} - Connecting to org...`,
-      );
-    } else if (!this.isOrchestrating()) {
+    if (this.isOrchestrating()) {
+      this.listr.updateBuildTitle(event.packageName, 'connecting to org...');
+    } else {
       this.spinner?.start(`Connecting to org ${chalk.yellow(event.username)}...`);
     }
   }
@@ -215,14 +198,10 @@ export class InstallProgressRenderer {
   private handleDeploymentComplete(event: any): void {
     if (!this.isInteractive()) return;
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
+    if (this.isOrchestrating()) {
       const components = event.numberComponentsDeployed ? ` (${event.numberComponentsDeployed} components)` : '';
-      this.listr.updatePackageTitle(
-        event.packageName,
-        `${chalk.cyan(event.packageName)} - Deployed${components}`,
-      );
-    } else if (!this.isOrchestrating()) {
+      this.listr.updateBuildTitle(event.packageName, `deployed${components}`);
+    } else {
       this.spinner?.succeed(chalk.green('Metadata deployed successfully'));
       if (event.numberComponentsDeployed) {
         this.logger.log(chalk.gray(`  Deployed ${event.numberComponentsDeployed} components`));
@@ -243,18 +222,14 @@ export class InstallProgressRenderer {
     let progressText: string;
     if (componentsTotal > 0) {
       const percentage = Math.round((componentsDeployed / componentsTotal) * 100);
-      progressText = `Deploying: ${status} (${componentsDeployed}/${componentsTotal} - ${percentage}%)`;
+      progressText = `deploying: ${status} (${componentsDeployed}/${componentsTotal} - ${percentage}%)`;
     } else {
-      progressText = `Deploying: ${status}`;
+      progressText = `deploying: ${status}`;
     }
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
-      this.listr.updatePackageTitle(
-        event.packageName,
-        `${chalk.cyan(event.packageName)} - ${progressText}`,
-      );
-    } else if (!this.isOrchestrating() && this.spinner) {
+    if (this.isOrchestrating()) {
+      this.listr.updateBuildTitle(event.packageName, progressText);
+    } else if (this.spinner) {
       this.spinner.text = progressText;
     }
   }
@@ -266,13 +241,9 @@ export class InstallProgressRenderer {
     this.timings.deploymentStart = new Date();
     if (!this.isInteractive()) return;
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
-      this.listr.updatePackageTitle(
-        event.packageName,
-        `${chalk.cyan(event.packageName)} - Deploying metadata...`,
-      );
-    } else if (!this.isOrchestrating()) {
+    if (this.isOrchestrating()) {
+      this.listr.updateBuildTitle(event.packageName, 'deploying metadata...');
+    } else {
       this.spinner = ora({
         color: 'cyan',
         text: `Deploying metadata to ${chalk.yellow(event.targetOrg)}...`,
@@ -288,18 +259,14 @@ export class InstallProgressRenderer {
       progress.completed.push(event.hookName);
     }
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
+    if (this.isOrchestrating()) {
       const remaining = progress
         ? progress.total.filter(n => !progress.completed.includes(n))
         : [];
       const label = remaining.length > 0
-        ? `Hooks [${event.timing}-${event.operation}] - ${remaining.join(', ')}`
-        : `Hooks [${event.timing}-${event.operation}]...`;
-      this.listr.updatePackageTitle(
-        event.packageName,
-        `${chalk.cyan(event.packageName)} - ${label}`,
-      );
+        ? `hooks [${event.timing}-${event.operation}] - ${remaining.join(', ')}`
+        : `hooks [${event.timing}-${event.operation}]...`;
+      this.listr.updateBuildTitle(event.packageName, label);
     }
   }
 
@@ -314,13 +281,12 @@ export class InstallProgressRenderer {
       ? formatDuration(Date.now() - this.timings.hooksStart.getTime())
       : '';
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
-      this.listr.updatePackageTitle(
+    if (this.isOrchestrating()) {
+      this.listr.updateBuildTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} - Hooks [${event.timing}-${event.operation}] (${event.completedCount}) ${chalk.gray(`(${duration})`)}`,
+        `hooks [${event.timing}-${event.operation}] (${event.completedCount}) ${chalk.gray(`(${duration})`)}`,
       );
-    } else if (!this.isOrchestrating()) {
+    } else {
       const hookText = event.completedCount === 1 ? 'hook' : 'hooks';
       this.logger.log(chalk.green(`✔ Completed ${event.completedCount} ${hookText} [${event.timing}-${event.operation}] in ${duration}`));
     }
@@ -337,13 +303,12 @@ export class InstallProgressRenderer {
 
     this.hookProgress.set(event.packageName, {completed: [], total: [...event.hookNames]});
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
-      this.listr.updatePackageTitle(
+    if (this.isOrchestrating()) {
+      this.listr.updateBuildTitle(
         event.packageName,
-        `${chalk.cyan(event.packageName)} - Hooks [${event.timing}-${event.operation}] - ${event.hookNames.join(', ')}`,
+        `hooks [${event.timing}-${event.operation}] - ${event.hookNames.join(', ')}`,
       );
-    } else if (!this.isOrchestrating()) {
+    } else {
       const hookText = event.hookCount === 1 ? 'hook' : 'hooks';
       this.logger.log(chalk.dim(`Running ${event.hookCount} ${hookText} [${event.timing}-${event.operation}] - ${event.hookNames.join(', ')}...`));
     }
@@ -360,16 +325,13 @@ export class InstallProgressRenderer {
     this.installResult = {success: true};
     if (!this.isInteractive()) return;
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
+    if (this.isOrchestrating()) {
       const version = event.versionNumber ? `@${event.versionNumber}` : '';
+      this.listr.updateBuildTitle(event.packageName, `installed${version}`);
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.green('Installed')} ${chalk.cyan(`${event.packageName}${version}`)}`,
+        `${chalk.cyan(`${event.packageName}${version}`)}`,
       );
-      this.listr.resolvePackage(event.packageName);
-    } else if (this.isOrchestrating()) {
-      // Listr task not ready yet — resolve via deferred directly
       this.listr.resolvePackage(event.packageName);
     } else {
       this.spinner?.succeed(chalk.green(`Successfully installed ${chalk.bold(event.packageName)}`));
@@ -406,12 +368,7 @@ export class InstallProgressRenderer {
       return;
     }
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
-      const errorMsg = typeof event.error === 'string' ? event.error : event.error?.message ?? 'Installation failed';
-      this.listr.rejectPackage(event.packageName, errorMsg);
-    } else if (this.isOrchestrating()) {
-      // Listr task not ready yet — reject via deferred directly
+    if (this.isOrchestrating()) {
       const errorMsg = typeof event.error === 'string' ? event.error : event.error?.message ?? 'Installation failed';
       this.listr.rejectPackage(event.packageName, errorMsg);
     } else {
@@ -426,14 +383,11 @@ export class InstallProgressRenderer {
     if (!this.isInteractive()) return;
 
     const reason = event.reason || 'Already installed';
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
+    if (this.isOrchestrating()) {
       this.listr.updatePackageTitle(
         event.packageName,
-        `${chalk.yellow('Skipped')} ${chalk.cyan(event.packageName)} - ${reason}`,
+        `${chalk.yellow('○')} ${chalk.cyan(event.packageName)} ${chalk.dim(`— ${reason}`)}`,
       );
-      this.listr.resolvePackage(event.packageName);
-    } else if (this.isOrchestrating()) {
       this.listr.resolvePackage(event.packageName);
     } else {
       this.spinner?.info(chalk.yellow(`Skipped ${chalk.bold(event.packageName)}: ${reason}`));
@@ -447,14 +401,10 @@ export class InstallProgressRenderer {
     this.timings.installStart = new Date();
     if (!this.isInteractive()) return;
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
+    if (this.isOrchestrating()) {
       const version = event.versionNumber ? `@${event.versionNumber}` : '';
-      this.listr.updatePackageTitle(
-        event.packageName,
-        `${chalk.cyan(`${event.packageName}${version}`)} - Starting installation...`,
-      );
-    } else if (!this.isOrchestrating()) {
+      this.listr.updateBuildTitle(event.packageName, `installing${version}...`);
+    } else {
       const packageDisplay = event.versionNumber
         ? `${event.packageName}@${event.versionNumber}`
         : event.packageName;
@@ -533,7 +483,7 @@ export class InstallProgressRenderer {
 
     this.logger.log('');
 
-    this.listr.start(event.totalLevels);
+    this.listr.start(event.packageNames);
   }
 
   /**
@@ -542,13 +492,9 @@ export class InstallProgressRenderer {
   private handleVersionInstallComplete(event: any): void {
     if (!this.isInteractive()) return;
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
-      this.listr.updatePackageTitle(
-        event.packageName,
-        `${chalk.cyan(event.packageName)} - Version installed`,
-      );
-    } else if (!this.isOrchestrating()) {
+    if (this.isOrchestrating()) {
+      this.listr.updateBuildTitle(event.packageName, 'version installed');
+    } else {
       this.spinner?.succeed(chalk.green('Package version installed'));
     }
   }
@@ -561,13 +507,9 @@ export class InstallProgressRenderer {
 
     const status = event.status || 'InProgress';
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
-      this.listr.updatePackageTitle(
-        event.packageName,
-        `${chalk.cyan(event.packageName)} - Installing version: ${status}`,
-      );
-    } else if (!this.isOrchestrating() && this.spinner) {
+    if (this.isOrchestrating()) {
+      this.listr.updateBuildTitle(event.packageName, `installing version: ${status}`);
+    } else if (this.spinner) {
       this.spinner.text = `Installing package version: ${status}`;
     }
   }
@@ -578,13 +520,9 @@ export class InstallProgressRenderer {
   private handleVersionInstallStart(event: any): void {
     if (!this.isInteractive()) return;
 
-    const task = this.getPackageTask(event.packageName);
-    if (task) {
-      this.listr.updatePackageTitle(
-        event.packageName,
-        `${chalk.cyan(event.packageName)} - Installing package version...`,
-      );
-    } else if (!this.isOrchestrating()) {
+    if (this.isOrchestrating()) {
+      this.listr.updateBuildTitle(event.packageName, 'installing package version...');
+    } else {
       this.spinner = ora({
         color: 'cyan',
         text: `Installing package version ${event.packageVersionId ?? ''}...`,

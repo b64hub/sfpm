@@ -39,31 +39,34 @@ export function createDeferred(): Deferred {
 // ============================================================================
 
 /**
- * Callback that produces the title for a Listr level task once the
- * `orchestration:level:start` event has fired.
- */
-export type LevelTitleFn = (event: OrchestrationLevelStartEvent) => string;
-
-/**
- * Manages the lifecycle of a single root Listr instance used by an
- * orchestration renderer (build or install).
+ * Manages a flat per-package Listr layout for build orchestration.
  *
- * Encapsulates the level-deferred / package-deferred wiring so renderers
- * only need to call high-level methods and supply a title callback.
+ * Each package is a root-level concurrent Listr task with two sequential
+ * sub-tasks:
+ * 1. **Build** — covers staging → builder → tasks → artifact assembly
+ * 2. **Validation queued** — static marker, only shown when validation
+ *    was triggered during the build
+ *
+ * Packages within a level run concurrently. Cross-level ordering is enforced
+ * by per-package "level gate" deferreds that block until the level starts.
+ *
+ * On success, sub-tasks collapse and the root task shows the final state:
+ * `✔ @scope/name @ 1.0.3 (1.6s)`. On failure, sub-tasks stay expanded.
  *
  * ## Typical usage
  *
  * ```ts
- * const manager = new OrchestrationListrManager(levelTitleFn);
+ * const manager = new OrchestrationListrManager();
  *
  * // orchestration:start
- * manager.start(event.totalLevels);
+ * manager.start(['pkg-a', 'pkg-b', 'pkg-c']);
  *
  * // orchestration:level:start
  * manager.onLevelStart(event);
  *
  * // per-package events
- * manager.updatePackageTitle(name, title);
+ * manager.updateBuildTitle(name, 'staging (42 components)...');
+ * manager.markValidationQueued(name);
  * manager.resolvePackage(name);
  *
  * // orchestration:complete
@@ -72,31 +75,34 @@ export type LevelTitleFn = (event: OrchestrationLevelStartEvent) => string;
  */
 export class OrchestrationListrManager {
   /**
-   * One deferred per orchestration level — resolved when
-   * `orchestration:level:start` fires to unblock the Listr level task.
+   * Build sub-task references keyed by package name — for phase title updates
+   * (staging, connecting, creating version, etc.)
    */
-  private levelDeferreds: Deferred[] = [];
-  private readonly levelTitleFn: LevelTitleFn;
+  private buildSubtasks = new Map<string, any>();
   /**
-   * Pre-created deferreds for each package in the *current* level.
-   * Populated synchronously in `onLevelStart` so resolve/reject are
-   * available immediately, even before Listr sub-tasks set up `packageTasks`.
+   * Per-package level gates — each package waits on its gate before starting.
+   * Resolved in `onLevelStart()` when the package's level begins.
    */
-  private packageDeferreds: Map<string, Deferred> = new Map();
+  private levelGates = new Map<string, Deferred>();
   /**
-   * Listr sub-task references keyed by package name.
-   * Populated lazily as each Listr package task executes.
+   * One deferred per package — resolves when the package build completes.
+   * Controls the build sub-task's Listr promise.
    */
-  private packageTasks: Map<string, any> = new Map();
+  private packageDeferreds = new Map<string, Deferred>();
   /**
-   * Single root Listr instance that persists across all orchestration levels.
-   * Created in `start()`, destroyed in `destroy()`.
+   * Root package task references keyed by package name — for setting
+   * the collapsed title on completion.
+   */
+  private packageTasks = new Map<string, any>();
+  /**
+   * Single root Listr instance. Created in `start()`, destroyed in `destroy()`.
    */
   private rootListr?: Listr;
-
-  constructor(levelTitleFn: LevelTitleFn) {
-    this.levelTitleFn = levelTitleFn;
-  }
+  /**
+   * Track which packages have validation queued.
+   * Used by the validation sub-task's `enabled` callback.
+   */
+  private validationQueued = new Set<string>();
 
   // ==========================================================================
   // Lifecycle
@@ -104,75 +110,55 @@ export class OrchestrationListrManager {
 
   /**
    * Tear down the Listr instance and clear all deferred state.
-   *
-   * Call this from the `orchestration:complete` handler.
+   * Call from the `orchestration:complete` handler.
    */
   public destroy(): void {
     this.rootListr = undefined;
-    this.levelDeferreds = [];
     this.packageDeferreds.clear();
+    this.levelGates.clear();
     this.packageTasks.clear();
+    this.buildSubtasks.clear();
+    this.validationQueued.clear();
   }
-
-  /**
-   * Look up the Listr sub-task for a package within the active orchestration level.
-   * Returns `undefined` when no orchestration is running or the task hasn't
-   * been registered yet.
-   */
-  public getPackageTask(packageName: string): any | undefined {
-    return this.packageTasks.get(packageName);
-  }
-
-  // ==========================================================================
-  // Package Task Helpers
-  // ==========================================================================
 
   /**
    * Check if an orchestration is currently active.
-   *
-   * Used to prevent standalone spinner creation during orchestration —
-   * all output should flow through Listr sub-tasks instead.
    */
   public isActive(): boolean {
     return this.rootListr !== undefined;
   }
 
   /**
+   * Mark a package as having validation queued.
+   * This enables the `◼ validation queued` sub-task for the package.
+   */
+  public markValidationQueued(packageName: string): void {
+    this.validationQueued.add(packageName);
+  }
+
+  /**
    * Handle `orchestration:level:start`.
-   *
-   * Creates package deferreds synchronously and then resolves the
-   * corresponding level deferred to unblock the Listr level task.
+   * Resolves the level gate for each package in this level,
+   * unblocking their Listr tasks.
    */
   public onLevelStart(event: OrchestrationLevelStartEvent): void {
-    this.packageDeferreds.clear();
-    this.packageTasks.clear();
     for (const name of event.packages) {
-      this.packageDeferreds.set(name, createDeferred());
-    }
-
-    const levelDeferred = this.levelDeferreds[event.level];
-    if (levelDeferred) {
-      (levelDeferred as any).data = event;
-      levelDeferred.resolve();
+      this.levelGates.get(name)?.resolve();
     }
   }
 
   /**
-   * Reject the Listr sub-task promise for a package (marks it as failed).
-   * Uses the pre-created deferred — safe to call even before Listr has
-   * populated the packageTasks map.
+   * Reject the package build (marks the Listr task as failed).
+   * Sub-tasks remain visible for failed packages.
    */
   public rejectPackage(packageName: string, error: string): void {
     const deferred = this.packageDeferreds.get(packageName);
     if (deferred) deferred.reject(new Error(error));
   }
 
-  // ==========================================================================
-  // Lifecycle
-  // ==========================================================================
-
   /**
-   * Resolve the Listr sub-task promise for a package (marks it as done).
+   * Resolve the package build (marks the Listr task as done).
+   * Sub-tasks collapse when the parent resolves.
    */
   public resolvePackage(packageName: string): void {
     const deferred = this.packageDeferreds.get(packageName);
@@ -180,51 +166,57 @@ export class OrchestrationListrManager {
   }
 
   /**
-   * Create the root Listr and fire-and-forget `run()`.
+   * Create the root Listr with all packages as concurrent tasks.
+   * Each package awaits its level gate, then runs sub-tasks.
    *
-   * @param totalLevels — number of orchestration levels (from OrchestrationStartEvent)
+   * @param packageNames — all packages, ordered by level
    */
-  public start(totalLevels: number): void {
-    this.levelDeferreds = [];
-    for (let i = 0; i < totalLevels; i++) {
-      this.levelDeferreds.push(createDeferred());
+  public start(packageNames: string[]): void {
+    for (const name of packageNames) {
+      this.packageDeferreds.set(name, createDeferred());
+      this.levelGates.set(name, createDeferred());
     }
 
     this.rootListr = new Listr(
-      this.levelDeferreds.map((deferred, i) => ({
-        task: async (_ctx: any, task: any): Promise<Listr> => {
-          await deferred.promise;
-          const levelEvent = (deferred as any).data as OrchestrationLevelStartEvent;
+      packageNames.map(name => ({
+        exitOnError: false,
+        task: async (_ctx: any, parentTask: any): Promise<Listr> => {
+          this.packageTasks.set(name, parentTask);
 
-          task.title = this.levelTitleFn(levelEvent);
+          // Block until this package's level starts
+          await this.levelGates.get(name)!.promise;
 
-          return task.newListr(
-            levelEvent.packages.map((name: string) => {
-              const detail = levelEvent.packageDetails?.find((d: any) => d.name === name);
-              const version = detail?.version ? `@${detail.version}` : '';
-              return {
-                task: async (_c: any, _t: any) => {
-                  this.packageTasks.set(name, _t);
+          parentTask.title = chalk.cyan(name);
+
+          return parentTask.newListr(
+            [
+              {
+                task: async (_c: any, buildTask: any) => {
+                  this.buildSubtasks.set(name, buildTask);
                   return this.packageDeferreds.get(name)!.promise;
                 },
-                title: `${chalk.cyan(`${name}${version}`)}`,
-              };
-            }),
-            {
-              concurrent: true,
-              exitOnError: false,
-              rendererOptions: {
-                collapseErrors: false,
+                title: 'building...',
               },
+              {
+                enabled: () => this.validationQueued.has(name),
+                task() {/* static marker — resolves immediately */},
+                title: chalk.dim('validation queued'),
+              },
+            ],
+            {
+              concurrent: false,
+              exitOnError: false,
             },
           );
         },
-        title: chalk.dim(`Level ${i + 1} - waiting...`),
+        title: chalk.dim(name),
       })),
       {
-        concurrent: false,
+        concurrent: true,
+        exitOnError: false,
         rendererOptions: {
-          collapseSubtasks: false,
+          collapseErrors: false,
+          collapseSubtasks: true,
         },
       },
     );
@@ -234,14 +226,25 @@ export class OrchestrationListrManager {
     });
   }
 
+  // ==========================================================================
+  // Title Helpers
+  // ==========================================================================
+
   /**
-   * Update the title of a package's Listr sub-task.
-   * No-op if the task hasn't been registered.
+   * Update the build sub-task title (for phase updates: staging, connecting, etc.)
+   * No-op if the sub-task hasn't been registered yet.
+   */
+  public updateBuildTitle(packageName: string, title: string): void {
+    const task = this.buildSubtasks.get(packageName);
+    if (task) task.title = title;
+  }
+
+  /**
+   * Update the root package task title (for the collapsed final state).
+   * No-op if the task hasn't been registered yet.
    */
   public updatePackageTitle(packageName: string, title: string): void {
     const task = this.packageTasks.get(packageName);
-    if (task) {
-      task.title = title;
-    }
+    if (task) task.title = title;
   }
 }
