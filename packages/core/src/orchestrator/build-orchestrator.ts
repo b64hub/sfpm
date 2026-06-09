@@ -100,7 +100,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     this.buildBus.on('skip', skipHandler);
 
     try {
-      pendingValidation = await builder.buildPackage(packageName, this.projectDirectory);
+      pendingValidation = await builder.build(packageName, this.projectDirectory);
     } catch (error_) {
       success = false;
       error = error_ instanceof Error ? error_.message : String(error_);

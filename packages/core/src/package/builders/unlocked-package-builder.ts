@@ -8,6 +8,7 @@ import type {BuildEventSink} from '../../events/build-event-bus.js';
 
 import ProjectService from '../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
+import {BuildError} from '../../types/errors.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, PendingValidationDescriptor, PerPackageBuildConfig} from '../../types/package.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
@@ -44,13 +45,24 @@ export default class UnlockedPackageBuilder implements Builder {
   }
 
   public async connect(username: string): Promise<void> {
+    if (!username && this.options.validation === true) {
+      throw new BuildError(this.sfpmPackage.packageName, 'Validation is enabled but no build org username was provided', {
+        buildStep: 'connect',
+      });
+    }
+
     this.devhubOrg = await Org.create({aliasOrUsername: username});
+
     if (!this.devhubOrg.isDevHubOrg()) {
-      throw new Error('Must connect to a dev hub org');
+      throw new BuildError(this.sfpmPackage.packageName, 'Must connect to a dev hub org', {
+        buildStep: 'connect',
+      });
     }
 
     if (!this.devhubOrg.getConnection()) {
-      throw new Error('Unable to connect to org');
+      throw new BuildError(this.sfpmPackage.packageName, 'Unable to connect to org', {
+        buildStep: 'connect',
+      });
     }
   }
 
@@ -249,7 +261,10 @@ export default class UnlockedPackageBuilder implements Builder {
           const serverErrors = status.Error?.map((e: any) =>
             typeof e === 'string' ? e : e.Message).join('; ') ?? 'Unknown server error';
           this.logger?.error(`Server-side creation failed: ${serverErrors}`);
-          throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${serverErrors}`, {cause: error});
+          throw new BuildError(this.sfpmPackage.packageName, `Unable to create ${this.sfpmPackage.packageName}:\n${serverErrors}`, {
+            buildStep: 'create',
+            cause: error,
+          });
         }
 
         // Still in progress (Queued / InProgress / Verifying)
@@ -264,7 +279,10 @@ export default class UnlockedPackageBuilder implements Builder {
         ].join('\n');
 
         this.logger?.error(timeoutMsg);
-        throw new Error(timeoutMsg, {cause: error});
+        throw new BuildError(this.sfpmPackage.packageName, timeoutMsg, {
+          buildStep: 'create',
+          cause: error,
+        });
       } catch (verifyError) {
         // If the verify query itself fails, check if it's our own rethrown error
         if (verifyError instanceof Error && verifyError.cause === error) {

@@ -89,7 +89,7 @@ describe('BuildOrchestrator', () => {
     // Mock PackageBuilder
     mockBuildPackage = vi.fn().mockResolvedValue();
     vi.mocked(PackageBuilder).mockImplementation(function (this: any) {
-      this.buildPackage = mockBuildPackage;
+      this.build = mockBuildPackage;
       return this;
     } as any);
 

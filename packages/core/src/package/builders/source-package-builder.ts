@@ -1,3 +1,4 @@
+import { Org } from '@salesforce/core';
 import type {BuildEventSink} from '../../events/build-event-bus.js';
 
 import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
@@ -11,11 +12,14 @@ import {
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 import {dependencyAnalysisTask} from './tasks/dependency-analysis-task.js';
 
+
+const VALIDATION_TEST_LEVEL = 'RunSpecifiedTests';
+
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Source)
 export default class SourcePackageBuilder implements Builder {
   public tasks: BuildTaskRegistration[] = [];
-  private buildOrg?: string;
+  private buildOrg?: Org;
   private logger?: Logger;
   private options: BuilderOptions;
   private sfpmPackage: SfpmMetadataPackage;
@@ -57,7 +61,21 @@ export default class SourcePackageBuilder implements Builder {
   }
 
   public async connect(username: string): Promise<void> {
-    this.buildOrg = username;
+    if (!username && this.options.validation === true) {
+      throw new BuildError(this.sfpmPackage.packageName, 'Validation is enabled but no build org username was provided', {
+        buildStep: 'connect',
+      });
+    }
+
+    try {
+      this.buildOrg = await Org.create({aliasOrUsername: username});
+    } catch (err) {
+      this.logger?.error(`Failed to connect to org '${username}': ${(err as Error).message}`);
+      throw new BuildError(this.sfpmPackage.packageName, `Connection failed for org '${username}'`, {
+        buildStep: 'connect',
+        cause: err as Error,
+      });
+    }
   }
 
   public async exec(): Promise<void> {
@@ -85,12 +103,12 @@ export default class SourcePackageBuilder implements Builder {
    * - Package has no Apex (nothing to validate)
    */
   public async validate(): Promise<PendingValidationDescriptor | undefined> {
-    const targetOrg = this.buildOrg ?? this.options.buildOrg;
+    const targetOrg = this.buildOrg;
+
     if (this.options.validation === false || !targetOrg) return undefined;
-    if (!this.sfpmPackage.hasApex) return undefined;
 
     const testClasses = this.getTestClasses();
-    if (testClasses.length === 0) {
+    if (this.sfpmPackage.hasApex && testClasses.length === 0) {
       throw new BuildError(this.sfpmPackage.packageName, 'Package contains Apex but has no test classes defined', {
         buildStep: 'validation',
       });
@@ -101,16 +119,16 @@ export default class SourcePackageBuilder implements Builder {
 
     this.sink?.taskValidateStart({
       testCount: testClasses.length,
-      testLevel: 'RunSpecifiedTests',
+      testLevel: VALIDATION_TEST_LEVEL,
     });
 
     const deployService = new MetadataDeployService(this.logger);
 
     // Deploy metadata with specified tests
     const componentSet = this.sfpmPackage.getComponentSet();
-    const deployId = await deployService.deploy(componentSet, targetOrg, {
+    const deployId = await deployService.deploy(componentSet, targetOrg.getConnection(), {
       testClasses,
-      testLevel: 'RunSpecifiedTests',
+      testLevel: VALIDATION_TEST_LEVEL,
     });
 
     // Set pending state on domain model
@@ -119,7 +137,7 @@ export default class SourcePackageBuilder implements Builder {
       operationType: 'deploy',
       packageName: this.sfpmPackage.packageName,
       startedAt: new Date().toISOString(),
-      targetOrg,
+      targetOrg: targetOrg.getUsername() as string,
     };
 
     this.sfpmPackage.validationState = {

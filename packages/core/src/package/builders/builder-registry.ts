@@ -104,16 +104,13 @@ export interface DependencyAnalysis {
  * Derived from {@link BuildOptions} and {@link ModeConfig} by the PackageBuilder.
  */
 export interface BuilderOptions {
-  /** Whether to produce a build artifact */
+  /** Persist build artifacts */
   artifact?: boolean;
-  /** Target org for source package validation (deploy + test) */
-  buildOrg?: string;
   dependencyAnalysis?: DependencyAnalysis;
   /** Installation key for unlocked packages */
   installationKey?: string;
   /** Validation mode for package builds */
   validation?: boolean;
-
   /** Timeout in minutes for package version creation */
   waitTime?: number;
 }
