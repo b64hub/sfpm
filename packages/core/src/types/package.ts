@@ -1,6 +1,10 @@
 import {PackageManifestObject} from '@salesforce/source-deploy-retrieve';
 
+import type {SfpmPackageSource} from './artifact.js';
+
 import {PackageInstallConfig} from './project.js';
+
+export type {SfpmPackageSource} from './artifact.js';
 
 /**
  * Salesforce test levels for metadata API deployments.
@@ -58,14 +62,6 @@ export interface SfpmUnlockedPackageIdentity extends SfpmPackageIdentity {
   packageId?: string;
   packageType: PackageType.Unlocked;
   packageVersionId?: string;
-}
-
-export interface SfpmPackageSource {
-  branch?: string;
-  commit?: string;
-  repositoryUrl?: string;
-  sourceHash?: string;
-  tag?: string;
 }
 
 /**
@@ -239,7 +235,7 @@ export interface SfpmPackageMetadataBase {
   packageType: Omit<PackageType, 'managed'>;
   // npm scope of the package, if present. This is not guaranteed to be unique across packages, and should not be used as an identifier on its own. It is primarily for informational purposes and to reconstruct the fully qualified package name when needed. For Salesforce operations, the scope is stripped and only the unscoped package name is used.
   readonly scope: string;
-  source: SfpmPackageSource;
+  source?: SfpmPackageSource;
   versionNumber?: string;
 }
 
