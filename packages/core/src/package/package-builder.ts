@@ -1,26 +1,26 @@
 import fs from 'fs-extra';
-import { merge } from 'lodash-es';
+import {merge} from 'lodash-es';
 import path from 'node:path';
 
-import type { ProjectDefinitionProvider } from '../project/providers/project-definition-provider.js';
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
-import { BuildEventBus, BuildEventSink } from '../events/build-event-bus.js';
-import { GitService } from '../git/git-service.js';
-import { LifecycleEngine } from '../lifecycle/lifecycle-engine.js';
-import { ArtifactManifest } from '../types/artifact.js';
-import { IgnoreFilesConfig } from '../types/config.js';
-import { HookContext, HookTiming } from '../types/lifecycle.js';
-import { Logger } from '../types/logger.js';
-import { PackageType, PendingValidationDescriptor } from '../types/package.js';
-import { getPipelineRunId } from '../utils/pipeline.js';
-import { resolvePackageWorkspacePath } from '../utils/workspace-path.js';
-import { AnalyzerRegistry, PackageAnalyzer } from './analyzers/analyzer-registry.js';
+import {ArtifactRepository} from '../artifacts/artifact-repository.js';
+import {BuildEventBus, BuildEventSink} from '../events/build-event-bus.js';
+import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
+import {IgnoreFilesConfig} from '../types/config.js';
+import {HookContext, HookTiming} from '../types/lifecycle.js';
+import {Logger} from '../types/logger.js';
+import {PackageType, PendingValidationDescriptor} from '../types/package.js';
+import {getPipelineRunId} from '../utils/pipeline.js';
+import {SourceHasher} from '../utils/source-hasher.js';
+import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
+import {AnalyzerRegistry, PackageAnalyzer} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
   Builder, BuilderOptions, BuilderRegistry,
   BuildTaskContext, BuildTaskRegistration, BuildTaskResult,
 } from './builders/builder-registry.js';
-import SfpmPackage, { PackageFactory, SfpmMetadataPackage } from './sfpm-package.js';
+import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
 
 export type BuildMode = 'default' | 'dry-run';
 
@@ -54,7 +54,7 @@ const MODE_DEFAULTS: Record<BuildMode, ModeConfig> = {
 function resolveModeConfig(mode?: BuildMode, skipValidation?: boolean): ModeConfig {
   const base = MODE_DEFAULTS[mode ?? 'default'];
   if (skipValidation) {
-    return { ...base, dependencyAnalysis: 'skip', validation: false };
+    return {...base, dependencyAnalysis: 'skip', validation: false};
   }
 
   return base;
@@ -97,7 +97,6 @@ export interface BuildOptions {
  */
 export class PackageBuilder {
   private bus?: BuildEventBus;
-  private gitService?: GitService;
   private ignoreFilesConfig?: IgnoreFilesConfig;
   private logger: Logger | undefined;
   private options: BuildOptions;
@@ -108,14 +107,12 @@ export class PackageBuilder {
     provider: ProjectDefinitionProvider,
     options?: BuildOptions,
     logger?: Logger,
-    gitService?: GitService,
     ignoreFilesConfig?: IgnoreFilesConfig,
     bus?: BuildEventBus,
   ) {
     this.options = options || {};
     this.logger = logger;
     this.provider = provider;
-    this.gitService = gitService;
     this.ignoreFilesConfig = ignoreFilesConfig;
     this.bus = bus;
   }
@@ -139,7 +136,6 @@ export class PackageBuilder {
     });
 
     this.handleBuildConfiguration(sfpmPackage);
-    await this.handleSourceContext(sfpmPackage, projectDirectory);
     const componentCount = await this.stagePackage(sfpmPackage);
 
     try {
@@ -191,36 +187,7 @@ export class PackageBuilder {
     return this.build(packageName, projectDirectory);
   }
 
-  public async runAnalyzers(sfpmPackage: SfpmPackage): Promise<void> {
-    if (sfpmPackage.type === PackageType.Data) {
-      return;
-    }
-
-    const analyzers = AnalyzerRegistry.getAnalyzers(this.logger);
-    const enabledAnalyzers = analyzers.filter(a => a.isEnabled(sfpmPackage));
-
-    this.sink?.analyzersStart({
-      analyzerCount: enabledAnalyzers.length,
-    });
-
-    try {
-      await Promise.all(enabledAnalyzers.map(async analyzer => {
-        return this.runAnalyzer(sfpmPackage, analyzer);
-      }));
-
-      this.sink?.analyzersComplete({
-        completedCount: enabledAnalyzers.length,
-      });
-    } catch (error: any) {
-      this.sink?.error({
-        error,
-        phase: 'analysis',
-      });
-      throw error;
-    }
-  }
-
-  public async runAnalyzer(sfpmPackage: SfpmPackage, analyzer: PackageAnalyzer): Promise<{ name: string; success: boolean }> {
+  public async runAnalyzer(sfpmPackage: SfpmPackage, analyzer: PackageAnalyzer): Promise<{name: string; success: boolean}> {
     const analyzerName = analyzer.name;
 
     this.sink?.analyzerStart({
@@ -235,7 +202,7 @@ export class PackageBuilder {
         analyzerName,
       });
 
-      return { name: analyzerName, success: true };
+      return {name: analyzerName, success: true};
     } catch (error) {
       this.sink?.analyzerComplete({
         analyzerName,
@@ -243,7 +210,34 @@ export class PackageBuilder {
       });
 
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`[${analyzerName}] ${message}`, { cause: error });
+      throw new Error(`[${analyzerName}] ${message}`, {cause: error});
+    }
+  }
+
+  public async runAnalyzers(sfpmPackage: SfpmPackage): Promise<void> {
+    if (sfpmPackage.type === PackageType.Data) {
+      return;
+    }
+
+    const analyzers = AnalyzerRegistry.getAnalyzers(this.logger);
+    const enabledAnalyzers = analyzers.filter(a => a.isEnabled(sfpmPackage));
+
+    this.sink?.analyzersStart({
+      analyzerCount: enabledAnalyzers.length,
+    });
+
+    try {
+      await Promise.all(enabledAnalyzers.map(async analyzer => this.runAnalyzer(sfpmPackage, analyzer)));
+
+      this.sink?.analyzersComplete({
+        completedCount: enabledAnalyzers.length,
+      });
+    } catch (error: any) {
+      this.sink?.error({
+        error,
+        phase: 'analysis',
+      });
+      throw error;
     }
   }
 
@@ -291,18 +285,17 @@ export class PackageBuilder {
    * Source hash guard — determines whether a build is necessary by comparing
    * the current source hash against the latest artifact manifest entry.
    *
-   * Always calculates and sets the hash on the package (needed for artifact metadata).
    * Returns skip info when the hash matches a previous build and `force` is not set.
    */
   private async checkSourceHash(
     sfpmPackage: SfpmPackage,
     projectDirectory: string,
-  ): Promise<undefined | { artifactPath?: string; latestVersion?: string }> {
+  ): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
     if (!(sfpmPackage instanceof SfpmMetadataPackage)) {
       return undefined;
     }
 
-    const currentSourceHash = await sfpmPackage.calculateSourceHash();
+    const currentSourceHash = await SourceHasher.calculate(sfpmPackage);
     this.logger?.debug(`Source hash: ${currentSourceHash}`);
 
     if (this.options.force) {
@@ -324,28 +317,16 @@ export class PackageBuilder {
       return undefined;
     }
 
-    const manifestPath = path.join(packageWorkspacePath, 'artifacts', 'manifest.json');
+    const repo = new ArtifactRepository(packageWorkspacePath, this.logger);
+    const match = await repo.checkSourceHash(currentSourceHash);
 
-    if (!(await fs.pathExists(manifestPath))) {
-      this.logger?.info('No previous builds found, proceeding with build');
-      return undefined;
-    }
-
-    const manifest: ArtifactManifest = await fs.readJson(manifestPath);
-
-    if (!manifest.sourceHash) {
-      this.logger?.info('No previous source hash found, proceeding with build');
-      return undefined;
-    }
-
-    if (manifest.sourceHash === currentSourceHash) {
+    if (match) {
       this.logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected. `
-        + `Latest version: ${manifest.version}, hash: ${currentSourceHash}`);
-      return { artifactPath: path.join(packageWorkspacePath, 'artifacts', 'artifact.tgz'), latestVersion: manifest.version };
+        + `Latest version: ${match.latestVersion}, hash: ${currentSourceHash}`);
+      return match;
     }
 
     this.logger?.info('Source changes detected, proceeding with build');
-    this.logger?.debug(`Previous hash: ${manifest.sourceHash}, current: ${currentSourceHash}`);
     return undefined;
   }
 
@@ -362,7 +343,7 @@ export class PackageBuilder {
     if (!sfpmPackage.workingDirectory) return;
 
     const buildDir = path.dirname(sfpmPackage.workingDirectory);
-    await fs.remove(buildDir).catch(() => {/* already removed or inaccessible */ });
+    await fs.remove(buildDir).catch(() => {/* already removed or inaccessible */});
   }
 
   private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string, componentCount?: number): Promise<PendingValidationDescriptor | undefined> {
@@ -457,7 +438,7 @@ export class PackageBuilder {
     }
 
     const modeConfig = resolveModeConfig(this.options.mode, this.options.skipValidation);
-    const { packageType, targetOrg } = this.resolveBuilderType(sfpmPackage, modeConfig.validation);
+    const {packageType, targetOrg} = this.resolveBuilderType(sfpmPackage, modeConfig.validation);
 
     const BuilderClass = BuilderRegistry.getBuilder(packageType);
 
@@ -496,14 +477,18 @@ export class PackageBuilder {
     return builderInstance;
   }
 
+  /** Check whether a staged package contains zero deployable components or files. */
+  private async isPackageEmpty(sfpmPackage: SfpmPackage): Promise<boolean> {
+    return (await sfpmPackage.componentCount()) === 0;
+  }
 
   /**
    * Resolve the builder type and target org based on package type and validation mode.
-   * @param sfpmPackage 
-   * @param validation 
-   * @returns 
+   * @param sfpmPackage
+   * @param validation
+   * @returns
    */
-  private resolveBuilderType(sfpmPackage: SfpmPackage, validation: boolean | 'local'): { packageType: Omit<PackageType, 'managed'>; targetOrg?: string } {
+  private resolveBuilderType(sfpmPackage: SfpmPackage, validation: 'local' | boolean): {packageType: Omit<PackageType, 'managed'>; targetOrg?: string} {
     const packageType = (validation === 'local' && sfpmPackage.type === PackageType.Unlocked)
       ? PackageType.Source
       : sfpmPackage.type;
@@ -515,23 +500,7 @@ export class PackageBuilder {
       targetOrg = this.options.buildOrg;
     }
 
-    return { packageType, targetOrg };
-  }
-
-  /**
-   * Initialize the git service and attach source context (commit, branch, repo) to the package.
-   */
-  private async handleSourceContext(sfpmPackage: SfpmPackage, projectDirectory: string): Promise<void> {
-    if (!this.gitService) {
-      this.gitService = await GitService.initialize(projectDirectory, this.logger);
-    }
-
-    sfpmPackage.metadata.source = await this.gitService.getPackageSourceContext();
-  }
-
-  /** Check whether a staged package contains zero deployable components or files. */
-  private async isPackageEmpty(sfpmPackage: SfpmPackage): Promise<boolean> {
-    return (await sfpmPackage.componentCount()) === 0;
+    return {packageType, targetOrg};
   }
 
   /**

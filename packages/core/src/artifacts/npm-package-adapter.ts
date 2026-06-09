@@ -19,6 +19,7 @@ import SfpmPackage from '../package/sfpm-package.js';
  * - Build-time additions: `sfpm` enriched with metadata, `files`, `repository`
  * - No duplication: `repository.url` at top level, `source.repositoryUrl` excluded from sfpm
  */
+import {SfpmPackageSource} from '../types/artifact.js';
 import {NpmPackageJson, SfpmArtifactMetadata} from '../types/npm.js';
 import {
   SfpmPackageMetadataBase,
@@ -42,6 +43,8 @@ export interface ToNpmPackageJsonOptions {
   additionalKeywords?: string[];
   /** Pre-classified managed dependencies (alias → packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
+  /** Source context (git commit, branch, repo, sourceHash) to embed in the artifact */
+  source?: SfpmPackageSource;
 }
 
 /**
@@ -80,6 +83,11 @@ export async function toNpmPackageJson(
     ...workspacePkgJson.sfpm,
     ...buildMetadata,
   } as SfpmArtifactMetadata;
+
+  // Inject source context from build options (not from the domain model)
+  if (options.source) {
+    sfpmMeta.source = {...options.source};
+  }
 
   // Remove repositoryUrl from sfpm.source — it lives at the npm top-level `repository`
   stripRepositoryUrl(sfpmMeta);
@@ -123,7 +131,7 @@ export async function toNpmPackageJson(
   }
 
   // Add repository if available (npm convention — top-level field)
-  const repository = buildRepositoryField(pkg.metadata?.source?.repositoryUrl);
+  const repository = buildRepositoryField(options.source?.repositoryUrl);
   if (repository) {
     packageJson.repository = repository;
   }
@@ -149,15 +157,18 @@ export function fromNpmPackageJson(packageJson: NpmPackageJson): SfpmPackageMeta
 
   const metadata: SfpmPackageMetadataBase = {
     ...sfpm,
-    source: {
-      ...sfpm.source,
-    },
+    // Preserve source from the artifact if present
+    ...(sfpm.source ? {source: {...sfpm.source}} : {}),
     // sfpm.versionNumber contains the full version with build suffix
     versionNumber: sfpm.versionNumber || packageJson.version,
   };
 
   // Reconstruct repositoryUrl from npm top-level field if not already set
-  restoreRepositoryUrl(metadata, packageJson.repository?.url);
+  if (metadata.source) {
+    restoreRepositoryUrl(metadata.source, packageJson.repository?.url);
+  } else if (packageJson.repository?.url) {
+    metadata.source = {repositoryUrl: packageJson.repository.url};
+  }
 
   // Backward compat: older artifacts may have managedDependencies under sfpm
   if (!metadata.managedDependencies && (packageJson as any).managedDependencies) {
@@ -247,7 +258,7 @@ function stripRepositoryUrl(sfpmMeta: SfpmArtifactMetadata): void {
  * Build an npm `repository` field from a URL string.
  * Returns `undefined` when no URL is provided.
  */
-function buildRepositoryField(url?: string): {type: string; url: string} | undefined {
+function buildRepositoryField(url?: string): undefined | {type: string; url: string} {
   if (!url) return undefined;
   return {type: 'git', url};
 }
@@ -256,8 +267,8 @@ function buildRepositoryField(url?: string): {type: string; url: string} | undef
  * Restore `source.repositoryUrl` from the npm top-level `repository.url`
  * field when reading back from an artifact package.json.
  */
-function restoreRepositoryUrl(metadata: SfpmPackageMetadataBase, repositoryUrl?: string): void {
-  if (!metadata.source.repositoryUrl && repositoryUrl) {
-    metadata.source.repositoryUrl = repositoryUrl;
+function restoreRepositoryUrl(source: SfpmPackageSource, repositoryUrl?: string): void {
+  if (!source.repositoryUrl && repositoryUrl) {
+    source.repositoryUrl = repositoryUrl;
   }
 }

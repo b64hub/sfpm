@@ -210,8 +210,8 @@ export default class Build extends SfpmCommand {
     renderer.attachTo(buildBus)
 
     try {
-      const context = await task.setup()
-      const result = await task.processSinglePackage(resolved.resolvedPackages[0], 0, context)
+      await task.setup()
+      const result = await task.processSinglePackage(resolved.resolvedPackages[0], 0)
 
       if (resolved.mode === 'json') {
         this.logJson(result)

@@ -1,4 +1,16 @@
 /**
+ * Source context captured at build time and persisted in artifact metadata.
+ * Describes the git/VCS state when the artifact was produced.
+ */
+export interface SfpmPackageSource {
+  branch?: string;
+  commit?: string;
+  repositoryUrl?: string;
+  sourceHash?: string;
+  tag?: string;
+}
+
+/**
  * Per-package artifact manifest (v2).
  *
  * Lives at `<packageWorkspace>/artifacts/manifest.json` alongside `artifact.tgz`.

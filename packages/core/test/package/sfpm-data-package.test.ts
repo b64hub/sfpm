@@ -48,15 +48,6 @@ describe('SfpmDataPackage', () => {
     expect(() => pkg.dataDirectory).toThrow('must have a path defined');
   });
 
-  it('should calculate deterministic source hash', async () => {
-    const hash1 = await dataPackage.calculateSourceHash();
-    const hash2 = await dataPackage.calculateSourceHash();
-
-    expect(hash1).toBe(hash2);
-    expect(hash1).toHaveLength(64);
-    expect(dataPackage.sourceHash).toBe(hash1);
-  });
-
   it('should count files in data directory', async () => {
     const count = await dataPackage.componentCount();
     expect(count).toBe(2); // export.json + Account.csv
@@ -69,7 +60,6 @@ describe('SfpmDataPackage', () => {
     expect(json.packageType).toBe(PackageType.Data);
     expect(json.content.dataDirectory).toBe('data');
     expect(json.content.fileCount).toBe(2);
-    expect(json.source).toBeDefined();
     expect(json.orchestration).toBeDefined();
   });
 

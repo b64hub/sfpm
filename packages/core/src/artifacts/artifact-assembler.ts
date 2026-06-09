@@ -6,8 +6,11 @@ import path from 'node:path';
 import type {WorkspacePackageJson} from '../project/providers/types/workspace.js';
 
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
+import {SfpmPackageSource} from '../types/artifact.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
+import {DirectoryHasher} from '../utils/directory-hasher.js';
+import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {ArtifactRepository} from './artifact-repository.js';
@@ -54,6 +57,8 @@ export interface ArtifactAssemblerOptions {
   changelogProvider?: ChangelogProvider;
   /** Pre-classified managed dependencies (alias -> packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
+  /** Git source context (commit, branch, repo URL) to embed in the artifact */
+  sourceContext?: SfpmPackageSource;
 }
 
 /**
@@ -117,8 +122,8 @@ export default class ArtifactAssembler {
       //    `package/` prefix without any path substitution flags.
       const {packageDir, workspaceDir} = await this.prepareStagingDirectory();
 
-      // 3. Generate package.json with sfpm metadata
-      await this.generatePackageJson(packageDir);
+      // 3. Generate package.json with sfpm metadata and source context
+      await this.generatePackageJson(packageDir, currentSourceHash);
 
       // 4. Generate changelog
       await this.generateChangelog(packageDir);
@@ -157,28 +162,17 @@ export default class ArtifactAssembler {
   }
 
   /**
-   * Get or calculate the source hash for the package.
-   * Prefers the package's existing sourceHash if already set.
-   * For metadata packages, calculates and sets the hash on the package.
+   * Calculate the source hash for the package.
+   * Uses the appropriate hasher based on package type.
    */
   private async calculateSourceHash(): Promise<string> {
-    // If sourceHash is already set on the package, use it
-    if (this.sfpmPackage.sourceHash) {
-      this.logger?.debug(`Using existing source hash: ${this.sfpmPackage.sourceHash}`);
-      return this.sfpmPackage.sourceHash;
-    }
-
     let hash: string;
     if (this.sfpmPackage instanceof SfpmMetadataPackage) {
-      // Calculate and set the hash on the package
-      hash = await this.sfpmPackage.calculateSourceHash();
+      hash = await SourceHasher.calculate(this.sfpmPackage);
     } else if (this.sfpmPackage instanceof SfpmDataPackage) {
-      // Data packages: deterministic hash of all files in the data directory
-      hash = await this.sfpmPackage.calculateSourceHash();
+      hash = await DirectoryHasher.calculate(this.sfpmPackage.dataDirectory);
     } else {
-      // For non-metadata packages, use a simple timestamp-based hash
       hash = crypto.createHash('sha256').update(Date.now().toString()).digest('hex');
-      this.sfpmPackage.sourceHash = hash;
     }
 
     this.logger?.debug(`Calculated source hash: ${hash}`);
@@ -261,7 +255,7 @@ export default class ArtifactAssembler {
     this.logger?.debug(`Artifact hash: ${artifactHash}`);
 
     await this.repository.finalizeArtifact(this.sfpmPackage.name, this.packageVersionNumber, artifactHash, sourceHash, {
-      commit: this.sfpmPackage.commitId,
+      commit: this.options.sourceContext?.commit,
     });
 
     return artifactHash;
@@ -287,17 +281,22 @@ export default class ArtifactAssembler {
    * license, dependencies, etc.) and overlays build-time properties via the
    * npm-package-adapter (sfpm metadata, files list, repository, resolved version).
    */
-  private async generatePackageJson(stagingDir: string): Promise<void> {
+  private async generatePackageJson(stagingDir: string, sourceHash: string): Promise<void> {
     const packageJsonPath = path.join(stagingDir, 'package.json');
 
     // Read the workspace package.json as the base for the artifact
     const workspacePkgJson = await this.readWorkspacePackageJson();
 
+    // Merge sourceHash into the source context for the artifact
+    const source: SfpmPackageSource | undefined = this.options.sourceContext || sourceHash
+      ? {...this.options.sourceContext, sourceHash}
+      : undefined;
+
     const generated = await toNpmPackageJson(
       workspacePkgJson,
       this.sfpmPackage,
       this.packageVersionNumber,
-      this.options,
+      {...this.options, source},
     );
 
     await fs.writeJson(packageJsonPath, generated, {spaces: 2});

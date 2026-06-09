@@ -67,6 +67,28 @@ export class ArtifactRepository {
   }
 
   /**
+   * Check whether the source has changed since the last build.
+   *
+   * Compares the given source hash against the manifest's recorded hash.
+   * Returns `undefined` if source has changed (or no previous build exists),
+   * otherwise returns the existing artifact path and version.
+   */
+  public async checkSourceHash(currentSourceHash: string): Promise<undefined | {artifactPath: string; latestVersion: string}> {
+    const manifest = await this.getManifest();
+
+    if (!manifest?.sourceHash) {
+      return undefined;
+    }
+
+    if (manifest.sourceHash === currentSourceHash) {
+      return {artifactPath: this.getArtifactPath(), latestVersion: manifest.version};
+    }
+
+    this.logger?.debug(`Previous hash: ${manifest.sourceHash}, current: ${currentSourceHash}`);
+    return undefined;
+  }
+
+  /**
    * Clean the artifacts directory.
    */
   public async clean(): Promise<void> {
