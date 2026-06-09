@@ -180,9 +180,6 @@ export default class UnlockedPackageInstaller implements Installer {
     const buildOptions = this.sfpmPackage.metadata?.orchestration?.build as PerPackageBuildConfig | undefined;
 
     return {
-      artifact: this.sfpmPackage.sourceHash && this.sfpmPackage.commitId
-        ? {commitId: this.sfpmPackage.commitId, sourceHash: this.sfpmPackage.sourceHash, tag: this.sfpmPackage.tag}
-        : undefined,
       installationKey: buildOptions?.installationKey,
       packageName: this.sfpmPackage.packageName,
       packageVersionId: versionId,

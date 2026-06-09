@@ -2,7 +2,7 @@ import {Connection, Org} from '@salesforce/core';
 
 import SfpmPackage from '../package/sfpm-package.js';
 import {
-  ArtifactResolutionOptions, ResolvedArtifact,
+  ArtifactResolutionOptions, ResolvedArtifact, SfpmPackageSource,
 } from '../types/artifact.js';
 import {Logger} from '../types/logger.js';
 import {InstalledArtifact} from '../types/package.js';
@@ -156,6 +156,7 @@ export class ArtifactService {
   public async createHistoryRecord(
     sfpmPackage: SfpmPackage,
     options?: ArtifactHistoryOptions,
+    source?: SfpmPackageSource,
   ): Promise<string | undefined> {
     if (!this.org) {
       throw new Error('Org connection required for createHistoryRecord');
@@ -168,12 +169,12 @@ export class ArtifactService {
     try {
       /* eslint-disable camelcase */
       const historyData: SfpmArtifactHistory__c = {
-        Checksum__c: sfpmPackage.sourceHash || '',
-        Commit_Id__c: sfpmPackage.commitId || '',
+        Checksum__c: source?.sourceHash || '',
+        Commit_Id__c: source?.commit || '',
         Deploy_Id__c: options?.deployId,
         Name: sfpmPackage.name,
         Pipeline_Run_Id__c: getPipelineRunId(),
-        Tag__c: sfpmPackage.tag,
+        Tag__c: source?.tag || `${sfpmPackage.name}@${sfpmPackage.version}`,
         Version__c: sfpmPackage.version || '',
       };
       /* eslint-enable camelcase */
@@ -375,7 +376,7 @@ export class ArtifactService {
    * @param sfpmPackage - Package to create/update artifact for
    * @returns Artifact record ID
    */
-  public async upsertArtifact(sfpmPackage: SfpmPackage): Promise<string | undefined> {
+  public async upsertArtifact(sfpmPackage: SfpmPackage, source?: SfpmPackageSource): Promise<string | undefined> {
     if (!this.org) {
       throw new Error('Org connection required for upsertArtifact');
     }
@@ -391,10 +392,10 @@ export class ArtifactService {
 
       /* eslint-disable camelcase */
       const artifactData = {
-        Checksum__c: sfpmPackage.sourceHash,
-        Commit_Id__c: sfpmPackage.commitId || '',
+        Checksum__c: source?.sourceHash,
+        Commit_Id__c: source?.commit || '',
         Name: sfpmPackage.name,
-        Tag__c: sfpmPackage.tag,
+        Tag__c: source?.tag || `${sfpmPackage.name}@${sfpmPackage.version}`,
         Version__c: sfpmPackage.version,
       };
       /* eslint-enable camelcase */
@@ -425,11 +426,11 @@ export class ArtifactService {
       // Update cache entry in-place so subsequent lookups reflect the upsert
       if (this.installedArtifactsCache) {
         this.installedArtifactsCache.set(sfpmPackage.name, {
-          checksum: sfpmPackage.sourceHash,
-          commitId: sfpmPackage.commitId,
+          checksum: source?.sourceHash,
+          commitId: source?.commit,
           id: resultId,
           name: sfpmPackage.name,
-          tag: sfpmPackage.tag,
+          tag: source?.tag || `${sfpmPackage.name}@${sfpmPackage.version}`,
           version: sfpmPackage.version,
         });
       }

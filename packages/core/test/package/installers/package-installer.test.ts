@@ -63,7 +63,6 @@ describe('PackageInstaller', () => {
             type: PackageType.Unlocked,
             projectDir: '/test/project',
             version: '1.0.0',
-            sourceHash: 'abc123',
         };
 
         mockInstallerInstance = {

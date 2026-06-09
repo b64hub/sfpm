@@ -1,22 +1,11 @@
 import {ComponentSet} from '@salesforce/source-deploy-retrieve';
 
 /**
- * Artifact provenance information attached to an installable.
- * Present when the package was resolved from a built artifact.
- */
-export interface ArtifactProvenance {
-  commitId: string;
-  sourceHash: string;
-  tag?: string;
-}
-
-/**
  * A package that can be installed via subscriber version ID (04t) through
  * the Tooling API. Implemented by unlocked packages (when a built artifact
  * is available) and managed/subscriber packages.
  */
 export interface VersionInstallable {
-  artifact?: ArtifactProvenance;
   installationKey?: string;
   packageName: string;
   packageVersionId: string;
@@ -29,7 +18,6 @@ export interface VersionInstallable {
  * installing from local source or as a fallback).
  */
 export interface SourceDeployable {
-  artifact?: ArtifactProvenance;
   componentSet: ComponentSet;
   packageName: string;
   versionNumber?: string;
@@ -43,7 +31,6 @@ export interface SourceDeployable {
  * interpret the directory contents (export.json, CSVs, etc.).
  */
 export interface DataDeployable {
-  artifact?: ArtifactProvenance;
   /** Absolute path to the directory containing the data files */
   dataDirectory: string;
   packageName: string;
@@ -60,7 +47,6 @@ export interface DataDeployable {
  * lifecycle.
  */
 export class ManagedPackageRef implements VersionInstallable {
-  public artifact?: ArtifactProvenance;
   public readonly packageName: string;
   public readonly packageVersionId: string;
   public readonly versionNumber?: string;

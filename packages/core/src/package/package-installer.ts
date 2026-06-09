@@ -586,7 +586,6 @@ export default class PackageInstaller {
 
     // Set version from resolved artifact
     sfpmPackage.version = resolved.version;
-    sfpmPackage.sourceHash = resolved.manifest.sourceHash;
 
     // For unlocked packages, set the packageVersionId
     if (sfpmPackage instanceof SfpmUnlockedPackage && resolved.packageVersionId) {
