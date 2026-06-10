@@ -186,6 +186,7 @@ export class InstallProgressRenderer {
     if (!this.isInteractive()) return;
 
     if (this.isOrchestrating()) {
+      this.listr.skipHooks(event.packageName, 'pre');
       this.listr.updateBuildTitle(event.packageName, 'connecting to org...');
     } else {
       this.spinner?.start(`Connecting to org ${chalk.yellow(event.username)}...`);
@@ -242,6 +243,7 @@ export class InstallProgressRenderer {
     if (!this.isInteractive()) return;
 
     if (this.isOrchestrating()) {
+      this.listr.skipHooks(event.packageName, 'pre');
       this.listr.updateBuildTitle(event.packageName, 'deploying metadata...');
     } else {
       this.spinner = ora({
@@ -314,6 +316,7 @@ export class InstallProgressRenderer {
     if (!this.isInteractive()) return;
 
     if (this.isOrchestrating()) {
+      this.listr.skipHooks(event.packageName, 'post');
       const version = event.versionNumber ? `@${event.versionNumber}` : '';
       this.listr.updateBuildTitle(event.packageName, `installed${version}`);
       this.listr.updatePackageTitle(
@@ -509,6 +512,7 @@ export class InstallProgressRenderer {
     if (!this.isInteractive()) return;
 
     if (this.isOrchestrating()) {
+      this.listr.skipHooks(event.packageName, 'pre');
       this.listr.updateBuildTitle(event.packageName, 'installing package version...');
     } else {
       this.spinner = ora({

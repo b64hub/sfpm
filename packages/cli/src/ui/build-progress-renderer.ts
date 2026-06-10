@@ -279,6 +279,7 @@ export class BuildProgressRenderer {
     const duration = calculateDuration(this.timings.buildStart, event.timestamp);
 
     if (this.isOrchestrating()) {
+      this.listr.skipHooks(event.packageName, 'post');
       if (event.version) this.packageVersions.set(event.packageName, event.version);
       const version = event.version ? ` @ ${event.version}` : '';
       // Update build sub-task to show artifact line
@@ -413,6 +414,7 @@ export class BuildProgressRenderer {
     if (!this.isInteractive()) return;
 
     if (this.isOrchestrating()) {
+      this.listr.skipHooks(event.packageName, 'pre');
       this.listr.updateBuildTitle(
         event.packageName,
         `connecting to ${event.orgType}: ${chalk.yellow(event.username)}...`,
@@ -639,6 +641,7 @@ export class BuildProgressRenderer {
     if (!this.isInteractive()) return;
 
     if (this.isOrchestrating()) {
+      this.listr.skipHooks(event.packageName, 'pre');
       this.listr.updateBuildTitle(event.packageName, 'staging...');
     } else {
       this.startSpinner('Staging package');
