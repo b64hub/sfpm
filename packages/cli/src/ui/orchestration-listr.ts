@@ -255,7 +255,7 @@ export class OrchestrationListrManager {
           return parentTask.newListr(
             [
               {
-                task: async (_c: any, buildTask: any) => this.runBuildPhaseLoop(name, buildTask),
+                task: async (_c: any, buildTask: any) => this.awaitNextPhase(name, buildTask),
                 title: 'building...',
               },
               {
@@ -320,77 +320,84 @@ export class OrchestrationListrManager {
   // ==========================================================================
 
   /**
-   * Consume a pending hook batch and render it as a **single** sub-task
-   * under the build task.  The title lists every hook name (dimmed) so
-   * the user sees what's running at a glance:
+   * Wait for package completion **or** a hook-batch signal.
    *
-   * ```
-   * ⠋ running pre-build hooks — lint, prettier
-   * ```
+   * - If the package settles first the task resolves/rejects normally.
+   * - If a hook signal arrives, returns a Listr (from
+   *   {@link createHookSubtasks}) so Listr2 renders hook + continuation
+   *   sub-tasks nested under the current build task.
    *
-   * Resolves when {@link completeHooks} is called for this package.
+   * The "looping" happens via recursion: the continuation task inside
+   * {@link createHookSubtasks} calls back into `awaitNextPhase`,
+   * so each hook phase adds one level of nesting that collapses on
+   * completion.
    */
-  private async renderHookBatch(packageName: string, buildTask: any): Promise<void> {
-    const hookInfo = this.pendingHooks.get(packageName);
-    if (!hookInfo) return;
-    this.pendingHooks.delete(packageName);
-
-    const batchDeferred = createDeferred();
-    const hookNamesLabel = hookInfo.hookNames.map(n => chalk.dim(n)).join(chalk.dim(', '));
-    const phaseLabel = `${hookInfo.timing}-${hookInfo.operation}`;
-
-    await buildTask.newListr(
-      [
-        {
-          task: async (_: any, hookTask: any) => {
-            this.activeHookBatches.set(packageName, {deferred: batchDeferred, task: hookTask});
-            return batchDeferred.promise;
-          },
-          title: `running ${phaseLabel} hooks ${chalk.dim('—')} ${hookNamesLabel}`,
-        },
-      ],
-      {concurrent: false, exitOnError: false},
-    ).run();
-
-    // Clean up for next potential hook batch
-    this.activeHookBatches.delete(packageName);
-    this.hookSignals.set(packageName, createDeferred());
-  }
-
-  /**
-   * Build sub-task phase loop.
-   *
-   * Races between package completion and hook-batch signals. When a hook
-   * batch arrives it renders a single sub-task for the whole phase
-   * (e.g. "running pre-build hooks — lint, prettier"), waits for
-   * {@link completeHooks} to resolve it, then loops back.
-   */
-  private async runBuildPhaseLoop(packageName: string, buildTask: any): Promise<void> {
+  private async awaitNextPhase(packageName: string, buildTask: any): Promise<Listr | void> {
     this.buildSubtasks.set(packageName, buildTask);
 
-    // Wrap package promise so Promise.race never throws
+    // Wrap the package promise so Promise.race never throws
     const pkgDone = this.packageDeferreds.get(packageName)!.promise
     .then(
       () => ({type: 'done'} as const),
       (error: Error) => ({error, type: 'error' as const}),
     );
 
-    // Alternate between waiting for package completion and rendering
-    // hook sub-tasks until the package settles.
-    while (true) {
-      const hookSignal = this.hookSignals.get(packageName)!;
+    const hookSignal = this.hookSignals.get(packageName)!;
 
-      // eslint-disable-next-line no-await-in-loop
-      const result = await Promise.race([
-        pkgDone,
-        hookSignal.promise.then(() => ({type: 'hooks'} as const)),
-      ]);
+    const result = await Promise.race([
+      pkgDone,
+      hookSignal.promise.then(() => ({type: 'hooks'} as const)),
+    ]);
 
-      if (result.type === 'done') return;
-      if (result.type === 'error') throw result.error;
+    if (result.type === 'done') return;
+    if (result.type === 'error') throw result.error;
 
-      // eslint-disable-next-line no-await-in-loop
-      await this.renderHookBatch(packageName, buildTask);
-    }
+    // Hook signal received — return subtasks if a batch is pending
+    const hookListr = this.createHookSubtasks(packageName, buildTask);
+    if (hookListr) return hookListr;
+
+    // Spurious signal (e.g. from rejectPackage cleanup) — await package result
+    const final = await pkgDone;
+    if (final.type === 'error') throw final.error;
+  }
+
+  /**
+   * Create a Listr with the hook-phase sub-task followed by a build
+   * continuation that re-enters {@link awaitNextPhase}.
+   *
+   * Returns the Listr to be **returned** (not `.run()`'d) from the
+   * parent task function so Listr2 renders it nested under the parent.
+   *
+   * Returns `undefined` if no hooks are actually pending (spurious signal).
+   */
+  private createHookSubtasks(packageName: string, buildTask: any): Listr | undefined {
+    const hookInfo = this.pendingHooks.get(packageName);
+    if (!hookInfo) return undefined;
+    this.pendingHooks.delete(packageName);
+
+    const batchDeferred = createDeferred();
+    const hookNamesLabel = hookInfo.hookNames.map(n => chalk.dim(n)).join(chalk.dim(', '));
+    const phaseLabel = `${hookInfo.timing}-${hookInfo.operation}`;
+
+    return buildTask.newListr(
+      [
+        {
+          task: async (_: any, hookTask: any) => {
+            this.activeHookBatches.set(packageName, {deferred: batchDeferred, task: hookTask});
+            return batchDeferred.promise;
+          },
+          title: `running ${phaseLabel} hooks ${chalk.dim('\u2014')} ${hookNamesLabel}`,
+        },
+        {
+          task: async (_: any, nextBuildTask: any) => {
+            this.activeHookBatches.delete(packageName);
+            this.hookSignals.set(packageName, createDeferred());
+            return this.awaitNextPhase(packageName, nextBuildTask);
+          },
+          title: 'building...',
+        },
+      ],
+      {concurrent: false, exitOnError: false},
+    ) as Listr;
   }
 }
