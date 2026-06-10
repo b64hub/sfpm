@@ -39,13 +39,22 @@ export function createDeferred(): Deferred {
 // ============================================================================
 
 /**
- * Manages a flat per-package Listr layout for build orchestration.
+ * Manages a flat per-package Listr layout for build/install orchestration.
  *
- * Each package is a root-level concurrent Listr task with two sequential
- * sub-tasks:
- * 1. **Build** — covers staging → builder → tasks → artifact assembly
- * 2. **Validation queued** — static marker, only shown when validation
- *    was triggered during the build
+ * The goal is a **rich but concise** real-time overview: every package
+ * gets just enough sub-tasks to show what's happening without drowning
+ * the user in detail.  Hook phases (pre-/post-) surface as single
+ * sub-tasks with a descriptive title; individual build phases update
+ * a rolling title on the main build sub-task.
+ *
+ * ### Per-package layout
+ *
+ * ```
+ * ├── @scope/name
+ * │   ├── ⠋ running pre-build hooks — lint, prettier   (only while hooks run)
+ * │   ├── ⠋ staging (42 components)...                  (rolling build title)
+ * │   └── ◼ validation queued                           (optional)
+ * ```
  *
  * Packages within a level run concurrently. Cross-level ordering is enforced
  * by per-package "level gate" deferreds that block until the level starts.
@@ -66,6 +75,8 @@ export function createDeferred(): Deferred {
  *
  * // per-package events
  * manager.updateBuildTitle(name, 'staging (42 components)...');
+ * manager.startHooks(name, ['lint', 'prettier'], 'pre', 'build');
+ * manager.completeHooks(name, 2, 'pre', 'build', '1.2s');
  * manager.markValidationQueued(name);
  * manager.resolvePackage(name);
  *
@@ -75,10 +86,21 @@ export function createDeferred(): Deferred {
  */
 export class OrchestrationListrManager {
   /**
+   * Active hook batch per package — one batch per hook phase (pre-/post-).
+   * Holds the batch deferred (resolved by `completeHooks`) and the Listr
+   * task reference (for title updates).
+   */
+  private activeHookBatches = new Map<string, {deferred: Deferred; task?: any}>();
+  /**
    * Build sub-task references keyed by package name — for phase title updates
    * (staging, connecting, creating version, etc.)
    */
   private buildSubtasks = new Map<string, any>();
+  /**
+   * Per-package signal that a hook batch is ready to render.
+   * Resolved by `startHooks()`, awaited by the build sub-task loop.
+   */
+  private hookSignals = new Map<string, Deferred>();
   /**
    * Per-package level gates — each package waits on its gate before starting.
    * Resolved in `onLevelStart()` when the package's level begins.
@@ -95,6 +117,11 @@ export class OrchestrationListrManager {
    */
   private packageTasks = new Map<string, any>();
   /**
+   * Hook batch info waiting to be consumed by the build sub-task loop.
+   * Written by `startHooks()`, read by the build sub-task.
+   */
+  private pendingHooks = new Map<string, {hookNames: string[]; operation: string; timing: string}>();
+  /**
    * Single root Listr instance. Created in `start()`, destroyed in `destroy()`.
    */
   private rootListr?: Listr;
@@ -109,6 +136,31 @@ export class OrchestrationListrManager {
   // ==========================================================================
 
   /**
+   * Mark an individual hook as done within the active batch.
+   * Currently a no-op — the batch resolves as a unit via {@link completeHooks}.
+   * Kept as a stable call-site so renderers don't need to guard.
+   */
+  public completeHook(_packageName: string, _hookName: string): void {
+    // Individual hook tracking intentionally omitted — one sub-task per phase.
+  }
+
+  /**
+   * Resolve the active hook-phase sub-task and set its final title.
+   * Called from the renderer's `hooks:complete` handler.
+   */
+  public completeHooks(packageName: string, completedCount: number, timing: string, operation: string, duration: string): void {
+    const batch = this.activeHookBatches.get(packageName);
+    if (!batch) return;
+
+    if (batch.task) {
+      const hookText = completedCount === 1 ? 'hook' : 'hooks';
+      batch.task.title = `${timing}-${operation} ${hookText} (${completedCount}) ${chalk.gray(`(${duration})`)}`;
+    }
+
+    batch.deferred.resolve();
+  }
+
+  /**
    * Tear down the Listr instance and clear all deferred state.
    * Call from the `orchestration:complete` handler.
    */
@@ -118,6 +170,9 @@ export class OrchestrationListrManager {
     this.levelGates.clear();
     this.packageTasks.clear();
     this.buildSubtasks.clear();
+    this.hookSignals.clear();
+    this.pendingHooks.clear();
+    this.activeHookBatches.clear();
     this.validationQueued.clear();
   }
 
@@ -150,10 +205,18 @@ export class OrchestrationListrManager {
   /**
    * Reject the package build (marks the Listr task as failed).
    * Sub-tasks remain visible for failed packages.
+   *
+   * Also resolves any active hook deferreds and the hook signal
+   * so the build sub-task loop can exit cleanly.
    */
-  public rejectPackage(packageName: string, error: string): void {
+  public rejectPackage(packageName: string, errorMessage: string): void {
+    // Unblock any active hook batch so the loop can exit
+    this.activeHookBatches.get(packageName)?.deferred.resolve();
+
+    // Unblock the hook signal in case the loop is waiting
+    this.hookSignals.get(packageName)?.resolve();
     const deferred = this.packageDeferreds.get(packageName);
-    if (deferred) deferred.reject(new Error(error));
+    if (deferred) deferred.reject(new Error(errorMessage));
   }
 
   /**
@@ -175,6 +238,7 @@ export class OrchestrationListrManager {
     for (const name of packageNames) {
       this.packageDeferreds.set(name, createDeferred());
       this.levelGates.set(name, createDeferred());
+      this.hookSignals.set(name, createDeferred());
     }
 
     this.rootListr = new Listr(
@@ -191,10 +255,7 @@ export class OrchestrationListrManager {
           return parentTask.newListr(
             [
               {
-                task: async (_c: any, buildTask: any) => {
-                  this.buildSubtasks.set(name, buildTask);
-                  return this.packageDeferreds.get(name)!.promise;
-                },
+                task: async (_c: any, buildTask: any) => this.runBuildPhaseLoop(name, buildTask),
                 title: 'building...',
               },
               {
@@ -226,9 +287,15 @@ export class OrchestrationListrManager {
     });
   }
 
-  // ==========================================================================
-  // Title Helpers
-  // ==========================================================================
+  /**
+   * Signal that a hook phase is about to run.
+   * The build sub-task loop renders a single sub-task for the batch,
+   * resolved by {@link completeHooks} when all hooks finish.
+   */
+  public startHooks(packageName: string, hookNames: string[], timing: string, operation: string): void {
+    this.pendingHooks.set(packageName, {hookNames, operation, timing});
+    this.hookSignals.get(packageName)?.resolve();
+  }
 
   /**
    * Update the build sub-task title (for phase updates: staging, connecting, etc.)
@@ -246,5 +313,84 @@ export class OrchestrationListrManager {
   public updatePackageTitle(packageName: string, title: string): void {
     const task = this.packageTasks.get(packageName);
     if (task) task.title = title;
+  }
+
+  // ==========================================================================
+  // Private Helpers
+  // ==========================================================================
+
+  /**
+   * Consume a pending hook batch and render it as a **single** sub-task
+   * under the build task.  The title lists every hook name (dimmed) so
+   * the user sees what's running at a glance:
+   *
+   * ```
+   * ⠋ running pre-build hooks — lint, prettier
+   * ```
+   *
+   * Resolves when {@link completeHooks} is called for this package.
+   */
+  private async renderHookBatch(packageName: string, buildTask: any): Promise<void> {
+    const hookInfo = this.pendingHooks.get(packageName);
+    if (!hookInfo) return;
+    this.pendingHooks.delete(packageName);
+
+    const batchDeferred = createDeferred();
+    const hookNamesLabel = hookInfo.hookNames.map(n => chalk.dim(n)).join(chalk.dim(', '));
+    const phaseLabel = `${hookInfo.timing}-${hookInfo.operation}`;
+
+    await buildTask.newListr(
+      [
+        {
+          task: async (_: any, hookTask: any) => {
+            this.activeHookBatches.set(packageName, {deferred: batchDeferred, task: hookTask});
+            return batchDeferred.promise;
+          },
+          title: `running ${phaseLabel} hooks ${chalk.dim('—')} ${hookNamesLabel}`,
+        },
+      ],
+      {concurrent: false, exitOnError: false},
+    ).run();
+
+    // Clean up for next potential hook batch
+    this.activeHookBatches.delete(packageName);
+    this.hookSignals.set(packageName, createDeferred());
+  }
+
+  /**
+   * Build sub-task phase loop.
+   *
+   * Races between package completion and hook-batch signals. When a hook
+   * batch arrives it renders a single sub-task for the whole phase
+   * (e.g. "running pre-build hooks — lint, prettier"), waits for
+   * {@link completeHooks} to resolve it, then loops back.
+   */
+  private async runBuildPhaseLoop(packageName: string, buildTask: any): Promise<void> {
+    this.buildSubtasks.set(packageName, buildTask);
+
+    // Wrap package promise so Promise.race never throws
+    const pkgDone = this.packageDeferreds.get(packageName)!.promise
+    .then(
+      () => ({type: 'done'} as const),
+      (error: Error) => ({error, type: 'error' as const}),
+    );
+
+    // Alternate between waiting for package completion and rendering
+    // hook sub-tasks until the package settles.
+    while (true) {
+      const hookSignal = this.hookSignals.get(packageName)!;
+
+      // eslint-disable-next-line no-await-in-loop
+      const result = await Promise.race([
+        pkgDone,
+        hookSignal.promise.then(() => ({type: 'hooks'} as const)),
+      ]);
+
+      if (result.type === 'done') return;
+      if (result.type === 'error') throw result.error;
+
+      // eslint-disable-next-line no-await-in-loop
+      await this.renderHookBatch(packageName, buildTask);
+    }
   }
 }

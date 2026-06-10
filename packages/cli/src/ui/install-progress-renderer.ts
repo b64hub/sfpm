@@ -260,13 +260,7 @@ export class InstallProgressRenderer {
     }
 
     if (this.isOrchestrating()) {
-      const remaining = progress
-        ? progress.total.filter(n => !progress.completed.includes(n))
-        : [];
-      const label = remaining.length > 0
-        ? `hooks [${event.timing}-${event.operation}] - ${remaining.join(', ')}`
-        : `hooks [${event.timing}-${event.operation}]...`;
-      this.listr.updateBuildTitle(event.packageName, label);
+      this.listr.completeHook(event.packageName, event.hookName);
     }
   }
 
@@ -282,10 +276,7 @@ export class InstallProgressRenderer {
       : '';
 
     if (this.isOrchestrating()) {
-      this.listr.updateBuildTitle(
-        event.packageName,
-        `hooks [${event.timing}-${event.operation}] (${event.completedCount}) ${chalk.gray(`(${duration})`)}`,
-      );
+      this.listr.completeHooks(event.packageName, event.completedCount, event.timing, event.operation, duration);
     } else {
       const hookText = event.completedCount === 1 ? 'hook' : 'hooks';
       this.logger.log(chalk.green(`✔ Completed ${event.completedCount} ${hookText} [${event.timing}-${event.operation}] in ${duration}`));
@@ -304,10 +295,7 @@ export class InstallProgressRenderer {
     this.hookProgress.set(event.packageName, {completed: [], total: [...event.hookNames]});
 
     if (this.isOrchestrating()) {
-      this.listr.updateBuildTitle(
-        event.packageName,
-        `hooks [${event.timing}-${event.operation}] - ${event.hookNames.join(', ')}`,
-      );
+      this.listr.startHooks(event.packageName, event.hookNames, event.timing, event.operation);
     } else {
       const hookText = event.hookCount === 1 ? 'hook' : 'hooks';
       this.logger.log(chalk.dim(`Running ${event.hookCount} ${hookText} [${event.timing}-${event.operation}] - ${event.hookNames.join(', ')}...`));
