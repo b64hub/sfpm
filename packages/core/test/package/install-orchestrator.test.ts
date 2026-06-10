@@ -105,7 +105,7 @@ describe('InstallOrchestrator', () => {
     // Mock PackageInstaller
     mockInstallPackage = vi.fn().mockResolvedValue({skipped: false});
     vi.mocked(PackageInstaller).mockImplementation(function (this: any) {
-      this.installPackage = mockInstallPackage;
+      this.install = mockInstallPackage;
       return this;
     } as any);
 

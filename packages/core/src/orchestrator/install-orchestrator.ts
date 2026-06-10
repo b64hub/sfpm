@@ -95,7 +95,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     let error: string | undefined;
 
     try {
-      const result = await installer.installPackage(packageName);
+      const result = await installer.install(packageName);
       if (result.skipped) {
         skipped = true;
       }

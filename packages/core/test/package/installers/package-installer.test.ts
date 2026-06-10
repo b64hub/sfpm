@@ -106,9 +106,9 @@ describe('PackageInstaller', () => {
         vi.clearAllMocks();
     });
 
-    describe('installPackage', () => {
+    describe('install', () => {
         it('should successfully install a package', async () => {
-            await installer.installPackage('test-package');
+            await installer.install('test-package');
 
             expect(PackageFactory).toHaveBeenCalledWith(mockProvider);
             expect(mockPackageFactoryInstance.createFromName).toHaveBeenCalledWith('test-package');
@@ -122,7 +122,7 @@ describe('PackageInstaller', () => {
             const startHandler = vi.fn();
             installBus.on('start', startHandler);
 
-            await installer.installPackage('test-package');
+            await installer.install('test-package');
 
             expect(startHandler).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -137,7 +137,7 @@ describe('PackageInstaller', () => {
             const completeHandler = vi.fn();
             installBus.on('complete', completeHandler);
 
-            await installer.installPackage('test-package');
+            await installer.install('test-package');
 
             expect(completeHandler).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -156,7 +156,7 @@ describe('PackageInstaller', () => {
             const error = new Error('Installation failed');
             mockInstallerInstance.exec.mockRejectedValue(error);
 
-            await expect(installer.installPackage('test-package')).rejects.toThrow('Installation failed');
+            await expect(installer.install('test-package')).rejects.toThrow('Installation failed');
 
             expect(errorHandler).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -171,7 +171,7 @@ describe('PackageInstaller', () => {
         it('should throw error if no installer is registered for package type', async () => {
             vi.mocked(InstallerRegistry.getInstaller).mockReturnValue(undefined);
 
-            await expect(installer.installPackage('test-package')).rejects.toThrow(
+            await expect(installer.install('test-package')).rejects.toThrow(
                 'No installer registered for package type: unlocked'
             );
         });
@@ -180,7 +180,7 @@ describe('PackageInstaller', () => {
             const error = new Error('Connection failed');
             mockInstallerInstance.connect.mockRejectedValue(error);
 
-            await expect(installer.installPackage('test-package')).rejects.toThrow('Connection failed');
+            await expect(installer.install('test-package')).rejects.toThrow('Connection failed');
 
             expect(mockLogger.error).toHaveBeenCalledWith(
                 expect.stringContaining('Failed to install test-package')
@@ -188,7 +188,7 @@ describe('PackageInstaller', () => {
         });
 
         it('should create installer with correct parameters', async () => {
-            await installer.installPackage('test-package', '/custom/project');
+            await installer.install('test-package', '/custom/project');
 
             expect(mockInstallerConstructor).toHaveBeenCalledWith(
                 'testOrg',
@@ -204,13 +204,13 @@ describe('PackageInstaller', () => {
 
         it('should use provided project directory', async () => {
             const customPath = '/custom/project';
-            await installer.installPackage('test-package', customPath);
+            await installer.install('test-package', customPath);
 
             expect(mockPackageFactoryInstance.createFromName).toHaveBeenCalledWith('test-package');
         });
 
         it('should use default project directory if not provided', async () => {
-            await installer.installPackage('test-package');
+            await installer.install('test-package');
 
             expect(mockPackageFactoryInstance.createFromName).toHaveBeenCalledWith('test-package');
         });
@@ -221,7 +221,7 @@ describe('PackageInstaller', () => {
 
             mockInstallerInstance.exec.mockRejectedValue('String error');
 
-            await expect(installer.installPackage('test-package')).rejects.toBe('String error');
+            await expect(installer.install('test-package')).rejects.toBe('String error');
 
             expect(errorHandler).toHaveBeenCalledWith(
                 expect.objectContaining({

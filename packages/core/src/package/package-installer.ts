@@ -19,13 +19,13 @@ import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {Installer, InstallerRegistry} from './installers/installer-registry.js';
 import {ManagedPackageRef} from './installers/types.js';
 import {PackageService} from './package-service.js';
+import SfpmPackage, {
+  isOrgAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage,
+} from './sfpm-package.js';
 // Import installers to trigger registration
 import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
 import './installers/managed-package-installer.js';
-import SfpmPackage, {
-  isOrgAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage,
-} from './sfpm-package.js';
 
 export interface InstallOptions {
   artifact?: {
@@ -113,7 +113,7 @@ export default class PackageInstaller {
    * @param packageName - Name of the package to install
    * @returns InstallResult with details of what happened
    */
-  public async installPackage(packageName: string): Promise<InstallResult> {
+  public async install(packageName: string): Promise<InstallResult> {
     const factory = new PackageFactory(this.provider);
 
     // Managed packages: skip artifact resolution, go straight to version install
@@ -139,80 +139,6 @@ export default class PackageInstaller {
       this.logger?.error(`Failed to install ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
-  }
-
-  private emitComplete(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
-    this.sink?.complete({
-      packageType: sfpmPackage.type as PackageType,
-      source: installTarget.resolved.source,
-      success: true,
-      targetOrg: this.options.targetOrg,
-      versionNumber: sfpmPackage.version,
-    });
-  }
-
-  private emitError(sfpmPackage: SfpmPackage, error: Error): void {
-    this.sink?.error({
-      error: error instanceof Error ? error.message : String(error),
-      packageType: sfpmPackage.type as PackageType,
-      targetOrg: this.options.targetOrg,
-      versionNumber: sfpmPackage.version,
-    });
-  }
-
-  private emitManagedComplete(packageName: string, packageVersionId: string, success: boolean): void {
-    this.sinkFor(packageName)?.complete({
-      packageType: PackageType.Managed,
-      packageVersionId,
-      source: 'managed',
-      success,
-      targetOrg: this.options.targetOrg,
-    });
-  }
-
-  private emitManagedError(packageName: string, packageVersionId: string): void {
-    this.sinkFor(packageName)?.error({
-      error: `Installation failed for ${packageVersionId}`,
-      packageType: PackageType.Managed,
-      packageVersionId,
-      targetOrg: this.options.targetOrg,
-    });
-  }
-
-  private emitManagedSkip(packageName: string, _packageVersionId: string, reason: string): void {
-    this.sinkFor(packageName)?.skip({
-      packageType: PackageType.Managed,
-      reason,
-      targetOrg: this.options.targetOrg,
-    });
-  }
-
-  private emitManagedStart(packageName: string, packageVersionId: string): void {
-    this.sinkFor(packageName)?.start({
-      installReason: 'managed dependency',
-      packageType: PackageType.Managed,
-      packageVersionId,
-      source: 'managed',
-      targetOrg: this.options.targetOrg,
-    });
-  }
-
-  private emitSkip(sfpmPackage: SfpmPackage, reason: string): void {
-    this.sink?.skip({
-      packageType: sfpmPackage.type as PackageType,
-      reason,
-      targetOrg: this.options.targetOrg,
-    });
-  }
-
-  private emitStart(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
-    this.sink?.start({
-      installReason: installTarget.installReason,
-      packageType: sfpmPackage.type as PackageType,
-      source: installTarget.resolved.source,
-      targetOrg: this.options.targetOrg,
-      versionNumber: sfpmPackage.version,
-    });
   }
 
   /**
@@ -246,9 +172,6 @@ export default class PackageInstaller {
       targetOrg: this.options.targetOrg,
       versionNumber: sfpmPackage.version,
     });
-
-    // Install managed dependencies before deploying the package itself
-    await this.installManagedDependencies(sfpmPackage);
 
     // Run pre-install hooks with the local source path
     await this.runHooks('pre', sfpmPackage);
@@ -287,36 +210,14 @@ export default class PackageInstaller {
         version: sfpmPackage.version ?? 'local',
       };
     } catch (error) {
-      this.emitError(sfpmPackage, error as Error);
+      this.sink?.error({
+        error: error instanceof Error ? error.message : String(error),
+        packageType: sfpmPackage.type as PackageType,
+        targetOrg: this.options.targetOrg,
+        versionNumber: sfpmPackage.version,
+      });
       this.logger?.error(`Failed to deploy ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
-    }
-  }
-
-  /**
-   * Install managed dependencies (04t subscriber versions) for a package
-   * before deploying the package itself.
-   *
-   * Reads `managedDependencies` from the package definition and delegates
-   * each one to {@link installManagedPackage}, reusing its skip-check,
-   * VersionInstaller, events, and error handling.
-   */
-  private async installManagedDependencies(sfpmPackage: SfpmPackage): Promise<void> {
-    const managedDependencies = sfpmPackage.packageDefinition?.managedDependencies;
-    if (!managedDependencies || Object.keys(managedDependencies).length === 0) return;
-
-    const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
-    const deps = Object.entries(managedDependencies)
-    .filter(([, versionId]) => versionId.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX))
-    .map(([depName, versionId]) => new ManagedPackageRef(depName, versionId));
-
-    if (deps.length === 0) return;
-
-    this.logger?.info(`Installing ${deps.length} managed dependency(ies) for '${sfpmPackage.name}'`);
-
-    for (const dep of deps) {
-      // eslint-disable-next-line no-await-in-loop -- sequential to avoid concurrent Tooling API requests
-      await this.installManagedPackage(dep);
     }
   }
 
@@ -342,7 +243,11 @@ export default class PackageInstaller {
         if (isInstalled) {
           const reason = `Version ${managedRef.packageVersionId} already installed`;
           this.logger?.info(`Skipping managed package ${packageName}: ${reason}`);
-          this.emitManagedSkip(packageName, managedRef.packageVersionId, reason);
+          this.sinkFor(packageName)?.skip({
+            packageType: PackageType.Managed,
+            reason,
+            targetOrg: this.options.targetOrg,
+          });
           return {
             installed: false,
             packageName,
@@ -356,7 +261,13 @@ export default class PackageInstaller {
       }
     }
 
-    this.emitManagedStart(packageName, managedRef.packageVersionId);
+    this.sinkFor(packageName)?.start({
+      installReason: 'managed dependency',
+      packageType: PackageType.Managed,
+      packageVersionId: managedRef.packageVersionId,
+      source: 'managed',
+      targetOrg: this.options.targetOrg,
+    });
 
     try {
       const InstallerConstructor = InstallerRegistry.getInstaller(PackageType.Managed as any);
@@ -369,7 +280,13 @@ export default class PackageInstaller {
       await installer.connect(this.options.targetOrg);
       await installer.exec();
 
-      this.emitManagedComplete(packageName, managedRef.packageVersionId, true);
+      this.sinkFor(packageName)?.complete({
+        packageType: PackageType.Managed,
+        packageVersionId: managedRef.packageVersionId,
+        source: 'managed',
+        success: true,
+        targetOrg: this.options.targetOrg,
+      });
       this.logger?.info(`Successfully installed managed package ${packageName}`);
 
       return {
@@ -379,7 +296,12 @@ export default class PackageInstaller {
         version: managedRef.packageVersionId,
       };
     } catch (error) {
-      this.emitManagedError(packageName, managedRef.packageVersionId);
+      this.sinkFor(packageName)?.error({
+        error: `Installation failed for ${managedRef.packageVersionId}`,
+        packageType: PackageType.Managed,
+        packageVersionId: managedRef.packageVersionId,
+        targetOrg: this.options.targetOrg,
+      });
       this.logger?.error(`Failed to install managed package ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
@@ -435,7 +357,11 @@ export default class PackageInstaller {
 
     if (!this.options.force && !installTarget.needsInstall) {
       this.logger?.info(`Skipping ${packageName}@${installTarget.resolved.version}: ${installTarget.installReason}`);
-      this.emitSkip(sfpmPackage, installTarget.installReason);
+      this.sink?.skip({
+        packageType: sfpmPackage.type as PackageType,
+        reason: installTarget.installReason,
+        targetOrg: this.options.targetOrg,
+      });
 
       return {
         installed: false,
@@ -449,10 +375,13 @@ export default class PackageInstaller {
     // Log install decision
     this.logger?.info(`Installing ${packageName}@${installTarget.resolved.version} `
       + `(reason: ${installTarget.installReason}, source: ${installTarget.resolved.source})`);
-    this.emitStart(sfpmPackage, installTarget);
-
-    // Install managed dependencies before deploying the package itself
-    await this.installManagedDependencies(sfpmPackage);
+    this.sink?.start({
+      installReason: installTarget.installReason,
+      packageType: sfpmPackage.type as PackageType,
+      source: installTarget.resolved.source,
+      targetOrg: this.options.targetOrg,
+      versionNumber: sfpmPackage.version,
+    });
 
     // Run pre-install hooks with the resolved package path
     // (extracted artifact dir for source packages, project source for unlocked)
@@ -479,7 +408,13 @@ export default class PackageInstaller {
         });
       }
 
-      this.emitComplete(sfpmPackage, installTarget);
+      this.sink?.complete({
+        packageType: sfpmPackage.type as PackageType,
+        source: installTarget.resolved.source,
+        success: true,
+        targetOrg: this.options.targetOrg,
+        versionNumber: sfpmPackage.version,
+      });
       this.logger?.info(`Successfully installed ${packageName}@${sfpmPackage.version}`);
 
       // Run post-install hooks
@@ -493,7 +428,12 @@ export default class PackageInstaller {
         version: installTarget.resolved.version,
       };
     } catch (error) {
-      this.emitError(sfpmPackage, error as Error);
+      this.sink?.error({
+        error: error instanceof Error ? error.message : String(error),
+        packageType: sfpmPackage.type as PackageType,
+        targetOrg: this.options.targetOrg,
+        versionNumber: sfpmPackage.version,
+      });
       this.logger?.error(`Failed to install ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
