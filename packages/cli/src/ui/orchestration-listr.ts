@@ -160,7 +160,7 @@ export class OrchestrationListrManager {
                   async task(_: any, t: any) {
                     preSlot.task = t;
                     await preSlot.deferred.promise;
-                    if (preSlot.skipped) t.skip('');
+                    if (preSlot.skipped) t.skip(chalk.dim('pre-hooks - skipped'));
                   },
                   title: chalk.dim('pre-hooks'),
                 },
@@ -175,7 +175,7 @@ export class OrchestrationListrManager {
                   async task(_: any, t: any) {
                     postSlot.task = t;
                     await postSlot.deferred.promise;
-                    if (postSlot.skipped) t.skip('');
+                    if (postSlot.skipped) t.skip(chalk.dim('post-hooks - skipped'));
                   },
                   title: chalk.dim('post-hooks'),
                 },
@@ -198,6 +198,9 @@ export class OrchestrationListrManager {
           collapseErrors: false,
           collapseSkips: true,
           collapseSubtasks: true,
+          icon: {
+            SKIPPED_WITH_COLLAPSE: '○',
+          },
         },
       },
     );
