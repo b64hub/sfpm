@@ -107,12 +107,10 @@ export class ArtifactRepository {
   public async finalizeArtifact(
     packageName: string,
     version: string,
-    artifactHash: string,
     sourceHash: string,
     options?: {commit?: string; packageVersionId?: string;},
   ): Promise<void> {
     const manifest: ArtifactManifest = {
-      artifactHash,
       commit: options?.commit,
       generatedAt: Date.now(),
       name: packageName,

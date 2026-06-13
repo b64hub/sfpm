@@ -178,7 +178,7 @@ export class PackageBuilder {
 
       return pendingValidation;
     } finally {
-      await this.cleanupStagingDirectory(sfpmPackage);
+      // No cleanup needed — artifacts/package/ is the intended build output
     }
   }
 
@@ -328,22 +328,6 @@ export class PackageBuilder {
 
     this.logger?.info('Source changes detected, proceeding with build');
     return undefined;
-  }
-
-  /**
-   * Remove the build directory that contains the staging area.
-   *
-   * The staging directory is `.sfpm/tmp/builds/<buildName>/package/`; the
-   * parent (`<buildName>/`) is the workspace directory that must be cleaned.
-   * If ArtifactAssembler already removed it on a successful build this is a
-   * safe no-op.  Cleanup is skipped when `DEBUG=true` to allow inspection.
-   */
-  private async cleanupStagingDirectory(sfpmPackage: SfpmPackage): Promise<void> {
-    if (process.env.DEBUG === 'true') return;
-    if (!sfpmPackage.workingDirectory) return;
-
-    const buildDir = path.dirname(sfpmPackage.workingDirectory);
-    await fs.remove(buildDir).catch(() => {/* already removed or inaccessible */});
   }
 
   private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string, componentCount?: number): Promise<PendingValidationDescriptor | undefined> {

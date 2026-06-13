@@ -1,8 +1,4 @@
 import { Org } from '@salesforce/core';
-import fs from 'fs-extra';
-import { execSync } from 'node:child_process';
-import os from 'node:os';
-import path from 'node:path';
 
 import type { ProjectDefinitionProvider } from '../project/providers/project-definition-provider.js';
 
@@ -19,6 +15,7 @@ import { resolvePackageWorkspacePath } from '../utils/workspace-path.js';
 import { installerFactory, InstallTaskContext, InstallTaskRegistration } from './installers/installer-registry.js';
 import { ManagedPackageRef } from './installers/types.js';
 import UpdateArtifactTask from './installers/tasks/update-artifact.js';
+import { OrgAliasResolver } from './org-alias-resolver.js';
 import SfpmPackage, {
   isOrgAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage,
 } from './sfpm-package.js';
@@ -422,30 +419,28 @@ export default class PackageInstaller {
   }
 
   /**
-   * For org-aliased packages, resolve the org alias on the package and
-   * update its working directory so that `packageDirectory` (and by
-   * extension `getComponentSet()`) points at the org-specific content.
+   * For org-aliased packages, resolve the org alias and stage the content
+   * so that `packageDirectory` (and by extension `getComponentSet()`) points
+   * at the org-specific content.
    *
-   * Creates a staging directory where `packageDefinition.path` resolves
-   * to the org-specific content, preserving the path structure expected
-   * by downstream consumers.
+   * Delegates file handling to {@link OrgAliasResolver.resolveAndStage}.
    */
   private async resolveOrgAliasForDeploy(sfpmPackage: SfpmPackage): Promise<void> {
     if (!isOrgAliasable(sfpmPackage) || !sfpmPackage.isOrgAliased) return;
 
-    const resolution = await sfpmPackage.resolveOrgAlias(this.targetOrg.getUsername()!, this.logger);
-    this.logger?.info(`Org alias resolved for ${sfpmPackage.name}: alias='${resolution.resolvedAlias}', matched=${resolution.matched}`);
-
-    // Create a staging root where path.join(stagingRoot, packageDefinition.path)
-    // contains the resolved org-specific metadata
     const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.name);
-    const stagingRoot = path.join(os.tmpdir(), 'sfpm-org-alias', sfpmPackage.name, resolution.resolvedAlias);
-    const stagingPackagePath = path.join(stagingRoot, packageDefinition.path);
+    const packagePath = sfpmPackage.resolveSourcePackagePath();
 
-    await fs.remove(stagingPackagePath);
-    await fs.ensureDir(stagingPackagePath);
-    await fs.copy(resolution.effectivePath, stagingPackagePath, { overwrite: true });
+    const resolver = new OrgAliasResolver(this.logger);
+    const {resolution, stagingRoot} = await resolver.resolveAndStage(
+      packagePath,
+      this.targetOrg.getUsername()!,
+      this.provider.projectDir,
+      packageDefinition.path,
+      sfpmPackage.orgAliasConfig,
+    );
 
+    this.logger?.info(`Org alias resolved for ${sfpmPackage.name}: alias='${resolution.resolvedAlias}', matched=${resolution.matched}`);
     sfpmPackage.workingDirectory = stagingRoot;
   }
 
@@ -499,12 +494,10 @@ export default class PackageInstaller {
     // For source packages, extract the artifact tarball so the source deployer
     // can build a ComponentSet from the metadata files inside.
     if (sfpmPackage instanceof SfpmSourcePackage && resolved.artifactPath) {
-      const extractDir = path.join(os.tmpdir(), 'sfpm-install', sfpmPackage.name, resolved.version);
-      fs.ensureDirSync(extractDir);
-      execSync(`tar -xzf "${resolved.artifactPath}" -C "${extractDir}"`, { timeout: 60_000 });
-
-      // npm tarballs extract into a package/ subdirectory
-      sfpmPackage.workingDirectory = path.join(extractDir, 'package');
+      const artifactService = ArtifactService.getInstance();
+      sfpmPackage.workingDirectory = artifactService.extractArtifact(
+        resolved.artifactPath, this.provider.projectDir, sfpmPackage.name, resolved.version,
+      );
     }
   }
 }
