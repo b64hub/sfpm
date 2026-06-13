@@ -17,11 +17,35 @@ export interface InstallerResult {
 }
 
 /**
+ * Result of an installation check.
+ *
+ * Returned by {@link Installer.isInstalled}. The method is infallible —
+ * errors during the check resolve to `{ needsInstall: true, installReason: 'check-failed' }`
+ * so callers never need a try/catch.
+ */
+export interface InstallCheckResult {
+  installReason: 'check-failed' | 'hash-match' | 'not-installed' | 'version-installed';
+  needsInstall: boolean;
+}
+
+/**
  * Interface for specific package installer implementations (Strategy Pattern)
  * Installers can emit events by extending EventEmitter
  */
 export interface Installer {
   connect(targetOrg: Org): Promise<void>;
+  /**
+   * Check whether the package is already installed in the target org.
+   *
+   * Uses the appropriate service internally:
+   * - Source/unlocked packages check {@link ArtifactService} for hash match
+   * - Unlocked packages fall back to {@link PackageService} for 04t version check
+   * - Managed packages check {@link PackageService} for subscriber version
+   *
+   * Must be called after {@link connect}. Guaranteed to never throw —
+   * check failures resolve to `{ needsInstall: true }`.
+   */
+  isInstalled(): Promise<InstallCheckResult>;
   run(): Promise<InstallerResult>;
 }
 
@@ -125,11 +149,15 @@ export function RegisterInstaller(type: Omit<PackageType, 'diff'>) {
 /**
  * Factory function to create an installer instance for a given package, based on its type.
  * The installer is selected from the {@link InstallerRegistry} using the package type.
+ *
  * @param workingDirectory The working directory for the installer
  * @param sfpmPackage The package to be installed
- * @param logger The logger instance
  * @param options Installation options
+ * @param logger The logger instance
  * @param sink Optional event sink for installation events
+ * @param installAs Override the package type used for installer lookup.
+ *   Allows the orchestrator to route an unlocked package through the source
+ *   installer (e.g., for `sfpm deploy` where source is deployed directly).
  * @returns An instance of the appropriate installer
  */
 export function installerFactory(
@@ -138,9 +166,12 @@ export function installerFactory(
   options?: InstallOptions,
   logger?: Logger,
   sink?: InstallEventSink,
+  installAs?: PackageType,
 ): Installer {
   let packageType: PackageType;
-  if (sfpmPackage instanceof ManagedPackageRef) {
+  if (installAs) {
+    packageType = installAs;
+  } else if (sfpmPackage instanceof ManagedPackageRef) {
     packageType = PackageType.Managed;
   } else {
     packageType = (sfpmPackage as SfpmPackage).type as PackageType;

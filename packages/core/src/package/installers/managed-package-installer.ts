@@ -4,7 +4,8 @@ import type {InstallEventSink} from '../../events/install-event-bus.js';
 
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
-import {Installer, type InstallerExecResult, RegisterInstaller} from './installer-registry.js';
+import {PackageService} from '../package-service.js';
+import {type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller} from './installer-registry.js';
 import VersionInstaller from './strategies/version-installer.js';
 import {ManagedPackageRef, type VersionInstallable} from './types.js';
 
@@ -23,29 +24,45 @@ export default class ManagedPackageInstaller implements Installer {
   private readonly logger?: Logger;
   private org?: Org;
   private readonly sink?: InstallEventSink;
-  private readonly targetOrg: string;
 
-  constructor(targetOrg: string, managedPackage: ManagedPackageRef, logger?: Logger, _options?: unknown, sink?: InstallEventSink) {
-    this.targetOrg = targetOrg;
+  constructor(_workingDirectory: string, managedPackage: ManagedPackageRef, _options?: unknown, logger?: Logger, sink?: InstallEventSink) {
     this.installable = managedPackage;
     this.logger = logger;
     this.sink = sink;
   }
 
-  public async connect(username: string): Promise<void> {
+  public async connect(targetOrg: Org): Promise<void> {
+    this.org = targetOrg;
+
+    const username = targetOrg.getUsername()!;
     this.sink?.connectionStart({orgType: 'production', username});
-
-    this.org = await Org.create({aliasOrUsername: username});
-
-    if (!this.org.getConnection()) {
-      throw new Error('Unable to connect to org');
-    }
-
     this.sink?.connectionComplete({username});
   }
 
-  public async exec(): Promise<InstallerExecResult> {
+  public async isInstalled(): Promise<InstallCheckResult> {
+    try {
+      const packageService = PackageService.getInstance()
+        .setOrg(this.org!);
+      if (this.logger) packageService.setLogger(this.logger);
+
+      const isInstalled = await packageService.isSubscriberVersionInstalled(this.installable.packageVersionId);
+
+      if (isInstalled) {
+        this.logger?.info(`Managed package ${this.installable.packageName} version ${this.installable.packageVersionId} already installed`);
+        return {installReason: 'version-installed', needsInstall: false};
+      }
+
+      return {installReason: 'not-installed', needsInstall: true};
+    } catch (error) {
+      this.logger?.warn(`Unable to check if ${this.installable.packageName} is installed, proceeding with install: ${error instanceof Error ? error.message : String(error)}`);
+      return {installReason: 'check-failed', needsInstall: true};
+    }
+  }
+
+  public async run(): Promise<InstallerResult> {
     this.logger?.info(`Installing managed package: ${this.installable.packageName}`);
-    return new VersionInstaller(this.logger, this.sink).install(this.installable, this.targetOrg);
+    const targetOrg = this.org!.getUsername()!;
+    const result = await new VersionInstaller(this.logger, this.sink).install(this.installable, targetOrg);
+    return {installId: result.deployId};
   }
 }

@@ -6,27 +6,16 @@ import type {InstallEventSink} from '../../events/install-event-bus.js';
 import {ArtifactService} from '../../artifacts/artifact-service.js';
 import {Logger} from '../../types/logger.js';
 import {
-  InstallationMode, InstallationSource, PackageType, PerPackageBuildConfig,
+  InstallationMode, PackageType, PerPackageBuildConfig,
 } from '../../types/package.js';
-import {resolvePackageWorkspacePath} from '../../utils/workspace-path.js';
+import {PackageService} from '../package-service.js';
 import {SfpmUnlockedPackage} from '../sfpm-package.js';
-import {Installer, type InstallerExecResult, RegisterInstaller} from './installer-registry.js';
+import {type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller} from './installer-registry.js';
+import {type InstallOptions} from '../../index.js';
 // Import strategy implementations
 import SourceDeployer from './strategies/source-deployer.js';
 import VersionInstaller from './strategies/version-installer.js';
 import {type VersionInstallable} from './types.js';
-
-export interface UnlockedPackageInstallerOptions {
-  installationKey?: string;
-  /** Specify installation mode (overrides auto-detection) */
-  mode?: InstallationMode;
-  /** Where the code comes from: 'local' (project source) or 'artifact' */
-  source?: InstallationSource;
-}
-
-export interface InstallTask {
-  exec(): Promise<void>;
-}
 
 /**
  * Adapter that bridges {@link SfpmUnlockedPackage} with the typed installation
@@ -38,60 +27,76 @@ export interface InstallTask {
 // eslint-disable-next-line new-cap
 @RegisterInstaller(PackageType.Unlocked)
 export default class UnlockedPackageInstaller implements Installer {
-  public postInstallTasks: InstallTask[] = [];
-  public preInstallTasks: InstallTask[] = [];
-  private readonly artifactService: ArtifactService;
   private readonly logger?: Logger;
   private readonly mode?: InstallationMode;
   private org?: Org;
   private readonly sfpmPackage: SfpmUnlockedPackage;
   private readonly sink?: InstallEventSink;
-  private readonly source: InstallationSource;
   private readonly sourceDeployer: SourceDeployer;
-  private readonly targetOrg: string;
   private readonly versionInstaller: VersionInstaller;
 
-  constructor(targetOrg: string, sfpmPackage: SfpmUnlockedPackage, logger?: Logger, options?: UnlockedPackageInstallerOptions, sink?: InstallEventSink) {
+  constructor(_workingDirectory: string, sfpmPackage: SfpmUnlockedPackage, options?: InstallOptions, logger?: Logger, sink?: InstallEventSink) {
     if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
       throw new TypeError(`UnlockedPackageInstaller received incompatible package type: ${(sfpmPackage as unknown as {constructor: {name: string}}).constructor.name}`);
     }
 
-    this.targetOrg = targetOrg;
     this.sfpmPackage = sfpmPackage;
     this.logger = logger;
     this.mode = options?.mode;
     this.sink = sink;
 
-    // Initialize artifact service
-    this.artifactService = new ArtifactService(logger);
-
     // Create strategy instances (pure — no routing logic)
     this.versionInstaller = new VersionInstaller(logger, sink);
     this.sourceDeployer = new SourceDeployer(logger, sink);
-
-    // Determine source
-    this.source = this.determineSource(options);
   }
 
-  public async connect(username: string): Promise<void> {
+  public async connect(targetOrg: Org): Promise<void> {
+    this.org = targetOrg;
+
+    const username = targetOrg.getUsername()!;
     this.sink?.connectionStart({orgType: 'production', username});
-
-    this.org = await Org.create({aliasOrUsername: username});
-
-    if (!this.org.getConnection()) {
-      throw new Error('Unable to connect to org');
-    }
-
     this.sink?.connectionComplete({username});
   }
 
-  public async exec(): Promise<InstallerExecResult> {
+  public async isInstalled(): Promise<InstallCheckResult> {
+    try {
+      // 1. Check ArtifactService for hash match (takes precedence)
+      const sourceHash = this.sfpmPackage.metadata.source?.sourceHash;
+      if (sourceHash) {
+        const artifactService = ArtifactService.getInstance();
+        const installedArtifacts = await artifactService.getInstalledPackages();
+        const installed = installedArtifacts.find(a => a.name === this.sfpmPackage.name);
+
+        if (installed?.checksum && installed.checksum === sourceHash) {
+          this.logger?.info(`Unlocked package ${this.sfpmPackage.name} already installed with matching hash ${sourceHash}`);
+          return {installReason: 'hash-match', needsInstall: false};
+        }
+      }
+
+      // 2. Fallback: check PackageService for 04t version
+      const packageVersionId = this.sfpmPackage.packageVersionId;
+      if (packageVersionId) {
+        const packageService = PackageService.getInstance()
+          .setOrg(this.org!);
+        if (this.logger) packageService.setLogger(this.logger);
+
+        const isVersionInstalled = await packageService.isSubscriberVersionInstalled(packageVersionId);
+        if (isVersionInstalled) {
+          this.logger?.info(`Unlocked package ${this.sfpmPackage.name} version ${packageVersionId} already installed`);
+          return {installReason: 'version-installed', needsInstall: false};
+        }
+      }
+
+      return {installReason: 'not-installed', needsInstall: true};
+    } catch (error) {
+      this.logger?.warn(`Unable to check if ${this.sfpmPackage.name} is installed, proceeding with install: ${error instanceof Error ? error.message : String(error)}`);
+      return {installReason: 'check-failed', needsInstall: true};
+    }
+  }
+
+  public async run(): Promise<InstallerResult> {
     this.logger?.info(`Installing unlocked package: ${this.sfpmPackage.packageName}`);
-
-    await this.runPreInstallTasks();
     const result = await this.installPackage();
-    await this.runPostInstallTasks();
-
     return result;
   }
 
@@ -99,50 +104,36 @@ export default class UnlockedPackageInstaller implements Installer {
   // Routing — decides which strategy to use and builds the typed payload
   // ---------------------------------------------------------------------------
 
-  private determineSource(options?: UnlockedPackageInstallerOptions): InstallationSource {
-    if (options?.source) {
-      return options.source;
-    }
-
-    // Auto-detect: if artifacts exist, use artifact; otherwise local
-    const sourcePath = this.sfpmPackage.packageDefinition?.path;
-    const workspacePath = sourcePath
-      ? resolvePackageWorkspacePath(this.sfpmPackage.projectDirectory, sourcePath)
-      : this.sfpmPackage.projectDirectory;
-    const repo = this.artifactService.getRepository(workspacePath);
-    if (repo.hasArtifact()) {
-      return InstallationSource.Artifact;
-    }
-
-    return InstallationSource.Local;
-  }
-
-  private async installPackage(): Promise<InstallerExecResult> {
+  private async installPackage(): Promise<InstallerResult> {
     const mode = this.resolveMode();
     this.logger?.info(`Using installation mode: ${mode}`);
 
+    const targetOrg = this.org!.getUsername()!;
+
     if (mode === InstallationMode.VersionInstall) {
       const installable = this.toVersionInstallable();
-      return this.versionInstaller.install(installable, this.targetOrg);
+      const result = await this.versionInstaller.install(installable, targetOrg);
+      return {installId: result.deployId};
     }
 
     // SfpmUnlockedPackage implements SourceDeployable via SfpmMetadataPackage
-    return this.sourceDeployer.install(this.sfpmPackage, this.targetOrg);
+    const result = await this.sourceDeployer.install(this.sfpmPackage, targetOrg);
+    return {installId: result.deployId};
   }
 
   /**
    * Resolve the installation mode for this package.
    *
    * Explicit `mode` option takes precedence. Otherwise:
-   * - Artifact source + packageVersionId → version-install
-   * - Everything else → source-deploy (local, or artifact without versionId)
+   * - packageVersionId available → version-install
+   * - Everything else → source-deploy
    */
   private resolveMode(): InstallationMode {
     if (this.mode) {
       return this.mode;
     }
 
-    if (this.source === InstallationSource.Artifact && this.sfpmPackage.packageVersionId) {
+    if (this.sfpmPackage.packageVersionId) {
       return InstallationMode.VersionInstall;
     }
 
@@ -152,24 +143,6 @@ export default class UnlockedPackageInstaller implements Installer {
   // ---------------------------------------------------------------------------
   // Payload builders — adapt SfpmUnlockedPackage → typed strategy inputs
   // ---------------------------------------------------------------------------
-
-  private async runPostInstallTasks(): Promise<void> {
-    for (const task of this.postInstallTasks) {
-      const taskName = task.constructor.name;
-      this.logger?.info(`Running post-install task: ${taskName}`);
-    }
-
-    await Promise.all(this.postInstallTasks.map(task => task.exec()));
-  }
-
-  private async runPreInstallTasks(): Promise<void> {
-    for (const task of this.preInstallTasks) {
-      const taskName = task.constructor.name;
-      this.logger?.info(`Running pre-install task: ${taskName}`);
-    }
-
-    await Promise.all(this.preInstallTasks.map(task => task.exec()));
-  }
 
   private toVersionInstallable(): VersionInstallable {
     const versionId = this.sfpmPackage.packageVersionId;

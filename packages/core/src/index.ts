@@ -71,7 +71,7 @@ export {
 } from './package/builders/builder-registry.js';
 export {assembleArtifactTask, default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
 export {
-  type Installer, type InstallerConstructor, type InstallerExecResult, InstallerRegistry, RegisterInstaller,
+  type InstallCheckResult, type Installer, type InstallerConstructor, type InstallerResult, InstallerRegistry, RegisterInstaller,
 } from './package/installers/installer-registry.js';
 export {default as SourceDeployer} from './package/installers/strategies/source-deployer.js';
 export {
