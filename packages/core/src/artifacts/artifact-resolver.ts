@@ -225,9 +225,9 @@ export class ArtifactResolver {
       return undefined;
     }
 
-    const artifactPath = this.repository.getArtifactPath();
+    const artifactPath = this.repository.getPackageContentDir();
     if (!fs.existsSync(artifactPath)) {
-      this.logger?.warn(`Artifact file missing for ${packageName}@${localVersion}: ${artifactPath}`);
+      this.logger?.warn(`Build output missing for ${packageName}@${localVersion}: ${artifactPath}`);
       return undefined;
     }
 

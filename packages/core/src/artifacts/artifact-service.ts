@@ -1,4 +1,5 @@
 import {Connection, Org} from '@salesforce/core';
+import path from 'node:path';
 
 import SfpmPackage from '../package/sfpm-package.js';
 import {
@@ -233,6 +234,22 @@ export class ArtifactService {
    */
   public getRepository(packageWorkspacePath: string, packageName?: string): ArtifactRepository {
     return new ArtifactRepository(packageWorkspacePath, this.logger, packageName);
+  }
+
+  /**
+   * Get the build output directory for a package, if a build exists.
+   *
+   * Checks for a manifest in the package workspace's `artifacts/` directory.
+   * Returns the path to `artifacts/package/` (the deployable content) or
+   * `undefined` if no build has been run.
+   *
+   * @param packageWorkspacePath - Package workspace root
+   * @returns Absolute path to `artifacts/package/` or undefined
+   */
+  public getBuildOutput(packageWorkspacePath: string): string | undefined {
+    const repo = this.getRepository(packageWorkspacePath);
+    if (!repo.hasArtifact()) return undefined;
+    return repo.getPackageContentDir();
   }
 
   /**

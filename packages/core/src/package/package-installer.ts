@@ -17,7 +17,7 @@ import { ManagedPackageRef } from './installers/types.js';
 import UpdateArtifactTask from './installers/tasks/update-artifact.js';
 import { OrgAliasResolver } from './org-alias-resolver.js';
 import SfpmPackage, {
-  isOrgAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage,
+  isOrgAliasable, PackageFactory, SfpmUnlockedPackage,
 } from './sfpm-package.js';
 // Import installers to trigger registration
 import './installers/unlocked-package-installer.js';
@@ -152,23 +152,34 @@ export default class PackageInstaller {
   }
 
   /**
-   * Deploy metadata directly from project source without artifact resolution.
-   * Used for `sfpm deploy` where the source is the local project directory.
+   * Deploy from build output (`artifacts/package/`).
+   * Requires a prior `sfpm build` (or Turbo cache restore).
    *
    * Routes unlocked packages through the source installer via `installAs`,
-   * and skips the install-check since source deploys are always executed.
+   * and skips the install-check since deploys are always executed.
    */
   public async deploySource(sfpmPackage: SfpmPackage): Promise<InstallResult> {
-    // For source deploys, set workingDirectory to the project root
-    // so getComponentSet() can resolve the metadata path.
-    if (!sfpmPackage.workingDirectory) {
-      sfpmPackage.workingDirectory = this.provider.projectDir;
+    // Resolve build output from the package workspace
+    const sourcePath = sfpmPackage.packageDefinition?.path;
+    if (!sourcePath) {
+      throw new Error(`No package definition path for ${sfpmPackage.name}`);
     }
+
+    const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
+    const buildOutput = ArtifactService.getInstance().getBuildOutput(packageWorkspacePath);
+
+    if (!buildOutput) {
+      throw new Error(
+        `No build found for ${sfpmPackage.name}. Run 'sfpm build' before deploying.`,
+      );
+    }
+
+    sfpmPackage.workingDirectory = buildOutput;
 
     // Handle org-aliased packages: resolve the correct source directory
     await this.resolveOrgAliasForDeploy(sfpmPackage);
 
-    this.logger?.info(`Deploying ${sfpmPackage.name} from local source`);
+    this.logger?.info(`Deploying ${sfpmPackage.name} from build output`);
 
     return this.runInstaller(sfpmPackage, {
       checkInstalled: false,
@@ -469,7 +480,7 @@ export default class PackageInstaller {
 
   /**
    * Hydrate the SfpmPackage with data from the resolved artifact.
-   * Sets version, source hash, packageVersionId, and extracts tarballs as needed.
+   * Sets version, source hash, packageVersionId, and working directory.
    */
   private hydratePackageFromArtifact(sfpmPackage: SfpmPackage, resolution: ArtifactResolution): void {
     const { resolved } = resolution;
@@ -491,13 +502,8 @@ export default class PackageInstaller {
       sfpmPackage.packageVersionId = resolved.packageVersionId;
     }
 
-    // For source packages, extract the artifact tarball so the source deployer
-    // can build a ComponentSet from the metadata files inside.
-    if (sfpmPackage instanceof SfpmSourcePackage && resolved.artifactPath) {
-      const artifactService = ArtifactService.getInstance();
-      sfpmPackage.workingDirectory = artifactService.extractArtifact(
-        resolved.artifactPath, this.provider.projectDir, sfpmPackage.name, resolved.version,
-      );
-    }
+    // Set working directory to the build output (artifacts/package/)
+    // Content is already assembled — no extraction needed.
+    sfpmPackage.workingDirectory = resolved.artifactPath;
   }
 }

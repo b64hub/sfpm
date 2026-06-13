@@ -81,7 +81,7 @@ export class ArtifactRepository {
     }
 
     if (manifest.sourceHash === currentSourceHash) {
-      return {artifactPath: this.getArtifactPath(), latestVersion: manifest.version};
+      return {artifactPath: this.getPackageContentDir(), latestVersion: manifest.version};
     }
 
     this.logger?.debug(`Previous hash: ${manifest.sourceHash}, current: ${currentSourceHash}`);
@@ -199,22 +199,31 @@ export class ArtifactRepository {
   }
 
   /**
-   * Check if a local artifact exists (manifest + tarball).
+   * Get the absolute path to the assembled package content directory.
+   * This is the deployable build output (`artifacts/package/`).
+   */
+  public getPackageContentDir(): string {
+    return path.join(this.artifactsDir, 'package');
+  }
+
+  /**
+   * Check if a local build output exists (manifest present).
    */
   public hasArtifact(): boolean {
     return fs.existsSync(this.getManifestPath());
   }
 
-  // =========================================================================
-  // Artifact Finalization
-  // =========================================================================
-
   /**
    * Check if the artifact tarball exists on disk.
+   * Used by the publish flow to verify packable content.
    */
   public hasTarball(): boolean {
     return fs.existsSync(this.getArtifactPath());
   }
+
+  // =========================================================================
+  // Artifact Finalization
+  // =========================================================================
 
   // =========================================================================
   // Tarball Localization (remote downloads)
