@@ -21,13 +21,13 @@ vi.mock('../../../src/artifacts/artifact-service.js', () => ({
             setOrg: vi.fn().mockReturnThis(),
             setLogger: vi.fn().mockReturnThis(),
             resolveInstallTarget: vi.fn().mockResolvedValue({
-                needsInstall: true,
-                installReason: 'New installation',
                 resolved: {
                     source: 'local',
                     version: '1.0.0',
                     manifest: { sourceHash: 'abc123', schemaVersion: 2, source: 'local' },
                 },
+                orgStatus: { isInstalled: false },
+                packageName: 'test-package',
             }),
             upsertArtifact: vi.fn().mockResolvedValue(undefined),
             createHistoryRecord: vi.fn().mockResolvedValue(undefined),

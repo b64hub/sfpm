@@ -13,6 +13,9 @@ import './package/analyzers/ft-analyzer.js';
 import './package/analyzers/manifest-analyzer.js';
 import './package/analyzers/picklist-analyzer.js';
 
+/**
+ * @deprecated dead code
+ */
 export class SfpmCore {
   project!: ProjectService;
 
@@ -37,7 +40,7 @@ export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type Change
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
 export {ArtifactResolver} from './artifacts/artifact-resolver.js';
 export {
-  type ArtifactHistoryOptions, ArtifactService, type InstallTarget, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
+  type ArtifactHistoryOptions, type ArtifactResolution, ArtifactService, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
 } from './artifacts/artifact-service.js';
 export {
   extractPackageVersionId, extractSourceHash, fromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions,

@@ -6,7 +6,7 @@ import path from 'node:path';
 
 import type { ProjectDefinitionProvider } from '../project/providers/project-definition-provider.js';
 
-import { ArtifactService } from '../artifacts/artifact-service.js';
+import { ArtifactResolution, ArtifactService } from '../artifacts/artifact-service.js';
 import { InstallEventBus, InstallEventSink } from '../events/install-event-bus.js';
 import { LifecycleEngine } from '../lifecycle/lifecycle-engine.js';
 import { ArtifactResolutionOptions } from '../types/artifact.js';
@@ -18,6 +18,7 @@ import {
 import { resolvePackageWorkspacePath } from '../utils/workspace-path.js';
 import { installerFactory, InstallTaskContext, InstallTaskRegistration } from './installers/installer-registry.js';
 import { ManagedPackageRef } from './installers/types.js';
+import UpdateArtifactTask from './installers/tasks/update-artifact.js';
 import SfpmPackage, {
   isOrgAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage,
 } from './sfpm-package.js';
@@ -274,10 +275,16 @@ export default class PackageInstaller {
       .setOrg(this.targetOrg)
       .setLogger(this.logger);
 
-    await this.resolveInstallTarget(artifactService, sfpmPackage);
+    await this.resolveArtifact(artifactService, sfpmPackage);
 
     // Log install decision
     this.logger?.info(`Installing ${packageName}@${sfpmPackage.version}`);
+
+    // Register artifact update as a post-install task
+    this.tasks.push({
+      factory: (ctx) => new UpdateArtifactTask(ctx),
+      phase: 'post',
+    });
 
     return this.runInstaller(sfpmPackage, {
       checkInstalled: !this.options.force,
@@ -349,6 +356,7 @@ export default class PackageInstaller {
       this.logger?.info(`Successfully installed ${sfpmPackage.name}@${sfpmPackage.version}`);
 
       await this.runTasks('post', {sfpmPackage, installId: result.installId, workingDirectory: this.provider.projectDir, targetOrg: this.targetOrg});
+
       await this.runHooks('post', sfpmPackage, sink);
 
       return {
@@ -396,7 +404,7 @@ export default class PackageInstaller {
   }
 
 
-  private async resolveInstallTarget(artifactService: ArtifactService, sfpmPackage: SfpmPackage): Promise<void> {
+  private async resolveArtifact(artifactService: ArtifactService, sfpmPackage: SfpmPackage): Promise<void> {
     const sourcePath = sfpmPackage.packageDefinition?.path;
     if (!sourcePath) {
       throw new Error(`No package definition path for ${sfpmPackage.name}`);
@@ -404,13 +412,13 @@ export default class PackageInstaller {
 
     const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
 
-    const installTarget = await artifactService.resolveInstallTarget(
+    const resolution = await artifactService.resolveArtifact(
       packageWorkspacePath,
       sfpmPackage.name,
       this.options.artifactResolution,
     );
 
-    this.updatePackageFromTarget(sfpmPackage, installTarget);
+    this.hydratePackageFromArtifact(sfpmPackage, resolution);
   }
 
   /**
@@ -465,11 +473,11 @@ export default class PackageInstaller {
 
 
   /**
-   * Update the SfpmPackage instance with information from the resolved install target.
-   * Sets version, packageVersionId, source hash, and extracts artifact tarballs as needed.
+   * Hydrate the SfpmPackage with data from the resolved artifact.
+   * Sets version, source hash, packageVersionId, and extracts tarballs as needed.
    */
-  private updatePackageFromTarget(sfpmPackage: SfpmPackage, installTarget: import('../artifacts/artifact-service.js').InstallTarget): void {
-    const { resolved } = installTarget;
+  private hydratePackageFromArtifact(sfpmPackage: SfpmPackage, resolution: ArtifactResolution): void {
+    const { resolved } = resolution;
 
     // Set version from resolved artifact
     sfpmPackage.version = resolved.version;

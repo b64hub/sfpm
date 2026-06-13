@@ -45,12 +45,12 @@ export interface ArtifactHistoryOptions {
 }
 
 /**
- * Result of install target resolution.
- * Combines artifact resolution with org installation status.
+ * Result of artifact resolution against the target org.
+ * Combines the resolved artifact with the org's current installation status.
  * The install decision is made by the installer's `isInstalled()` method,
  * not by the artifact service.
  */
-export interface InstallTarget {
+export interface ArtifactResolution {
   /** Current installation status in the org */
   orgStatus: {
     /** The currently installed sourceHash (if any) */
@@ -293,13 +293,13 @@ export class ArtifactService {
    * @param packageWorkspacePath - Package workspace directory (contains artifacts/)
    * @param packageName - Fully scoped name of the package to resolve
    * @param options - Resolution options (version, forceRefresh, etc.)
-   * @returns InstallTarget with resolved artifact and org status
+   * @returns ArtifactResolution with resolved artifact and org status
    */
-  public async resolveInstallTarget(
+  public async resolveArtifact(
     packageWorkspacePath: string,
     packageName: string,
     options?: ArtifactResolutionOptions,
-  ): Promise<InstallTarget> {
+  ): Promise<ArtifactResolution> {
     // 1. Create resolver for this specific package (handles scoped registries)
     const resolver = ArtifactResolver.create(
       packageWorkspacePath,
@@ -315,7 +315,7 @@ export class ArtifactService {
     this.logger?.debug(`Resolved ${packageName} to version ${resolved.version} from ${resolved.source}`);
 
     // 2. Check org installation status (if org is available)
-    let orgStatus: InstallTarget['orgStatus'] = {
+    let orgStatus: ArtifactResolution['orgStatus'] = {
       isInstalled: false,
     };
 
