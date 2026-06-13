@@ -1,24 +1,24 @@
-import {Org} from '@salesforce/core';
+import { Org } from '@salesforce/core';
 import fs from 'fs-extra';
-import {execSync} from 'node:child_process';
+import { execSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
-import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+import type { ProjectDefinitionProvider } from '../project/providers/project-definition-provider.js';
 
-import {ArtifactService, InstallTarget} from '../artifacts/artifact-service.js';
-import {InstallEventBus, InstallEventSink} from '../events/install-event-bus.js';
-import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
-import {ArtifactResolutionOptions} from '../types/artifact.js';
-import {HookContext, HookTiming} from '../types/lifecycle.js';
-import {Logger} from '../types/logger.js';
+import { ArtifactService, InstallTarget } from '../artifacts/artifact-service.js';
+import { InstallEventBus, InstallEventSink } from '../events/install-event-bus.js';
+import { LifecycleEngine } from '../lifecycle/lifecycle-engine.js';
+import { ArtifactResolutionOptions } from '../types/artifact.js';
+import { HookContext, HookTiming } from '../types/lifecycle.js';
+import { Logger } from '../types/logger.js';
 import {
   InstallationMode, InstallationSource, PackageType, type TestLevel,
 } from '../types/package.js';
-import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
-import {Installer, InstallerRegistry} from './installers/installer-registry.js';
-import {ManagedPackageRef} from './installers/types.js';
-import {PackageService} from './package-service.js';
+import { resolvePackageWorkspacePath } from '../utils/workspace-path.js';
+import { installerFactory, InstallTaskContext, InstallTaskRegistration } from './installers/installer-registry.js';
+import { ManagedPackageRef } from './installers/types.js';
+import { PackageService } from './package-service.js';
 import SfpmPackage, {
   isOrgAliasable, PackageFactory, SfpmSourcePackage, SfpmUnlockedPackage,
 } from './sfpm-package.js';
@@ -26,20 +26,10 @@ import SfpmPackage, {
 import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
 import './installers/managed-package-installer.js';
+import sfpmPackage from './sfpm-package.js';
 
 export interface InstallOptions {
-  artifact?: {
-    resolution?: Omit<ArtifactResolutionOptions, 'version'>;
-    /**
-     * Whether to update artifact records in the target org after installation.
-     * When true (default), upserts `Sfpm_Artifact__c` and creates an
-     * `Sfpm_Artifact_History__c` record (gracefully skipped if the object
-     * is not deployed to the org).
-     *
-     * @default true
-     */
-    update?: boolean;
-  }
+  artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
 
   deployment?: {
     /**
@@ -57,24 +47,18 @@ export interface InstallOptions {
    * Where to install from: 'local' (project source) or 'artifact'.
    */
   source?: InstallationSource;
-
-  targetOrg: string;
-
-  versionInstall?: {installationKeys?: {[packageName: string]: string}};
+  updateArtifact?: boolean;
+  versionInstall?: { installationKeys?: { [packageName: string]: string } };
 }
 
 export interface InstallResult {
   /** Salesforce deploy ID or PackageInstallRequest ID (when available) */
-  deployId?: string;
-  installed: boolean;
+  installId?: string;
+  success: boolean;
   packageName: string;
   skipped: boolean;
   skipReason?: string;
   version: string;
-}
-
-export interface InstallTask {
-  exec(): Promise<void>;
 }
 
 /**
@@ -84,22 +68,30 @@ export default class PackageInstaller {
   private bus?: InstallEventBus;
   private logger: Logger | undefined;
   private options: InstallOptions;
-  private org?: Org;
+  private targetOrg!: Org;
   private provider: ProjectDefinitionProvider;
-  private sink?: InstallEventSink;
+
+  private tasks: InstallTaskRegistration[] = [];
+
 
   constructor(
     provider: ProjectDefinitionProvider,
     options: InstallOptions,
     logger?: Logger,
-    org?: Org,
     bus?: InstallEventBus,
   ) {
     this.options = options;
     this.logger = logger;
     this.provider = provider;
-    this.org = org;
     this.bus = bus;
+  }
+
+  public async connect(usernameOrOrg: string | Org): Promise<void> {
+    if (usernameOrOrg instanceof Org) {
+      this.targetOrg = usernameOrOrg;
+    } else {
+      this.targetOrg = await Org.create({ aliasOrUsername: usernameOrOrg });
+    }
   }
 
   /**
@@ -116,6 +108,10 @@ export default class PackageInstaller {
   public async install(packageName: string): Promise<InstallResult> {
     const factory = new PackageFactory(this.provider);
 
+    if (!this.targetOrg) {
+      throw new Error('Target org not connected. Call connect() before installing packages.');
+    }
+
     // Managed packages: skip artifact resolution, go straight to version install
     if (factory.isManagedPackage(packageName)) {
       const managedRef = factory.createManagedRef(packageName);
@@ -126,7 +122,6 @@ export default class PackageInstaller {
       return this.installManagedPackage(managedRef);
     }
 
-    // Create local package from project config
     const sfpmPackage = factory.createFromName(packageName);
 
     if (!sfpmPackage) {
@@ -134,7 +129,12 @@ export default class PackageInstaller {
     }
 
     try {
-      return await this.installSfpmPackage(sfpmPackage);
+      // Source-local deploy: skip artifact resolution entirely — deploy from project source
+      if (this.options.source === InstallationSource.Local) {
+        return await this.deploySource(sfpmPackage);
+      }
+
+      return await this.installArtifact(sfpmPackage);
     } catch (error) {
       this.logger?.error(`Failed to install ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
@@ -142,18 +142,13 @@ export default class PackageInstaller {
   }
 
   /**
-   * Install directly from project source without artifact resolution.
+   * Deploy metadata directly from project source without artifact resolution.
    * Used for `sfpm deploy` where the source is the local project directory.
    */
-  private async installFromSource(sfpmPackage: SfpmPackage): Promise<InstallResult> {
+  public async deploySource(sfpmPackage: SfpmPackage): Promise<InstallResult> {
     const packageName = sfpmPackage.name;
 
-    // Create scoped sink for this package
-    this.sink = this.bus?.forPackage(packageName);
-
-    if (!this.org) {
-      this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
-    }
+    const sink = this.bus?.forPackage(packageName);
 
     // For source deploys, set workingDirectory to the project root
     // so getComponentSet() can resolve the metadata path.
@@ -165,167 +160,123 @@ export default class PackageInstaller {
     await this.resolveOrgAliasForDeploy(sfpmPackage);
 
     this.logger?.info(`Deploying ${packageName} from local source`);
-    this.sink?.start({
+    sink?.start({
       installReason: 'source deploy',
       packageType: sfpmPackage.type as PackageType,
       source: InstallationSource.Local,
-      targetOrg: this.options.targetOrg,
+      targetOrg: this.targetOrg.getUsername(),
       versionNumber: sfpmPackage.version,
     });
 
-    // Run pre-install hooks with the local source path
-    await this.runHooks('pre', sfpmPackage);
-
-    try {
-      const InstallerConstructor = InstallerRegistry.getInstaller(sfpmPackage.type as any);
-      if (!InstallerConstructor) {
-        throw new Error(`No installer registered for package type: ${sfpmPackage.type}`);
-      }
-
-      const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
-        source: InstallationSource.Local,
-        testLevel: this.options.deployment?.testLevel,
-      }, this.sink);
-
-      await installer.connect(this.options.targetOrg);
-      const execResult = await installer.exec();
-
-      this.sink?.complete({
-        packageType: sfpmPackage.type as PackageType,
-        source: InstallationSource.Local,
-        success: true,
-        targetOrg: this.options.targetOrg,
-        versionNumber: sfpmPackage.version,
-      });
-      this.logger?.info(`Successfully deployed ${packageName}`);
-
-      // Run post-install hooks
-      await this.runHooks('post', sfpmPackage);
-
-      return {
-        deployId: execResult.deployId,
-        installed: true,
-        packageName,
-        skipped: false,
-        version: sfpmPackage.version ?? 'local',
-      };
-    } catch (error) {
-      this.sink?.error({
-        error: error instanceof Error ? error.message : String(error),
-        packageType: sfpmPackage.type as PackageType,
-        targetOrg: this.options.targetOrg,
-        versionNumber: sfpmPackage.version,
-      });
-      this.logger?.error(`Failed to deploy ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
-      throw error;
-    }
+    await this.runInstaller(sfpmPackage);
   }
+
+
 
   /**
    * Fast path for managed packages — no artifact resolution needed.
    * Uses the packageVersionId already known from packageAliases.
    * Checks if the version is already installed before attempting installation.
    */
-  private async installManagedPackage(managedRef: ManagedPackageRef): Promise<InstallResult> {
-    const {packageName} = managedRef;
+  public async installManagedPackage(managedRef: ManagedPackageRef): Promise<InstallResult> {
+    const { packageName } = managedRef;
+
+    const sink = this.bus?.forPackage(packageName);
 
     // Check if the managed package version is already installed (unless forced)
     if (!this.options.force) {
-      if (!this.org) {
-        this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
-      }
-
-      try {
-        const packageService = PackageService.getInstance()
-        .setOrg(this.org);
-        if (this.logger) packageService.setLogger(this.logger);
-        const isInstalled = await packageService.isSubscriberVersionInstalled(managedRef.packageVersionId);
-        if (isInstalled) {
-          const reason = `Version ${managedRef.packageVersionId} already installed`;
-          this.logger?.info(`Skipping managed package ${packageName}: ${reason}`);
-          this.sinkFor(packageName)?.skip({
-            packageType: PackageType.Managed,
-            reason,
-            targetOrg: this.options.targetOrg,
-          });
-          return {
-            installed: false,
-            packageName,
-            skipped: true,
-            skipReason: reason,
-            version: managedRef.packageVersionId,
-          };
-        }
-      } catch (error) {
-        this.logger?.warn(`Unable to check if ${packageName} is installed, proceeding with install: ${error instanceof Error ? error.message : String(error)}`);
+      const checkResult = await this.checkPackageInstalled(managedRef, sink);
+      if (checkResult?.skipped) {
+        return checkResult;
       }
     }
 
-    this.sinkFor(packageName)?.start({
+    sink?.start({
       installReason: 'managed dependency',
       packageType: PackageType.Managed,
       packageVersionId: managedRef.packageVersionId,
       source: 'managed',
-      targetOrg: this.options.targetOrg,
+      targetOrg: this.targetOrg.getUsername(),
     });
 
     try {
-      const InstallerConstructor = InstallerRegistry.getInstaller(PackageType.Managed as any);
-      if (!InstallerConstructor) {
-        throw new Error('No installer registered for package type: managed');
-      }
+      const installer = installerFactory(this.provider.projectDir, managedRef, this.options, this.logger, sink);
+      await installer.connect(this.targetOrg);
+      const result = await installer.exec();
 
-      const installer = new InstallerConstructor(this.options.targetOrg, managedRef, this.logger, undefined, this.sinkFor(packageName));
-
-      await installer.connect(this.options.targetOrg);
-      await installer.exec();
-
-      this.sinkFor(packageName)?.complete({
+      sink?.complete({
         packageType: PackageType.Managed,
         packageVersionId: managedRef.packageVersionId,
         source: 'managed',
         success: true,
-        targetOrg: this.options.targetOrg,
+        targetOrg: this.targetOrg.getUsername(),
       });
       this.logger?.info(`Successfully installed managed package ${packageName}`);
 
       return {
-        installed: true,
+        success: true,
         packageName,
         skipped: false,
         version: managedRef.packageVersionId,
       };
     } catch (error) {
-      this.sinkFor(packageName)?.error({
+      sink?.error({
         error: `Installation failed for ${managedRef.packageVersionId}`,
         packageType: PackageType.Managed,
         packageVersionId: managedRef.packageVersionId,
-        targetOrg: this.options.targetOrg,
+        targetOrg: this.targetOrg.getUsername(),
       });
       this.logger?.error(`Failed to install managed package ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
   }
 
+  private async checkPackageInstalled(managedRef: ManagedPackageRef, sink?: InstallEventSink): Promise<InstallResult | undefined> {
+
+    const packageService = PackageService.getInstance()
+      .setOrg(this.targetOrg);
+
+    if (this.logger) packageService.setLogger(this.logger);
+
+    try {
+      const isInstalled = await packageService.isSubscriberVersionInstalled(managedRef.packageVersionId);
+
+      if (!isInstalled) {
+        return undefined;
+      }
+
+      const reason = `Version ${managedRef.packageVersionId} already installed`;
+      this.logger?.info(`Skipping managed package ${managedRef.packageName}: ${reason}`);
+
+      sink?.skip({
+        packageType: PackageType.Managed,
+        reason,
+        targetOrg: this.targetOrg.getUsername(),
+      });
+
+      return {
+        success: true,
+        packageName: managedRef.packageName,
+        skipped: true,
+        skipReason: reason,
+        version: managedRef.packageVersionId,
+      };
+
+    } catch (error) {
+      this.logger?.warn(`Unable to check if ${managedRef.packageName} is installed, proceeding with install: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   /**
-   * Install a package by resolving the appropriate artifact and using the correct installer strategy.
+   * Install an artifact and using the correct installer strategy.
    * @param sfpmPackage
    * @returns installResult
    */
-  private async installSfpmPackage(sfpmPackage: SfpmPackage): Promise<InstallResult> {
-    // Source-local deploy: skip artifact resolution entirely — deploy from project source
-    if (this.options.source === InstallationSource.Local) {
-      return this.installFromSource(sfpmPackage);
-    }
+  public async installArtifact(sfpmPackage: SfpmPackage): Promise<InstallResult> {
 
     const packageName = sfpmPackage.name;
 
-    // Create scoped sink for this package
-    this.sink = this.bus?.forPackage(packageName);
-
-    if (!this.org) {
-      this.org = await Org.create({aliasOrUsername: this.options.targetOrg});
-    }
+    const sink = this.bus?.forPackage(packageName);
 
     if (!packageName) {
       throw new Error(`Package "${packageName}" has no npm name. `
@@ -335,36 +286,21 @@ export default class PackageInstaller {
 
     // Use singleton artifact service
     const artifactService = ArtifactService.getInstance()
-    .setOrg(this.org)
-    .setLogger(this.logger);
+      .setOrg(this.targetOrg)
+      .setLogger(this.logger);
 
-    // Derive package workspace path for artifact resolution
-    const sourcePath = sfpmPackage.packageDefinition?.path;
-    let packageWorkspacePath: string;
-    if (sourcePath) {
-      packageWorkspacePath = resolvePackageWorkspacePath(sfpmPackage.projectDirectory, sourcePath);
-    } else {
-      packageWorkspacePath = sfpmPackage.projectDirectory;
-    }
-
-    const installTarget = await artifactService.resolveInstallTarget(
-      packageWorkspacePath,
-      packageName,
-      this.options.artifact?.resolution,
-    );
-
-    this.updatePackageFromTarget(sfpmPackage, installTarget);
+    const installTarget = await this.resolveInstallTarget(artifactService, sfpmPackage);
 
     if (!this.options.force && !installTarget.needsInstall) {
       this.logger?.info(`Skipping ${packageName}@${installTarget.resolved.version}: ${installTarget.installReason}`);
-      this.sink?.skip({
+      sink?.skip({
         packageType: sfpmPackage.type as PackageType,
         reason: installTarget.installReason,
-        targetOrg: this.options.targetOrg,
+        targetOrg: this.targetOrg.getUsername(),
       });
 
       return {
-        installed: false,
+        success: false,
         packageName,
         skipped: true,
         skipReason: installTarget.installReason,
@@ -375,11 +311,16 @@ export default class PackageInstaller {
     // Log install decision
     this.logger?.info(`Installing ${packageName}@${installTarget.resolved.version} `
       + `(reason: ${installTarget.installReason}, source: ${installTarget.resolved.source})`);
-    this.sink?.start({
+
+    return await this.runInstaller(sfpmPackage, installTarget, sink);
+  }
+
+  private async runInstaller(sfpmPackage: SfpmPackage, installTarget: InstallTarget, sink?: InstallEventSink): Promise<InstallResult> {
+    sink?.start({
       installReason: installTarget.installReason,
       packageType: sfpmPackage.type as PackageType,
       source: installTarget.resolved.source,
-      targetOrg: this.options.targetOrg,
+      targetOrg: this.targetOrg.getUsername(),
       versionNumber: sfpmPackage.version,
     });
 
@@ -388,55 +329,110 @@ export default class PackageInstaller {
     await this.runHooks('pre', sfpmPackage);
 
     try {
-      const InstallerConstructor = InstallerRegistry.getInstaller(sfpmPackage.type as any);
-      if (!InstallerConstructor) {
-        throw new Error(`No installer registered for package type: ${sfpmPackage.type}`);
-      }
+      
+      const installer = installerFactory(this.provider.projectDir, sfpmPackage, this.options, this.logger, sink);
+      await installer.connect(this.targetOrg);
 
-      const installer = new InstallerConstructor(this.options.targetOrg, sfpmPackage, this.logger, {
-        source: this.options.source,
-        testLevel: this.options.deployment?.testLevel,
-      }, this.sink);
 
-      await installer.connect(this.options.targetOrg);
-      const execResult = await installer.exec();
+      await this.runTasks('pre', {sfpmPackage, workingDirectory: this.provider.projectDir, targetOrg: this.targetOrg}, sink);
 
-      if (this.options.artifact?.update !== false) {
-        await artifactService.upsertArtifact(sfpmPackage);
-        await artifactService.createHistoryRecord(sfpmPackage, {
-          deployId: execResult.deployId,
-        });
-      }
+      const result = await installer.run();
 
-      this.sink?.complete({
+      sink?.complete({
         packageType: sfpmPackage.type as PackageType,
         source: installTarget.resolved.source,
         success: true,
-        targetOrg: this.options.targetOrg,
+        targetOrg: this.targetOrg.getUsername(),
         versionNumber: sfpmPackage.version,
       });
-      this.logger?.info(`Successfully installed ${packageName}@${sfpmPackage.version}`);
+      this.logger?.info(`Successfully installed ${sfpmPackage.name}@${sfpmPackage.version}`);
 
+      await this.runTasks('post', {sfpmPackage, installId: result.installId, workingDirectory: this.provider.projectDir, targetOrg: this.targetOrg}, sink);
       // Run post-install hooks
       await this.runHooks('post', sfpmPackage);
 
       return {
-        deployId: execResult.deployId,
-        installed: true,
-        packageName,
+        installId: result.deployId,
+        success: true,
+        packageName: sfpmPackage.name,
         skipped: false,
         version: installTarget.resolved.version,
       };
     } catch (error) {
-      this.sink?.error({
+      sink?.error({
         error: error instanceof Error ? error.message : String(error),
         packageType: sfpmPackage.type as PackageType,
-        targetOrg: this.options.targetOrg,
+        targetOrg: this.targetOrg.getUsername(),
         versionNumber: sfpmPackage.version,
       });
-      this.logger?.error(`Failed to install ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger?.error(`Failed to install ${sfpmPackage.name}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
+  }
+
+  /**
+   * Run task registrations sequentially, emitting lifecycle events.
+   */
+  private async runTasks(
+    phase: 'post' | 'pre',
+    ctx: InstallTaskContext,
+    sink?: InstallEventSink,
+  ): Promise<void> {
+
+    for (const registration of this.tasks) {
+      const task = registration.factory(ctx);
+      const taskName = task.name;
+
+      // Check runtime precondition
+      if (task.canRun && !task.canRun()) {
+        sink?.taskSkip({
+          reason: `Precondition not met for task '${taskName}'`,
+          taskName,
+          phase,
+        });
+        continue;
+      }
+
+      sink?.taskStart({
+        taskName,
+        phase,
+      });
+
+      try {
+        // eslint-disable-next-line no-await-in-loop -- tasks run sequentially, stop on first failure
+        await task.exec();
+      } catch (error) {
+        sink?.taskComplete({
+          success: false,
+          taskName,
+          phase,
+        });
+
+        throw error;
+      }
+
+      sink?.taskComplete({
+        success: true,
+        taskName,
+        phase,
+      });
+    }
+  }
+
+
+  private async resolveInstallTarget(artifactService: ArtifactService, sfpmPackage: SfpmPackage): Promise<InstallTarget> {
+    // Derive package workspace path for artifact resolution
+    const sourcePath = sfpmPackage.packageDefinition?.path;
+    const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
+
+    const installTarget = await artifactService.resolveInstallTarget(
+      packageWorkspacePath,
+      sfpmPackage.name,
+      this.options.artifactResolution,
+    );
+
+    this.updatePackageFromTarget(sfpmPackage, installTarget);
+    return installTarget;
   }
 
   /**
@@ -451,7 +447,7 @@ export default class PackageInstaller {
   private async resolveOrgAliasForDeploy(sfpmPackage: SfpmPackage): Promise<void> {
     if (!isOrgAliasable(sfpmPackage) || !sfpmPackage.isOrgAliased) return;
 
-    const resolution = await sfpmPackage.resolveOrgAlias(this.options.targetOrg, this.logger);
+    const resolution = await sfpmPackage.resolveOrgAlias(this.targetOrg.getUsername(), this.logger);
     this.logger?.info(`Org alias resolved for ${sfpmPackage.name}: alias='${resolution.resolvedAlias}', matched=${resolution.matched}`);
 
     // Create a staging root where path.join(stagingRoot, packageDefinition.path)
@@ -462,37 +458,13 @@ export default class PackageInstaller {
 
     await fs.remove(stagingPackagePath);
     await fs.ensureDir(stagingPackagePath);
-    await fs.copy(resolution.effectivePath, stagingPackagePath, {overwrite: true});
+    await fs.copy(resolution.effectivePath, stagingPackagePath, { overwrite: true });
 
     sfpmPackage.workingDirectory = stagingRoot;
   }
 
-  /**
-   * Resolve the absolute path to a package's metadata directory.
-   *
-   * Resolution hierarchy for the root:
-   * 1. `workingDirectory` — set when an artifact has been extracted to a temp dir
-   * 2. `projectDir` — the project root from the provider
-   *
-   * The package definition's `path` (e.g. `src-access-management`) is always
-   * appended so the result points to the actual metadata directory, not just
-   * the project/artifact root.
-   *
-   * For org-aliased packages, uses the package's resolved org alias path
-   * (set by a prior call to {@link SfpmPackage.resolveOrgAlias}).
-   */
-  private resolvePackageSourceDir(sfpmPackage: SfpmPackage): string {
-    // If org alias was resolved, use the effective path directly
-    if (isOrgAliasable(sfpmPackage) && sfpmPackage.orgAliasResolution) {
-      return sfpmPackage.orgAliasResolution.effectivePath;
-    }
 
-    const root = sfpmPackage.workingDirectory ?? this.provider.projectDir;
-    const packageDefinition = this.provider.getPackageDefinition(sfpmPackage.name);
-    return path.join(root, packageDefinition.path);
-  }
-
-  private async runHooks(timing: HookTiming, sfpmPackage: SfpmPackage): Promise<void> {
+  private async runHooks(timing: HookTiming, sfpmPackage: SfpmPackage, sink?: InstallEventSink): Promise<void> {
     if (!LifecycleEngine.isInitialized()) return;
 
     const lifecycle = LifecycleEngine.getInstance();
@@ -502,27 +474,23 @@ export default class PackageInstaller {
       projectDir: this.provider.projectDir,
       sfpmPackage,
       stage: lifecycle.stage,
-      targetOrg: this.options.targetOrg,
+      targetOrg: this.targetOrg.getUsername(),
       timing,
     };
 
     if (timing === 'pre') {
-      await lifecycle.runInstallPre(hookContext, this.sink);
+      await lifecycle.runInstallPre(hookContext, sink);
     } else {
-      await lifecycle.runInstallPost(hookContext, this.sink);
+      await lifecycle.runInstallPost(hookContext, sink);
     }
   }
 
-  /** Create a scoped sink for a managed package by name. */
-  private sinkFor(packageName: string): InstallEventSink | undefined {
-    return this.bus?.forPackage(packageName);
-  }
 
   /**
    * Update the SfpmPackage instance with information from the resolved install target.
    */
   private updatePackageFromTarget(sfpmPackage: SfpmPackage, installTarget: InstallTarget): void {
-    const {resolved} = installTarget;
+    const { resolved } = installTarget;
 
     // Set version from resolved artifact
     sfpmPackage.version = resolved.version;
@@ -537,7 +505,7 @@ export default class PackageInstaller {
     if (sfpmPackage instanceof SfpmSourcePackage && resolved.artifactPath) {
       const extractDir = path.join(os.tmpdir(), 'sfpm-install', sfpmPackage.name, resolved.version);
       fs.ensureDirSync(extractDir);
-      execSync(`tar -xzf "${resolved.artifactPath}" -C "${extractDir}"`, {timeout: 60_000});
+      execSync(`tar -xzf "${resolved.artifactPath}" -C "${extractDir}"`, { timeout: 60_000 });
 
       // npm tarballs extract into a package/ subdirectory
       sfpmPackage.workingDirectory = path.join(extractDir, 'package');
