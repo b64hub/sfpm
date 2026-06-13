@@ -174,7 +174,7 @@ export default class PackageInstaller {
 
     return this.runInstaller(sfpmPackage, {
       checkInstalled: false,
-      installAs: PackageType.Source,
+      installAs: sfpmPackage.type === PackageType.Unlocked ? PackageType.Source : undefined,
     });
   }
 

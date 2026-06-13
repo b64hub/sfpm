@@ -47,12 +47,10 @@ export interface ArtifactHistoryOptions {
 /**
  * Result of install target resolution.
  * Combines artifact resolution with org installation status.
+ * The install decision is made by the installer's `isInstalled()` method,
+ * not by the artifact service.
  */
 export interface InstallTarget {
-  /** Reason for the install decision */
-  installReason: 'already-installed' | 'hash-mismatch' | 'not-installed' | 'version-downgrade' | 'version-upgrade';
-  /** Whether installation is needed */
-  needsInstall: boolean;
   /** Current installation status in the org */
   orgStatus: {
     /** The currently installed sourceHash (if any) */
@@ -295,7 +293,7 @@ export class ArtifactService {
    * @param packageWorkspacePath - Package workspace directory (contains artifacts/)
    * @param packageName - Fully scoped name of the package to resolve
    * @param options - Resolution options (version, forceRefresh, etc.)
-   * @returns InstallTarget with resolved artifact and install decision
+   * @returns InstallTarget with resolved artifact and org status
    */
   public async resolveInstallTarget(
     packageWorkspacePath: string,
@@ -338,15 +336,7 @@ export class ArtifactService {
       }
     }
 
-    // 3. Determine if installation is needed
-    const {installReason, needsInstall} = this.determineInstallNeed(
-      resolved,
-      orgStatus,
-    );
-
     return {
-      installReason,
-      needsInstall,
       orgStatus,
       packageName,
       resolved,
@@ -442,32 +432,6 @@ export class ArtifactService {
       this.logger?.debug(`SfpmArtifact__c is not available in this org — skipping artifact tracking: ${message}`);
       return undefined;
     }
-  }
-
-  /**
-   * Determine if installation is needed based on resolved artifact and org status.
-   */
-  private determineInstallNeed(
-    resolved: ResolvedArtifact,
-    orgStatus: InstallTarget['orgStatus'],
-  ): {installReason: InstallTarget['installReason']; needsInstall: boolean;} {
-    // Not installed - definitely needs install
-    if (!orgStatus.isInstalled) {
-      return {installReason: 'not-installed', needsInstall: true};
-    }
-
-    // Compare versions
-    if (orgStatus.installedVersion !== resolved.version) {
-      return {installReason: 'version-upgrade', needsInstall: true};
-    }
-
-    // Same version - check source hash if available
-    if (resolved.manifest.sourceHash && orgStatus.installedSourceHash && resolved.manifest.sourceHash !== orgStatus.installedSourceHash) {
-      return {installReason: 'hash-mismatch', needsInstall: true};
-    }
-
-    // Everything matches
-    return {installReason: 'already-installed', needsInstall: false};
   }
 
   /**
