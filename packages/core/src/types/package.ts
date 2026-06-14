@@ -4,8 +4,6 @@ import type {SfpmPackageSource} from './artifact.js';
 
 import {PackageInstallConfig} from './project.js';
 
-export type {SfpmPackageSource} from './artifact.js';
-
 /**
  * Salesforce test levels for metadata API deployments.
  *

@@ -1,4 +1,5 @@
 import fs from 'fs-extra';
+import {execSync} from 'node:child_process';
 import * as semver from 'semver';
 
 import {ArtifactManifest, ArtifactResolutionOptions, ResolvedArtifact} from '../types/artifact.js';
@@ -31,16 +32,24 @@ const DEFAULT_TTL_MINUTES = 60;
  * Modes:
  * - Local-only: no registry client, works only with the local artifact
  * - Remote-enabled: with registry client, can fetch from npm/other registries
+/**
+ * Resolves where downloaded remote artifacts should be extracted.
+ * The default implementation uses `node_modules/` (pnpm-compatible).
+ * Swap this to change the download cache location (e.g., `.sfpm/packages/`).
  */
+export type DownloadTarget = (packageName: string, version: string) => string;
+
 export class ArtifactResolver {
+  private downloadTarget?: DownloadTarget;
   private logger?: Logger;
   private registryClient?: RegistryClient;
   private repository: ArtifactRepository;
 
-  constructor(repository: ArtifactRepository, registryClient?: RegistryClient, logger?: Logger) {
+  constructor(repository: ArtifactRepository, registryClient?: RegistryClient, logger?: Logger, downloadTarget?: DownloadTarget) {
     this.repository = repository;
     this.registryClient = registryClient;
     this.logger = logger;
+    this.downloadTarget = downloadTarget;
 
     if (this.registryClient) {
       this.logger?.debug(`Using registry: ${this.registryClient.getRegistryUrl()}`);
@@ -59,6 +68,7 @@ export class ArtifactResolver {
   public static create(
     packageWorkspacePath: string,
     options?: {
+      downloadTarget?: DownloadTarget;
       localOnly?: boolean;
       registryClient?: RegistryClient;
     },
@@ -75,7 +85,7 @@ export class ArtifactResolver {
       projectDir: packageWorkspacePath,
     });
 
-    return new ArtifactResolver(repository, registryClient, logger);
+    return new ArtifactResolver(repository, registryClient, logger, options?.downloadTarget);
   }
 
   public getRegistryClient(): RegistryClient | undefined {
@@ -141,10 +151,25 @@ export class ArtifactResolver {
     try {
       const {tarballPath} = await this.registryClient.downloadPackage(packageName, version, artifactsDir);
 
+      // Localize: store tarball + manifest in per-package artifacts/
       const localized = await this.repository.localizeTarball(tarballPath, packageName, version);
 
+      // Extract to download target (default: node_modules/<packageName>/)
+      let contentPath: string;
+      if (this.downloadTarget) {
+        contentPath = this.downloadTarget(packageName, version);
+        await fs.ensureDir(contentPath);
+        execSync(`tar -xzf "${localized.artifactPath}" --strip-components=1 -C "${contentPath}"`, {timeout: 60_000});
+        this.logger?.debug(`Extracted remote artifact to ${contentPath}`);
+      } else {
+        // Fallback: extract to artifacts/package/
+        contentPath = this.repository.getPackageContentDir();
+        await fs.emptyDir(contentPath);
+        execSync(`tar -xzf "${localized.artifactPath}" -C "${artifactsDir}"`, {timeout: 60_000});
+      }
+
       return {
-        artifactPath: localized.artifactPath,
+        artifactPath: contentPath,
         manifest: localized.manifest,
         packageVersionId: localized.packageVersionId,
         source: 'remote',

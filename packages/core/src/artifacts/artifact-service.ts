@@ -10,7 +10,7 @@ import {InstalledArtifact} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
 import {soql} from '../utils/soql.js';
 import {ArtifactRepository} from './artifact-repository.js';
-import {ArtifactResolver} from './artifact-resolver.js';
+import {ArtifactResolver, DownloadTarget} from './artifact-resolver.js';
 
 export interface SfpmArtifact__c {
   Checksum__c: string;
@@ -94,6 +94,7 @@ export class ArtifactService {
   private installedArtifactsCache: Map<string, CachedArtifact> | null = null;
   private logger?: Logger;
   private org?: Org;
+  private projectDir?: string;
 
   constructor(logger?: Logger, org?: Org) {
     this.logger = logger;
@@ -194,6 +195,22 @@ export class ArtifactService {
     }
   }
 
+  /**
+   * Get the build output directory for a package, if a build exists.
+   *
+   * Checks for a manifest in the package workspace's `artifacts/` directory.
+   * Returns the path to `artifacts/package/` (the deployable content) or
+   * `undefined` if no build has been run.
+   *
+   * @param packageWorkspacePath - Package workspace root
+   * @returns Absolute path to `artifacts/package/` or undefined
+   */
+  public getBuildOutput(packageWorkspacePath: string): string | undefined {
+    const repo = this.getRepository(packageWorkspacePath);
+    if (!repo.hasArtifact()) return undefined;
+    return repo.getPackageContentDir();
+  }
+
   public async getInstalledPackages(orderBy: string = 'Name'): Promise<InstalledArtifact[]> {
     if (!this.org) {
       throw new Error('Org connection required for getInstalledPackages');
@@ -234,22 +251,6 @@ export class ArtifactService {
    */
   public getRepository(packageWorkspacePath: string, packageName?: string): ArtifactRepository {
     return new ArtifactRepository(packageWorkspacePath, this.logger, packageName);
-  }
-
-  /**
-   * Get the build output directory for a package, if a build exists.
-   *
-   * Checks for a manifest in the package workspace's `artifacts/` directory.
-   * Returns the path to `artifacts/package/` (the deployable content) or
-   * `undefined` if no build has been run.
-   *
-   * @param packageWorkspacePath - Package workspace root
-   * @returns Absolute path to `artifacts/package/` or undefined
-   */
-  public getBuildOutput(packageWorkspacePath: string): string | undefined {
-    const repo = this.getRepository(packageWorkspacePath);
-    if (!repo.hasArtifact()) return undefined;
-    return repo.getPackageContentDir();
   }
 
   /**
@@ -318,9 +319,14 @@ export class ArtifactService {
     options?: ArtifactResolutionOptions,
   ): Promise<ArtifactResolution> {
     // 1. Create resolver for this specific package (handles scoped registries)
+    const downloadTarget: DownloadTarget | undefined = this.projectDir
+      ? pkgName => path.join(this.projectDir!, 'node_modules', pkgName)
+      : undefined;
+
     const resolver = ArtifactResolver.create(
       packageWorkspacePath,
       {
+        downloadTarget,
         localOnly: options?.localOnly,
       },
       this.logger,
@@ -375,6 +381,15 @@ export class ArtifactService {
    */
   public setOrg(org: Org | undefined): this {
     this.org = org;
+    return this;
+  }
+
+  /**
+   * Set the project root directory.
+   * Used to resolve the download target for remote artifacts (e.g., `node_modules/`).
+   */
+  public setProjectDir(projectDir: string): this {
+    this.projectDir = projectDir;
     return this;
   }
 

@@ -792,6 +792,18 @@ export class SfpmSourcePackage extends SfpmMetadataPackage implements OrgAliasab
     return this._orgAliasResolution;
   }
 
+  /**
+   * For org-aliased packages with a resolved alias, returns the
+   * effective path directly (bypassing the default workingDirectory + path computation).
+   */
+  override get packageDirectory(): string | undefined {
+    if (this._orgAliasResolution?.effectivePath) {
+      return this._orgAliasResolution.effectivePath;
+    }
+
+    return super.packageDirectory;
+  }
+
   public getAnalysisSourcePath(): string {
     const basePath = this.resolveSourcePackagePath();
     if (!this.isOrgAliased) {

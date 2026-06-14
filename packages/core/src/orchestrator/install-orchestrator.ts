@@ -119,6 +119,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     // Use singleton instance - cache is lazy-loaded automatically on first access
     const artifactService = ArtifactService.getInstance()
     .setOrg(org)
+    .setProjectDir(this.provider.projectDir)
     .setLogger(this.logger);
 
     return {artifactService, org};

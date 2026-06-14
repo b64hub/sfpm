@@ -38,7 +38,7 @@ export {
 export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
 
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
-export {ArtifactResolver} from './artifacts/artifact-resolver.js';
+export {ArtifactResolver, type DownloadTarget} from './artifacts/artifact-resolver.js';
 export {
   type ArtifactHistoryOptions, type ArtifactResolution, ArtifactService, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
 } from './artifacts/artifact-service.js';
@@ -74,7 +74,7 @@ export {
 } from './package/builders/builder-registry.js';
 export {assembleArtifactTask, default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
 export {
-  type InstallCheckResult, type Installer, type InstallerConstructor, type InstallerResult, InstallerRegistry, RegisterInstaller,
+  type InstallCheckResult, type Installer, type InstallerConstructor, InstallerRegistry, type InstallerResult, RegisterInstaller,
 } from './package/installers/installer-registry.js';
 export {default as SourceDeployer} from './package/installers/strategies/source-deployer.js';
 export {

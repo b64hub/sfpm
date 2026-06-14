@@ -192,18 +192,18 @@ export class ArtifactRepository {
   }
 
   /**
-   * Get the package workspace path this repository is bound to.
-   */
-  public getPackageWorkspacePath(): string {
-    return this.packageWorkspacePath;
-  }
-
-  /**
    * Get the absolute path to the assembled package content directory.
    * This is the deployable build output (`artifacts/package/`).
    */
   public getPackageContentDir(): string {
     return path.join(this.artifactsDir, 'package');
+  }
+
+  /**
+   * Get the package workspace path this repository is bound to.
+   */
+  public getPackageWorkspacePath(): string {
+    return this.packageWorkspacePath;
   }
 
   /**
@@ -261,10 +261,8 @@ export class ArtifactRepository {
       // Read sfpm metadata from the tarball's package.json
       const packageJson = this.extractPackageJsonFromTarball(tarballPath);
 
-      // Move tarball to artifacts/artifact.tgz
+      // Move tarball to artifacts/artifact.tgz (kept for publish/replication)
       await fs.move(tarballPath, artifactPath, {overwrite: true});
-
-      const artifactHash = await this.calculateFileHash(artifactPath);
 
       let metadata: SfpmPackageMetadataBase | undefined;
       let packageVersionId: string | undefined;
@@ -274,10 +272,9 @@ export class ArtifactRepository {
         packageVersionId = extractPackageVersionId(packageJson);
       }
 
-      const sourceHash = (packageJson && extractSourceHash(packageJson)) || artifactHash;
+      const sourceHash = (packageJson && extractSourceHash(packageJson)) || '';
 
       const manifest: ArtifactManifest = {
-        artifactHash,
         generatedAt: Date.now(),
         lastCheckedRemote: Date.now(),
         name: packageName,
