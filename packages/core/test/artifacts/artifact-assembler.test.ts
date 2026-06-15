@@ -185,8 +185,8 @@ describe('ArtifactAssembler', () => {
 
             const result = await assembler.assemble();
 
-            // Should return path to tgz file (flat path)
-            expect(result).toBe('/project/packages/my-package/artifacts/artifact.tgz');
+            // Should return the package content directory (no tarball)
+            expect(result).toBe('/tmp/builds/test-build/package');
             
             // Should generate package.json in the package directory
             expect(fs.writeJson).toHaveBeenCalledWith(
@@ -199,25 +199,19 @@ describe('ArtifactAssembler', () => {
                 { spaces: 2 }
             );
             
-            // Should create tarball with tar from workspace dir
-            expect(childProcess.execSync).toHaveBeenCalledWith(
-                expect.stringContaining('tar -czf'),
-                expect.objectContaining({ cwd: '/tmp/builds/test-build' })
-            );
-            
-            // Should finalize artifact with new signature (packageName, version, hash, sourceHash)
+            // Should finalize manifest (no artifactHash)
             expect(mockRepository.finalizeArtifact).toHaveBeenCalledWith(
                 scopedName,
                 version,
-                'mockhash123',
                 expect.any(String),
                 expect.objectContaining({
                     commit: undefined,
                 })
             );
             
-            // Should cleanup workspace directory
-            expect(fs.remove).toHaveBeenCalledWith('/tmp/builds/test-build');
+            // Should NOT create tarball or cleanup
+            expect(childProcess.execSync).not.toHaveBeenCalled();
+            expect(fs.remove).not.toHaveBeenCalledWith('/tmp/builds/test-build');
         });
 
         it('should throw ArtifactError if no staging directory is available', async () => {
@@ -344,53 +338,15 @@ describe('ArtifactAssembler', () => {
         });
     });
 
-    describe('createTarball', () => {
-        it('should create tarball and return filename', async () => {
-            vi.mocked(childProcess.execSync).mockReturnValue('');
-            vi.mocked(fs.readJson as any).mockResolvedValue({
-                name: `@testorg/${packageName}`,
-                version,
-            });
-
-            const result = await (assembler as any).createTarball('/tmp/workspace');
-
-            expect(result).toBe(`testorg-${packageName}-${version}.tgz`);
-            expect(childProcess.execSync).toHaveBeenCalledWith(
-                expect.stringContaining('tar -czf'),
-                expect.objectContaining({
-                    cwd: '/tmp/workspace',
-                    encoding: 'utf8'
-                })
-            );
-        });
-
-        it('should throw ArtifactError if tar fails', async () => {
-            vi.mocked(fs.readJson as any).mockResolvedValue({
-                name: `@testorg/${packageName}`,
-                version,
-            });
-            vi.mocked(childProcess.execSync).mockImplementation(() => {
-                throw new Error('tar failed');
-            });
-
-            await expect((assembler as any).createTarball('/tmp/workspace')).rejects.toThrow('Failed to create tarball');
+    describe('createTarball (removed)', () => {
+        it('tarball creation is deferred to publish — method no longer exists', () => {
+            expect((assembler as any).createTarball).toBeUndefined();
         });
     });
 
-    describe('moveTarball', () => {
-        it('should move tarball to artifacts directory (flat path)', async () => {
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-            vi.mocked(fs.move).mockResolvedValue(undefined as any);
-
-            const result = await (assembler as any).moveTarball('/tmp/workspace', 'test-1.0.0-1.tgz');
-
-            expect(fs.ensureDir).toHaveBeenCalledWith('/project/packages/my-package/artifacts');
-            expect(fs.move).toHaveBeenCalledWith(
-                '/tmp/workspace/test-1.0.0-1.tgz',
-                '/project/packages/my-package/artifacts/artifact.tgz',
-                { overwrite: true }
-            );
-            expect(result).toBe('/project/packages/my-package/artifacts/artifact.tgz');
+    describe('moveTarball (removed)', () => {
+        it('tarball operations are deferred to publish — method no longer exists', () => {
+            expect((assembler as any).moveTarball).toBeUndefined();
         });
     });
 });

@@ -33,6 +33,7 @@ function createMockProvider(): any {
   return {
     getPackageConfig: vi.fn(),
     getProjectDefinition: vi.fn(),
+    projectDir: '/test/project',
   };
 }
 
@@ -92,6 +93,7 @@ describe('InstallOrchestrator', () => {
       clearCache: vi.fn(),
       setLogger: vi.fn().mockReturnThis(),
       setOrg: vi.fn().mockReturnThis(),
+      setProjectDir: vi.fn().mockReturnThis(),
     };
     
     vi.mocked(ArtifactService).mockImplementation(function (this: any) {

@@ -175,7 +175,6 @@ describe('ArtifactRepository', () => {
             await repository.finalizeArtifact(
                 '@testorg/test-package',
                 '1.0.0-1',
-                'artifacthash',
                 'sourcehash',
                 { commit: 'abc123', packageVersionId: '04t000' }
             );
@@ -185,7 +184,6 @@ describe('ArtifactRepository', () => {
                 expect.objectContaining({
                     name: '@testorg/test-package',
                     version: '1.0.0-1',
-                    artifactHash: 'artifacthash',
                     sourceHash: 'sourcehash',
                     commit: 'abc123',
                     packageVersionId: '04t000',
@@ -205,7 +203,6 @@ describe('ArtifactRepository', () => {
             await repository.finalizeArtifact(
                 '@testorg/test-package',
                 '1.0.0-1',
-                'artifacthash',
                 'sourcehash',
             );
 
