@@ -1,6 +1,5 @@
-import fs from 'fs-extra';
+import {Org} from '@salesforce/core';
 import {merge} from 'lodash-es';
-import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
@@ -17,7 +16,7 @@ import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {AnalyzerRegistry, PackageAnalyzer} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
-  Builder, BuilderOptions, BuilderRegistry,
+  builderFactory, BuilderOptions, BuilderResult,
   BuildTaskContext, BuildTaskRegistration, BuildTaskResult,
 } from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
@@ -60,6 +59,14 @@ function resolveModeConfig(mode?: BuildMode, skipValidation?: boolean): ModeConf
   return base;
 }
 
+/**
+ * Options for {@link PackageBuilder.runBuilder}.
+ */
+interface RunBuilderOptions {
+  /** Build even if source hash matches a previous build. */
+  force: boolean;
+}
+
 export interface BuildOptions {
   /** Build number for version generation */
   buildNumber?: string;
@@ -93,7 +100,15 @@ export interface BuildOptions {
 }
 
 /**
- * Orchestrator for package builds
+ * Orchestrator for package builds.
+ *
+ * Manages the full build lifecycle:
+ * 1. Stage package content to `artifacts/package/`
+ * 2. Check if build is needed (source hash comparison)
+ * 3. Run analyzers
+ * 4. Run pre-build hooks
+ * 5. Execute the builder (via {@link builderFactory})
+ * 6. Run post-build hooks
  */
 export class PackageBuilder {
   private bus?: BuildEventBus;
@@ -118,12 +133,9 @@ export class PackageBuilder {
   }
 
   /**
-   * @description Build a single package by name
-   * @param packageName
-   * @param projectDirectory
-   * @returns
+   * Build a single package by name.
    */
-  public async build(packageName: string, projectDirectory: string): Promise<PendingValidationDescriptor | undefined> {
+  public async build(packageName: string): Promise<PendingValidationDescriptor | undefined> {
     const packageFactory = new PackageFactory(this.provider);
     const sfpmPackage = packageFactory.createFromName(packageName);
 
@@ -136,55 +148,13 @@ export class PackageBuilder {
     });
 
     this.handleBuildConfiguration(sfpmPackage);
-    const componentCount = await this.stagePackage(sfpmPackage);
 
-    try {
-      if (await this.isPackageEmpty(sfpmPackage)) {
-        this.sink?.skip({
-          packageType: sfpmPackage.type as PackageType,
-          reason: 'empty-package',
-          version: sfpmPackage.version,
-        });
-        return undefined;
-      }
-
-      const hashSkip = await this.checkSourceHash(sfpmPackage, projectDirectory);
-      if (hashSkip) {
-        this.sink?.skip({
-          artifactPath: hashSkip.artifactPath,
-          latestVersion: hashSkip.latestVersion,
-          packageType: sfpmPackage.type as PackageType,
-          reason: 'no-changes',
-          version: sfpmPackage.version,
-        });
-        return undefined;
-      }
-
-      await this.runAnalyzers(sfpmPackage);
-
-      // Run pre-build hooks after analyzers have enriched the package context
-      await this.runLifecycleHooks('pre', sfpmPackage, projectDirectory);
-
-      const builderInstance = await this.initBuilder(sfpmPackage);
-      const pendingValidation = await this.executeBuilder(sfpmPackage, builderInstance, builderInstance.constructor.name, componentCount);
-
-      // Run post-build hooks
-      await this.runLifecycleHooks('post', sfpmPackage, projectDirectory);
-
-      this.sink?.complete({
-        packageVersionId: 'packageVersionId' in sfpmPackage ? (sfpmPackage.packageVersionId as string) : undefined,
-        success: true,
-      });
-
-      return pendingValidation;
-    } finally {
-      // No cleanup needed — artifacts/package/ is the intended build output
-    }
+    return this.runBuilder(sfpmPackage, {force: this.options.force ?? false});
   }
 
-  public async dryRun(packageName: string, projectDirectory: string): Promise<PendingValidationDescriptor | undefined> {
+  public async dryRun(packageName: string): Promise<PendingValidationDescriptor | undefined> {
     this.options.mode = 'dry-run';
-    return this.build(packageName, projectDirectory);
+    return this.build(packageName);
   }
 
   public async runAnalyzer(sfpmPackage: SfpmPackage, analyzer: PackageAnalyzer): Promise<{name: string; success: boolean}> {
@@ -241,36 +211,24 @@ export class PackageBuilder {
     }
   }
 
-  public async stagePackage(sfpmPackage: SfpmPackage): Promise<number> {
-    this.sink?.stageStart({
-      stagingDirectory: sfpmPackage.workingDirectory,
-    });
+  // ========================================================================
+  // Private — Build Pipeline
+  // ========================================================================
 
-    try {
-      const assemblyOutput = await new PackageAssembler(
-        sfpmPackage.name,
-        this.provider,
-        {
-          ignoreFilesConfig: this.ignoreFilesConfig,
-          versionNumber: sfpmPackage.version,
-        },
-        this.logger,
-      ).assemble();
+  /**
+   * Apply builder result to the package domain model.
+   */
+  private applyBuilderResult(sfpmPackage: SfpmPackage, result: BuilderResult): void {
+    if (result.version) {
+      sfpmPackage.version = result.version;
+    }
 
-      sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
+    if (result.packageVersionId && 'packageVersionId' in sfpmPackage) {
+      (sfpmPackage as any).packageVersionId = result.packageVersionId;
+    }
 
-      this.sink?.stageComplete({
-        componentCount: assemblyOutput.componentCount || 0,
-        stagingDirectory: assemblyOutput.stagingDirectory,
-      });
-
-      return assemblyOutput.componentCount || 0;
-    } catch (error: any) {
-      this.sink?.error({
-        error,
-        phase: 'staging',
-      });
-      throw error;
+    if (result.validationState && sfpmPackage instanceof SfpmMetadataPackage) {
+      sfpmPackage.validationState = result.validationState;
     }
   }
 
@@ -284,24 +242,14 @@ export class PackageBuilder {
   /**
    * Source hash guard — determines whether a build is necessary by comparing
    * the current source hash against the latest artifact manifest entry.
-   *
-   * Returns skip info when the hash matches a previous build and `force` is not set.
    */
-  private async checkSourceHash(
-    sfpmPackage: SfpmPackage,
-    projectDirectory: string,
-  ): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
+  private async checkSourceHash(sfpmPackage: SfpmPackage): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
     if (!(sfpmPackage instanceof SfpmMetadataPackage)) {
       return undefined;
     }
 
     const currentSourceHash = await SourceHasher.calculate(sfpmPackage);
     this.logger?.debug(`Source hash: ${currentSourceHash}`);
-
-    if (this.options.force) {
-      this.logger?.info('Force build enabled — skipping source change detection');
-      return undefined;
-    }
 
     const sourcePath = sfpmPackage.packageDefinition?.path;
     if (!sourcePath) {
@@ -311,7 +259,7 @@ export class PackageBuilder {
 
     let packageWorkspacePath: string;
     try {
-      packageWorkspacePath = resolvePackageWorkspacePath(projectDirectory, sourcePath);
+      packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
     } catch {
       this.logger?.info('Could not resolve package workspace path, proceeding with build');
       return undefined;
@@ -330,61 +278,6 @@ export class PackageBuilder {
     return undefined;
   }
 
-  private async executeBuilder(sfpmPackage: SfpmPackage, builderInstance: Builder, builderName: string, componentCount?: number): Promise<PendingValidationDescriptor | undefined> {
-    this.sink?.builderStart({
-      builderName,
-      packageType: sfpmPackage.type as PackageType,
-    });
-
-    // Build task context — shared by all tasks for this package
-    const ctx: BuildTaskContext = {
-      logger: this.logger,
-      projectDirectory: sfpmPackage.projectDirectory,
-      sfpmPackage,
-      sink: this.sink,
-    };
-
-    const preTasks = builderInstance.tasks.filter(t => t.phase === 'pre');
-    const postTasks = builderInstance.tasks.filter(t => t.phase === 'post');
-
-    try {
-      await this.runTasks(sfpmPackage, preTasks, ctx, 'pre-build');
-
-      await builderInstance.exec();
-
-      // Validation step — initiates validation and returns a pending descriptor.
-      // The descriptor is set on the domain model and flows into the artifact.
-      // Resolution (awaiting the result) is handled by the entrypoint via ValidationResolver.
-      let pendingValidation: PendingValidationDescriptor | undefined;
-      if (builderInstance.validate) {
-        pendingValidation = await builderInstance.validate();
-        if (pendingValidation) {
-          this.sink?.validateQueued({
-            operationId: pendingValidation.operationId,
-            operationType: pendingValidation.operationType,
-          });
-        }
-      }
-
-      await this.runTasks(sfpmPackage, postTasks, ctx, 'post-build');
-
-      this.sink?.builderComplete({
-        builderName,
-        componentCount,
-        packageType: sfpmPackage.type as PackageType,
-      });
-
-      return pendingValidation;
-    } catch (error: any) {
-      // Handle actual build errors
-      this.sink?.error({
-        error,
-        phase: 'build',
-      });
-      throw error;
-    }
-  }
-
   /**
    * Merge package definition build options and assign build number.
    */
@@ -398,42 +291,77 @@ export class PackageBuilder {
     if (this.options.buildNumber) {
       sfpmPackage.setBuildNumber(this.options.buildNumber);
     } else if (sfpmPackage.type !== PackageType.Unlocked) {
-      // Source and data packages don't get build numbers from Salesforce.
-      // Generate one from the CI pipeline run ID or a timestamp to ensure
-      // each build produces a unique, ever-increasing version.
       const autoBuildNumber = getPipelineRunId() ?? String(Math.floor(Date.now() / 1000));
       sfpmPackage.setBuildNumber(autoBuildNumber);
       this.logger?.debug(`Auto-assigned build number ${autoBuildNumber} for ${sfpmPackage.name}`);
     }
   }
 
+  /** Check whether a staged package contains zero deployable components or files. */
+  private async isPackageEmpty(sfpmPackage: SfpmPackage): Promise<boolean> {
+    return (await sfpmPackage.componentCount()) === 0;
+  }
+
   /**
-   * Resolve and instantiate the appropriate builder for the package type.
-   * Uses {@link ModeConfig} to determine builder routing, validation, and feature flags.
+   * Resolve the target org for the builder based on package type and mode.
    */
-  private async initBuilder(sfpmPackage: SfpmPackage): Promise<Builder> {
-    if (!sfpmPackage.workingDirectory) {
-      const error = new Error('Package must be staged for build');
-      this.sink?.error({
-        error,
-        phase: 'staging',
-      });
-      throw error;
+  private async resolveTargetOrg(sfpmPackage: SfpmPackage, modeConfig: ModeConfig): Promise<Org | undefined> {
+    const packageType = (modeConfig.validation === 'local' && sfpmPackage.type === PackageType.Unlocked)
+      ? PackageType.Source
+      : sfpmPackage.type;
+
+    let username: string | undefined;
+    if (packageType === PackageType.Unlocked) {
+      username = this.options.devhubUsername;
+    } else {
+      username = this.options.buildOrg;
     }
 
+    if (!username) return undefined;
+
+    return Org.create({aliasOrUsername: username});
+  }
+
+  /**
+   * Unified build flow: stage → check → analyze → hooks → build → hooks.
+   */
+  private async runBuilder(sfpmPackage: SfpmPackage, options: RunBuilderOptions): Promise<PendingValidationDescriptor | undefined> {
+    const componentCount = await this.stagePackage(sfpmPackage);
+
+    if (await this.isPackageEmpty(sfpmPackage)) {
+      this.sink?.skip({
+        packageType: sfpmPackage.type as PackageType,
+        reason: 'empty-package',
+        version: sfpmPackage.version,
+      });
+      return undefined;
+    }
+
+    // Check if build is needed (source hash comparison)
+    if (!options.force) {
+      const hashSkip = await this.checkSourceHash(sfpmPackage);
+      if (hashSkip) {
+        this.sink?.skip({
+          artifactPath: hashSkip.artifactPath,
+          latestVersion: hashSkip.latestVersion,
+          packageType: sfpmPackage.type as PackageType,
+          reason: 'no-changes',
+          version: sfpmPackage.version,
+        });
+        return undefined;
+      }
+    }
+
+    await this.runAnalyzers(sfpmPackage);
+
+    // Run pre-build hooks after analyzers have enriched the package context
+    await this.runLifecycleHooks('pre', sfpmPackage);
+
+    // Create builder via factory
     const modeConfig = resolveModeConfig(this.options.mode, this.options.skipValidation);
-    const {packageType, targetOrg} = this.resolveBuilderType(sfpmPackage, modeConfig.validation);
-
-    const BuilderClass = BuilderRegistry.getBuilder(packageType);
-
-    if (!BuilderClass) {
-      const error = new Error(`No builder registered for package type: ${sfpmPackage.type}`);
-      this.sink?.error({
-        error,
-        phase: 'build',
-      });
-      throw error;
-    }
+    const buildAs = (modeConfig.validation === 'local' && sfpmPackage.type === PackageType.Unlocked)
+      ? PackageType.Source
+      : undefined;
 
     const builderOptions: BuilderOptions = {
       artifact: modeConfig.artifact,
@@ -447,56 +375,71 @@ export class PackageBuilder {
       }),
     };
 
-    const builderInstance: Builder = new BuilderClass(
-      sfpmPackage.workingDirectory,
-      sfpmPackage,
-      builderOptions,
-      this.logger,
-    );
+    const builderInstance = builderFactory(sfpmPackage, builderOptions, this.logger, this.sink, buildAs as PackageType);
 
+    // Connect to org if needed
+    const targetOrg = await this.resolveTargetOrg(sfpmPackage, modeConfig);
     if (targetOrg) {
       await builderInstance.connect(targetOrg);
     }
 
-    return builderInstance;
-  }
+    this.sink?.builderStart({
+      builderName: builderInstance.constructor.name,
+      packageType: sfpmPackage.type as PackageType,
+    });
 
-  /** Check whether a staged package contains zero deployable components or files. */
-  private async isPackageEmpty(sfpmPackage: SfpmPackage): Promise<boolean> {
-    return (await sfpmPackage.componentCount()) === 0;
-  }
+    try {
+      // Run pre-build tasks
+      const preTasks = (builderInstance as any).tasks?.filter((t: BuildTaskRegistration) => t.phase === 'pre') ?? [];
+      await this.runTasks(sfpmPackage, preTasks, 'pre-build');
 
-  /**
-   * Resolve the builder type and target org based on package type and validation mode.
-   * @param sfpmPackage
-   * @param validation
-   * @returns
-   */
-  private resolveBuilderType(sfpmPackage: SfpmPackage, validation: 'local' | boolean): {packageType: Omit<PackageType, 'managed'>; targetOrg?: string} {
-    const packageType = (validation === 'local' && sfpmPackage.type === PackageType.Unlocked)
-      ? PackageType.Source
-      : sfpmPackage.type;
+      // Execute the builder
+      const result = await builderInstance.exec();
 
-    let targetOrg: string | undefined;
-    if (packageType === PackageType.Unlocked) {
-      targetOrg = this.options.devhubUsername;
-    } else {
-      targetOrg = this.options.buildOrg;
+      // Apply result to package
+      this.applyBuilderResult(sfpmPackage, result);
+
+      if (result.pendingValidation) {
+        this.sink?.validateQueued({
+          operationId: result.pendingValidation.operationId,
+          operationType: result.pendingValidation.operationType,
+        });
+      }
+
+      // Run post-build tasks
+      const postTasks = (builderInstance as any).tasks?.filter((t: BuildTaskRegistration) => t.phase === 'post') ?? [];
+      await this.runTasks(sfpmPackage, postTasks, 'post-build');
+
+      this.sink?.builderComplete({
+        builderName: builderInstance.constructor.name,
+        componentCount,
+        packageType: sfpmPackage.type as PackageType,
+      });
+
+      // Run post-build hooks
+      await this.runLifecycleHooks('post', sfpmPackage);
+
+      this.sink?.complete({
+        packageVersionId: result.packageVersionId,
+        success: true,
+      });
+
+      return result.pendingValidation;
+    } catch (error: any) {
+      this.sink?.error({
+        error,
+        phase: 'build',
+      });
+      throw error;
     }
-
-    return {packageType, targetOrg};
   }
 
   /**
-   * Run lifecycle hooks for the build operation if the engine is initialized.
-   *
-   * Passes the scoped {@link BuildEventSink} directly as a HookEventSink,
-   * since it satisfies the same convenience method interface.
+   * Run lifecycle hooks for the build operation.
    */
   private async runLifecycleHooks(
     timing: HookTiming,
     sfpmPackage: SfpmPackage,
-    projectDirectory: string,
   ): Promise<void> {
     if (!LifecycleEngine.isInitialized()) return;
 
@@ -504,7 +447,7 @@ export class PackageBuilder {
     const hookContext: HookContext = {
       logger: this.logger,
       operation: 'build',
-      projectDir: projectDirectory,
+      projectDir: this.provider.projectDir,
       sfpmPackage,
       stage: lifecycle.stage,
       targetOrg: this.options.devhubUsername,
@@ -524,9 +467,15 @@ export class PackageBuilder {
   private async runTasks(
     sfpmPackage: SfpmPackage,
     registrations: BuildTaskRegistration[],
-    ctx: BuildTaskContext,
     taskType: 'post-build' | 'pre-build',
   ): Promise<void> {
+    const ctx: BuildTaskContext = {
+      logger: this.logger,
+      projectDirectory: this.provider.projectDir,
+      sfpmPackage,
+      sink: this.sink,
+    };
+
     for (const registration of registrations) {
       const task = registration.factory(ctx);
       const taskName = task.name;
@@ -568,6 +517,39 @@ export class PackageBuilder {
         taskName,
         taskType,
       });
+    }
+  }
+
+  private async stagePackage(sfpmPackage: SfpmPackage): Promise<number> {
+    this.sink?.stageStart({
+      stagingDirectory: sfpmPackage.workingDirectory,
+    });
+
+    try {
+      const assemblyOutput = await new PackageAssembler(
+        sfpmPackage.name,
+        this.provider,
+        {
+          ignoreFilesConfig: this.ignoreFilesConfig,
+          versionNumber: sfpmPackage.version,
+        },
+        this.logger,
+      ).assemble();
+
+      sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
+
+      this.sink?.stageComplete({
+        componentCount: assemblyOutput.componentCount || 0,
+        stagingDirectory: assemblyOutput.stagingDirectory,
+      });
+
+      return assemblyOutput.componentCount || 0;
+    } catch (error: any) {
+      this.sink?.error({
+        error,
+        phase: 'staging',
+      });
+      throw error;
     }
   }
 }

@@ -203,12 +203,14 @@ export default class PackageAssembler {
   }
 
   /**
-   * @description Ensures the staging directory exists and is clean
-   * for a fresh build.
+   * Ensures the artifacts directory is clean before a fresh build.
+   * Removes any previous build output (manifest, tarball, package content)
+   * to prevent stale data from leaking into the new build.
    */
   private async ensureStagingDirectoryExists(): Promise<void> {
-    await fs.ensureDir(path.dirname(this.stagingDirectory));
-    await fs.emptyDir(this.stagingDirectory);
+    // Clean the entire artifacts/ directory (parent of package/)
+    await fs.emptyDir(path.dirname(this.stagingDirectory));
+    await fs.ensureDir(this.stagingDirectory);
   }
 
   /**

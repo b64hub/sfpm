@@ -175,7 +175,7 @@ describe('UnlockedPackageBuilder', () => {
                 };
             });
 
-            await builder.connect('test-user');
+            await builder.connect(mockOrg);
             await builder.exec();
 
             expect(PackageVersion.create).toHaveBeenCalledWith(
@@ -205,7 +205,7 @@ describe('UnlockedPackageBuilder', () => {
                 Error: ['Something went wrong']
             });
 
-            await builder.connect('test-user');
+            await builder.connect(mockOrg);
 
             await expect(builder.exec()).rejects.toThrow('Package creation failed');
         });
@@ -227,7 +227,7 @@ describe('UnlockedPackageBuilder', () => {
                 };
             });
 
-            await builder.connect('test-user');
+            await builder.connect(mockOrg);
             await builder.exec();
 
             expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Status: Queued'));
@@ -244,7 +244,7 @@ describe('UnlockedPackageBuilder', () => {
                 HasPassedCodeCoverageCheck: false,
             });
 
-            await builder.connect('test-user');
+            await builder.connect(mockOrg);
 
             await expect(builder.exec()).resolves.not.toThrow();
             expect(mockSfpmPackage.validationState).toMatchObject({
@@ -268,7 +268,7 @@ describe('UnlockedPackageBuilder', () => {
                 CodeCoverage: null,
             });
 
-            await skipBuilder.connect('test-user');
+            await skipBuilder.connect(mockOrg);
             await skipBuilder.exec();
 
             expect(mockSfpmPackage.validationState).toEqual({
@@ -303,7 +303,7 @@ describe('UnlockedPackageBuilder', () => {
                 SubscriberPackageVersionId: '04t000000000000',
             });
 
-            await builder.connect('test-user');
+            await builder.connect(mockOrg);
             await builder.exec();
 
             expect(fs.writeJson).toHaveBeenCalledWith(
@@ -350,7 +350,7 @@ describe('UnlockedPackageBuilder', () => {
                 Package2Id: '0Ho000000000001',
             });
 
-            await builder.connect('test-user');
+            await builder.connect(mockOrg);
             await builder.exec();
 
             expect(PackageVersion.getCreateStatus).toHaveBeenCalledWith(requestId, mockConnection);
@@ -367,7 +367,7 @@ describe('UnlockedPackageBuilder', () => {
                 Error: [{Message: 'Apex compilation failed'}],
             });
 
-            await builder.connect('test-user');
+            await builder.connect(mockOrg);
 
             await expect(builder.exec()).rejects.toThrow('Apex compilation failed');
         });
@@ -378,7 +378,7 @@ describe('UnlockedPackageBuilder', () => {
                 Status: 'InProgress',
             });
 
-            await builder.connect('test-user');
+            await builder.connect(mockOrg);
 
             const error = await builder.exec().catch((e: Error) => e);
             expect(error).toBeInstanceOf(Error);
@@ -391,7 +391,7 @@ describe('UnlockedPackageBuilder', () => {
                 new Error('connection refused'),
             );
 
-            await builder.connect('test-user');
+            await builder.connect(mockOrg);
 
             // Verify query fails → falls through to existing timeout detection
             // (lastStatus is 'InProgress', so timeout path matches)

@@ -66,11 +66,11 @@ export {
 } from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
 export {
-  type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry,
-  type BuildTask, type BuildTaskContext, type BuildTaskEnrichments,
-  type BuildTaskRegistration, type BuildTaskResult,
-  type DependencyAnalysis,
-  RegisterBuilder,
+  type Builder, type BuilderConstructor, builderFactory, type BuilderOptions, BuilderRegistry,
+  type BuilderResult, type BuildTask, type BuildTaskContext,
+  type BuildTaskEnrichments, type BuildTaskRegistration,
+  type BuildTaskResult,
+  type DependencyAnalysis, RegisterBuilder,
 } from './package/builders/builder-registry.js';
 export {assembleArtifactTask, default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
 export {

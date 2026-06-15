@@ -13,7 +13,7 @@ import {Logger} from '../../types/logger.js';
 import {PackageType, PendingValidationDescriptor, PerPackageBuildConfig} from '../../types/package.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
-  Builder, BuilderOptions, BuildTaskRegistration, RegisterBuilder,
+  Builder, BuilderOptions, BuilderResult, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 
@@ -44,29 +44,17 @@ export default class UnlockedPackageBuilder implements Builder {
     ];
   }
 
-  public async connect(username: string): Promise<void> {
-    if (!username && this.options.validation === true) {
-      throw new BuildError(this.sfpmPackage.packageName, 'Validation is enabled but no build org username was provided', {
-        buildStep: 'connect',
-      });
-    }
-
-    this.devhubOrg = await Org.create({aliasOrUsername: username});
+  public async connect(targetOrg: Org): Promise<void> {
+    this.devhubOrg = targetOrg;
 
     if (!this.devhubOrg.isDevHubOrg()) {
       throw new BuildError(this.sfpmPackage.packageName, 'Must connect to a dev hub org', {
         buildStep: 'connect',
       });
     }
-
-    if (!this.devhubOrg.getConnection()) {
-      throw new BuildError(this.sfpmPackage.packageName, 'Unable to connect to org', {
-        buildStep: 'connect',
-      });
-    }
   }
 
-  public async exec(): Promise<void> {
+  public async exec(): Promise<BuilderResult> {
     if (!this.devhubOrg) {
       throw new Error('Must run connect() before exec()');
     }
@@ -78,22 +66,15 @@ export default class UnlockedPackageBuilder implements Builder {
 
     await this.pruneOrgDependentPackage();
     await this.buildPackage();
-  }
 
-  /**
-   * Return the pending validation descriptor for the in-flight package version create.
-   *
-   * For unlocked packages, validation is handled server-side during `exec()`.
-   * This method surfaces the pending descriptor so the caller can resolve it
-   * via {@link ValidationResolver} when ready.
-   */
-  public async validate(): Promise<PendingValidationDescriptor | undefined> {
-    const state = this.sfpmPackage.validationState;
-    if (state?.status === 'pending') {
-      return state.pending;
-    }
-
-    return undefined;
+    // Return build results — no more side-effect mutations
+    const {validationState} = this.sfpmPackage;
+    return {
+      packageVersionId: this.sfpmPackage.packageVersionId,
+      pendingValidation: validationState?.status === 'pending' ? validationState.pending : undefined,
+      validationState,
+      version: this.sfpmPackage.version,
+    };
   }
 
   /**

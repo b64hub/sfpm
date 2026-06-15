@@ -97,7 +97,7 @@ export class BuildOrchestrationTask implements OrchestrationTask {
     this.buildBus.on('skip', skipHandler);
 
     try {
-      pendingValidation = await builder.build(packageName, this.projectDirectory);
+      pendingValidation = await builder.build(packageName);
     } catch (error_) {
       success = false;
       error = error_ instanceof Error ? error_.message : String(error_);
