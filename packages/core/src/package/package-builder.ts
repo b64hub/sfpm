@@ -16,7 +16,7 @@ import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {AnalyzerRegistry, PackageAnalyzer} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
-  builderFactory, BuilderOptions, BuilderResult,
+  Builder, builderFactory, BuilderOptions, BuilderResult,
   BuildTaskContext, BuildTaskRegistration, BuildTaskResult,
 } from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
@@ -390,8 +390,7 @@ export class PackageBuilder {
 
     try {
       // Run pre-build tasks
-      const preTasks = (builderInstance as any).tasks?.filter((t: BuildTaskRegistration) => t.phase === 'pre') ?? [];
-      await this.runTasks(sfpmPackage, preTasks, 'pre-build');
+      await this.runTasks(sfpmPackage, builderInstance, 'pre');
 
       // Execute the builder
       const result = await builderInstance.exec();
@@ -407,8 +406,7 @@ export class PackageBuilder {
       }
 
       // Run post-build tasks
-      const postTasks = (builderInstance as any).tasks?.filter((t: BuildTaskRegistration) => t.phase === 'post') ?? [];
-      await this.runTasks(sfpmPackage, postTasks, 'post-build');
+      await this.runTasks(sfpmPackage, builderInstance, 'post');
 
       this.sink?.builderComplete({
         builderName: builderInstance.constructor.name,
@@ -466,9 +464,12 @@ export class PackageBuilder {
    */
   private async runTasks(
     sfpmPackage: SfpmPackage,
-    registrations: BuildTaskRegistration[],
-    taskType: 'post-build' | 'pre-build',
+    builderInstance: Builder,
+    phase: 'post' | 'pre',
   ): Promise<void> {
+    const registrations = builderInstance.tasks.filter(t => t.phase === phase);
+    const taskType = `${phase}-build` as 'post-build' | 'pre-build';
+
     const ctx: BuildTaskContext = {
       logger: this.logger,
       projectDirectory: this.provider.projectDir,

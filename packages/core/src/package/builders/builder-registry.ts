@@ -105,6 +105,11 @@ export interface Builder {
    * Includes validation when applicable — no separate validate() call needed.
    */
   exec(): Promise<BuilderResult>;
+  /**
+   * Task registrations for pre/post build phases.
+   * Registered by the builder in its constructor based on options.
+   */
+  readonly tasks: BuildTaskRegistration[];
 }
 
 export interface DependencyAnalysis {
