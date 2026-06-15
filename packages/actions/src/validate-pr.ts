@@ -137,7 +137,7 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
       continueOnError: true,
       devhubUsername: options.devhubUsername,
       includeDependencies: true,
-      mode: 'dry-run',
+      validation: 'local',
     },
     logger,
     projectDir,

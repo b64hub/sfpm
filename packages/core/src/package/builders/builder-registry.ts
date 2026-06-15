@@ -122,8 +122,6 @@ export interface DependencyAnalysis {
  * Derived from {@link BuildOptions} and {@link ModeConfig} by the PackageBuilder.
  */
 export interface BuilderOptions {
-  /** Persist build artifacts */
-  artifact?: boolean;
   dependencyAnalysis?: DependencyAnalysis;
   /** Installation key for unlocked packages */
   installationKey?: string;

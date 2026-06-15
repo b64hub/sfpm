@@ -126,7 +126,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       includeDependencies: options.includeDependencies,
       installationKey: options.installationKey,
-      mode: 'default',
+      validation: 'full',
     },
     logger,
     projectDir,

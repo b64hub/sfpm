@@ -54,10 +54,8 @@ export default class SourcePackageBuilder implements Builder {
       });
     }
 
-    // Post-build: assemble artifact (conditional on mode)
-    if (options.artifact !== false) {
-      this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});
-    }
+    // Post-build: assemble artifact metadata (package.json, manifest)
+    this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});
   }
 
   public async connect(targetOrg: Org): Promise<void> {

@@ -21,42 +21,47 @@ import {
 } from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
 
-export type BuildMode = 'default' | 'dry-run';
+/**
+ * Validation level for builds.
+ *
+ * - `none`  — assemble only, no analysis, no org interaction
+ * - `local` — static analysis only (dependency checks), no org
+ * - `org`   — org validation only (deploy+test for source, SF API for unlocked)
+ * - `full`  — static analysis + org validation (default)
+ */
+export type ValidationLevel = 'full' | 'local' | 'none' | 'org';
 
 /**
- * Internal configuration resolved from {@link BuildMode}.
- * Maps a mode to the set of features and behaviors it enables.
- * Consumers should never construct this directly — use `resolveModeConfig()`.
+ * Internal configuration resolved from {@link ValidationLevel}.
  */
 interface ModeConfig {
-  /** Whether to always produce an artifact (false = skip artifact in dry-run CLI) */
-  artifact: boolean;
-  /** How dependency analysis should behave: 'warn' = log violations, 'error' = throw, 'skip' = don't run */
-  dependencyAnalysis: 'error' | 'skip' | 'warn';
-  /** Whether to run validation */
-  validation: 'local' | boolean;
+  /** Whether to run static analysis (dependency checks, etc.) */
+  analysis: boolean;
+  /** Whether to connect to and validate against an org */
+  orgValidation: boolean;
 }
 
-const MODE_DEFAULTS: Record<BuildMode, ModeConfig> = {
-  default: {
-    artifact: true,
-    dependencyAnalysis: 'warn',
-    validation: true,
+const VALIDATION_CONFIGS: Record<ValidationLevel, ModeConfig> = {
+  full: {
+    analysis: true,
+    orgValidation: true,
   },
-  'dry-run': {
-    artifact: false,
-    dependencyAnalysis: 'error',
-    validation: 'local',
+  local: {
+    analysis: true,
+    orgValidation: false,
+  },
+  none: {
+    analysis: false,
+    orgValidation: false,
+  },
+  org: {
+    analysis: false,
+    orgValidation: true,
   },
 };
 
-function resolveModeConfig(mode?: BuildMode, skipValidation?: boolean): ModeConfig {
-  const base = MODE_DEFAULTS[mode ?? 'default'];
-  if (skipValidation) {
-    return {...base, dependencyAnalysis: 'skip', validation: false};
-  }
-
-  return base;
+function resolveModeConfig(validation?: ValidationLevel): ModeConfig {
+  return VALIDATION_CONFIGS[validation ?? 'full'];
 }
 
 /**
@@ -70,7 +75,7 @@ interface RunBuilderOptions {
 export interface BuildOptions {
   /** Build number for version generation */
   buildNumber?: string;
-  /** Target org for source package validation (deploy + test). Required for `dry-run` mode. */
+  /** Target org for source package validation (deploy + test) */
   buildOrg?: string;
   /** DevHub username or alias for unlocked package builds */
   devhubUsername?: string;
@@ -79,22 +84,14 @@ export interface BuildOptions {
   /** Installation key for unlocked packages */
   installationKey?: string;
   /**
-   * Build mode. Determines which builder pipeline, validation, and feature flags apply.
+   * Validation level. Controls which quality gates run during the build.
    *
-   * - `default` — production-ready artifact with full validation.
-   *   Source packages: deploy+test against buildOrg. Unlocked: SF API with async validation + code coverage.
-   * - `dry-run` — maximum validation, no real SF API build, no artifacts.
-   *   All packages go through the source pipeline with deploy+test.
+   * - `full`  — static analysis + org validation (default)
+   * - `org`   — org validation only (skip static analysis)
+   * - `local` — static analysis only (no org connection)
+   * - `none`  — assemble only
    */
-  mode?: BuildMode;
-  /**
-   * Skip validation entirely. Acts as an overlay on the active mode:
-   * forces `validation: false` and `dependencyAnalysis: 'skip'`.
-   *
-   * Combine with `mode: 'default'` for a fast build without quality gates.
-   * Combine with `mode: 'dry-run'` for a pure artifact-only assembly (no tags, no validation).
-   */
-  skipValidation?: boolean;
+  validation?: ValidationLevel;
   /** Timeout in minutes for package version creation (default: 120) */
   waitTime?: number;
 }
@@ -153,7 +150,7 @@ export class PackageBuilder {
   }
 
   public async dryRun(packageName: string): Promise<PendingValidationDescriptor | undefined> {
-    this.options.mode = 'dry-run';
+    this.options.validation = 'local';
     return this.build(packageName);
   }
 
@@ -303,15 +300,15 @@ export class PackageBuilder {
   }
 
   /**
-   * Resolve the target org for the builder based on package type and mode.
+   * Resolve the target org for the builder based on package type.
+   * Returns undefined when org validation is disabled.
    */
   private async resolveTargetOrg(sfpmPackage: SfpmPackage, modeConfig: ModeConfig): Promise<Org | undefined> {
-    const packageType = (modeConfig.validation === 'local' && sfpmPackage.type === PackageType.Unlocked)
-      ? PackageType.Source
-      : sfpmPackage.type;
+    if (!modeConfig.orgValidation) return undefined;
 
     let username: string | undefined;
-    if (packageType === PackageType.Unlocked) {
+    // When routing unlocked through source builder, use buildOrg
+    if (sfpmPackage.type === PackageType.Unlocked) {
       username = this.options.devhubUsername;
     } else {
       username = this.options.buildOrg;
@@ -352,27 +349,24 @@ export class PackageBuilder {
       }
     }
 
-    await this.runAnalyzers(sfpmPackage);
+    const modeConfig = resolveModeConfig(this.options.validation);
+
+    if (modeConfig.analysis) {
+      await this.runAnalyzers(sfpmPackage);
+    }
 
     // Run pre-build hooks after analyzers have enriched the package context
     await this.runLifecycleHooks('pre', sfpmPackage);
 
-    // Create builder via factory
-    const modeConfig = resolveModeConfig(this.options.mode, this.options.skipValidation);
-    const buildAs = (modeConfig.validation === 'local' && sfpmPackage.type === PackageType.Unlocked)
+    // Route unlocked packages through source builder when no org validation
+    const buildAs = (!modeConfig.orgValidation && sfpmPackage.type === PackageType.Unlocked)
       ? PackageType.Source
       : undefined;
 
     const builderOptions: BuilderOptions = {
-      artifact: modeConfig.artifact,
       installationKey: this.options.installationKey,
-      validation: modeConfig.validation !== false,
+      validation: modeConfig.orgValidation,
       waitTime: this.options.waitTime,
-      ...(modeConfig.dependencyAnalysis !== 'skip' && {
-        dependencyAnalysis: {
-          warnOnly: modeConfig.dependencyAnalysis === 'warn',
-        },
-      }),
     };
 
     const builderInstance = builderFactory(sfpmPackage, builderOptions, this.logger, this.sink, buildAs as PackageType);

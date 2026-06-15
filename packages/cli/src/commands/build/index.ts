@@ -63,16 +63,14 @@ export default class Build extends SfpmCommand {
     '<%= config.bin %> <%= command.id %> package-a package-b -v my-devhub',
   ]
   static override flags = {
-    async: Flags.boolean({description: 'return immediately without waiting for validation results', exclusive: ['dry-run']}),
+    async: Flags.boolean({description: 'return immediately without waiting for validation results'}),
     'build-number': Flags.string({char: 'b', description: 'build number'}),
     'build-org': Flags.string({char: 'o', description: 'target org for source package validation (deploy + test)'}),
-    'dry-run': Flags.boolean({description: 'validate without producing artifacts (auto-creates a scratch org if --build-org not provided)', exclusive: ['async']}),
     force: Flags.boolean({char: 'f', description: 'build even if no source changes detected', env: 'SFPM_FORCE_BUILD'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key'}),
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     'no-dependencies': Flags.boolean({default: false, description: 'build the specified packages without their transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
-    'skip-validation': Flags.boolean({description: 'skip validation (no deploy+test for source, skipvalidation=true for unlocked)'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
     'target-dev-hub': Flags.string({
       char: 'v',
@@ -88,6 +86,13 @@ export default class Build extends SfpmCommand {
       env: 'SF_DEV_HUB',
     }),
     turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies)'}),
+    validation: Flags.string({
+      allowNo: true,
+      char: 'l',
+      default: 'full',
+      description: 'validation level (use --no-validation to skip)',
+      options: ['local', 'org', 'full'],
+    }),
     wait: Flags.integer({
       char: 'w', default: 120, description: 'timeout in minutes for package version creation', min: 1,
     }),
@@ -263,7 +268,7 @@ export default class Build extends SfpmCommand {
    * - At least one resolved package is a Source package
    */
   private async ensureBuildOrg(resolved: ResolvedBuildFlags): Promise<void> {
-    if (resolved.buildOptions.buildOrg || resolved.buildOptions.skipValidation) return
+    if (resolved.buildOptions.buildOrg || resolved.buildOptions.validation === 'none' || resolved.buildOptions.validation === 'local') return
 
     // Check if any resolved package is a Source package
     const projectService = await ProjectService.getInstance(resolved.projectDir)
@@ -428,14 +433,18 @@ export default class Build extends SfpmCommand {
     // Resolve user input to canonical scoped package names
     const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: flags.json})
 
-    // Resolve devhub (not required in dry-run mode)
+    // Resolve validation level: --no-validation → 'none', --validation=X → X, default → 'full'
+    const validation = (flags.validation === 'false' ? 'none' : flags.validation ?? 'full') as 'full' | 'local' | 'none' | 'org';
+
+    // Resolve devhub (not required when validation doesn't need an org)
+    const needsOrg = validation === 'org' || validation === 'full';
     let devhubUsername = flags['target-dev-hub']
-    if (!devhubUsername && !flags['dry-run']) {
+    if (!devhubUsername && needsOrg) {
       const configAggregator = await ConfigAggregator.create()
       devhubUsername = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined
     }
 
-    if (!devhubUsername && !flags['dry-run']) {
+    if (!devhubUsername && needsOrg) {
       this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1})
     }
 
@@ -448,8 +457,7 @@ export default class Build extends SfpmCommand {
       force: flags.force,
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       installationKey: flags['installation-key'],
-      mode: flags['dry-run'] ? 'dry-run' : 'default',
-      skipValidation: flags['skip-validation'],
+      validation,
       waitTime: flags.wait,
     }
 

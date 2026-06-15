@@ -40,7 +40,7 @@ export default class UnlockedPackageBuilder implements Builder {
     this.sink = sink;
 
     this.tasks = [
-      ...(options.artifact === false ? [] : [{factory: assembleArtifactTask(), phase: 'post' as const}]),
+      {factory: assembleArtifactTask(), phase: 'post' as const},
     ];
   }
 
@@ -161,7 +161,7 @@ export default class UnlockedPackageBuilder implements Builder {
 
   /**
    * Assemble PackageVersion.create options and invoke the Salesforce API.
-   * Reads SF API parameters from BuilderOptions (derived from BuildMode).
+   * Reads SF API parameters from BuilderOptions.
    */
   private async createPackageVersion(
     sfProject: SfProject,
