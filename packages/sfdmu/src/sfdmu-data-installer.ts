@@ -1,14 +1,15 @@
-import {Org} from '@salesforce/core';
-import EventEmitter from 'node:events';
-
 import {
+  type InstallCheckResult,
   type Installer,
+  type InstallerResult,
   type Logger,
   PackageType,
   RegisterInstaller,
   SfpmDataPackage,
   type SfpmPackage,
 } from '@b64hub/sfpm-core';
+import {Org} from '@salesforce/core';
+import EventEmitter from 'node:events';
 
 import SfdmuImportStrategy from './strategies/sfdmu-import-strategy.js';
 
@@ -26,15 +27,13 @@ export default class SfdmuDataInstaller extends EventEmitter implements Installe
   private org?: Org;
   private readonly sfpmPackage: SfpmDataPackage;
   private readonly strategy: SfdmuImportStrategy;
-  private readonly targetOrg: string;
 
-  constructor(targetOrg: string, sfpmPackage: SfpmPackage, logger?: Logger) {
+  constructor(_workingDirectory: string, sfpmPackage: SfpmPackage, _options?: unknown, logger?: Logger) {
     super();
     if (!(sfpmPackage instanceof SfpmDataPackage)) {
       throw new TypeError(`SfdmuDataInstaller received incompatible package type: ${(sfpmPackage as any).constructor.name}`);
     }
 
-    this.targetOrg = targetOrg;
     this.sfpmPackage = sfpmPackage;
     this.logger = logger;
 
@@ -42,33 +41,19 @@ export default class SfdmuDataInstaller extends EventEmitter implements Installe
     this.strategy = new SfdmuImportStrategy(logger, this);
   }
 
-  /**
-   * Validate target org connectivity.
-   */
-  public async connect(username: string): Promise<void> {
-    this.emit('connection:start', {
-      targetOrg: username,
-      timestamp: new Date(),
-    });
-
-    this.org = await Org.create({aliasOrUsername: username});
-
-    if (!this.org.getConnection()) {
-      throw new Error('Unable to connect to target org');
-    }
-
-    this.emit('connection:complete', {
-      targetOrg: username,
-      timestamp: new Date(),
-    });
+  public async connect(targetOrg: Org): Promise<void> {
+    this.org = targetOrg;
   }
 
-  /**
-   * Execute the data import via SFDMU.
-   */
-  public async exec(): Promise<any> {
+  public async isInstalled(): Promise<InstallCheckResult> {
+    // Data packages are always installed (no skip logic)
+    return {installReason: 'not-installed', needsInstall: true};
+  }
+
+  public async run(): Promise<InstallerResult> {
     this.logger?.info(`Installing data package: ${this.sfpmPackage.packageName}`);
-    const result = await this.strategy.execute(this.sfpmPackage, this.targetOrg);
-    return result;
+    const targetOrg = this.org!.getUsername()!;
+    await this.strategy.execute(this.sfpmPackage, targetOrg);
+    return {};
   }
 }
