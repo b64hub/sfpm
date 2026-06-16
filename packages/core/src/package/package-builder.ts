@@ -55,7 +55,7 @@ const VALIDATION_CONFIGS: Record<ValidationLevel, ModeConfig> = {
     orgValidation: false,
   },
   org: {
-    analysis: false,
+    analysis: true,
     orgValidation: true,
   },
 };

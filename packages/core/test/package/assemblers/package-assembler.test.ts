@@ -110,8 +110,8 @@ describe('PackageAssembler', () => {
 
         expect(stagingPath).toBe(path.join('/root/packages/core', 'artifacts', 'package'));
 
-        // Verify core orchestration steps
-        expect(mockedFs.emptyDir).toHaveBeenCalledWith(stagingPath);
+        // Verify core orchestration steps — cleans the entire artifacts/ directory
+        expect(mockedFs.emptyDir).toHaveBeenCalledWith(path.join('/root/packages/core', 'artifacts'));
         // Copy source (with optional filter for build ignore)
         expect(mockedFs.copy).toHaveBeenCalledWith(
             path.join('/root', 'force-app'),
