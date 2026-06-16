@@ -6,6 +6,7 @@ import SfpmPackage from "../sfpm-package.js";
  * Interface for package analyzers
  */
 export interface PackageAnalyzer {
+    name: string;
     isEnabled(sfpmPackage: SfpmPackage): boolean;
     analyze(sfpmPackage: SfpmPackage): Promise<Partial<SfpmPackageContent>>;
 }

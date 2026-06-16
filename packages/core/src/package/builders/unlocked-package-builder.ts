@@ -5,16 +5,17 @@ import fs from 'fs-extra';
 import path from 'node:path';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+
 import ProjectService from '../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
+import {BuildError} from '../../types/errors.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, PendingValidationDescriptor, PerPackageBuildConfig} from '../../types/package.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
-  Builder, BuilderOptions, BuildTaskRegistration, RegisterBuilder,
+  Builder, BuilderOptions, BuilderResult, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
-import {gitTagTask} from './tasks/git-tag-task.js';
 
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Unlocked)
@@ -39,23 +40,21 @@ export default class UnlockedPackageBuilder implements Builder {
     this.sink = sink;
 
     this.tasks = [
-      ...(options.artifact === false ? [] : [{factory: assembleArtifactTask(), phase: 'post' as const}]),
-      ...(options.gitTag === false ? [] : [{factory: gitTagTask(), phase: 'post' as const}]),
+      {factory: assembleArtifactTask(), phase: 'post' as const},
     ];
   }
 
-  public async connect(username: string): Promise<void> {
-    this.devhubOrg = await Org.create({aliasOrUsername: username});
-    if (!this.devhubOrg.isDevHubOrg()) {
-      throw new Error('Must connect to a dev hub org');
-    }
+  public async connect(targetOrg: Org): Promise<void> {
+    this.devhubOrg = targetOrg;
 
-    if (!this.devhubOrg.getConnection()) {
-      throw new Error('Unable to connect to org');
+    if (!this.devhubOrg.isDevHubOrg()) {
+      throw new BuildError(this.sfpmPackage.packageName, 'Must connect to a dev hub org', {
+        buildStep: 'connect',
+      });
     }
   }
 
-  public async exec(): Promise<void> {
+  public async exec(): Promise<BuilderResult> {
     if (!this.devhubOrg) {
       throw new Error('Must run connect() before exec()');
     }
@@ -67,22 +66,15 @@ export default class UnlockedPackageBuilder implements Builder {
 
     await this.pruneOrgDependentPackage();
     await this.buildPackage();
-  }
 
-  /**
-   * Return the pending validation descriptor for the in-flight package version create.
-   *
-   * For unlocked packages, validation is handled server-side during `exec()`.
-   * This method surfaces the pending descriptor so the caller can resolve it
-   * via {@link ValidationResolver} when ready.
-   */
-  public async validate(): Promise<PendingValidationDescriptor | undefined> {
-    const state = this.sfpmPackage.validationState;
-    if (state?.status === 'pending') {
-      return state.pending;
-    }
-
-    return undefined;
+    // Return build results — no more side-effect mutations
+    const {validationState} = this.sfpmPackage;
+    return {
+      packageVersionId: this.sfpmPackage.packageVersionId,
+      pendingValidation: validationState?.status === 'pending' ? validationState.pending : undefined,
+      validationState,
+      version: this.sfpmPackage.version,
+    };
   }
 
   /**
@@ -169,7 +161,7 @@ export default class UnlockedPackageBuilder implements Builder {
 
   /**
    * Assemble PackageVersion.create options and invoke the Salesforce API.
-   * Reads SF API parameters from BuilderOptions (derived from BuildMode).
+   * Reads SF API parameters from BuilderOptions.
    */
   private async createPackageVersion(
     sfProject: SfProject,
@@ -250,7 +242,10 @@ export default class UnlockedPackageBuilder implements Builder {
           const serverErrors = status.Error?.map((e: any) =>
             typeof e === 'string' ? e : e.Message).join('; ') ?? 'Unknown server error';
           this.logger?.error(`Server-side creation failed: ${serverErrors}`);
-          throw new Error(`Unable to create ${this.sfpmPackage.packageName}:\n${serverErrors}`, {cause: error});
+          throw new BuildError(this.sfpmPackage.packageName, `Unable to create ${this.sfpmPackage.packageName}:\n${serverErrors}`, {
+            buildStep: 'create',
+            cause: error,
+          });
         }
 
         // Still in progress (Queued / InProgress / Verifying)
@@ -265,7 +260,10 @@ export default class UnlockedPackageBuilder implements Builder {
         ].join('\n');
 
         this.logger?.error(timeoutMsg);
-        throw new Error(timeoutMsg, {cause: error});
+        throw new BuildError(this.sfpmPackage.packageName, timeoutMsg, {
+          buildStep: 'create',
+          cause: error,
+        });
       } catch (verifyError) {
         // If the verify query itself fails, check if it's our own rethrown error
         if (verifyError instanceof Error && verifyError.cause === error) {

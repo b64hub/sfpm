@@ -1,5 +1,7 @@
 import {PackageManifestObject} from '@salesforce/source-deploy-retrieve';
 
+import type {SfpmPackageSource} from './artifact.js';
+
 import {PackageInstallConfig} from './project.js';
 
 /**
@@ -58,14 +60,6 @@ export interface SfpmUnlockedPackageIdentity extends SfpmPackageIdentity {
   packageId?: string;
   packageType: PackageType.Unlocked;
   packageVersionId?: string;
-}
-
-export interface SfpmPackageSource {
-  branch?: string;
-  commit?: string;
-  repositoryUrl?: string;
-  sourceHash?: string;
-  tag?: string;
 }
 
 /**
@@ -178,6 +172,10 @@ export interface ValidationStatePending {
 export interface ValidationStatePassed {
   /** Which validation checks were performed */
   checks: ValidationCheck[];
+  /** Number of components successfully deployed */
+  componentsDeployed?: number;
+  /** Total number of components in the deployment */
+  componentsTotal?: number;
   status: 'passed';
   /** Test coverage percentage (0–100), if measured */
   testCoverage?: number;
@@ -186,6 +184,10 @@ export interface ValidationStatePassed {
 export interface ValidationStateFailed {
   /** Which validation checks were attempted */
   checks: ValidationCheck[];
+  /** Number of components successfully deployed */
+  componentsDeployed?: number;
+  /** Total number of components in the deployment */
+  componentsTotal?: number;
   /** Human-readable error description */
   error?: string;
   status: 'failed';
@@ -231,7 +233,7 @@ export interface SfpmPackageMetadataBase {
   packageType: Omit<PackageType, 'managed'>;
   // npm scope of the package, if present. This is not guaranteed to be unique across packages, and should not be used as an identifier on its own. It is primarily for informational purposes and to reconstruct the fully qualified package name when needed. For Salesforce operations, the scope is stripped and only the unscoped package name is used.
   readonly scope: string;
-  source: SfpmPackageSource;
+  source?: SfpmPackageSource;
   versionNumber?: string;
 }
 

@@ -7,15 +7,12 @@ import { PackageType } from '../../src/types/package.js';
 
 // Create a mock repository instance that we can control
 const mockRepository = {
-    getVersionPath: vi.fn(),
     getArtifactPath: vi.fn(),
-    getRelativeArtifactPath: vi.fn(),
-    getArtifactZipPath: vi.fn(),
-    getArtifactTgzPath: vi.fn(),
+    getArtifactsDir: vi.fn(),
+    getPackageWorkspacePath: vi.fn(),
     getManifest: vi.fn(),
     getManifestSync: vi.fn(),
     saveManifest: vi.fn(),
-    updateLatestSymlink: vi.fn(),
     calculateFileHash: vi.fn(),
     finalizeArtifact: vi.fn(),
 };
@@ -60,6 +57,11 @@ vi.mock('../../src/utils/version-utils.js', () => ({
     toVersionFormat: vi.fn()
 }));
 
+// Mock workspace-path to return a predictable path
+vi.mock('../../src/utils/workspace-path.js', () => ({
+    resolvePackageWorkspacePath: vi.fn().mockReturnValue('/project/packages/my-package'),
+}));
+
 // Import after mocks are set up
 import ArtifactAssembler, { ArtifactAssemblerOptions } from '../../src/artifacts/artifact-assembler.js';
 
@@ -77,16 +79,13 @@ describe('ArtifactAssembler', () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        // Configure mock repository for this test
-        mockRepository.getVersionPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}`);
-        mockRepository.getArtifactPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}/artifact.tgz`);
-        mockRepository.getRelativeArtifactPath.mockImplementation((pkg: string, ver: string) => `${pkg}/${ver}/artifact.tgz`);
-        mockRepository.getArtifactTgzPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}/artifact.tgz`);
-        mockRepository.getArtifactZipPath.mockImplementation((pkg: string, ver: string) => `/project/artifacts/${pkg}/${ver}/artifact.zip`);
+        // Configure mock repository for this test (flat paths)
+        mockRepository.getArtifactPath.mockReturnValue('/project/packages/my-package/artifacts/artifact.tgz');
+        mockRepository.getArtifactsDir.mockReturnValue('/project/packages/my-package/artifacts');
+        mockRepository.getPackageWorkspacePath.mockReturnValue('/project/packages/my-package');
         mockRepository.getManifest.mockResolvedValue(undefined);
         mockRepository.getManifestSync.mockReturnValue(undefined);
         mockRepository.saveManifest.mockResolvedValue(undefined);
-        mockRepository.updateLatestSymlink.mockResolvedValue(undefined);
         mockRepository.calculateFileHash.mockResolvedValue('mockhash123');
         mockRepository.finalizeArtifact.mockResolvedValue(undefined);
 
@@ -153,8 +152,7 @@ describe('ArtifactAssembler', () => {
         );
     });
 
-    it('should initialize with correct paths', () => {
-        expect((assembler as any).versionDirectory).toBe(`/project/artifacts/${scopedName}/${version}`);
+    it('should initialize with correct repository', () => {
         expect((assembler as any).repository).toBeDefined();
         expect((assembler as any).options).toBeDefined();
     });
@@ -187,8 +185,8 @@ describe('ArtifactAssembler', () => {
 
             const result = await assembler.assemble();
 
-            // Should return path to tgz file
-            expect(result).toBe(`/project/artifacts/${scopedName}/${version}/artifact.tgz`);
+            // Should return the package content directory (no tarball)
+            expect(result).toBe('/tmp/builds/test-build/package');
             
             // Should generate package.json in the package directory
             expect(fs.writeJson).toHaveBeenCalledWith(
@@ -201,25 +199,19 @@ describe('ArtifactAssembler', () => {
                 { spaces: 2 }
             );
             
-            // Should create tarball with tar from workspace dir
-            expect(childProcess.execSync).toHaveBeenCalledWith(
-                expect.stringContaining('tar -czf'),
-                expect.objectContaining({ cwd: '/tmp/builds/test-build' })
-            );
-            
-            // Should finalize artifact (update manifest and symlink)
+            // Should finalize manifest (no artifactHash)
             expect(mockRepository.finalizeArtifact).toHaveBeenCalledWith(
                 scopedName,
                 version,
+                expect.any(String),
                 expect.objectContaining({
-                    path: `${scopedName}/${version}/artifact.tgz`,
-                    sourceHash: expect.any(String),
-                    artifactHash: 'mockhash123'
+                    commit: undefined,
                 })
             );
             
-            // Should cleanup workspace directory
-            expect(fs.remove).toHaveBeenCalledWith('/tmp/builds/test-build');
+            // Should NOT create tarball or cleanup
+            expect(childProcess.execSync).not.toHaveBeenCalled();
+            expect(fs.remove).not.toHaveBeenCalledWith('/tmp/builds/test-build');
         });
 
         it('should throw ArtifactError if no staging directory is available', async () => {
@@ -346,53 +338,15 @@ describe('ArtifactAssembler', () => {
         });
     });
 
-    describe('createTarball', () => {
-        it('should create tarball and return filename', async () => {
-            vi.mocked(childProcess.execSync).mockReturnValue('');
-            vi.mocked(fs.readJson as any).mockResolvedValue({
-                name: `@testorg/${packageName}`,
-                version,
-            });
-
-            const result = await (assembler as any).createTarball('/tmp/workspace');
-
-            expect(result).toBe(`testorg-${packageName}-${version}.tgz`);
-            expect(childProcess.execSync).toHaveBeenCalledWith(
-                expect.stringContaining('tar -czf'),
-                expect.objectContaining({
-                    cwd: '/tmp/workspace',
-                    encoding: 'utf8'
-                })
-            );
-        });
-
-        it('should throw ArtifactError if tar fails', async () => {
-            vi.mocked(fs.readJson as any).mockResolvedValue({
-                name: `@testorg/${packageName}`,
-                version,
-            });
-            vi.mocked(childProcess.execSync).mockImplementation(() => {
-                throw new Error('tar failed');
-            });
-
-            await expect((assembler as any).createTarball('/tmp/workspace')).rejects.toThrow('Failed to create tarball');
+    describe('createTarball (removed)', () => {
+        it('tarball creation is deferred to publish — method no longer exists', () => {
+            expect((assembler as any).createTarball).toBeUndefined();
         });
     });
 
-    describe('moveTarball', () => {
-        it('should move tarball to version directory', async () => {
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-            vi.mocked(fs.move).mockResolvedValue(undefined as any);
-
-            const result = await (assembler as any).moveTarball('/tmp/workspace', 'test-1.0.0-1.tgz');
-
-            expect(fs.ensureDir).toHaveBeenCalledWith(`/project/artifacts/${scopedName}/${version}`);
-            expect(fs.move).toHaveBeenCalledWith(
-                '/tmp/workspace/test-1.0.0-1.tgz',
-                `/project/artifacts/${scopedName}/${version}/artifact.tgz`,
-                { overwrite: true }
-            );
-            expect(result).toBe(`/project/artifacts/${scopedName}/${version}/artifact.tgz`);
+    describe('moveTarball (removed)', () => {
+        it('tarball operations are deferred to publish — method no longer exists', () => {
+            expect((assembler as any).moveTarball).toBeUndefined();
         });
     });
 });

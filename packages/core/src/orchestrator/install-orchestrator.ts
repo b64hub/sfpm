@@ -21,7 +21,9 @@ import {
   OrchestratorOptions,
 } from './orchestrator.js';
 
-export interface InstallOrchestratorOptions extends InstallOptions, OrchestratorOptions {}
+export interface InstallOrchestratorOptions extends InstallOptions, OrchestratorOptions {
+  targetOrg: string;
+}
 
 /**
  * Shared context created once per orchestration run and threaded to each
@@ -46,12 +48,12 @@ interface InstallContext {
 export class InstallOrchestrationTask implements OrchestrationTask<InstallContext> {
   private readonly installBus: InstallEventBus;
   private readonly logger: Logger | undefined;
-  private readonly options: InstallOptions;
+  private readonly options: InstallOrchestratorOptions;
   private readonly provider: ProjectDefinitionProvider;
 
   constructor(
     provider: ProjectDefinitionProvider,
-    options: InstallOptions,
+    options: InstallOrchestratorOptions,
     logger?: Logger,
     installBus?: InstallEventBus,
   ) {
@@ -89,13 +91,14 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
       context.org,
       this.installBus,
     );
+    // Org already provided via constructor — no connect() needed
 
     let success = true;
     let skipped = false;
     let error: string | undefined;
 
     try {
-      const result = await installer.installPackage(packageName);
+      const result = await installer.install(packageName);
       if (result.skipped) {
         skipped = true;
       }
@@ -116,6 +119,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
     // Use singleton instance - cache is lazy-loaded automatically on first access
     const artifactService = ArtifactService.getInstance()
     .setOrg(org)
+    .setProjectDir(this.provider.projectDir)
     .setLogger(this.logger);
 
     return {artifactService, org};

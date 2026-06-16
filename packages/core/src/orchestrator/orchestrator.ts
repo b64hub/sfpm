@@ -263,15 +263,6 @@ export class Orchestrator<TContext = void> {
   }
 
   /**
-   * Remove managed packages from the levels, then drop any empty levels.
-   */
-  private filterOutManagedPackages(levels: PackageNode[][]): PackageNode[][] {
-    return levels
-    .map(level => level.filter(node => !node.isManaged))
-    .filter(level => level.length > 0);
-  }
-
-  /**
    * Remove packages not explicitly requested, then drop any empty levels.
    */
   private filterToRequestedPackages(levels: PackageNode[][], packageNames: string[]): PackageNode[][] {
@@ -354,7 +345,8 @@ export class Orchestrator<TContext = void> {
    * Filters out unrequested packages when `includeDependencies` is false.
    */
   private resolveLevels(packageNames: string[]): PackageNode[][] {
-    const resolution = this.graph.resolveDependencies(packageNames);
+    const includeManaged = this.options.includeManagedPackages !== false;
+    const resolution = this.graph.resolveDependencies(packageNames, {includeManaged});
 
     this.checkCircularDependencies(resolution, packageNames);
 
@@ -362,10 +354,6 @@ export class Orchestrator<TContext = void> {
 
     if (this.options.includeDependencies === false) {
       levels = this.filterToRequestedPackages(levels, packageNames);
-    }
-
-    if (this.options.includeManagedPackages === false) {
-      levels = this.filterOutManagedPackages(levels);
     }
 
     return levels;

@@ -36,8 +36,6 @@ export interface BuildOptions {
 }
 
 export interface BuildResult {
-  /** Artifacts base directory (relative to project root) */
-  artifactsDir: string;
   /** Duration in milliseconds */
   duration: number;
   /** List of package names that failed */
@@ -128,7 +126,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       includeDependencies: options.includeDependencies,
       installationKey: options.installationKey,
-      mode: 'default',
+      validation: 'full',
     },
     logger,
     projectDir,
@@ -160,7 +158,6 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   // ------------------------------------------------------------------
   // 4. Build per-package state and determine which need validation
   // ------------------------------------------------------------------
-  const artifactsDir = 'artifacts';
   const packageStates: PackageBuildState[] = orchResult.results.map(r => {
     const pkgDef = projectConfig.getPackageDefinition(r.packageName);
     const pkgType = pkgDef.type as string;
@@ -193,7 +190,6 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
     const buildCache = new BuildCacheService({logger, runId});
 
     const cacheState: CachedBuildState = {
-      artifactsDir,
       cachedAt: Date.now(),
       devhubUsername: options.devhubUsername,
       packages: packageStates,
@@ -214,7 +210,6 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   // ------------------------------------------------------------------
   const duration = Date.now() - startTime;
   const result: BuildResult = {
-    artifactsDir,
     duration,
     failedPackages: orchResult.failedPackages,
     packages: packageStates,
@@ -240,7 +235,6 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
 
 function setActionOutputs(result: BuildResult): void {
   core.setOutput('success', String(result.success));
-  core.setOutput('artifacts-dir', result.artifactsDir);
   core.setOutput('duration', String(result.duration));
   core.setOutput('state-cached', String(result.stateCached));
   core.setOutput('failed-packages', result.failedPackages.join(','));

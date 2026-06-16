@@ -2,6 +2,7 @@ import type {Connection} from '@salesforce/core';
 
 import {Org} from '@salesforce/core';
 
+import type {ScopedValidationSink, ValidationEventBus, ValidationEventSink} from '../../events/validation-event-bus.js';
 import type {Logger} from '../../types/logger.js';
 import type {
   PendingValidationDescriptor,
@@ -11,6 +12,12 @@ import type {
 
 import {type DeployResult, MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
 import {type PackageValidationResult, ValidationPoller} from './validation-poller.js';
+
+/** Terminal validation result tagged with the originating package name. */
+interface PackageValidationOutcome {
+  packageName: string;
+  result: ValidationStateFailed | ValidationStatePassed;
+}
 
 // ============================================================================
 // Types
@@ -43,25 +50,172 @@ export interface ResolveOptions {
  * {@link MetadataDeployService} (for source packages) to provide a unified
  * resolution contract.
  *
+ * Accepts an optional {@link ValidationEventSink} for progress reporting.
+ * When provided, the resolver emits lifecycle events that renderers can
+ * subscribe to for real-time UI feedback.
+ *
  * @example
  * ```ts
- * const resolver = new ValidationResolver(logger);
- * const finalState = await resolver.resolve(pendingDescriptor, {
- *   deployService, // same instance that started the deploy
- * });
+ * const bus = new ValidationEventBus();
+ * const resolver = new ValidationResolver(logger, bus);
+ * renderer.attachTo(bus);
+ * const results = await resolver.resolve(descriptors);
  * ```
  */
 export class ValidationResolver {
+  private readonly bus?: ValidationEventBus;
   private readonly logger?: Logger;
+  private readonly sink?: ValidationEventSink;
 
-  constructor(logger?: Logger) {
+  constructor(logger?: Logger, bus?: ValidationEventBus) {
     this.logger = logger;
+    this.bus = bus;
+    this.sink = bus?.asSink();
   }
 
   /**
-   * Resolve a pending validation into a terminal state (passed or failed).
+   * Resolve multiple pending validations with optimal concurrency.
+   *
+   * - Deploy-type descriptors are resolved sequentially (they target the same org).
+   * - Package-version-request descriptors are resolved in parallel (independent server-side).
    */
   async resolve(
+    descriptors: PendingValidationDescriptor[],
+    options?: ResolveOptions,
+  ): Promise<Map<string, ValidationStateFailed | ValidationStatePassed>> {
+    const packageNames = descriptors.map(d => d.packageName);
+    this.sink?.start({packageNames});
+
+    const results = new Map<string, ValidationStateFailed | ValidationStatePassed>();
+
+    try {
+      const deploys = descriptors.filter(d => d.operationType === 'deploy');
+      const versionRequests = descriptors.filter(d => d.operationType === 'package-version-request');
+
+      const deployOutcomes = await this.resolveDeploysSequentially(deploys, options);
+      const versionOutcomes = await this.resolveVersionRequestsInParallel(versionRequests, options);
+
+      for (const {packageName, result} of [...deployOutcomes, ...versionOutcomes]) {
+        results.set(packageName, result);
+      }
+    } finally {
+      const passed = [...results.values()].filter(r => r.status === 'passed').length;
+      const failed = [...results.values()].filter(r => r.status === 'failed').length;
+      this.sink?.complete({
+        failed, passed, timedOut: 0, total: results.size,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Emit the terminal result (passed or failed) through a scoped sink.
+   */
+  private emitOutcome(sink: ScopedValidationSink, result: ValidationStateFailed | ValidationStatePassed): void {
+    const components = {
+      componentsDeployed: result.componentsDeployed,
+      componentsTotal: result.componentsTotal,
+    };
+
+    if (result.status === 'passed') {
+      sink.passed({...components, checks: result.checks, codeCoverage: result.testCoverage});
+    } else {
+      sink.failed({...components, codeCoverage: result.testCoverage, error: result.error ?? 'Unknown error'});
+    }
+  }
+
+  private evaluateDeployResult(
+    result: DeployResult,
+    packageName: string,
+    coverageThreshold: number,
+  ): ValidationStateFailed | ValidationStatePassed {
+    const componentFields = {
+      componentsDeployed: result.deployed,
+      componentsTotal: result.total,
+    };
+
+    if (!result.success) {
+      return {
+        ...componentFields,
+        checks: ['deploy'],
+        error: result.formatErrors() || 'Unknown deployment error',
+        status: 'failed',
+      };
+    }
+
+    if (result.hasTestFailures()) {
+      const failureDetails = result.testResults!.failures
+      .map(f => `${f.name}.${f.methodName}: ${f.message}`)
+      .join('\n');
+
+      return {
+        ...componentFields,
+        checks: ['deploy', 'test'],
+        error: `${result.testResults!.failed} Apex test(s) failed:\n${failureDetails}`,
+        status: 'failed',
+        testCoverage: result.testResults!.coverage,
+      };
+    }
+
+    if (!result.meetsCoverageThreshold(coverageThreshold)) {
+      return {
+        ...componentFields,
+        checks: ['deploy', 'test'],
+        error: `Coverage ${result.testResults!.coverage}% is below required ${coverageThreshold}%`,
+        status: 'failed',
+        testCoverage: result.testResults!.coverage,
+      };
+    }
+
+    this.logger?.info(`Validation passed for '${packageName}' (coverage: ${result.testResults?.coverage ?? 'N/A'}%)`);
+    return {
+      ...componentFields,
+      checks: ['deploy', 'test'],
+      status: 'passed',
+      testCoverage: result.testResults?.coverage,
+    };
+  }
+
+  private async resolveDeploy(
+    descriptor: PendingValidationDescriptor,
+    options?: ResolveOptions,
+  ): Promise<ValidationStateFailed | ValidationStatePassed> {
+    const threshold = options?.coverageThreshold ?? DEFAULT_COVERAGE_THRESHOLD;
+    const deployService = new MetadataDeployService(this.logger);
+
+    this.logger?.info(`Awaiting deploy '${descriptor.operationId}' for '${descriptor.packageName}'`);
+    const result = await deployService.awaitDeploy(descriptor.operationId, descriptor.targetOrg);
+
+    return this.evaluateDeployResult(result, descriptor.packageName, threshold);
+  }
+
+  /**
+   * Resolve deploy-type descriptors sequentially (they target the same org).
+   * Each descriptor gets its own scoped sink for per-package event emission.
+   */
+  private async resolveDeploysSequentially(
+    descriptors: PendingValidationDescriptor[],
+    options?: ResolveOptions,
+  ): Promise<PackageValidationOutcome[]> {
+    const outcomes: PackageValidationOutcome[] = [];
+
+    for (const descriptor of descriptors) {
+      const sink = this.sinkFor(descriptor.packageName);
+      sink?.status({status: 'polling'});
+
+      // eslint-disable-next-line no-await-in-loop -- sequential resolution is intentional
+      const result = await this.resolveSingle(descriptor, sink, options);
+      outcomes.push({packageName: descriptor.packageName, result});
+    }
+
+    return outcomes;
+  }
+
+  /**
+   * Route a single descriptor to the appropriate resolution strategy.
+   */
+  private async resolveDescriptor(
     descriptor: PendingValidationDescriptor,
     options?: ResolveOptions,
   ): Promise<ValidationStateFailed | ValidationStatePassed> {
@@ -84,103 +238,6 @@ export class ValidationResolver {
       };
     }
     }
-  }
-
-  /**
-   * Resolve multiple pending validations with optimal concurrency.
-   *
-   * - Deploy-type descriptors are resolved sequentially (they target the same org).
-   * - Package-version-request descriptors are resolved in parallel (independent server-side).
-   */
-  async resolveAll(
-    descriptors: PendingValidationDescriptor[],
-    options?: ResolveOptions,
-  ): Promise<Map<string, ValidationStateFailed | ValidationStatePassed>> {
-    const results = new Map<string, ValidationStateFailed | ValidationStatePassed>();
-
-    const deploys = descriptors.filter(d => d.operationType === 'deploy');
-    const versionRequests = descriptors.filter(d => d.operationType === 'package-version-request');
-
-    // Deploy-type: sequential (same org)
-    for (const descriptor of deploys) {
-      // eslint-disable-next-line no-await-in-loop -- sequential resolution is intentional
-      const result = await this.resolve(descriptor, options);
-      results.set(descriptor.packageName, result);
-    }
-
-    // Package-version-request-type: parallel (independent server-side processes)
-    if (versionRequests.length > 0) {
-      const parallelResults = await Promise.all(versionRequests.map(async descriptor => {
-        const result = await this.resolve(descriptor, options);
-        return {packageName: descriptor.packageName, result};
-      }));
-
-      for (const {packageName, result} of parallelResults) {
-        results.set(packageName, result);
-      }
-    }
-
-    return results;
-  }
-
-  private evaluateDeployResult(
-    result: DeployResult,
-    packageName: string,
-    coverageThreshold: number,
-  ): ValidationStateFailed | ValidationStatePassed {
-    // Check deployment success
-    if (!result.success) {
-      return {
-        checks: ['deploy'],
-        error: result.formatErrors() || 'Unknown deployment error',
-        status: 'failed',
-      };
-    }
-
-    // Check test failures
-    if (result.hasTestFailures()) {
-      const failureDetails = result.testResults!.failures
-      .map(f => `${f.name}.${f.methodName}: ${f.message}`)
-      .join('\n');
-
-      return {
-        checks: ['deploy', 'test'],
-        error: `${result.testResults!.failed} Apex test(s) failed:\n${failureDetails}`,
-        status: 'failed',
-        testCoverage: result.testResults!.coverage,
-      };
-    }
-
-    // Check coverage threshold
-    if (!result.meetsCoverageThreshold(coverageThreshold)) {
-      return {
-        checks: ['deploy', 'test'],
-        error: `Coverage ${result.testResults!.coverage}% is below required ${coverageThreshold}%`,
-        status: 'failed',
-        testCoverage: result.testResults!.coverage,
-      };
-    }
-
-    // All passed
-    this.logger?.info(`Validation passed for '${packageName}' (coverage: ${result.testResults?.coverage ?? 'N/A'}%)`);
-    return {
-      checks: ['deploy', 'test'],
-      status: 'passed',
-      testCoverage: result.testResults?.coverage,
-    };
-  }
-
-  private async resolveDeploy(
-    descriptor: PendingValidationDescriptor,
-    options?: ResolveOptions,
-  ): Promise<ValidationStateFailed | ValidationStatePassed> {
-    const threshold = options?.coverageThreshold ?? DEFAULT_COVERAGE_THRESHOLD;
-    const deployService = new MetadataDeployService(this.logger);
-
-    this.logger?.info(`Awaiting deploy '${descriptor.operationId}' for '${descriptor.packageName}'`);
-    const result = await deployService.awaitDeploy(descriptor.operationId, descriptor.targetOrg);
-
-    return this.evaluateDeployResult(result, descriptor.packageName, threshold);
   }
 
   private async resolvePackageVersion(
@@ -214,5 +271,60 @@ export class ValidationResolver {
       status: 'failed',
       testCoverage: result.codeCoverage,
     };
+  }
+
+  /**
+   * Resolve a single descriptor with error handling.
+   * Catches thrown errors and converts them to a failed validation state,
+   * ensuring the scoped sink always emits a terminal event.
+   */
+  private async resolveSingle(
+    descriptor: PendingValidationDescriptor,
+    sink: ScopedValidationSink | undefined,
+    options?: ResolveOptions,
+  ): Promise<ValidationStateFailed | ValidationStatePassed> {
+    try {
+      const result = await this.resolveDescriptor(descriptor, options);
+      if (sink) this.emitOutcome(sink, result);
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.error(`Validation resolution error for '${descriptor.packageName}': ${message}`);
+
+      const failed: ValidationStateFailed = {
+        checks: [],
+        error: message,
+        status: 'failed',
+      };
+
+      sink?.failed({error: message});
+      return failed;
+    }
+  }
+
+  /**
+   * Resolve package-version-request descriptors in parallel (independent server-side).
+   * Each descriptor gets its own scoped sink for per-package event emission.
+   */
+  private async resolveVersionRequestsInParallel(
+    descriptors: PendingValidationDescriptor[],
+    options?: ResolveOptions,
+  ): Promise<PackageValidationOutcome[]> {
+    if (descriptors.length === 0) return [];
+
+    return Promise.all(descriptors.map(async descriptor => {
+      const sink = this.sinkFor(descriptor.packageName);
+      sink?.status({status: 'polling'});
+
+      const result = await this.resolveSingle(descriptor, sink, options);
+      return {packageName: descriptor.packageName, result};
+    }));
+  }
+
+  /**
+   * Create a package-scoped validation sink, or `undefined` if no bus is wired.
+   */
+  private sinkFor(packageName: string): ScopedValidationSink | undefined {
+    return this.bus?.forPackage(packageName);
   }
 }

@@ -2,13 +2,9 @@ import type {
   ComponentSet, DeploySetOptions, MetadataApiDeploy, MetadataApiDeployStatus,
 } from '@salesforce/source-deploy-retrieve';
 
-import {Org} from '@salesforce/core';
+import {Connection, Org} from '@salesforce/core';
 
 import type {Logger} from '../types/logger.js';
-
-// ============================================================================
-// Types
-// ============================================================================
 
 /** Options for starting a metadata deployment. */
 export interface DeployOptions {
@@ -26,13 +22,17 @@ export interface DeployComponentError {
 
 /** A single Apex test failure. */
 export interface TestFailure {
+  /** The failure message from Salesforce */
   message: string;
+  /** The name of the method that failed */
   methodName: string;
+  /** The name of the class that failed */
   name: string;
+  /** The stack trace of the failure, if available */
   stackTrace?: string;
 }
 
-/** Test run results extracted from a deployment response. */
+/** Test run results extracted from a deployment response. TODO: Break down coverage by class */
 export interface TestRunResult {
   /** Aggregate code coverage percentage (0–100), undefined if not measured */
   coverage?: number;
@@ -48,6 +48,7 @@ export interface TestRunResult {
 
 /** Normalized deployment result with rich test data and helper methods. */
 export interface DeployResult {
+  id: string;
   /** Number of components successfully deployed */
   deployed: number;
   /** Component-level errors */
@@ -76,10 +77,6 @@ export interface DeployProgress {
   status: string;
   total: number;
 }
-
-// ============================================================================
-// MetadataDeployService
-// ============================================================================
 
 /**
  * Low-level service for deploying metadata to a Salesforce org.
@@ -112,7 +109,7 @@ export class MetadataDeployService {
    * - **Fresh-polling**: If the deployId is not in the local registry (e.g., resolution from a different
    *   process), creates a fresh org connection and polls `checkDeployStatus` directly.
    */
-  async awaitDeploy(
+  public async awaitDeploy(
     deployId: string,
     targetOrg: string,
     onProgress?: (progress: DeployProgress) => void,
@@ -120,7 +117,7 @@ export class MetadataDeployService {
     const deploy = this.pendingDeploys.get(deployId);
 
     if (deploy) {
-      return this.awaitInProcess(deploy, deployId, onProgress);
+      return this.awaitInProcess(deploy, onProgress);
     }
 
     return this.awaitFreshPoll(deployId, targetOrg, onProgress);
@@ -130,34 +127,37 @@ export class MetadataDeployService {
    * Start a metadata deployment and return the deploy ID immediately.
    * The deployment continues server-side — use {@link awaitDeploy} to wait for completion.
    */
-  async deploy(
+  public async deploy(
     componentSet: ComponentSet,
-    targetOrg: string,
+    usernameOrConnection: string | Connection,
     options?: DeployOptions,
   ): Promise<string> {
-    const org = await Org.create({aliasOrUsername: targetOrg});
-    const connection = org.getConnection();
-
-    const testLevel = options?.testClasses?.length
-      ? 'RunSpecifiedTests'
-      : (options?.testLevel ?? 'NoTestRun');
+    const testLevel = this.getTestLevel(options);
 
     const deployOptions: DeploySetOptions = {
       apiOptions: {
         ...(options?.testClasses?.length && {runTests: options.testClasses}),
-        testLevel: testLevel as DeploySetOptions['apiOptions'] extends {testLevel?: infer T} ? T : never,
+        testLevel: testLevel,
       },
-      usernameOrConnection: connection,
+      usernameOrConnection,
     };
 
-    const deploy = await componentSet.deploy(deployOptions);
-    const deployId = deploy.id ?? '';
+    let deploy: MetadataApiDeploy;
+    try {
+      this.logger?.info(`Starting deployment against ${usernameOrConnection} with test level '${testLevel}'`);
+      deploy = await componentSet.deploy(deployOptions);
+    } catch (err) {
+      this.logger?.error(`Failed to start deploy against '${usernameOrConnection}': ${(err as Error).message}`);
+      throw err as Error;
+    }
 
-    if (!deployId) {
+    if (!deploy.id) {
       throw new Error('Deployment failed to start — no deploy ID returned');
     }
 
-    this.logger?.info(`Deployment started: ${deployId} against ${targetOrg}`);
+    const deployId = deploy.id;
+
+    this.logger?.info(`Deployment started: ${deployId} against ${usernameOrConnection} with test level '${testLevel}'`);
     this.pendingDeploys.set(deployId, deploy);
 
     return deployId;
@@ -205,7 +205,6 @@ export class MetadataDeployService {
 
   private async awaitInProcess(
     deploy: MetadataApiDeploy,
-    deployId: string,
     onProgress?: (progress: DeployProgress) => void,
   ): Promise<DeployResult> {
     deploy.onUpdate(status => {
@@ -220,7 +219,7 @@ export class MetadataDeployService {
     });
 
     const result = await deploy.pollStatus();
-    this.pendingDeploys.delete(deployId);
+    this.pendingDeploys.delete(deploy.id!);
 
     return this.mapResult(result.response);
   }
@@ -269,6 +268,12 @@ export class MetadataDeployService {
     };
   }
 
+  private getTestLevel(options?: DeployOptions): DeployOptions['testLevel'] {
+    return options?.testClasses?.length
+      ? 'RunSpecifiedTests'
+      : (options?.testLevel ?? 'NoTestRun');
+  }
+
   private mapResult(response: MetadataApiDeployStatus): DeployResult {
     const componentFailures = toArray(response.details.componentFailures);
     const errors: DeployComponentError[] = componentFailures.map(f => ({
@@ -279,6 +284,7 @@ export class MetadataDeployService {
     const testResults = this.extractTestResults(response);
 
     return {
+      id: response.id,
       deployed: response.numberComponentsDeployed,
       errors,
       formatErrors() {

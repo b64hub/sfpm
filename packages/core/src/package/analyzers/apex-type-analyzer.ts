@@ -11,6 +11,8 @@ import {PackageAnalyzer, RegisterAnalyzer} from './analyzer-registry.js';
 // eslint-disable-next-line new-cap -- We want to use the decorator pattern for analyzers
 @RegisterAnalyzer()
 export class ApexTypeAnalyzer implements PackageAnalyzer {
+  public readonly name = 'ApexTypeAnalyzer';
+
   public async analyze(sfpmPackage: SfpmMetadataPackage): Promise<Partial<SfpmPackageContent>> {
     const components = sfpmPackage.apexClasses
     .filter(ac => ac.content !== undefined);

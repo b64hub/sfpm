@@ -28,7 +28,7 @@ class GitTagTask implements BuildTask {
 
     this.logger?.info(`Successfully tagged ${this.sfpmPackage.packageName} as ${tagname}`);
 
-    return {enrichments: {sourceTag: tagname}};
+    return undefined;
   }
 }
 

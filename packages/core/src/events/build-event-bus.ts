@@ -93,6 +93,7 @@ export interface BuilderStartPayload {
 
 export interface BuilderCompletePayload {
   builderName: string;
+  componentCount?: number;
   packageType: PackageType;
 }
 
@@ -134,14 +135,9 @@ export interface CreateCompletePayload {
   versionNumber: string;
 }
 
-export interface ValidationStartPayload {
-  validationType: 'apex' | 'dependencies' | 'metadata';
-}
-
-export interface ValidationCompletePayload {
-  details?: string;
-  passed: boolean;
-  validationType: 'apex' | 'dependencies' | 'metadata';
+export interface ValidationQueuedPayload {
+  operationId: string;
+  operationType: 'deploy' | 'package-version-request';
 }
 
 // ============================================================================
@@ -243,8 +239,7 @@ export type PruneCompleteEvent = BaseEvent & PruneCompletePayload;
 export type CreateStartEvent = BaseEvent & CreateStartPayload;
 export type CreateProgressEvent = BaseEvent & CreateProgressPayload;
 export type CreateCompleteEvent = BaseEvent & CreateCompletePayload;
-export type ValidationStartEvent = BaseEvent & ValidationStartPayload;
-export type ValidationCompleteEvent = BaseEvent & ValidationCompletePayload;
+export type ValidationQueuedEvent = BaseEvent & ValidationQueuedPayload;
 export type AssembleStartEvent = AssembleStartPayload & BaseEvent;
 export type AssembleCompleteEvent = AssembleCompletePayload & BaseEvent;
 export type TaskStartEvent = BaseEvent & TaskStartPayload;
@@ -298,8 +293,7 @@ export type BuildEvents = ConnectionEvents & HookEvents & {
   'task:validate:complete': [TaskValidationCompleteEvent];
   'task:validate:progress': [TaskValidationProgressEvent];
   'task:validate:start': [TaskValidationStartEvent];
-  'validate:complete': [ValidationCompleteEvent];
-  'validate:start': [ValidationStartEvent];
+  'validate:queued': [ValidationQueuedEvent];
 };
 
 // ============================================================================
@@ -347,8 +341,7 @@ export interface BuildEventSink extends EventSink<BuildEvents> {
   taskValidateComplete(payload: TaskValidationCompletePayload): void;
   taskValidateProgress(payload: TaskValidationProgressPayload): void;
   taskValidateStart(payload: TaskValidationStartPayload): void;
-  validateComplete(payload: ValidationCompletePayload): void;
-  validateStart(payload: ValidationStartPayload): void;
+  validateQueued(payload: ValidationQueuedPayload): void;
 }
 
 // ============================================================================
@@ -496,12 +489,8 @@ export class ScopedBuildSink extends ScopedEventSink<BuildEvents> implements Bui
     this.emit('task:validate:start', p as any);
   }
 
-  validateComplete(p: ValidationCompletePayload): void {
-    this.emit('validate:complete', p as any);
-  }
-
-  validateStart(p: ValidationStartPayload): void {
-    this.emit('validate:start', p as any);
+  validateQueued(p: ValidationQueuedPayload): void {
+    this.emit('validate:queued', p as any);
   }
 }
 

@@ -7,6 +7,7 @@ import {PackageAnalyzer, RegisterAnalyzer} from './analyzer-registry.js';
 // eslint-disable-next-line new-cap
 @RegisterAnalyzer()
 export default class FHTAnalyzer implements PackageAnalyzer {
+  public readonly name = 'FHTAnalyzer';
   private logger?: Logger;
 
   constructor(logger?: Logger) {

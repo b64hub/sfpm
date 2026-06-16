@@ -1,7 +1,10 @@
+import type {Org} from '@salesforce/core';
+
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+
 import {DependencyAnalyzer} from '../../types/dependency-analysis.js';
 import {Logger} from '../../types/logger.js';
-import {PackageType, PendingValidationDescriptor} from '../../types/package.js';
+import {PackageType, PendingValidationDescriptor, ValidationState} from '../../types/package.js';
 import SfpmPackage from '../sfpm-package.js';
 
 // ============================================================================
@@ -25,7 +28,6 @@ export interface BuildTaskContext {
  * instead of mutating sfpmPackage directly.
  */
 export interface BuildTaskEnrichments {
-  sourceTag?: string;
   testCoverage?: number;
 }
 
@@ -62,7 +64,6 @@ export interface BuildTask {
 
 /**
  * A registration entry combining a task factory with its execution phase.
- * Builders expose a single `tasks` array of these entries.
  * The pipeline splits by phase and runs in insertion order within each phase.
  */
 export interface BuildTaskRegistration {
@@ -75,23 +76,40 @@ export interface BuildTaskRegistration {
 // ============================================================================
 
 /**
+ * Result returned by a builder after execution.
+ * Captures build output as explicit return values — builders
+ * should not mutate sfpmPackage directly.
+ */
+export interface BuilderResult {
+  /** Package version ID (04t) — set by unlocked package builds */
+  packageVersionId?: string;
+  /** Pending validation descriptor when validation was initiated asynchronously */
+  pendingValidation?: PendingValidationDescriptor;
+  /** Validation state to set on the package */
+  validationState?: ValidationState;
+  /** Resolved version string */
+  version?: string;
+}
+
+/**
  * Interface for specific package builder implementations (Strategy Pattern).
- * Builders can emit events by extending EventEmitter.
  */
 export interface Builder {
-  connect(username: string): Promise<void>;
-  exec(): Promise<any>;
-  tasks: BuildTaskRegistration[];
   /**
-   * Optional validation step invoked after `exec()` completes but before post-build tasks.
-   * Implementations initiate validation (deploy + test for source, polling for unlocked)
-   * and set {@link ValidationState} on the domain model.
-   *
-   * Returns a {@link PendingValidationDescriptor} when validation was initiated asynchronously.
-   * The caller (PackageBuilder) decides whether to await resolution or proceed with pending state.
-   * Returns `undefined` when validation was skipped or not applicable.
+   * Connect to the target org (DevHub for unlocked, build org for source).
+   * Optional — not all builds require an org connection.
    */
-  validate?(): Promise<PendingValidationDescriptor | undefined>;
+  connect(targetOrg: Org): Promise<void>;
+  /**
+   * Execute the build and return results.
+   * Includes validation when applicable — no separate validate() call needed.
+   */
+  exec(): Promise<BuilderResult>;
+  /**
+   * Task registrations for pre/post build phases.
+   * Registered by the builder in its constructor based on options.
+   */
+  readonly tasks: BuildTaskRegistration[];
 }
 
 export interface DependencyAnalysis {
@@ -104,18 +122,11 @@ export interface DependencyAnalysis {
  * Derived from {@link BuildOptions} and {@link ModeConfig} by the PackageBuilder.
  */
 export interface BuilderOptions {
-  /** Whether to produce a build artifact */
-  artifact?: boolean;
-  /** Target org for source package validation (deploy + test) */
-  buildOrg?: string;
   dependencyAnalysis?: DependencyAnalysis;
-  /** Whether to create git tags */
-  gitTag?: boolean;
   /** Installation key for unlocked packages */
   installationKey?: string;
   /** Validation mode for package builds */
   validation?: boolean;
-
   /** Timeout in minutes for package version creation */
   waitTime?: number;
 }
@@ -156,7 +167,45 @@ export class BuilderRegistry {
  * Decorator to register a package builder implementation
  */
 export function RegisterBuilder(type: Omit<PackageType, 'managed'>) {
-  return (constructor: BuilderConstructor) => {
-    BuilderRegistry.register(type, constructor);
+  return (constructor: new (...args: any[]) => Builder) => {
+    BuilderRegistry.register(type, constructor as BuilderConstructor);
   };
+}
+
+/**
+ * Factory function to create a builder instance for a given package.
+ *
+ * @param sfpmPackage - The package to build
+ * @param options - Builder options (validation, artifact, etc.)
+ * @param logger - Optional logger
+ * @param sink - Optional build event sink
+ * @param buildAs - Override the package type used for builder lookup.
+ *   Allows dry-run to route unlocked packages through the source builder.
+ * @returns A configured builder instance
+ */
+export function builderFactory(
+  sfpmPackage: SfpmPackage,
+  options: BuilderOptions,
+  logger?: Logger,
+  sink?: BuildEventSink,
+  buildAs?: PackageType,
+): Builder {
+  const packageType = buildAs ?? sfpmPackage.type;
+
+  const BuilderClass = BuilderRegistry.getBuilder(packageType);
+  if (!BuilderClass) {
+    throw new Error(`No builder registered for package type: ${sfpmPackage.type}`);
+  }
+
+  if (!sfpmPackage.workingDirectory) {
+    throw new Error('Package must be staged before building');
+  }
+
+  return new BuilderClass(
+    sfpmPackage.workingDirectory,
+    sfpmPackage,
+    options,
+    logger,
+    sink,
+  );
 }

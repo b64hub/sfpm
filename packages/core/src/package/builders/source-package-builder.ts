@@ -1,21 +1,25 @@
+import {Org} from '@salesforce/core';
+
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+
 import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
 import {BuildError} from '../../types/errors.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, PendingValidationDescriptor, type ValidationCheck} from '../../types/package.js';
 import SfpmPackage, {SfpmMetadataPackage, SfpmSourcePackage} from '../sfpm-package.js';
 import {
-  Builder, BuilderOptions, BuildTaskRegistration, RegisterBuilder,
+  Builder, BuilderOptions, BuilderResult, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 import {dependencyAnalysisTask} from './tasks/dependency-analysis-task.js';
-import {gitTagTask} from './tasks/git-tag-task.js';
+
+const VALIDATION_TEST_LEVEL = 'RunSpecifiedTests';
 
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Source)
 export default class SourcePackageBuilder implements Builder {
   public tasks: BuildTaskRegistration[] = [];
-  private buildOrg?: string;
+  private buildOrg?: Org;
   private logger?: Logger;
   private options: BuilderOptions;
   private sfpmPackage: SfpmMetadataPackage;
@@ -50,22 +54,15 @@ export default class SourcePackageBuilder implements Builder {
       });
     }
 
-    // Post-build: assemble artifact (conditional on mode)
-    if (options.artifact !== false) {
-      this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});
-    }
-
-    // Post-build: git tag (conditional on mode)
-    if (options.gitTag !== false) {
-      this.tasks.push({factory: gitTagTask(), phase: 'post'});
-    }
+    // Post-build: assemble artifact metadata (package.json, manifest)
+    this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});
   }
 
-  public async connect(username: string): Promise<void> {
-    this.buildOrg = username;
+  public async connect(targetOrg: Org): Promise<void> {
+    this.buildOrg = targetOrg;
   }
 
-  public async exec(): Promise<void> {
+  public async exec(): Promise<BuilderResult> {
     this.sink?.assembleStart({
       sourcePath: this.workingDirectory,
     });
@@ -76,64 +73,13 @@ export default class SourcePackageBuilder implements Builder {
       artifactPath: this.workingDirectory,
       sourcePath: this.workingDirectory,
     });
-  }
 
-  /**
-   * Initiate validation by deploying metadata with tests against the build org.
-   *
-   * Returns a {@link PendingValidationDescriptor} that the caller can resolve
-   * (via ValidationResolver) when ready. Sets the domain model to pending state.
-   *
-   * Skipped (returns undefined) when:
-   * - Validation is disabled (`options.validation === false`)
-   * - No build org is available
-   * - Package has no Apex (nothing to validate)
-   */
-  public async validate(): Promise<PendingValidationDescriptor | undefined> {
-    const targetOrg = this.buildOrg ?? this.options.buildOrg;
-    if (this.options.validation === false || !targetOrg) return undefined;
-    if (!this.sfpmPackage.hasApex) return undefined;
+    // Validate if enabled and an org is available
+    const pendingValidation = await this.validate();
 
-    const testClasses = this.getTestClasses();
-    if (testClasses.length === 0) {
-      throw new BuildError(this.sfpmPackage.packageName, 'Package contains Apex but has no test classes defined', {
-        buildStep: 'validation',
-      });
-    }
-
-    this.logger?.info(`Validating '${this.sfpmPackage.packageName}' against ${targetOrg} [deploy+test]`);
-    this.logger?.info(`Running ${testClasses.length} test class(es): ${testClasses.join(', ')}`);
-
-    this.sink?.taskValidateStart({
-      testCount: testClasses.length,
-      testLevel: 'RunSpecifiedTests',
-    });
-
-    const deployService = new MetadataDeployService(this.logger);
-
-    // Deploy metadata with specified tests
-    const componentSet = this.sfpmPackage.getComponentSet();
-    const deployId = await deployService.deploy(componentSet, targetOrg, {
-      testClasses,
-      testLevel: 'RunSpecifiedTests',
-    });
-
-    // Set pending state on domain model
-    const descriptor: PendingValidationDescriptor = {
-      operationId: deployId,
-      operationType: 'deploy',
-      packageName: this.sfpmPackage.packageName,
-      startedAt: new Date().toISOString(),
-      targetOrg,
+    return {
+      pendingValidation,
     };
-
-    this.sfpmPackage.validationState = {
-      checks: ['deploy', 'test'] as ValidationCheck[],
-      pending: descriptor,
-      status: 'pending',
-    };
-
-    return descriptor;
   }
 
   private getTestClasses(): string[] {
@@ -145,5 +91,51 @@ export default class SourcePackageBuilder implements Builder {
       sfpmPackage.testLevel = 'RunLocalTests';
     }
   }
-}
 
+  /**
+   * Initiate validation by deploying metadata with tests against the build org.
+   *
+   * Skipped (returns undefined) when:
+   * - Validation is disabled (`options.validation === false`)
+   * - No build org is available
+   * - Package has no Apex (nothing to validate)
+   */
+  private async validate(): Promise<PendingValidationDescriptor | undefined> {
+    const targetOrg = this.buildOrg;
+
+    if (this.options.validation === false || !targetOrg) return undefined;
+
+    const testClasses = this.getTestClasses();
+    if (this.sfpmPackage.hasApex && testClasses.length === 0) {
+      throw new BuildError(this.sfpmPackage.packageName, 'Package contains Apex but has no test classes defined', {
+        buildStep: 'validation',
+      });
+    }
+
+    this.logger?.info(`Validating '${this.sfpmPackage.packageName}' against ${targetOrg.getUsername()} [deploy+test]`);
+    this.logger?.info(`Running ${testClasses.length} test class(es): ${testClasses.join(', ')}`);
+
+    this.sink?.taskValidateStart({
+      testCount: testClasses.length,
+      testLevel: VALIDATION_TEST_LEVEL,
+    });
+
+    const deployService = new MetadataDeployService(this.logger);
+
+    // Deploy metadata with specified tests
+    const componentSet = this.sfpmPackage.getComponentSet();
+    const deployId = await deployService.deploy(componentSet, targetOrg.getConnection(), {
+      testClasses,
+      testLevel: VALIDATION_TEST_LEVEL,
+    });
+
+    // Return pending descriptor — the orchestrator decides whether to await resolution
+    return {
+      operationId: deployId,
+      operationType: 'deploy',
+      packageName: this.sfpmPackage.packageName,
+      startedAt: new Date().toISOString(),
+      targetOrg: targetOrg.getUsername() as string,
+    };
+  }
+}

@@ -33,6 +33,7 @@ function createMockProvider(): any {
   return {
     getPackageConfig: vi.fn(),
     getProjectDefinition: vi.fn(),
+    projectDir: '/test/project',
   };
 }
 
@@ -92,6 +93,7 @@ describe('InstallOrchestrator', () => {
       clearCache: vi.fn(),
       setLogger: vi.fn().mockReturnThis(),
       setOrg: vi.fn().mockReturnThis(),
+      setProjectDir: vi.fn().mockReturnThis(),
     };
     
     vi.mocked(ArtifactService).mockImplementation(function (this: any) {
@@ -105,7 +107,7 @@ describe('InstallOrchestrator', () => {
     // Mock PackageInstaller
     mockInstallPackage = vi.fn().mockResolvedValue({skipped: false});
     vi.mocked(PackageInstaller).mockImplementation(function (this: any) {
-      this.installPackage = mockInstallPackage;
+      this.install = mockInstallPackage;
       return this;
     } as any);
 

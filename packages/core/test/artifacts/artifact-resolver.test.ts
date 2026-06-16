@@ -1,50 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import path from 'path';
 import fs from 'fs-extra';
 import { ArtifactResolver } from '../../src/artifacts/artifact-resolver.js';
 import { ArtifactRepository } from '../../src/artifacts/artifact-repository.js';
 import { ArtifactManifest } from '../../src/types/artifact.js';
 import { ArtifactError } from '../../src/types/errors.js';
-import { execSync } from 'child_process';
 
 // Mock external dependencies
 vi.mock('fs-extra');
 vi.mock('child_process');
-vi.mock('adm-zip', () => {
-    return {
-        default: vi.fn().mockImplementation(() => ({
-            getEntry: vi.fn().mockReturnValue({
-                name: 'artifact_metadata.json',
-            }),
-            readAsText: vi.fn().mockReturnValue(JSON.stringify({
-                identity: {
-                    packageName: '@testorg/test-package',
-                    packageVersionId: '04t1234567890',
-                },
-            })),
-        })),
-    };
-});
-
-// Mock archiver
-vi.mock('archiver', () => ({
-    default: vi.fn().mockImplementation(() => ({
-        pipe: vi.fn(),
-        directory: vi.fn(),
-        finalize: vi.fn(),
-        on: vi.fn((event, callback) => {
-            if (event === 'close') {
-                // Simulate immediate close
-                setTimeout(callback, 0);
-            }
-        }),
-    })),
-}));
 
 describe('ArtifactResolver', () => {
     let resolver: ArtifactResolver;
-    const projectDirectory = '/test/project';
-    const artifactsRootDir = '/test/project/artifacts';
+    const packageWorkspacePath = '/test/project/packages/my-pkg';
 
     const mockLogger = {
         warn: vi.fn(),
@@ -71,36 +38,33 @@ describe('ArtifactResolver', () => {
 
     // Factory for creating a resolver with mock dependencies
     const createResolverWithMocks = (mockRegistryClient?: ReturnType<typeof createMockRegistryClient>) => {
-        const repository = new ArtifactRepository(projectDirectory, mockLogger);
+        const repository = new ArtifactRepository(packageWorkspacePath, mockLogger);
         const registryClient = mockRegistryClient || createMockRegistryClient();
         return new ArtifactResolver(repository, registryClient, mockLogger);
     };
 
     // Factory for creating a local-only resolver (no registry client)
     const createLocalOnlyResolver = () => {
-        const repository = new ArtifactRepository(projectDirectory, mockLogger);
+        const repository = new ArtifactRepository(packageWorkspacePath, mockLogger);
         return new ArtifactResolver(repository, undefined, mockLogger);
     };
 
     const createMockManifest = (overrides?: Partial<ArtifactManifest>): ArtifactManifest => ({
         name: '@testorg/test-package',
-        latest: '1.0.0-1',
+        version: '1.0.0-1',
+        sourceHash: 'abc123',
+        artifactHash: 'def456',
+        generatedAt: Date.now() - 60000,
+        schemaVersion: 2,
+        source: 'local',
+        commit: 'commit123',
         lastCheckedRemote: Date.now() - 30 * 60 * 1000, // 30 minutes ago (within TTL)
-        versions: {
-            '1.0.0-1': {
-                path: 'test-package/1.0.0-1/artifact.zip',
-                sourceHash: 'abc123',
-                artifactHash: 'def456',
-                generatedAt: Date.now() - 60000,
-                commit: 'commit123',
-            },
-        },
         ...overrides,
     });
 
     beforeEach(() => {
         vi.clearAllMocks();
-        resolver = ArtifactResolver.create(projectDirectory, mockLogger);
+        resolver = ArtifactResolver.create(packageWorkspacePath, undefined, mockLogger);
     });
 
     afterEach(() => {
@@ -108,19 +72,17 @@ describe('ArtifactResolver', () => {
     });
 
     describe('constructor and create()', () => {
-        it('should initialize with project directory', () => {
+        it('should initialize with package workspace path', () => {
             expect(resolver).toBeDefined();
         });
 
         it('should default to pnpm registry (falls back to npmjs.org when pnpm CLI unavailable)', () => {
-            // child_process is mocked, so execSync returns undefined → PnpmRegistryClient
-            // catches the error and falls back to the default npm registry
             expect(resolver.getRegistryUrl()).toBe('https://registry.npmjs.org');
         });
 
         it('should accept an injected registry client via create()', () => {
             const mockClient = createMockRegistryClient();
-            const customResolver = ArtifactResolver.create(projectDirectory, {
+            const customResolver = ArtifactResolver.create(packageWorkspacePath, {
                 registryClient: mockClient,
             }, mockLogger);
             expect(customResolver.getRegistryUrl()).toBe('https://registry.npmjs.org');
@@ -128,7 +90,7 @@ describe('ArtifactResolver', () => {
         });
 
         it('should allow direct constructor with injected dependencies', () => {
-            const repository = new ArtifactRepository(projectDirectory, mockLogger);
+            const repository = new ArtifactRepository(packageWorkspacePath, mockLogger);
             const mockClient = createMockRegistryClient();
             (mockClient.getRegistryUrl as ReturnType<typeof vi.fn>).mockReturnValue('https://injected.registry.com');
 
@@ -147,7 +109,7 @@ describe('ArtifactResolver', () => {
         });
 
         it('should create local-only resolver via create() with localOnly option', () => {
-            const customResolver = ArtifactResolver.create(projectDirectory, {
+            const customResolver = ArtifactResolver.create(packageWorkspacePath, {
                 localOnly: true,
             }, mockLogger);
 
@@ -156,80 +118,10 @@ describe('ArtifactResolver', () => {
         });
     });
 
-    describe('hasLocalVersion (via repository)', () => {
-        it('should return true if version exists in manifest', () => {
-            const manifest = createMockManifest();
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-
-            expect(resolver.getRepository().hasVersion('@testorg/test-package', '1.0.0-1')).toBe(true);
-        });
-
-        it('should return false if version does not exist', () => {
-            const manifest = createMockManifest();
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-
-            expect(resolver.getRepository().hasVersion('@testorg/test-package', '2.0.0-1')).toBe(false);
-        });
-
-        it('should return false if manifest does not exist', () => {
-            vi.mocked(fs.existsSync).mockReturnValue(false);
-
-            expect(resolver.getRepository().hasVersion('@testorg/test-package', '1.0.0-1')).toBe(false);
-        });
-    });
-
-    describe('getLocalVersions (via repository)', () => {
-        it('should return all versions from manifest', () => {
-            const manifest = createMockManifest({
-                versions: {
-                    '1.0.0-1': { path: 'test-package/1.0.0-1/artifact.zip', generatedAt: Date.now() },
-                    '1.0.0-2': { path: 'test-package/1.0.0-2/artifact.zip', generatedAt: Date.now() },
-                    '1.0.1-1': { path: 'test-package/1.0.1-1/artifact.zip', generatedAt: Date.now() },
-                },
-            });
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-
-            const versions = resolver.getRepository().getVersions('@testorg/test-package');
-            expect(versions).toHaveLength(3);
-            expect(versions).toContain('1.0.0-1');
-            expect(versions).toContain('1.0.0-2');
-            expect(versions).toContain('1.0.1-1');
-        });
-
-        it('should return empty array if no manifest', () => {
-            vi.mocked(fs.existsSync).mockReturnValue(false);
-
-            const versions = resolver.getRepository().getVersions('@testorg/test-package');
-            expect(versions).toEqual([]);
-        });
-    });
-
-    describe('getManifest (via repository)', () => {
-        it('should return manifest if it exists', () => {
-            const manifest = createMockManifest();
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-
-            const result = resolver.getRepository().getManifestSync('@testorg/test-package');
-            expect(result).toEqual(manifest);
-        });
-
-        it('should return undefined if manifest does not exist', () => {
-            vi.mocked(fs.existsSync).mockReturnValue(false);
-
-            const result = resolver.getRepository().getManifestSync('@testorg/test-package');
-            expect(result).toBeUndefined();
-        });
-    });
-
     describe('resolve', () => {
         describe('TTL and cache behavior', () => {
             it('should use local manifest when TTL is valid', async () => {
                 const manifest = createMockManifest();
-                const artifactPath = path.join(artifactsRootDir, 'test-package/1.0.0-1/artifact.zip');
 
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
                 vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
@@ -239,7 +131,6 @@ describe('ArtifactResolver', () => {
 
                 expect(result.version).toBe('1.0.0-1');
                 expect(result.source).toBe('local');
-                // Note: execSync may be called for local tar extraction, but should not call registry
             });
 
             it('should check remote when TTL is expired', async () => {
@@ -262,7 +153,6 @@ describe('ArtifactResolver', () => {
 
                 expect(result.version).toBe('1.0.0-1');
                 expect(result.source).toBe('local');
-                // Should have called registry client to check remote
                 expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('@testorg/test-package');
             });
 
@@ -282,20 +172,13 @@ describe('ArtifactResolver', () => {
 
                 await testResolver.resolve('@testorg/test-package', { forceRefresh: true });
 
-                // Should have called registry client even though TTL is valid
                 expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('@testorg/test-package');
             });
         });
 
         describe('version selection', () => {
-            it('should select latest version when no version specified', async () => {
-                const manifest = createMockManifest({
-                    latest: '1.0.1-2',
-                    versions: {
-                        '1.0.0-1': { path: 'test-package/1.0.0-1/artifact.zip', generatedAt: Date.now() },
-                        '1.0.1-2': { path: 'test-package/1.0.1-2/artifact.zip', generatedAt: Date.now() },
-                    },
-                });
+            it('should return the single local version when no version specified', async () => {
+                const manifest = createMockManifest();
 
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
                 vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
@@ -303,17 +186,11 @@ describe('ArtifactResolver', () => {
 
                 const result = await resolver.resolve('@testorg/test-package');
 
-                expect(result.version).toBe('1.0.1-2');
+                expect(result.version).toBe('1.0.0-1');
             });
 
-            it('should select specific version when requested', async () => {
-                const manifest = createMockManifest({
-                    latest: '1.0.1-2',
-                    versions: {
-                        '1.0.0-1': { path: 'test-package/1.0.0-1/artifact.zip', generatedAt: Date.now() },
-                        '1.0.1-2': { path: 'test-package/1.0.1-2/artifact.zip', generatedAt: Date.now() },
-                    },
-                });
+            it('should return local version when requested version matches', async () => {
+                const manifest = createMockManifest();
 
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
                 vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
@@ -323,125 +200,23 @@ describe('ArtifactResolver', () => {
 
                 expect(result.version).toBe('1.0.0-1');
             });
-
-            it('should handle Salesforce version format (x.x.x.x)', async () => {
-                const manifest = createMockManifest({
-                    versions: {
-                        '1.0.0-1': { path: 'test-package/1.0.0-1/artifact.zip', generatedAt: Date.now() },
-                    },
-                });
-
-                vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
-                vi.mocked(fs.existsSync).mockReturnValue(true);
-                vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-                vi.mocked(fs.writeJson).mockResolvedValue(undefined as never);
-                vi.mocked(fs.move).mockResolvedValue(undefined as never);
-                vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
-
-                // Remote has Salesforce format version
-                vi.mocked(execSync).mockReturnValue(JSON.stringify(['1.0.0-1']));
-
-                const result = await resolver.resolve('@testorg/test-package', { forceRefresh: true });
-
-                expect(result).toBeDefined();
-            });
-        });
-
-        describe('event emission', () => {
-            it('should emit resolve:start event', async () => {
-                const manifest = createMockManifest();
-                const startHandler = vi.fn();
-
-                vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
-                vi.mocked(fs.existsSync).mockReturnValue(true);
-
-                resolver.on('resolve:start', startHandler);
-                await resolver.resolve('@testorg/test-package');
-
-                expect(startHandler).toHaveBeenCalledWith(
-                    expect.objectContaining({
-                        packageName: '@testorg/test-package',
-                        timestamp: expect.any(Date),
-                    })
-                );
-            });
-
-            it('should emit resolve:cache-hit event when using local cache', async () => {
-                const manifest = createMockManifest();
-                const cacheHitHandler = vi.fn();
-
-                vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
-                vi.mocked(fs.existsSync).mockReturnValue(true);
-
-                resolver.on('resolve:cache-hit', cacheHitHandler);
-                await resolver.resolve('@testorg/test-package');
-
-                expect(cacheHitHandler).toHaveBeenCalledWith(
-                    expect.objectContaining({
-                        packageName: '@testorg/test-package',
-                        version: '1.0.0-1',
-                    })
-                );
-            });
-
-            it('should emit resolve:complete event', async () => {
-                const manifest = createMockManifest();
-                const completeHandler = vi.fn();
-
-                vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
-                vi.mocked(fs.existsSync).mockReturnValue(true);
-
-                resolver.on('resolve:complete', completeHandler);
-                await resolver.resolve('@testorg/test-package');
-
-                expect(completeHandler).toHaveBeenCalledWith(
-                    expect.objectContaining({
-                        packageName: '@testorg/test-package',
-                        version: '1.0.0-1',
-                        registry: 'local',
-                    })
-                );
-            });
-
-            it('should emit resolve:error event on failure', async () => {
-                const errorHandler = vi.fn();
-
-                vi.mocked(fs.pathExists).mockResolvedValue(false as never);
-                vi.mocked(fs.readJson).mockRejectedValue(new Error('File not found') as never);
-                vi.mocked(fs.existsSync).mockReturnValue(false);
-                vi.mocked(execSync).mockImplementation(() => {
-                    throw new Error('npm error');
-                });
-
-                resolver.on('resolve:error', errorHandler);
-
-                await expect(resolver.resolve('@testorg/test-package')).rejects.toThrow();
-
-                expect(errorHandler).toHaveBeenCalledWith(
-                    expect.objectContaining({
-                        packageName: '@testorg/test-package',
-                        error: expect.any(String),
-                    })
-                );
-            });
         });
 
         describe('error handling', () => {
             it('should throw ArtifactError when no version found', async () => {
                 vi.mocked(fs.pathExists).mockResolvedValue(false as never);
                 vi.mocked(fs.existsSync).mockReturnValue(false);
-                vi.mocked(execSync).mockReturnValue('[]'); // No remote versions
 
                 await expect(
                     resolver.resolve('nonexistent-package')
                 ).rejects.toThrow(ArtifactError);
             });
 
-            it('should handle npm registry errors gracefully', async () => {
+            it('should handle npm registry errors gracefully with local fallback', async () => {
+                const mockRegistryClient = createMockRegistryClient();
+                mockRegistryClient.getVersions.mockRejectedValue(new Error('Network error'));
+                const testResolver = createResolverWithMocks(mockRegistryClient);
+
                 const manifest = createMockManifest({
                     lastCheckedRemote: Date.now() - 90 * 60 * 1000, // Expired TTL
                 });
@@ -449,18 +224,11 @@ describe('ArtifactResolver', () => {
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
                 vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
-                vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
                 vi.mocked(fs.writeJson).mockResolvedValue(undefined as never);
                 vi.mocked(fs.move).mockResolvedValue(undefined as never);
                 vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
 
-                // npm call fails - should fall back to local
-                vi.mocked(execSync).mockImplementation(() => {
-                    throw new Error('Network error');
-                });
-
-                // Should still resolve from local
-                const result = await resolver.resolve('@testorg/test-package');
+                const result = await testResolver.resolve('@testorg/test-package');
                 expect(result.version).toBe('1.0.0-1');
             });
         });
@@ -468,16 +236,7 @@ describe('ArtifactResolver', () => {
         describe('packageVersionId extraction', () => {
             it('should include packageVersionId from manifest if present', async () => {
                 const manifest = createMockManifest({
-                    versions: {
-                        '1.0.0-1': {
-                            path: 'test-package/1.0.0-1/artifact.zip',
-                            sourceHash: 'abc123',
-                            artifactHash: 'def456',
-                            generatedAt: Date.now() - 60000,
-                            commit: 'commit123',
-                            packageVersionId: '04t1234567890',
-                        },
-                    },
+                    packageVersionId: '04t1234567890',
                 });
 
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
@@ -486,7 +245,24 @@ describe('ArtifactResolver', () => {
 
                 const result = await resolver.resolve('@testorg/test-package');
 
-                expect(result.versionEntry.packageVersionId).toBe('04t1234567890');
+                expect(result.manifest.packageVersionId).toBe('04t1234567890');
+            });
+        });
+
+        describe('manifest shape', () => {
+            it('should return ResolvedArtifact with manifest field', async () => {
+                const manifest = createMockManifest();
+
+                vi.mocked(fs.pathExists).mockResolvedValue(true as never);
+                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
+                vi.mocked(fs.existsSync).mockReturnValue(true);
+
+                const result = await resolver.resolve('@testorg/test-package');
+
+                expect(result.manifest).toBeDefined();
+                expect(result.manifest.sourceHash).toBe('abc123');
+                expect(result.manifest.artifactHash).toBe('def456');
+                expect(result.manifest.schemaVersion).toBe(2);
             });
         });
     });
@@ -510,7 +286,6 @@ describe('ArtifactResolver', () => {
 
             await testResolver.resolve('@testorg/test-package');
 
-            // Should have checked remote because TTL was expired
             expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('@testorg/test-package');
         });
 

@@ -9,7 +9,6 @@ import type {PendingValidationDescriptor} from '../types/package.js';
 
 import {BuildEventBus} from '../events/build-event-bus.js';
 import {OrchestrationEventBus} from '../events/orchestration-event-bus.js';
-import {GitService} from '../git/git-service.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {BuildOptions, PackageBuilder} from '../package/package-builder.js';
 import {ProjectGraph} from '../project/project-graph.js';
@@ -33,10 +32,10 @@ export interface BuildOrchestratorOptions extends BuildOptions, OrchestratorOpti
 /**
  * {@link OrchestrationTask} for package builds.
  *
- * Initialises a shared GitService and delegates individual package builds
- * to PackageBuilder. Builders emit events directly on the shared BuildEventBus.
+ * Delegates individual package builds to PackageBuilder.
+ * Builders emit events directly on the shared BuildEventBus.
  */
-export class BuildOrchestrationTask implements OrchestrationTask<GitService | undefined> {
+export class BuildOrchestrationTask implements OrchestrationTask {
   private readonly buildBus: BuildEventBus;
   private readonly logger: Logger | undefined;
   private readonly options: BuildOrchestratorOptions;
@@ -60,7 +59,6 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
   async processSinglePackage(
     packageName: string,
     _level: number,
-    gitService: GitService | undefined,
   ): Promise<PackageResult> {
     const start = Date.now();
     const pkgLogger = this.logger?.child?.({package: packageName}) ?? this.logger;
@@ -82,7 +80,6 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
       this.provider,
       this.options,
       pkgLogger,
-      gitService,
       this.options.ignoreFilesConfig,
       this.buildBus,
     );
@@ -100,7 +97,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     this.buildBus.on('skip', skipHandler);
 
     try {
-      pendingValidation = await builder.buildPackage(packageName, this.projectDirectory);
+      pendingValidation = await builder.build(packageName);
     } catch (error_) {
       success = false;
       error = error_ instanceof Error ? error_.message : String(error_);
@@ -114,14 +111,8 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
     };
   }
 
-  async setup(): Promise<GitService | undefined> {
-    // In dry-run mode, git service is not needed (no tagging or version bumps)
-    if (this.options.mode === 'dry-run') {
-      this.logger?.debug('Dry-run mode — skipping git service initialization');
-      return undefined;
-    }
-
-    return GitService.initialize(this.projectDirectory, this.logger);
+  async setup(): Promise<void> {
+    // No-op — setup logic (e.g. git service) is handled by individual tasks
   }
 }
 
@@ -142,7 +133,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<GitService | un
 export class BuildOrchestrator {
   readonly buildBus: BuildEventBus;
   readonly orchestrationBus: OrchestrationEventBus;
-  private readonly orchestrator: Orchestrator<GitService | undefined>;
+  private readonly orchestrator: Orchestrator;
 
   constructor(
     provider: ProjectDefinitionProvider,

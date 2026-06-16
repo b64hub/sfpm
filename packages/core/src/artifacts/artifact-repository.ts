@@ -3,46 +3,57 @@ import {execSync} from 'node:child_process';
 import crypto from 'node:crypto';
 import path from 'node:path';
 
-import {ArtifactManifest, ArtifactVersionEntry} from '../types/artifact.js';
+import {ArtifactManifest} from '../types/artifact.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 import {NpmPackageJson} from '../types/npm.js';
 import {SfpmPackageMetadataBase, ValidationState} from '../types/package.js';
-import {splitPackageName} from '../utils/scope-utils.js';
 import {extractPackageVersionId, extractSourceHash, fromNpmPackageJson} from './npm-package-adapter.js';
 
 /**
- * The hidden folder for SFPM configuration and temporary files
+ * Subdirectory name for artifact storage within each package workspace.
  */
-const DOT_FOLDER = '.sfpm';
+const ARTIFACTS_DIR = 'artifacts';
 
 /**
- * ArtifactRepository handles all filesystem operations for local artifact storage.
+ * Package-scoped artifact repository.
  *
- * Responsibilities:
- * - Reading and writing artifact manifests
- * - Reading artifact metadata from zip files
- * - Calculating file and source hashes
- * - Managing 'latest' symlinks
- * - Path resolution for artifacts
+ * Each instance is bound to a single package workspace and manages the flat
+ * artifact layout:
  *
- * This class provides the low-level storage abstraction used by:
- * - ArtifactAssembler (for writing)
+ * ```
+ * <packageWorkspace>/
+ *   artifacts/
+ *     artifact.tgz      # the single built/downloaded artifact
+ *     manifest.json      # metadata sidecar (version, hashes, etc.)
+ * ```
+ *
+ * Version history is delegated to Turborepo's content-addressed cache.
+ * This repository only tracks the *current* artifact on disk.
+ *
+ * Used by:
+ * - ArtifactAssembler (for writing build output)
  * - ArtifactResolver (for reading and remote localization)
  */
 export class ArtifactRepository {
-  private artifactsRootDir: string;
-  private logger?: Logger;
-  private projectDirectory: string;
+  public readonly packageName?: string;
+  private readonly artifactsDir: string;
+  private readonly logger?: Logger;
+  private readonly packageWorkspacePath: string;
 
-  constructor(projectDirectory: string, logger?: Logger) {
+  constructor(packageWorkspacePath: string, logger?: Logger, packageName?: string) {
     this.logger = logger;
-    this.projectDirectory = projectDirectory;
-    this.artifactsRootDir = path.join(projectDirectory, 'artifacts');
+    this.packageName = packageName;
+    this.packageWorkspacePath = packageWorkspacePath;
+    this.artifactsDir = path.join(packageWorkspacePath, ARTIFACTS_DIR);
   }
 
+  // =========================================================================
+  // Path Resolution
+  // =========================================================================
+
   /**
-   * Calculate SHA-256 hash of a file
+   * Calculate SHA-256 hash of a file.
    */
   public async calculateFileHash(filePath: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -56,98 +67,72 @@ export class ArtifactRepository {
   }
 
   /**
-   * Ensure version directory exists
-   * @param packageName - Scoped name of the package
-   * @param version - Version of the package (including buildnumber)
+   * Check whether the source has changed since the last build.
+   *
+   * Compares the given source hash against the manifest's recorded hash.
+   * Returns `undefined` if source has changed (or no previous build exists),
+   * otherwise returns the existing artifact path and version.
    */
-  public async ensureVersionDir(packageName: string, version: string): Promise<string> {
-    const versionPath = this.getVersionPath(packageName, version);
-    await fs.ensureDir(versionPath);
-    return versionPath;
-  }
+  public async checkSourceHash(currentSourceHash: string): Promise<undefined | {artifactPath: string; latestVersion: string}> {
+    const manifest = await this.getManifest();
 
-  /**
-   * Extract packageVersionId from artifact metadata
-   */
-  public extractPackageVersionId(packageName: string, version?: string): string | undefined {
-    const metadata = this.getMetadata(packageName, version);
-    if (!metadata) {
+    if (!manifest?.sourceHash) {
       return undefined;
     }
 
-    return (metadata as any).packageVersionId;
+    if (manifest.sourceHash === currentSourceHash) {
+      return {artifactPath: this.getPackageContentDir(), latestVersion: manifest.version};
+    }
+
+    this.logger?.debug(`Previous hash: ${manifest.sourceHash}, current: ${currentSourceHash}`);
+    return undefined;
   }
 
   /**
-   * Finalize an artifact by updating the manifest and symlink.
+   * Clean the artifacts directory.
+   */
+  public async clean(): Promise<void> {
+    await fs.remove(this.artifactsDir);
+  }
+
+  /**
+   * Finalize a locally built artifact by writing the manifest.
    *
-   * This is a convenience method that combines:
-   * 1. Adding/updating the version entry in manifest
-   * 2. Updating the latest symlink
-   *
-   * @param packageName - Name of the package
-   * @param version - Version being finalized
-   * @param entry - Version entry data for the manifest
+   * @param packageName - Scoped package name
+   * @param version - Version string
+   * @param artifactHash - SHA-256 of the tarball
+   * @param sourceHash - SHA-256 of the source files
+   * @param options - Optional commit and packageVersionId
    */
   public async finalizeArtifact(
     packageName: string,
     version: string,
-    entry: ArtifactVersionEntry,
+    sourceHash: string,
+    options?: {commit?: string; packageVersionId?: string;},
   ): Promise<void> {
-    await this.addVersionEntry(packageName, version, entry, true);
-    await this.updateLatestSymlink(packageName, version);
-  }
-
-  /**
-   * Get comprehensive artifact info for a package
-   */
-  public getArtifactInfo(
-    packageName: string,
-    version?: string,
-  ): {
-    manifest?: ArtifactManifest;
-    metadata?: SfpmPackageMetadataBase;
-    version?: string;
-    versionInfo?: ArtifactVersionEntry;
-  } {
-    const manifest = this.getManifestSync(packageName);
-
-    if (!manifest) {
-      return {};
-    }
-
-    const targetVersion = version || manifest.latest;
-    const versionInfo = targetVersion ? manifest.versions[targetVersion] : undefined;
-    const metadata = this.getMetadata(packageName, targetVersion);
-
-    return {
-      manifest,
-      metadata,
-      version: targetVersion,
-      versionInfo,
+    const manifest: ArtifactManifest = {
+      commit: options?.commit,
+      generatedAt: Date.now(),
+      name: packageName,
+      packageVersionId: options?.packageVersionId,
+      schemaVersion: 2,
+      source: 'local',
+      sourceHash,
+      version,
     };
+
+    await this.saveManifest(manifest);
   }
 
-  /**
-   * Get the absolute path to the artifact file
-   */
-  public getArtifactPath(packageName: string, version: string): string {
-    return path.join(this.getVersionPath(packageName, version), 'artifact.tgz');
-  }
+  // =========================================================================
+  // Hash Calculation
+  // =========================================================================
 
   /**
-   * Get the root directory for all artifacts
+   * Get the absolute path to the artifact tarball.
    */
-  public getArtifactsRoot(): string {
-    return this.artifactsRootDir;
-  }
-
-  /**
-   * Get the latest version from a package's manifest
-   */
-  public getLatestVersion(packageName: string): string | undefined {
-    const manifest = this.getManifestSync(packageName);
-    return manifest?.latest;
+  public getArtifactPath(): string {
+    return path.join(this.artifactsDir, 'artifact.tgz');
   }
 
   // =========================================================================
@@ -155,68 +140,27 @@ export class ArtifactRepository {
   // =========================================================================
 
   /**
-   * Load the manifest for a package (async)
+   * Get the artifacts directory path.
    */
-  public async getManifest(packageName: string): Promise<ArtifactManifest | undefined> {
-    const manifestPath = this.getManifestPath(packageName);
+  public getArtifactsDir(): string {
+    return this.artifactsDir;
+  }
+
+  /**
+   * Load the manifest (async).
+   */
+  public async getManifest(): Promise<ArtifactManifest | undefined> {
+    const manifestPath = this.getManifestPath();
 
     try {
       if (await fs.pathExists(manifestPath)) {
         return await fs.readJson(manifestPath);
       }
     } catch (error) {
-      this.logger?.warn(`Failed to load manifest for ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger?.warn(`Failed to load manifest: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     return undefined;
-  }
-
-  /**
-   * Load the manifest for a package (sync)
-   */
-  public getManifestSync(packageName: string): ArtifactManifest | undefined {
-    const manifestPath = this.getManifestPath(packageName);
-
-    try {
-      if (fs.existsSync(manifestPath)) {
-        return fs.readJsonSync(manifestPath);
-      }
-    } catch (error) {
-      this.logger?.warn(`Failed to load manifest for ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-
-    return undefined;
-  }
-
-  /**
-   * Read artifact metadata from a specific version.
-   * Reads the sfpm property from package.json inside the tarball.
-   */
-  public getMetadata(packageName: string, version?: string): SfpmPackageMetadataBase | undefined {
-    try {
-      const manifest = this.getManifestSync(packageName);
-      if (!manifest) {
-        return undefined;
-      }
-
-      const targetVersion = version || manifest.latest;
-      if (!targetVersion) {
-        this.logger?.warn(`No version specified and no latest version in manifest for ${packageName}`);
-        return undefined;
-      }
-
-      // Check if version exists in manifest
-      if (!manifest.versions[targetVersion]) {
-        this.logger?.warn(`Version ${targetVersion} not found in manifest for ${packageName}`);
-        return undefined;
-      }
-
-      const tgzPath = this.getArtifactPath(packageName, targetVersion);
-      return this.extractMetadataFromTarball(tgzPath);
-    } catch (error) {
-      this.logger?.warn(`Failed to read artifact metadata: ${error instanceof Error ? error.message : String(error)}`);
-      return undefined;
-    }
   }
 
   // =========================================================================
@@ -224,71 +168,80 @@ export class ArtifactRepository {
   // =========================================================================
 
   /**
-   * Get the path to a package's artifact directory
+   * Load the manifest (sync).
    */
-  public getPackageArtifactPath(packageName: string): string {
-    const {name, scope} = splitPackageName(packageName);
+  public getManifestSync(): ArtifactManifest | undefined {
+    const manifestPath = this.getManifestPath();
 
-    if (!scope) {
-      throw new ArtifactError(packageName, 'read', 'Invalid package name: missing scope', {
-        context: {packageName},
-      });
+    try {
+      if (fs.existsSync(manifestPath)) {
+        return fs.readJsonSync(manifestPath);
+      }
+    } catch (error) {
+      this.logger?.warn(`Failed to load manifest: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    return path.join(this.artifactsRootDir, scope, name);
+    return undefined;
   }
 
   /**
-   * Get the project directory
+   * Read artifact metadata from the tarball's package.json.
    */
-  public getProjectDirectory(): string {
-    return this.projectDirectory;
+  public getMetadata(): SfpmPackageMetadataBase | undefined {
+    return this.extractMetadataFromTarball(this.getArtifactPath());
   }
 
   /**
-   * Get the relative path to the artifact file (for storage in manifest)
+   * Get the absolute path to the assembled package content directory.
+   * This is the deployable build output (`artifacts/package/`).
    */
-  public getRelativeArtifactPath(packageName: string, version: string): string {
-    const {name, scope} = splitPackageName(packageName);
-    if (!scope) {
-      throw new ArtifactError(packageName, 'read', 'Invalid package name: missing scope', {
-        context: {packageName},
-      });
-    }
-
-    return path.join(scope, name, version, 'artifact.tgz');
+  public getPackageContentDir(): string {
+    return path.join(this.artifactsDir, 'package');
   }
 
   /**
-   * Get the path to a specific version's directory
+   * Get the package workspace path this repository is bound to.
    */
-  public getVersionPath(packageName: string, version: string): string {
-    return path.join(this.getPackageArtifactPath(packageName), version);
+  public getPackageWorkspacePath(): string {
+    return this.packageWorkspacePath;
   }
 
   /**
-   * Check if any local artifacts exist for a package
+   * Check if a local build output exists (manifest present).
    */
-  public hasArtifacts(packageName: string): boolean {
-    const manifestPath = this.getManifestPath(packageName);
-    return fs.existsSync(manifestPath);
+  public hasArtifact(): boolean {
+    return fs.existsSync(this.getManifestPath());
   }
+
+  /**
+   * Check if the artifact tarball exists on disk.
+   * Used by the publish flow to verify packable content.
+   */
+  public hasTarball(): boolean {
+    return fs.existsSync(this.getArtifactPath());
+  }
+
+  // =========================================================================
+  // Artifact Finalization
+  // =========================================================================
+
+  // =========================================================================
+  // Tarball Localization (remote downloads)
+  // =========================================================================
 
   /**
    * Localize a downloaded tarball into the artifact repository.
    *
-   * This method owns the full responsibility of "localization":
+   * Responsibilities:
    * 1. Read package.json from tarball to extract sfpm metadata
-   * 2. Move tarball to artifacts/<package>/<version>/artifact.tgz
+   * 2. Move tarball to artifacts/artifact.tgz
    * 3. Calculate artifact hash
-   * 4. Build and save version entry in manifest
-   * 5. Update 'latest' symlink
-   * 6. Update lastCheckedRemote timestamp
+   * 4. Write manifest with source: 'remote'
+   * 5. Update lastCheckedRemote timestamp
    *
    * @param tarballPath - Path to the downloaded .tgz file
    * @param packageName - Name of the package
    * @param version - Version being localized
-   * @returns Localized artifact info including version entry
    */
   public async localizeTarball(
     tarballPath: string,
@@ -296,24 +249,20 @@ export class ArtifactRepository {
     version: string,
   ): Promise<{
     artifactPath: string;
+    manifest: ArtifactManifest;
     metadata?: SfpmPackageMetadataBase;
     packageVersionId?: string;
-    versionEntry: ArtifactVersionEntry;
   }> {
-    const versionDir = this.getVersionPath(packageName, version);
-    const artifactPath = this.getArtifactPath(packageName, version);
+    const artifactPath = this.getArtifactPath();
 
     try {
-      // Ensure version directory exists
-      await fs.ensureDir(versionDir);
+      await fs.ensureDir(this.artifactsDir);
 
       // Read sfpm metadata from the tarball's package.json
       const packageJson = this.extractPackageJsonFromTarball(tarballPath);
 
-      // Move tarball to the artifacts folder
+      // Move tarball to artifacts/artifact.tgz (kept for publish/replication)
       await fs.move(tarballPath, artifactPath, {overwrite: true});
-
-      const artifactHash = await this.calculateFileHash(artifactPath);
 
       let metadata: SfpmPackageMetadataBase | undefined;
       let packageVersionId: string | undefined;
@@ -323,29 +272,26 @@ export class ArtifactRepository {
         packageVersionId = extractPackageVersionId(packageJson);
       }
 
-      // Use sourceHash from metadata if available, otherwise fall back to artifactHash
-      const sourceHash = (packageJson && extractSourceHash(packageJson)) || artifactHash;
+      const sourceHash = (packageJson && extractSourceHash(packageJson)) || '';
 
-      // Build version entry
-      const versionEntry: ArtifactVersionEntry = {
-        artifactHash,
+      const manifest: ArtifactManifest = {
         generatedAt: Date.now(),
+        lastCheckedRemote: Date.now(),
+        name: packageName,
         packageVersionId,
-        path: `${packageName}/${version}/artifact.tgz`,
+        schemaVersion: 2,
+        source: 'remote',
         sourceHash,
+        version,
       };
 
-      // Finalize: update manifest and symlink
-      await this.finalizeArtifact(packageName, version, versionEntry);
-
-      // Update last checked remote timestamp
-      await this.updateLastCheckedRemote(packageName);
+      await this.saveManifest(manifest);
 
       return {
         artifactPath,
+        manifest,
         metadata,
         packageVersionId,
-        versionEntry,
       };
     } catch (error) {
       throw new ArtifactError(packageName, 'extract', 'Failed to localize tarball', {
@@ -356,12 +302,22 @@ export class ArtifactRepository {
     }
   }
 
+  // =========================================================================
+  // Metadata Extraction
+  // =========================================================================
+
   /**
-   * Remove a version directory
+   * Save a manifest (atomic write).
    */
-  public async removeVersion(packageName: string, version: string): Promise<void> {
-    const versionPath = this.getVersionPath(packageName, version);
-    await fs.remove(versionPath);
+  public async saveManifest(manifest: ArtifactManifest): Promise<void> {
+    const manifestPath = this.getManifestPath();
+    const tempPath = `${manifestPath}.tmp`;
+
+    await fs.ensureDir(this.artifactsDir);
+
+    // Atomic write: write to temp file first, then rename
+    await fs.writeJson(tempPath, manifest, {spaces: 4});
+    await fs.move(tempPath, manifestPath, {overwrite: true});
   }
 
   /**
@@ -371,22 +327,17 @@ export class ArtifactRepository {
    * `sfpm.validation` field with the resolved state, repacks the tarball,
    * and recalculates the artifact hash in the manifest.
    *
-   * @param packageName - Scoped npm name of the package
-   * @param version - Version of the artifact to update
    * @param validationState - The resolved validation state to write
    */
-  public async updateArtifactValidation(
-    packageName: string,
-    version: string,
-    validationState: ValidationState,
-  ): Promise<void> {
-    const artifactPath = this.getArtifactPath(packageName, version);
+  public async updateArtifactValidation(validationState: ValidationState): Promise<void> {
+    const artifactPath = this.getArtifactPath();
+    const name = this.packageName ?? 'unknown';
 
     if (!await fs.pathExists(artifactPath)) {
-      throw new ArtifactError(packageName, 'update', `Artifact not found at ${artifactPath}`, {version});
+      throw new ArtifactError(name, 'update', `Artifact not found at ${artifactPath}`);
     }
 
-    const tempDir = path.join(path.dirname(artifactPath), '.repack-tmp');
+    const tempDir = path.join(this.artifactsDir, '.repack-tmp');
 
     try {
       // 1. Extract tarball into temp directory
@@ -410,17 +361,16 @@ export class ArtifactRepository {
       // 4. Recalculate artifact hash and update manifest
       const newHash = await this.calculateFileHash(artifactPath);
 
-      const manifest = await this.getManifest(packageName);
-      if (manifest?.versions[version]) {
-        manifest.versions[version].artifactHash = newHash;
-        await this.saveManifest(packageName, manifest);
+      const manifest = await this.getManifest();
+      if (manifest) {
+        manifest.artifactHash = newHash;
+        await this.saveManifest(manifest);
       }
 
-      this.logger?.info(`Updated validation state for ${packageName}@${version} to '${validationState.status}'`);
+      this.logger?.info(`Updated validation state for ${name} to '${validationState.status}'`);
     } catch (error) {
-      throw new ArtifactError(packageName, 'update', 'Failed to update artifact validation state', {
+      throw new ArtifactError(name, 'update', 'Failed to update artifact validation state', {
         cause: error instanceof Error ? error : new Error(String(error)),
-        version,
       });
     } finally {
       await fs.remove(tempDir);
@@ -430,85 +380,18 @@ export class ArtifactRepository {
   /**
    * Update lastCheckedRemote timestamp in manifest
    */
-  public async updateLastCheckedRemote(packageName: string): Promise<void> {
-    const manifest = await this.getManifest(packageName);
+  public async updateLastCheckedRemote(): Promise<void> {
+    const manifest = await this.getManifest();
     if (manifest) {
       manifest.lastCheckedRemote = Date.now();
-      await this.saveManifest(packageName, manifest);
+      await this.saveManifest(manifest);
     }
   }
 
   // =========================================================================
-  // Metadata Operations
+  // Private Helpers
   // =========================================================================
 
-  /**
-   * Add or update a version entry in the manifest
-   */
-  private async addVersionEntry(
-    packageName: string,
-    version: string,
-    entry: ArtifactVersionEntry,
-    updateLatest: boolean = true,
-  ): Promise<void> {
-    let manifest = await this.getManifest(packageName);
-
-    if (!manifest) {
-      manifest = {
-        latest: version,
-        name: packageName,
-        versions: {},
-      };
-    }
-
-    manifest.versions[version] = entry;
-
-    if (updateLatest) {
-      manifest.latest = version;
-    }
-
-    await this.saveManifest(packageName, manifest);
-  }
-
-  /**
-   * Check if an artifact exists for a version
-   */
-  private artifactExists(packageName: string, version: string): boolean {
-    const tgzPath = this.getArtifactPath(packageName, version);
-    return fs.existsSync(tgzPath);
-  }
-
-  /**
-   * Calculate SHA-256 hash of a file (sync)
-   */
-  private calculateFileHashSync(filePath: string): string {
-    const content = fs.readFileSync(filePath);
-    return crypto.createHash('sha256').update(content).digest('hex');
-  }
-
-  // Metadata conversion is now handled by the npm-package-adapter module.
-  // See: fromNpmPackageJson() and extractPackageVersionId()
-
-  /**
-   * Create a unique temporary directory for downloads/extraction.
-   * Pattern: .sfpm/tmp/downloads/[timestamp]-[packageName]-[hash]
-   */
-  private async createTempDir(packageName: string): Promise<string> {
-    const timestamp = new Date().toISOString()
-    .replace(/T/, '-')
-    .replace(/\..+/, '')
-    .replaceAll(/[:-]/g, '');
-    const hash = crypto.randomBytes(4).toString('hex');
-    const tempDirName = `${timestamp}-${packageName}-${hash}`;
-    const tempDir = path.join(this.projectDirectory, DOT_FOLDER, 'tmp', 'downloads', tempDirName);
-    await fs.ensureDir(tempDir);
-    return tempDir;
-  }
-
-  /**
-   * Extract metadata from a tarball (npm package format).
-   * Reads the sfpm property from package.json and converts to SfpmPackageMetadataBase.
-   */
   private extractMetadataFromTarball(tarballPath: string): SfpmPackageMetadataBase | undefined {
     try {
       if (!fs.existsSync(tarballPath)) {
@@ -529,16 +412,8 @@ export class ArtifactRepository {
     }
   }
 
-  // =========================================================================
-  // Hash Calculation
-  // =========================================================================
-
-  /**
-   * Extract package.json from a tarball
-   */
   private extractPackageJsonFromTarball(tarballPath: string): NpmPackageJson | undefined {
     try {
-      // Extract package.json content from tarball without fully extracting
       const packageJsonContent = execSync(
         `tar -xOzf "${tarballPath}" package/package.json`,
         {encoding: 'utf8', timeout: 30_000},
@@ -550,86 +425,7 @@ export class ArtifactRepository {
     }
   }
 
-  /**
-   * Get the path to the manifest file for a package
-   */
-  private getManifestPath(packageName: string): string {
-    return path.join(this.getPackageArtifactPath(packageName), 'manifest.json');
-  }
-
-  // =========================================================================
-  // Symlink Management
-  // =========================================================================
-
-  /**
-   * Get version entry from manifest
-   */
-  private getVersionEntry(packageName: string, version: string): ArtifactVersionEntry | undefined {
-    const manifest = this.getManifestSync(packageName);
-    return manifest?.versions[version];
-  }
-
-  // =========================================================================
-  // Artifact Finalization
-  // =========================================================================
-
-  /**
-   * Get all local versions for a package
-   */
-  private getVersions(packageName: string): string[] {
-    const manifest = this.getManifestSync(packageName);
-    return manifest ? Object.keys(manifest.versions) : [];
-  }
-
-  // =========================================================================
-  // Directory Management
-  // =========================================================================
-
-  /**
-   * Check if a specific version exists locally
-   */
-  private hasVersion(packageName: string, version: string): boolean {
-    const manifest = this.getManifestSync(packageName);
-    return manifest?.versions[version] !== undefined;
-  }
-
-  /**
-   * Save the manifest for a package (atomic write)
-   */
-  private async saveManifest(packageName: string, manifest: ArtifactManifest): Promise<void> {
-    const manifestPath = this.getManifestPath(packageName);
-    const tempPath = `${manifestPath}.tmp`;
-
-    await fs.ensureDir(path.dirname(manifestPath));
-
-    // Atomic write: write to temp file first, then rename
-    await fs.writeJson(tempPath, manifest, {spaces: 4});
-    await fs.move(tempPath, manifestPath, {overwrite: true});
-  }
-
-  /**
-   * Update the 'latest' symlink to point to a version directory
-   */
-  private async updateLatestSymlink(packageName: string, version: string): Promise<void> {
-    const packageArtifactRoot = this.getPackageArtifactPath(packageName);
-    const symlinkPath = path.join(packageArtifactRoot, 'latest');
-
-    try {
-      // Remove existing symlink if present
-      if (await fs.pathExists(symlinkPath)) {
-        await fs.remove(symlinkPath);
-      }
-
-      // Create relative symlink (version directory name is relative to package root)
-      // Use 'junction' for Windows compatibility
-      await fs.symlink(version, symlinkPath, 'junction');
-    } catch (error) {
-      // Symlinks might fail on some systems (Windows without admin)
-      this.logger?.warn(`Symlink failed: ${error instanceof Error ? error.message : String(error)}. Falling back to latest.version identifier.`);
-
-      // Fallback: write version to a file
-      const versionFilePath = path.join(packageArtifactRoot, 'latest.version');
-      await fs.writeFile(versionFilePath, version);
-    }
+  private getManifestPath(): string {
+    return path.join(this.artifactsDir, 'manifest.json');
   }
 }

@@ -11,6 +11,7 @@ const PICKLIST_TYPES = new Set(['MultiselectPicklist', 'Picklist']);
 // eslint-disable-next-line new-cap
 @RegisterAnalyzer()
 export default class PicklistAnalyzer implements PackageAnalyzer {
+  public readonly name = 'PicklistAnalyzer';
   private logger?: Logger;
 
   constructor(logger?: Logger) {

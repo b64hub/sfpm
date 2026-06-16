@@ -1,28 +1,43 @@
 /**
- * Represents the version entry in the manifest
+ * Source context captured at build time and persisted in artifact metadata.
+ * Describes the git/VCS state when the artifact was produced.
  */
-export interface ArtifactVersionEntry {
-  artifactHash?: string;
+export interface SfpmPackageSource {
+  branch?: string;
   commit?: string;
-  generatedAt: number;
-  /** For unlocked packages, the 04t... package version ID */
-  packageVersionId?: string;
-  path: string;
+  repositoryUrl?: string;
   sourceHash?: string;
+  tag?: string;
 }
 
 /**
- * Represents the manifest.json structure for package artifacts.
- * This manifest tracks all versions of a package and their associated metadata.
+ * Per-package artifact manifest (v2).
+ *
+ * Lives at `<packageWorkspace>/artifacts/manifest.json` alongside `artifact.tgz`.
+ * Tracks metadata for the single artifact on disk — version history is managed
+ * by Turborepo's content-addressed cache, not by SFPM.
  */
 export interface ArtifactManifest {
+  /** SHA-256 hash of artifact.tgz */
+  artifactHash?: string;
+  /** Git commit SHA at build time */
+  commit?: string;
+  /** Epoch millis when the artifact was generated */
+  generatedAt: number;
   /** Timestamp of last remote registry check (for TTL-based caching) */
   lastCheckedRemote?: number;
-  latest: string;
+  /** Scoped package name (e.g. "@b64/my-pkg") */
   name: string;
-  versions: {
-    [version: string]: ArtifactVersionEntry;
-  };
+  /** For unlocked packages, the 04t... subscriber package version ID */
+  packageVersionId?: string;
+  /** Schema version for forward compatibility */
+  schemaVersion: 2;
+  /** Whether this artifact was built locally or downloaded from a registry */
+  source: 'local' | 'remote';
+  /** SHA-256 hash of the package source files */
+  sourceHash?: string;
+  /** Semver version string (e.g. "1.0.0-3") */
+  version: string;
 }
 
 /**
@@ -30,11 +45,11 @@ export interface ArtifactManifest {
  */
 export interface ResolvedArtifact {
   artifactPath: string;
+  manifest: ArtifactManifest;
   packageVersionId?: string;
   source: 'local' | 'remote';
   /** The resolved version string */
   version: string;
-  versionEntry: ArtifactVersionEntry;
 }
 
 /**

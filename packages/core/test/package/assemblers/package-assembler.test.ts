@@ -42,6 +42,11 @@ vi.mock('../../../src/project/project-service.js', () => ({
     },
 }));
 
+// Mock workspace path resolution so staging resolves to a predictable path
+vi.mock('../../../src/utils/workspace-path.js', () => ({
+    resolvePackageWorkspacePath: vi.fn().mockReturnValue('/root/packages/core'),
+}));
+
 import fs from 'fs-extra';
 import PackageAssembler from '../../../src/package/assemblers/package-assembler.js';
 
@@ -74,8 +79,7 @@ describe('PackageAssembler', () => {
     });
 
     it('should initialize staging directory in constructor', () => {
-        expect((assembler as any).stagingDirectory).toContain('.sfpm/tmp/builds');
-        expect((assembler as any).stagingDirectory).toContain('core');
+        expect((assembler as any).stagingDirectory).toBe(path.join('/root/packages/core', 'artifacts', 'package'));
     });
 
     it('should allow fluent configuration', () => {
@@ -104,10 +108,10 @@ describe('PackageAssembler', () => {
         const result = await assembler.assemble();
         const stagingPath = result.stagingDirectory;
 
-        expect(stagingPath).toContain('.sfpm/tmp/builds');
+        expect(stagingPath).toBe(path.join('/root/packages/core', 'artifacts', 'package'));
 
-        // Verify core orchestration steps
-        expect(mockedFs.emptyDir).toHaveBeenCalledWith(stagingPath);
+        // Verify core orchestration steps — cleans the entire artifacts/ directory
+        expect(mockedFs.emptyDir).toHaveBeenCalledWith(path.join('/root/packages/core', 'artifacts'));
         // Copy source (with optional filter for build ignore)
         expect(mockedFs.copy).toHaveBeenCalledWith(
             path.join('/root', 'force-app'),
@@ -127,7 +131,7 @@ describe('PackageAssembler', () => {
         mockedFs.remove.mockResolvedValue(undefined);
 
         await expect(assembler.assemble()).rejects.toThrow('Failed to create dir');
-
+        // Cleanup is attempted on failure
         expect(mockedFs.remove).toHaveBeenCalled();
     });
 
@@ -141,8 +145,8 @@ describe('PackageAssembler', () => {
         delete process.env.DEBUG;
     });
 
-    it('should create unique build names', () => {
+    it('should produce deterministic staging path', () => {
         const assembler2 = new PackageAssembler('core', mockProvider as any);
-        expect((assembler as any).stagingDirectory).not.toBe((assembler2 as any).stagingDirectory);
+        expect((assembler as any).stagingDirectory).toBe((assembler2 as any).stagingDirectory);
     });
 });

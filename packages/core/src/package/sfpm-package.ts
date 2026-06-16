@@ -23,9 +23,7 @@ import {
   VersionFormat,
 } from '../types/package.js';
 import {OrgAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
-import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
-import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {
   type DataDeployable,
@@ -81,8 +79,7 @@ export default abstract class SfpmPackage {
       scope: extractScope(packageName),
       ...metadata?.identity,
       orchestration: {...metadata?.orchestration},
-      source: {...metadata?.source},
-      ...omit(metadata, ['identity', 'source', 'orchestration']),
+      ...omit(metadata, ['identity', 'orchestration']),
     } as SfpmPackageMetadataBase;
   }
 
@@ -97,10 +94,6 @@ export default abstract class SfpmPackage {
 
   set apiVersion(val: string) {
     this._metadata.apiVersion = val;
-  }
-
-  get commitId(): string | undefined {
-    return this._metadata.source?.commit;
   }
 
   get dependencies(): undefined | {[packageName: string]: string} {
@@ -150,18 +143,6 @@ export default abstract class SfpmPackage {
 
   get scope(): string {
     return this._metadata.scope;
-  }
-
-  get sourceHash(): string | undefined {
-    return this._metadata.source?.sourceHash;
-  }
-
-  set sourceHash(val: string | undefined) {
-    this._metadata.source = {...this._metadata.source, sourceHash: val};
-  }
-
-  get tag(): string {
-    return this._metadata.source?.tag || `${this.name}@${this.version}`;
   }
 
   get type(): Omit<PackageType, 'managed'> {
@@ -436,17 +417,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     return this.version;
   }
 
-  /**
-   * Calculate and set the source hash for this package.
-   * Uses ComponentSet to ensure consistency with .forceignore rules.
-   * @returns The calculated source hash
-   */
-  public async calculateSourceHash(): Promise<string> {
-    const hash = await SourceHasher.calculate(this);
-    this.sourceHash = hash;
-    return hash;
-  }
-
   /** Returns the number of metadata components in the package. */
   public async componentCount(): Promise<number> {
     return this.getComponentSet().size;
@@ -678,16 +648,6 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
     return this.version;
   }
 
-  /**
-   * Calculate source hash by hashing all files in the data directory recursively.
-   * This is content-agnostic — it hashes every file regardless of type.
-   */
-  public async calculateSourceHash(): Promise<string> {
-    const hash = await DirectoryHasher.calculate(this.dataDirectory);
-    this.sourceHash = hash;
-    return hash;
-  }
-
   /** Returns the number of data files in the package. */
   public async componentCount(): Promise<number> {
     const files = await fg(['**/*'], {
@@ -714,7 +674,6 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
       packageName: this.packageName,
       packageType: PackageType.Data,
       scope: this.scope,
-      source: this._metadata.source,
       versionNumber: this.version,
     };
   }
@@ -831,6 +790,18 @@ export class SfpmSourcePackage extends SfpmMetadataPackage implements OrgAliasab
 
   get orgAliasResolution(): OrgAliasResolution | undefined {
     return this._orgAliasResolution;
+  }
+
+  /**
+   * For org-aliased packages with a resolved alias, returns the
+   * effective path directly (bypassing the default workingDirectory + path computation).
+   */
+  override get packageDirectory(): string | undefined {
+    if (this._orgAliasResolution?.effectivePath) {
+      return this._orgAliasResolution.effectivePath;
+    }
+
+    return super.packageDirectory;
   }
 
   public getAnalysisSourcePath(): string {

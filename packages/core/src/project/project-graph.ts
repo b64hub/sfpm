@@ -19,6 +19,11 @@ export interface DependencyResolution {
   levels: PackageNode[][];
 }
 
+export interface GraphQueryOptions {
+  /** Include managed (external) packages in results. Defaults to true. */
+  includeManaged?: boolean;
+}
+
 export class PackageNode {
   public readonly definition: PackageDefinition;
   // Graph connections
@@ -141,7 +146,7 @@ export class ProjectGraph {
    * @returns 2D array where each sub-array represents packages that can be installed in parallel
    * @throws Error if any package name is not found in the graph
    */
-  public getInstallationLevels(packageNames: string[]): PackageNode[][] {
+  public getInstallationLevels(packageNames: string[], options?: GraphQueryOptions): PackageNode[][] {
     // Validate all package names exist
     for (const name of packageNames) {
       if (!this.resolveNode(name)) {
@@ -149,11 +154,13 @@ export class ProjectGraph {
       }
     }
 
+    const includeManaged = options?.includeManaged !== false;
+
     // Build a set of nodes we're working with
     const nodeSet = new Set<PackageNode>();
     for (const name of packageNames) {
       const node = this.resolveNode(name);
-      if (node) {
+      if (node && (includeManaged || !node.isManaged)) {
         nodeSet.add(node);
       }
     }
@@ -251,7 +258,7 @@ export class ProjectGraph {
    * @returns DependencyResolution containing installation levels and circular dependencies
    * @throws Error if any package name is not found in the graph
    */
-  public resolveDependencies(packageNames: string[]): DependencyResolution {
+  public resolveDependencies(packageNames: string[], options?: GraphQueryOptions): DependencyResolution {
     // Validate all package names exist
     for (const name of packageNames) {
       if (!this.resolveNode(name)) {
@@ -268,7 +275,7 @@ export class ProjectGraph {
     // Calculate installation levels only if there are no circular dependencies
     let levels: PackageNode[][] = [];
     if (circularDependencies === null) {
-      levels = this.getInstallationLevels([...allNodes].map(n => n.name));
+      levels = this.getInstallationLevels([...allNodes].map(n => n.name), options);
     }
 
     return {

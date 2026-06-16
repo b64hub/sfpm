@@ -20,15 +20,12 @@ export default class ProjectService {
   private readonly definitionProvider: ProjectDefinitionProvider;
   private readonly graph: ProjectGraph;
   private readonly sfpmConfig: SfpmConfig;
-  private readonly sfProject: SfProject;
 
   private constructor(
-    sfProject: SfProject,
     graph: ProjectGraph,
     sfpmConfig: SfpmConfig,
     definitionProvider: ProjectDefinitionProvider,
   ) {
-    this.sfProject = sfProject;
     this.graph = graph;
     this.sfpmConfig = sfpmConfig;
     this.definitionProvider = definitionProvider;
@@ -55,9 +52,7 @@ export default class ProjectService {
       WorkspaceProvider.ensureSfdxProject(projectRoot, definition);
     }
 
-    const sfProject = await SfProject.resolve(projectRoot);
-
-    return new ProjectService(sfProject, graph, sfpmConfig, definitionProvider);
+    return new ProjectService(graph, sfpmConfig, definitionProvider);
   }
 
   /**
@@ -67,7 +62,7 @@ export default class ProjectService {
     const provider = new SfdxProjectProvider(project);
     const graph = new ProjectGraph(provider);
 
-    return new ProjectService(project, graph, sfpmConfig, provider);
+    return new ProjectService(graph, sfpmConfig, provider);
   }
 
   /**
@@ -110,10 +105,6 @@ export default class ProjectService {
     ProjectService.instance = undefined;
   }
 
-  // =========================================================================
-  // Provider detection
-  // =========================================================================
-
   private static async detectProvider(projectDir: string, sfpmConfig: SfpmConfig): Promise<ProjectDefinitionProvider> {
     if (WorkspaceProvider.hasWorkspace(projectDir)) {
       return new WorkspaceProvider({
@@ -132,6 +123,7 @@ export default class ProjectService {
    * Walk up the directory tree from `startDir` to find the nearest workspace root
    * (a directory containing pnpm-workspace.yaml or a package.json with "workspaces").
    * Returns the workspace root path, or undefined if none is found.
+   * TODO: move this responsibility to the provider
    */
   private static findWorkspaceRoot(startDir: string): string | undefined {
     let dir = path.resolve(startDir);

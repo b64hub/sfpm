@@ -41,6 +41,11 @@ vi.mock('../../../src/project/project-service.js', () => ({
   },
 }));
 
+// Mock workspace path resolution
+vi.mock('../../../src/utils/workspace-path.js', () => ({
+  resolvePackageWorkspacePath: vi.fn().mockReturnValue('/root/packages/my-data'),
+}));
+
 import fs from 'fs-extra';
 import path from 'path';
 import PackageAssembler from '../../../../src/package/assemblers/package-assembler.js';
@@ -84,7 +89,7 @@ describe('PackageAssembler — Data packages', () => {
     const result = await assembler.assemble();
     const stagingPath = result.stagingDirectory;
 
-    expect(stagingPath).toContain('.sfpm/tmp/builds');
+    expect(stagingPath).toBe(path.join('/root/packages/my-data', 'artifacts', 'package'));
 
     // Should copy source (data directory)
     expect(mockedFs.copy).toHaveBeenCalledWith(

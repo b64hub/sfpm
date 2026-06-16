@@ -3,8 +3,8 @@ import ignore from 'ignore';
 import path from 'node:path';
 import tmp from 'tmp';
 
+import {SfpmPackageSource} from '../types/artifact.js';
 import {Logger} from '../types/logger.js';
-import {SfpmPackageSource} from '../types/package.js';
 import Git from './git.js';
 
 /**

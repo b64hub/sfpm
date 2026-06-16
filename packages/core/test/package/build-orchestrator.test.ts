@@ -5,14 +5,12 @@ import {
 import type {DependencyResolution} from '../../src/project/project-graph.js';
 import type {OrchestrationResult, PackageResult} from '../../src/events/orchestration-event-bus.js';
 
-import {GitService} from '../../src/git/git-service.js';
 import {BuildOrchestrator} from '../../src/orchestrator/build-orchestrator.js';
 import {PackageBuilder} from '../../src/package/package-builder.js';
 import {DependencyError} from '../../src/types/errors.js';
 
 // Mock external dependencies
 vi.mock('../../src/package/package-builder.js');
-vi.mock('../../src/git/git-service.js');
 
 const mockLogger = {
   debug: vi.fn(),
@@ -83,13 +81,10 @@ describe('BuildOrchestrator', () => {
     // Default: single-level resolution with two packages
     mockResolution = createResolution([['pkg-a', 'pkg-b']]);
 
-    // Mock GitService
-    vi.mocked(GitService.initialize).mockResolvedValue({} as any);
-
     // Mock PackageBuilder
     mockBuildPackage = vi.fn().mockResolvedValue();
     vi.mocked(PackageBuilder).mockImplementation(function (this: any) {
-      this.buildPackage = mockBuildPackage;
+      this.build = mockBuildPackage;
       return this;
     } as any);
 
@@ -252,13 +247,6 @@ describe('BuildOrchestrator', () => {
       expect(result.failedPackages).toHaveLength(1);
       const failedResult = result.results.find(r => !r.success);
       expect(failedResult?.error).toBe('Unexpected error');
-    });
-
-    it('should share a single GitService across all builders', async () => {
-      await orchestrator.buildAll(['pkg-a', 'pkg-b']);
-
-      // GitService.initialize should be called only once
-      expect(GitService.initialize).toHaveBeenCalledTimes(1);
     });
   });
 

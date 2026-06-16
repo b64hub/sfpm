@@ -93,7 +93,7 @@ describe('npm-package-adapter', () => {
       const packageJson = createUnlockedPackageJson();
       const metadata = fromNpmPackageJson(packageJson);
 
-      expect(metadata.source.repositoryUrl).toBe('https://github.com/b64hub/sfpm-bootstrap.git');
+      expect(metadata.source?.repositoryUrl).toBe('https://github.com/b64hub/sfpm-bootstrap.git');
     });
 
     it('should not overwrite existing repositoryUrl in sfpm.source', () => {
@@ -102,16 +102,16 @@ describe('npm-package-adapter', () => {
       (packageJson.sfpm as any).source.repositoryUrl = 'https://internal.repo.com';
 
       const metadata = fromNpmPackageJson(packageJson);
-      expect(metadata.source.repositoryUrl).toBe('https://internal.repo.com');
+      expect(metadata.source?.repositoryUrl).toBe('https://internal.repo.com');
     });
 
     it('should preserve source metadata', () => {
       const packageJson = createUnlockedPackageJson();
       const metadata = fromNpmPackageJson(packageJson);
 
-      expect(metadata.source.branch).toBe('feat-orgs');
-      expect(metadata.source.commitSHA).toBe('f1dc9cd8e9521b01b07e021171dd7c0b18291682');
-      expect(metadata.source.sourceHash).toBe('8dbb986ebe459f428313e9a07d7e1842361589acf2460aafb9bd38f58a99c960');
+      expect(metadata.source?.branch).toBe('feat-orgs');
+      expect((metadata.source as any)?.commitSHA).toBe('f1dc9cd8e9521b01b07e021171dd7c0b18291682');
+      expect(metadata.source?.sourceHash).toBe('8dbb986ebe459f428313e9a07d7e1842361589acf2460aafb9bd38f58a99c960');
     });
 
     it('should preserve orchestration metadata', () => {
@@ -146,7 +146,7 @@ describe('npm-package-adapter', () => {
       const metadata = fromNpmPackageJson(packageJson);
 
       // No repository at top level, no repositoryUrl in source
-      expect(metadata.source.repositoryUrl).toBeUndefined();
+      expect(metadata.source?.repositoryUrl).toBeUndefined();
     });
   });
 
@@ -212,7 +212,6 @@ describe('npm-package-adapter', () => {
           packageName: 'my-pkg',
           packageType: PackageType.Unlocked,
           versionNumber: '1.0.0-1',
-          source: {branch: 'main', repositoryUrl: 'https://github.com/test/repo.git'},
           orchestration: {},
         },
         name: 'my-pkg',
@@ -224,12 +223,14 @@ describe('npm-package-adapter', () => {
           packageType: PackageType.Unlocked,
           versionNumber: '1.0.0-1',
           orchestration: {},
-          source: {branch: 'main', repositoryUrl: 'https://github.com/test/repo.git'},
         }),
         type: PackageType.Unlocked,
         ...overrides,
       } as any;
     }
+
+    /** Default source context used by tests that need repository/source metadata */
+    const defaultSource = {branch: 'main', repositoryUrl: 'https://github.com/test/repo.git'};
 
     it('should inherit static fields from workspace package.json', async () => {
       const workspace = createWorkspacePkgJson();
@@ -279,7 +280,7 @@ describe('npm-package-adapter', () => {
     it('should put repository at top level and remove from sfpm.source', async () => {
       const workspace = createWorkspacePkgJson();
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
+      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {source: defaultSource});
 
       expect(result.repository).toEqual({type: 'git', url: 'https://github.com/test/repo.git'});
       expect(result.sfpm.source?.repositoryUrl).toBeUndefined();

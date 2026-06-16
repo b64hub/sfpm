@@ -1,15 +1,16 @@
 import {Connection, Org} from '@salesforce/core';
+import path from 'node:path';
 
 import SfpmPackage from '../package/sfpm-package.js';
 import {
-  ArtifactResolutionOptions, ResolvedArtifact,
+  ArtifactResolutionOptions, ResolvedArtifact, SfpmPackageSource,
 } from '../types/artifact.js';
 import {Logger} from '../types/logger.js';
 import {InstalledArtifact} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
 import {soql} from '../utils/soql.js';
 import {ArtifactRepository} from './artifact-repository.js';
-import {ArtifactResolver} from './artifact-resolver.js';
+import {ArtifactResolver, DownloadTarget} from './artifact-resolver.js';
 
 export interface SfpmArtifact__c {
   Checksum__c: string;
@@ -45,14 +46,12 @@ export interface ArtifactHistoryOptions {
 }
 
 /**
- * Result of install target resolution.
- * Combines artifact resolution with org installation status.
+ * Result of artifact resolution against the target org.
+ * Combines the resolved artifact with the org's current installation status.
+ * The install decision is made by the installer's `isInstalled()` method,
+ * not by the artifact service.
  */
-export interface InstallTarget {
-  /** Reason for the install decision */
-  installReason: 'already-installed' | 'hash-mismatch' | 'not-installed' | 'version-downgrade' | 'version-upgrade';
-  /** Whether installation is needed */
-  needsInstall: boolean;
+export interface ArtifactResolution {
   /** Current installation status in the org */
   orgStatus: {
     /** The currently installed sourceHash (if any) */
@@ -95,6 +94,7 @@ export class ArtifactService {
   private installedArtifactsCache: Map<string, CachedArtifact> | null = null;
   private logger?: Logger;
   private org?: Org;
+  private projectDir?: string;
 
   constructor(logger?: Logger, org?: Org) {
     this.logger = logger;
@@ -156,6 +156,7 @@ export class ArtifactService {
   public async createHistoryRecord(
     sfpmPackage: SfpmPackage,
     options?: ArtifactHistoryOptions,
+    source?: SfpmPackageSource,
   ): Promise<string | undefined> {
     if (!this.org) {
       throw new Error('Org connection required for createHistoryRecord');
@@ -168,12 +169,12 @@ export class ArtifactService {
     try {
       /* eslint-disable camelcase */
       const historyData: SfpmArtifactHistory__c = {
-        Checksum__c: sfpmPackage.sourceHash || '',
-        Commit_Id__c: sfpmPackage.commitId || '',
+        Checksum__c: source?.sourceHash || '',
+        Commit_Id__c: source?.commit || '',
         Deploy_Id__c: options?.deployId,
         Name: sfpmPackage.name,
         Pipeline_Run_Id__c: getPipelineRunId(),
-        Tag__c: sfpmPackage.tag,
+        Tag__c: source?.tag || `${sfpmPackage.name}@${sfpmPackage.version}`,
         Version__c: sfpmPackage.version || '',
       };
       /* eslint-enable camelcase */
@@ -192,6 +193,22 @@ export class ArtifactService {
       this.logger?.debug(`Sfpm_Artifact_History__c is not available in this org — skipping history tracking: ${message}`);
       return undefined;
     }
+  }
+
+  /**
+   * Get the build output directory for a package, if a build exists.
+   *
+   * Checks for a manifest in the package workspace's `artifacts/` directory.
+   * Returns the path to `artifacts/package/` (the deployable content) or
+   * `undefined` if no build has been run.
+   *
+   * @param packageWorkspacePath - Package workspace root
+   * @returns Absolute path to `artifacts/package/` or undefined
+   */
+  public getBuildOutput(packageWorkspacePath: string): string | undefined {
+    const repo = this.getRepository(packageWorkspacePath);
+    if (!repo.hasArtifact()) return undefined;
+    return repo.getPackageContentDir();
   }
 
   public async getInstalledPackages(orderBy: string = 'Name'): Promise<InstalledArtifact[]> {
@@ -228,12 +245,12 @@ export class ArtifactService {
   }
 
   /**
-   * Get an ArtifactRepository for the given project directory.
+   * Get an ArtifactRepository for the given package workspace path.
    * Use this for lower-level artifact operations like reading manifests,
    * checking if artifacts exist, getting metadata, etc.
    */
-  public getRepository(projectDirectory: string): ArtifactRepository {
-    return new ArtifactRepository(projectDirectory, this.logger);
+  public getRepository(packageWorkspacePath: string, packageName?: string): ArtifactRepository {
+    return new ArtifactRepository(packageWorkspacePath, this.logger, packageName);
   }
 
   /**
@@ -291,20 +308,25 @@ export class ArtifactService {
    * Uses npm config (.npmrc) for registry and auth token resolution,
    * including support for scoped registries (e.g., @myorg packages).
    *
-   * @param projectDirectory - Root project directory for artifact storage
+   * @param packageWorkspacePath - Package workspace directory (contains artifacts/)
    * @param packageName - Fully scoped name of the package to resolve
    * @param options - Resolution options (version, forceRefresh, etc.)
-   * @returns InstallTarget with resolved artifact and install decision
+   * @returns ArtifactResolution with resolved artifact and org status
    */
-  public async resolveInstallTarget(
-    projectDirectory: string,
+  public async resolveArtifact(
+    packageWorkspacePath: string,
     packageName: string,
     options?: ArtifactResolutionOptions,
-  ): Promise<InstallTarget> {
+  ): Promise<ArtifactResolution> {
     // 1. Create resolver for this specific package (handles scoped registries)
-    const resolver = await ArtifactResolver.create(
-      projectDirectory,
+    const downloadTarget: DownloadTarget | undefined = this.projectDir
+      ? pkgName => path.join(this.projectDir!, 'node_modules', pkgName)
+      : undefined;
+
+    const resolver = ArtifactResolver.create(
+      packageWorkspacePath,
       {
+        downloadTarget,
         localOnly: options?.localOnly,
       },
       this.logger,
@@ -316,7 +338,7 @@ export class ArtifactService {
     this.logger?.debug(`Resolved ${packageName} to version ${resolved.version} from ${resolved.source}`);
 
     // 2. Check org installation status (if org is available)
-    let orgStatus: InstallTarget['orgStatus'] = {
+    let orgStatus: ArtifactResolution['orgStatus'] = {
       isInstalled: false,
     };
 
@@ -337,15 +359,7 @@ export class ArtifactService {
       }
     }
 
-    // 3. Determine if installation is needed
-    const {installReason, needsInstall} = this.determineInstallNeed(
-      resolved,
-      orgStatus,
-    );
-
     return {
-      installReason,
-      needsInstall,
       orgStatus,
       packageName,
       resolved,
@@ -371,11 +385,20 @@ export class ArtifactService {
   }
 
   /**
+   * Set the project root directory.
+   * Used to resolve the download target for remote artifacts (e.g., `node_modules/`).
+   */
+  public setProjectDir(projectDir: string): this {
+    this.projectDir = projectDir;
+    return this;
+  }
+
+  /**
    * Create or update an artifact record in the org
    * @param sfpmPackage - Package to create/update artifact for
    * @returns Artifact record ID
    */
-  public async upsertArtifact(sfpmPackage: SfpmPackage): Promise<string | undefined> {
+  public async upsertArtifact(sfpmPackage: SfpmPackage, source?: SfpmPackageSource): Promise<string | undefined> {
     if (!this.org) {
       throw new Error('Org connection required for upsertArtifact');
     }
@@ -391,10 +414,10 @@ export class ArtifactService {
 
       /* eslint-disable camelcase */
       const artifactData = {
-        Checksum__c: sfpmPackage.sourceHash,
-        Commit_Id__c: sfpmPackage.commitId || '',
+        Checksum__c: source?.sourceHash,
+        Commit_Id__c: source?.commit || '',
         Name: sfpmPackage.name,
-        Tag__c: sfpmPackage.tag,
+        Tag__c: source?.tag || `${sfpmPackage.name}@${sfpmPackage.version}`,
         Version__c: sfpmPackage.version,
       };
       /* eslint-enable camelcase */
@@ -425,11 +448,11 @@ export class ArtifactService {
       // Update cache entry in-place so subsequent lookups reflect the upsert
       if (this.installedArtifactsCache) {
         this.installedArtifactsCache.set(sfpmPackage.name, {
-          checksum: sfpmPackage.sourceHash,
-          commitId: sfpmPackage.commitId,
+          checksum: source?.sourceHash,
+          commitId: source?.commit,
           id: resultId,
           name: sfpmPackage.name,
-          tag: sfpmPackage.tag,
+          tag: source?.tag || `${sfpmPackage.name}@${sfpmPackage.version}`,
           version: sfpmPackage.version,
         });
       }
@@ -441,35 +464,6 @@ export class ArtifactService {
       this.logger?.debug(`SfpmArtifact__c is not available in this org — skipping artifact tracking: ${message}`);
       return undefined;
     }
-  }
-
-  /**
-   * Determine if installation is needed based on resolved artifact and org status.
-   */
-  private determineInstallNeed(
-    resolved: ResolvedArtifact,
-    orgStatus: InstallTarget['orgStatus'],
-  ): {installReason: InstallTarget['installReason']; needsInstall: boolean;} {
-    // Not installed - definitely needs install
-    if (!orgStatus.isInstalled) {
-      return {installReason: 'not-installed', needsInstall: true};
-    }
-
-    // Compare versions
-    if (orgStatus.installedVersion !== resolved.version) {
-      // Version mismatch - check if upgrade or downgrade
-      // For simplicity, we'll just say it needs install if versions differ
-      // A more sophisticated approach could use semver comparison
-      return {installReason: 'version-upgrade', needsInstall: true};
-    }
-
-    // Same version - check source hash if available
-    if (resolved.versionEntry.sourceHash && orgStatus.installedSourceHash && resolved.versionEntry.sourceHash !== orgStatus.installedSourceHash) {
-      return {installReason: 'hash-mismatch', needsInstall: true};
-    }
-
-    // Everything matches
-    return {installReason: 'already-installed', needsInstall: false};
   }
 
   /**

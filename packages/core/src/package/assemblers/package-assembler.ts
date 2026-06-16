@@ -1,11 +1,11 @@
 import * as fs from 'fs-extra';
-import crypto from 'node:crypto';
 import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
+import {resolvePackageWorkspacePath} from '../../utils/workspace-path.js';
 import {DestructiveManifestStep} from './steps/destructive-manifest-step.js';
 import {ForceIgnoreStep} from './steps/force-ignore-step.js';
 import {MetadataDependenciesStep} from './steps/metadata-dependencies-step.js';
@@ -15,7 +15,6 @@ import {ScriptAssemblyStep} from './steps/script-assembly-step.js';
 import {SourceCopyStep} from './steps/source-copy-step.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from './types.js';
 
-const DOT_FOLDER = '.sfpm';
 /**
  * @description Assembles package contents from a project configuration in a fluent, instance-based manner.
  *
@@ -204,45 +203,29 @@ export default class PackageAssembler {
   }
 
   /**
-   * @description Generates a unique name for the build to avoid collisions.
-   * Format: YYYYMMDDHHMMSS-[packageName]-[randomHash]
-   *
-   * @returns {string} A unique build identifier.
-   */
-  private createBuildName(): string {
-    const now = new Date();
-    const timestamp = now.toISOString()
-    .replace(/T/, '-')
-    .replace(/\..+/, '')
-    .replaceAll(':', '')
-    .replaceAll('-', '');
-
-    const hash = crypto.randomBytes(2).toString('hex');
-    return `${timestamp}-${this.packageName}-${hash}`;
-  }
-
-  /**
-   * @description Ensures the parent directories for the staging area exist and that the
-   * specific staging folder is completely empty and ready for a fresh build.
-   *
-   * @returns {Promise<void>}
+   * Ensures the artifacts directory is clean before a fresh build.
+   * Removes any previous build output (manifest, tarball, package content)
+   * to prevent stale data from leaking into the new build.
    */
   private async ensureStagingDirectoryExists(): Promise<void> {
-    await fs.ensureDir(path.dirname(this.stagingDirectory));
-    await fs.emptyDir(this.stagingDirectory);
+    // Clean the entire artifacts/ directory (parent of package/)
+    await fs.emptyDir(path.dirname(this.stagingDirectory));
+    await fs.ensureDir(this.stagingDirectory);
   }
 
   /**
-   * @description Resolves the path for the temporary assembly area.
-   * The path is constructed as: `.sfpm/tmp/builds/[timestamp]-[packageName]-[hash]`
-   * Uses the project root (where sfdx-project.json lives) rather than cwd so that
-   * the staging area is never created inside a package's own source directory
-   * (which would cause SourceCopyStep to fail with a self-referencing copy).
+   * @description Resolves the path for the artifact output directory.
+   *
+   * Stages directly into `<packageWorkspace>/artifacts/package/` so that
+   * the assembled content IS the build output — no temp directories, no
+   * tarballing. The `artifacts/` directory is Turbo-cacheable and serves
+   * as the deployment source for `sfpm deploy`.
    *
    * @returns {string} The absolute path to the staging directory.
    */
   private initializeStagingArea(): string {
-    const buildName = this.createBuildName();
-    return path.join(this.provider.projectDir, DOT_FOLDER, 'tmp', 'builds', buildName, 'package');
+    const packageDefinition = this.provider.getPackageDefinition(this.packageName);
+    const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, packageDefinition.path);
+    return path.join(packageWorkspacePath, 'artifacts', 'package');
   }
 }

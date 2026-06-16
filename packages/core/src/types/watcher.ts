@@ -115,6 +115,8 @@ export interface WatcherState<TPayload = unknown, TResult = unknown> {
  * Payload for the `build` job type — polls Package2VersionCreateRequest.
  */
 export interface BuildWatcherPayload {
+  /** Auto-created scratch org to delete after validation completes */
+  cleanupBuildOrg?: {devhubUsername: string; username: string};
   targets: BuildWatcherTarget[];
 }
 

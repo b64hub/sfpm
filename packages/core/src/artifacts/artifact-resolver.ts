@@ -1,5 +1,5 @@
 import fs from 'fs-extra';
-import {EventEmitter} from 'node:events';
+import {execSync} from 'node:child_process';
 import * as semver from 'semver';
 
 import {ArtifactManifest, ArtifactResolutionOptions, ResolvedArtifact} from '../types/artifact.js';
@@ -11,55 +11,45 @@ import {RegistryClient} from './registry/index.js';
 import {PnpmRegistryClient} from './registry/pnpm-registry-client.js';
 
 /**
- * Events emitted by the ArtifactResolver
- */
-export interface ArtifactResolverEvents {
-  'resolve:cache-hit': {packageName: string; timestamp: Date; version: string;};
-  'resolve:complete': {packageName: string; registry: 'local' | 'remote'; timestamp: Date; version: string;};
-  'resolve:download:complete': {artifactPath: string; packageName: string; timestamp: Date; version: string;};
-  'resolve:download:start': {packageName: string; timestamp: Date; version: string;};
-  'resolve:error': {error: string; packageName: string; timestamp: Date};
-  'resolve:remote-check': {packageName: string; timestamp: Date};
-  'resolve:remote-versions': {packageName: string; timestamp: Date; versions: string[];};
-  'resolve:start': {packageName: string; timestamp: Date; version?: string;};
-}
-
-/**
  * Default TTL for remote checks in minutes
  */
 const DEFAULT_TTL_MINUTES = 60;
 
 /**
- * ArtifactResolver reconciles local manifest.json with remote NPM versions
- * to determine the best "Install Target" for a package.
+ * ArtifactResolver reconciles the local per-package manifest with remote NPM
+ * versions to determine the best install target for a package.
+ *
+ * In the per-package artifact model, the local side is simple: there is at most
+ * one artifact on disk, described by a flat manifest. The resolver compares this
+ * single local version against remote registry versions.
  *
  * Key behaviors:
- * - Trust the TTL: If lastCheckedRemote is within TTL and forceRefresh is false, use local manifest only
- * - Highest Wins: Uses semver (with includePrerelease: true) to compare versions
- * - Localize Remotes: If remote version is newer, download and add to local manifest
- * - Idempotency: If version exists locally with matching hashes, skip re-download
+ * - Trust the TTL: if lastCheckedRemote is within TTL, use local manifest only
+ * - Highest Wins: uses semver to compare the local version against remote versions
+ * - Localize Remotes: if a remote version is newer, download and overwrite local
+ * - Version pinning: supports exact versions and semver ranges
  *
- * Can operate in two modes:
- * - Local-only: No registry client, only works with local artifacts
- * - Remote-enabled: With registry client, can fetch from npm/other registries
+ * Modes:
+ * - Local-only: no registry client, works only with the local artifact
+ * - Remote-enabled: with registry client, can fetch from npm/other registries
+/**
+ * Resolves where downloaded remote artifacts should be extracted.
+ * The default implementation uses `node_modules/` (pnpm-compatible).
+ * Swap this to change the download cache location (e.g., `.sfpm/packages/`).
  */
-export class ArtifactResolver extends EventEmitter {
+export type DownloadTarget = (packageName: string, version: string) => string;
+
+export class ArtifactResolver {
+  private downloadTarget?: DownloadTarget;
   private logger?: Logger;
   private registryClient?: RegistryClient;
   private repository: ArtifactRepository;
 
-  /**
-   * Create an ArtifactResolver.
-   *
-   * @param repository - The artifact repository for local storage operations
-   * @param registryClient - Optional registry client for remote package operations (omit for local-only mode)
-   * @param logger - Optional logger
-   */
-  constructor(repository: ArtifactRepository, registryClient?: RegistryClient, logger?: Logger) {
-    super();
+  constructor(repository: ArtifactRepository, registryClient?: RegistryClient, logger?: Logger, downloadTarget?: DownloadTarget) {
     this.repository = repository;
     this.registryClient = registryClient;
     this.logger = logger;
+    this.downloadTarget = downloadTarget;
 
     if (this.registryClient) {
       this.logger?.debug(`Using registry: ${this.registryClient.getRegistryUrl()}`);
@@ -71,25 +61,20 @@ export class ArtifactResolver extends EventEmitter {
   /**
    * Create a resolver with the default pnpm-based registry client.
    *
-   * Registry and auth configuration is handled by pnpm natively —
-   * it reads `.npmrc` files (project, user, global), handles scoped
-   * registries, auth tokens, and environment variable expansion.
-   *
-   * @param projectDirectory - Project directory for artifact storage and pnpm config
-   * @param logger - Optional logger
+   * @param packageWorkspacePath - Package workspace directory (contains artifacts/)
    * @param options - Optional overrides
+   * @param logger - Optional logger
    */
   public static create(
-    projectDirectory: string,
+    packageWorkspacePath: string,
     options?: {
-      /** Local-only mode - no registry client */
+      downloadTarget?: DownloadTarget;
       localOnly?: boolean;
-      /** Inject a custom registry client (for testing or alternative package managers) */
       registryClient?: RegistryClient;
     },
     logger?: Logger,
   ): ArtifactResolver {
-    const repository = new ArtifactRepository(projectDirectory, logger);
+    const repository = new ArtifactRepository(packageWorkspacePath, logger);
 
     if (options?.localOnly) {
       return new ArtifactResolver(repository, undefined, logger);
@@ -97,38 +82,24 @@ export class ArtifactResolver extends EventEmitter {
 
     const registryClient = options?.registryClient ?? new PnpmRegistryClient({
       logger,
-      projectDir: projectDirectory,
+      projectDir: packageWorkspacePath,
     });
 
-    return new ArtifactResolver(repository, registryClient, logger);
+    return new ArtifactResolver(repository, registryClient, logger, options?.downloadTarget);
   }
 
-  /**
-   * Get the registry client instance.
-   * Returns undefined if running in local-only mode.
-   */
   public getRegistryClient(): RegistryClient | undefined {
     return this.registryClient;
   }
 
-  /**
-   * Get the currently configured NPM registry URL.
-   * Returns undefined if running in local-only mode.
-   */
   public getRegistryUrl(): string | undefined {
     return this.registryClient?.getRegistryUrl();
   }
 
-  /**
-   * Get the underlying repository for direct access if needed
-   */
   public getRepository(): ArtifactRepository {
     return this.repository;
   }
 
-  /**
-   * Check if this resolver has a registry client (remote-enabled mode).
-   */
   public hasRegistryClient(): boolean {
     return Boolean(this.registryClient);
   }
@@ -137,47 +108,35 @@ export class ArtifactResolver extends EventEmitter {
    * Resolve the best available artifact version for a package.
    *
    * Resolution logic:
-   * 1. Try cache if TTL is valid (unless forceRefresh)
-   * 2. Check remote registry for available versions
-   * 3. Select best version from combined local + remote
-   * 4. Return local artifact or download from remote
-   *
-   * @param packageName - Scoped package name of the package to resolve
-   * @param options - Resolution options
-   * @returns Resolved artifact information
+   * 1. Read local manifest (single version)
+   * 2. If TTL is valid and no forceRefresh, return local if it satisfies the request
+   * 3. Check remote registry for available versions
+   * 4. Compare local version against remote versions
+   * 5. Return local artifact or download from remote
    */
   public async resolve(packageName: string, options: ArtifactResolutionOptions = {}): Promise<ResolvedArtifact> {
     const {forceRefresh = false, includePrerelease = true, ttlMinutes = DEFAULT_TTL_MINUTES, version} = options;
 
-    this.emit('resolve:start', {packageName, timestamp: new Date(), version});
-
     try {
-      const manifest = await this.repository.getManifest(packageName);
+      const manifest = await this.repository.getManifest();
 
       // Try cache first if TTL is valid
       if (!forceRefresh) {
-        const cached = await this.tryResolveFromCache(
-          packageName,
-          manifest,
-          version,
-          includePrerelease,
-          ttlMinutes,
-        );
+        const cached = this.tryResolveFromCache(packageName, manifest, version, ttlMinutes);
         if (cached) return cached;
       }
 
       // Check remote and resolve
       return await this.resolveWithRemoteCheck(packageName, manifest, version, includePrerelease);
     } catch (error) {
-      this.emitError(packageName, error);
-      throw this.wrapError(packageName, error, version, {forceRefresh, ttlMinutes});
+      this.wrapAndThrow(packageName, error, version, {forceRefresh, ttlMinutes});
     }
   }
 
-  /**
-   * Download a package from the registry.
-   * Requires a registry client - throws if running in local-only mode.
-   */
+  // =========================================================================
+  // Private — Download
+  // =========================================================================
+
   private async download(packageName: string, version: string): Promise<ResolvedArtifact> {
     if (!this.registryClient) {
       throw new ArtifactError(packageName, 'download', 'Cannot download package in local-only mode', {
@@ -186,100 +145,53 @@ export class ArtifactResolver extends EventEmitter {
       });
     }
 
-    this.emit('resolve:download:start', {
-      packageName,
-      timestamp: new Date(),
-      version,
-    });
-
-    const versionDir = this.repository.getVersionPath(packageName, version);
-    const existedBefore = fs.existsSync(versionDir);
-    await this.repository.ensureVersionDir(packageName, version);
+    const artifactsDir = this.repository.getArtifactsDir();
+    await fs.ensureDir(artifactsDir);
 
     try {
-      // Download the package tarball using registry client
-      const {tarballPath} = await this.registryClient.downloadPackage(packageName, version, versionDir);
+      const {tarballPath} = await this.registryClient.downloadPackage(packageName, version, artifactsDir);
 
-      // Localize tarball (move, update manifest, symlink, lastChecked)
+      // Localize: store tarball + manifest in per-package artifacts/
       const localized = await this.repository.localizeTarball(tarballPath, packageName, version);
 
-      this.emit('resolve:download:complete', {
-        artifactPath: localized.artifactPath,
-        packageName,
-        timestamp: new Date(),
-        version,
-      });
+      // Extract to download target (default: node_modules/<packageName>/)
+      let contentPath: string;
+      if (this.downloadTarget) {
+        contentPath = this.downloadTarget(packageName, version);
+        await fs.ensureDir(contentPath);
+        execSync(`tar -xzf "${localized.artifactPath}" --strip-components=1 -C "${contentPath}"`, {timeout: 60_000});
+        this.logger?.debug(`Extracted remote artifact to ${contentPath}`);
+      } else {
+        // Fallback: extract to artifacts/package/
+        contentPath = this.repository.getPackageContentDir();
+        await fs.emptyDir(contentPath);
+        execSync(`tar -xzf "${localized.artifactPath}" -C "${artifactsDir}"`, {timeout: 60_000});
+      }
 
       return {
-        artifactPath: localized.artifactPath,
+        artifactPath: contentPath,
+        manifest: localized.manifest,
         packageVersionId: localized.packageVersionId,
         source: 'remote',
         version,
-        versionEntry: localized.versionEntry,
       };
     } catch (error) {
-      // Only clean up the version dir if we created it (don't delete pre-existing local artifacts)
-      if (!existedBefore) {
-        await this.repository.removeVersion(packageName, version).catch(() => {
-          /* ignore cleanup errors */
-        });
-      }
-
       throw new ArtifactError(packageName, 'extract', 'Failed to download and localize artifact', {
         cause: error instanceof Error ? error : new Error(String(error)),
-        context: {versionDir},
+        context: {artifactsDir},
         version,
       });
     }
   }
 
-  /**
-   * Emit resolve:complete event
-   */
-  private emitComplete(packageName: string, version: string, registry: 'local' | 'remote'): void {
-    this.emit('resolve:complete', {
-      packageName, registry, timestamp: new Date(), version,
-    });
-  }
+  // =========================================================================
+  // Private — Local Resolution
+  // =========================================================================
 
-  /**
-   * Emit resolve:error event
-   */
-  private emitError(packageName: string, error: unknown): void {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    this.emit('resolve:error', {error: errorMessage, packageName, timestamp: new Date()});
-  }
+  // =========================================================================
+  // Private — Remote Resolution
+  // =========================================================================
 
-  private fallback(
-    packageName: string,
-    manifest: ArtifactManifest | undefined,
-    requestedVersion: string | undefined,
-    includePrerelease: boolean,
-  ): ResolvedArtifact | undefined {
-    const localVersions = manifest ? Object.keys(manifest.versions) : [];
-    if (localVersions.length === 0) {
-      return undefined;
-    }
-
-    const fallbackVersion = manifest!.latest || this.findHighestVersion(localVersions, includePrerelease);
-    if (!fallbackVersion || fallbackVersion === requestedVersion) {
-      return undefined;
-    }
-
-    this.logger?.warn(`Falling back to local version: ${packageName}@${fallbackVersion}`);
-    const result = this.resolveFromLocal(packageName, manifest!, fallbackVersion, includePrerelease);
-
-    if (result) {
-      this.emitComplete(packageName, result.version, 'local');
-    }
-
-    return result;
-  }
-
-  /**
-   * Fetch available versions from the package registry.
-   * Returns empty array if no registry client (local-only mode).
-   */
   private async fetchRemoteVersions(packageName: string): Promise<string[]> {
     if (!this.registryClient) {
       this.logger?.debug(`Skipping remote version check for ${packageName} (local-only mode)`);
@@ -292,47 +204,11 @@ export class ArtifactResolver extends EventEmitter {
       this.logger?.debug(`Found ${versions.length} versions for ${packageName}`);
       return versions;
     } catch (error) {
-      // Package might not exist on registry - this is not an error for local-only packages
       this.logger?.debug(`No remote versions found for ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       return [];
     }
   }
 
-  /**
-   * Find the best version from combined local and remote versions.
-   *
-   * @param requestedVersion - Optional specific version or range to match
-   * @param localVersions - Versions available locally
-   * @param remoteVersions - Versions available on remote registry
-   * @param includePrerelease - Whether to include prerelease versions
-   * @returns The best matching version and its source location
-   */
-  private findBestVersion(
-    localVersions: string[],
-    remoteVersions: string[],
-    requestedVersion: string | undefined,
-    includePrerelease: boolean = true,
-  ): {registry: 'local' | 'remote'; version: string;} {
-    if (localVersions.length === 0 && remoteVersions.length === 0) {
-      throw new Error('No versions available locally or remotely');
-    }
-
-    const allVersions = [...new Set([...localVersions, ...remoteVersions])];
-    const bestVersion = this.selectBestVersion(allVersions, requestedVersion, includePrerelease);
-
-    if (!bestVersion) {
-      throw new Error(`No matching version found for ${requestedVersion ?? 'latest'}`);
-    }
-
-    // Prefer local if available, otherwise it must be remote
-    const registry = localVersions.includes(bestVersion) ? 'local' : 'remote';
-
-    return {registry, version: bestVersion};
-  }
-
-  /**
-   * Find the highest version from a list
-   */
   private findHighestVersion(versions: string[], _includePrerelease: boolean): string | undefined {
     if (versions.length === 0) {
       return undefined;
@@ -346,174 +222,124 @@ export class ArtifactResolver extends EventEmitter {
     return sorted[0]?.original;
   }
 
-  /**
-   * Check if the TTL has expired for remote checks
-   */
+  // =========================================================================
+  // Private — Version Selection
+  // =========================================================================
+
   private isTTLExpired(manifest: ArtifactManifest | undefined, ttlMinutes: number): boolean {
     if (!manifest?.lastCheckedRemote) {
       return true;
     }
 
     const ttlMs = ttlMinutes * 60 * 1000;
-    const elapsed = Date.now() - manifest.lastCheckedRemote;
-
-    return elapsed > ttlMs;
+    return (Date.now() - manifest.lastCheckedRemote) > ttlMs;
   }
 
   /**
-   * Resolve a version from the local manifest
+   * Resolve from local manifest. Returns undefined if local version doesn't
+   * satisfy the request.
    */
   private resolveFromLocal(
     packageName: string,
     manifest: ArtifactManifest,
-    version: string | undefined,
-    includePrerelease: boolean,
+    requestedVersion: string | undefined,
   ): ResolvedArtifact | undefined {
-    const versions = Object.keys(manifest.versions);
+    const localVersion = manifest.version;
 
-    if (versions.length === 0) {
+    if (requestedVersion && !this.versionSatisfies(localVersion, requestedVersion)) {
       return undefined;
     }
 
-    let targetVersion: string | undefined;
-
-    if (version) {
-      // Find exact match or best match for version range
-      targetVersion = this.selectBestVersion(versions, version, includePrerelease);
-    } else {
-      // Use latest or find highest version
-      targetVersion = manifest.latest || this.findHighestVersion(versions, includePrerelease);
-    }
-
-    if (!targetVersion || !manifest.versions[targetVersion]) {
-      return undefined;
-    }
-
-    const versionEntry = manifest.versions[targetVersion];
-    const artifactPath = this.repository.getArtifactPath(packageName, targetVersion);
-
-    // Verify artifact exists
+    const artifactPath = this.repository.getPackageContentDir();
     if (!fs.existsSync(artifactPath)) {
-      this.logger?.warn(`Artifact file missing for ${packageName}@${targetVersion}: ${artifactPath}`);
+      this.logger?.warn(`Build output missing for ${packageName}@${localVersion}: ${artifactPath}`);
       return undefined;
-    }
-
-    // Extract packageVersionId from artifact metadata if not in manifest
-    let {packageVersionId} = versionEntry;
-    if (!packageVersionId) {
-      packageVersionId = this.repository.extractPackageVersionId(packageName, targetVersion);
     }
 
     return {
       artifactPath,
-      packageVersionId,
+      manifest,
+      packageVersionId: manifest.packageVersionId,
       source: 'local',
-      version: targetVersion,
-      versionEntry,
+      version: localVersion,
     };
   }
 
-  /**
-   * Resolve artifact from local storage or download from remote.
-   *
-   * Uses the pre-computed source from findBestVersion to determine whether
-   * to resolve locally or download from remote. Falls back to local if
-   * download fails.
-   *
-   * @param packageName - Package name
-   * @param manifest - Local manifest (may be undefined)
-   * @param resolved - Result from findBestVersion with version and source
-   * @param includePrerelease - Whether to include prerelease versions for fallback
-   */
-  private async resolveOrDownload(
-    packageName: string,
-    manifest: ArtifactManifest | undefined,
-    resolved: {registry: 'local' | 'remote'; version: string;},
-    includePrerelease: boolean,
-  ): Promise<ResolvedArtifact> {
-    const {registry, version} = resolved;
-
-    // Registry is 'local' - resolve from local storage
-    if (registry === 'local') {
-      await this.repository.updateLastCheckedRemote(packageName);
-      const result = this.resolveFromLocal(packageName, manifest!, version, includePrerelease);
-      if (result) {
-        this.emitComplete(packageName, result.version, 'local');
-        return result;
-      }
-
-      // Local artifact file might be missing (corrupt state)
-      this.logger?.warn(`Local artifact file missing for ${packageName}@${version}`);
-    }
-
-    // Registry is 'remote' or local file missing - try download
-    if (registry === 'remote' || manifest?.versions[version]) {
-      try {
-        const result = await this.download(packageName, version);
-        this.emitComplete(packageName, result.version, 'remote');
-        return result;
-      } catch (downloadError) {
-        this.logger?.warn(`Failed to download ${packageName}@${version} from registry: ${downloadError instanceof Error ? downloadError.message : String(downloadError)}`);
-      }
-    }
-
-    const fallbackResult = this.fallback(packageName, manifest, version, includePrerelease);
-    if (fallbackResult) {
-      return fallbackResult;
-    }
-
-    // No version available
-    throw new ArtifactError(packageName, 'read', `No available artifact for version ${version}`, {
-      context: {
-        hasLocalVersions: manifest ? Object.keys(manifest.versions).length > 0 : false,
-        registry,
-      },
-      version,
-    });
-  }
-
-  /**
-   * Resolve by checking remote registry and comparing with local versions.
-   */
   private async resolveWithRemoteCheck(
     packageName: string,
     manifest: ArtifactManifest | undefined,
     requestedVersion: string | undefined,
     includePrerelease: boolean,
   ): Promise<ResolvedArtifact> {
-    this.emit('resolve:remote-check', {packageName, timestamp: new Date()});
     const remoteVersions = await this.fetchRemoteVersions(packageName);
-    this.emit('resolve:remote-versions', {packageName, timestamp: new Date(), versions: remoteVersions});
 
-    let localVersions;
-    if (!requestedVersion && manifest?.latest) {
-      localVersions = [manifest.latest];
-    } else {
-      localVersions = manifest ? Object.keys(manifest.versions) : [];
-    }
+    const localVersion = manifest?.version;
 
-    let resolvedVersion: {registry: 'local' | 'remote'; version: string;};
+    // Determine the best version from remote (and optionally local)
+    const allVersions = localVersion
+      ? [...new Set([localVersion, ...remoteVersions])]
+      : remoteVersions;
 
-    try {
-      resolvedVersion = this.findBestVersion(localVersions, remoteVersions, requestedVersion, includePrerelease);
-      this.logger?.debug(`Best version for ${packageName}: ${resolvedVersion.version} (${resolvedVersion.registry})`);
-    } catch (error) {
-      this.logger?.warn(`Failed to find best version for ${packageName}@${requestedVersion}: ${error}`);
-      throw new ArtifactError(packageName, 'resolve', `No matching version found for ${requestedVersion}`, {
-        context: {
-          localVersions,
-          remoteVersions,
-        },
+    if (allVersions.length === 0) {
+      // No remote versions and no local — nothing to resolve
+      if (manifest) {
+        // Return local if it exists, even without remote confirmation
+        const local = this.resolveFromLocal(packageName, manifest, requestedVersion);
+        if (local) {
+          await this.repository.updateLastCheckedRemote();
+          return local;
+        }
+      }
+
+      throw new ArtifactError(packageName, 'resolve', 'No versions available locally or remotely', {
         version: requestedVersion,
       });
     }
 
-    return this.resolveOrDownload(packageName, manifest, resolvedVersion, includePrerelease);
+    const bestVersion = this.selectBestVersion(allVersions, requestedVersion, includePrerelease);
+    if (!bestVersion) {
+      throw new ArtifactError(packageName, 'resolve', `No matching version found for ${requestedVersion ?? 'latest'}`, {
+        context: {localVersion, remoteVersions},
+        version: requestedVersion,
+      });
+    }
+
+    // Is the best version already local?
+    if (localVersion && bestVersion === localVersion && this.repository.hasTarball()) {
+      await this.repository.updateLastCheckedRemote();
+      const local = this.resolveFromLocal(packageName, manifest!, requestedVersion);
+      if (local) {
+        return local;
+      }
+    }
+
+    // Best version is remote — download it
+    try {
+      const result = await this.download(packageName, bestVersion);
+      return result;
+    } catch (downloadError) {
+      this.logger?.warn(`Failed to download ${packageName}@${bestVersion}: ${downloadError instanceof Error ? downloadError.message : String(downloadError)}`);
+
+      // Fallback to local if available and satisfies request
+      if (manifest) {
+        const fallback = this.resolveFromLocal(packageName, manifest, requestedVersion);
+        if (fallback) {
+          this.logger?.warn(`Falling back to local version: ${packageName}@${fallback.version}`);
+          return fallback;
+        }
+      }
+
+      throw new ArtifactError(packageName, 'read', `No available artifact for version ${bestVersion}`, {
+        context: {localVersion, remoteVersions},
+        version: bestVersion,
+      });
+    }
   }
 
-  /**
-   * Select the best version from a list based on a version range or exact match
-   */
+  // =========================================================================
+  // Private — Helpers
+  // =========================================================================
+
   private selectBestVersion(
     versions: string[],
     requestedVersion: string | undefined,
@@ -537,11 +363,13 @@ export class ArtifactResolver extends EventEmitter {
 
     const cleanedRequested = toVersionFormat(requestedVersion, 'semver', {resolveTokens: true, strict: false});
 
+    // Exact match
     const exactMatch = cleanedVersions.find(v => v.cleaned === cleanedRequested);
     if (exactMatch) {
       return exactMatch.original;
     }
 
+    // Range match
     const semverOptions: semver.RangeOptions = {includePrerelease};
     const isRange = /[\^~><= ]/.test(requestedVersion);
 
@@ -553,7 +381,7 @@ export class ArtifactResolver extends EventEmitter {
       return satisfying[0]?.original;
     }
 
-    // Try prefix matching (e.g., "1.0" matches "1.0.0-1")
+    // Prefix matching (e.g., "1.0" matches "1.0.0-1")
     const prefixMatches = cleanedVersions
     .filter(v => v.original.startsWith(requestedVersion) || v.cleaned.startsWith(cleanedRequested))
     .sort((a, b) => semver.rcompare(a.cleaned, b.cleaned));
@@ -561,43 +389,54 @@ export class ArtifactResolver extends EventEmitter {
     return prefixMatches[0]?.original;
   }
 
-  // =========================================================================
-  // Private Methods - Remote Registry
-  // =========================================================================
-
   /**
    * Try to resolve from local cache if TTL is still valid.
    */
-  private async tryResolveFromCache(
+  private tryResolveFromCache(
     packageName: string,
     manifest: ArtifactManifest | undefined,
-    version: string | undefined,
-    includePrerelease: boolean,
+    requestedVersion: string | undefined,
     ttlMinutes: number,
-  ): Promise<ResolvedArtifact | undefined> {
-    if (this.isTTLExpired(manifest, ttlMinutes) || !manifest) {
+  ): ResolvedArtifact | undefined {
+    if (!manifest || this.isTTLExpired(manifest, ttlMinutes)) {
       return undefined;
     }
 
-    const result = this.resolveFromLocal(packageName, manifest, version, includePrerelease);
+    const result = this.resolveFromLocal(packageName, manifest, requestedVersion);
     if (!result) {
       return undefined;
     }
 
-    this.emit('resolve:cache-hit', {packageName, timestamp: new Date(), version: result.version});
-    this.emitComplete(packageName, result.version, 'local');
     return result;
   }
 
   /**
-   * Wrap error in ArtifactError if not already one
+   * Check if a local version satisfies a requested version constraint.
    */
-  private wrapError(
+  private versionSatisfies(localVersion: string, requestedVersion: string): boolean {
+    const cleanedLocal = toVersionFormat(localVersion, 'semver', {resolveTokens: true, strict: false});
+    const cleanedRequested = toVersionFormat(requestedVersion, 'semver', {resolveTokens: true, strict: false});
+
+    // Exact match
+    if (cleanedLocal === cleanedRequested) {
+      return true;
+    }
+
+    // Range match
+    if (/[\^~><= ]/.test(requestedVersion) && semver.valid(cleanedLocal)) {
+      return semver.satisfies(cleanedLocal, cleanedRequested, {includePrerelease: true});
+    }
+
+    // Prefix match
+    return localVersion.startsWith(requestedVersion) || cleanedLocal.startsWith(cleanedRequested);
+  }
+
+  private wrapAndThrow(
     packageName: string,
     error: unknown,
     version: string | undefined,
     context: Record<string, unknown>,
-  ): ArtifactError {
+  ): never {
     if (error instanceof ArtifactError) {
       throw error;
     }

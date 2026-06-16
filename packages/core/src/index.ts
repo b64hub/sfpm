@@ -13,6 +13,9 @@ import './package/analyzers/ft-analyzer.js';
 import './package/analyzers/manifest-analyzer.js';
 import './package/analyzers/picklist-analyzer.js';
 
+/**
+ * @deprecated dead code
+ */
 export class SfpmCore {
   project!: ProjectService;
 
@@ -35,9 +38,9 @@ export {
 export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
 
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
-export {ArtifactResolver} from './artifacts/artifact-resolver.js';
+export {ArtifactResolver, type DownloadTarget} from './artifacts/artifact-resolver.js';
 export {
-  type ArtifactHistoryOptions, ArtifactService, type InstallTarget, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
+  type ArtifactHistoryOptions, type ArtifactResolution, ArtifactService, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
 } from './artifacts/artifact-service.js';
 export {
   extractPackageVersionId, extractSourceHash, fromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions,
@@ -63,22 +66,22 @@ export {
 } from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
 export {
-  type Builder, type BuilderConstructor, type BuilderOptions, BuilderRegistry,
-  type BuildTask, type BuildTaskContext, type BuildTaskEnrichments,
-  type BuildTaskRegistration, type BuildTaskResult,
-  type DependencyAnalysis,
-  RegisterBuilder,
+  type Builder, type BuilderConstructor, builderFactory, type BuilderOptions, BuilderRegistry,
+  type BuilderResult, type BuildTask, type BuildTaskContext,
+  type BuildTaskEnrichments, type BuildTaskRegistration,
+  type BuildTaskResult,
+  type DependencyAnalysis, RegisterBuilder,
 } from './package/builders/builder-registry.js';
 export {assembleArtifactTask, default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
 export {
-  type Installer, type InstallerConstructor, type InstallerExecResult, InstallerRegistry, RegisterInstaller,
+  type InstallCheckResult, type Installer, type InstallerConstructor, InstallerRegistry, type InstallerResult, RegisterInstaller,
 } from './package/installers/installer-registry.js';
 export {default as SourceDeployer} from './package/installers/strategies/source-deployer.js';
 export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
 export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from './package/org-alias-resolver.js';
-export {type BuildMode, type BuildOptions, PackageBuilder} from './package/package-builder.js'; // Named exports to avoid BuildOptions name conflict with types/project.ts
+export {type BuildOptions, PackageBuilder, type ValidationLevel} from './package/package-builder.js';
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';

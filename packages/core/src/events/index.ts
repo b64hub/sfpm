@@ -31,8 +31,7 @@ export type {
   TaskValidationCompleteEvent, TaskValidationCompletePayload,
   TaskValidationProgressEvent, TaskValidationProgressPayload,
   TaskValidationStartEvent, TaskValidationStartPayload,
-  ValidationCompleteEvent, ValidationCompletePayload,
-  ValidationStartEvent, ValidationStartPayload,
+  ValidationQueuedEvent, ValidationQueuedPayload,
 } from './build-event-bus.js';
 export {ScopedEventSink} from './event-sink.js';
 export type {EventSink} from './event-sink.js';
@@ -74,10 +73,20 @@ export type {
   ConnectionStartPayload,
   HookCompleteEvent,
   HookCompletePayload,
-  HookEventSink,
   HookEvents,
+  HookEventSink,
   HooksCompleteEvent,
   HooksCompletePayload,
   HooksStartEvent,
   HooksStartPayload,
 } from './types.js';
+export {ScopedValidationSink, ValidationEventBus} from './validation-event-bus.js';
+export type {
+  ResolveCompleteEvent, ResolveCompletePayload,
+  ResolveFailedEvent, ResolveFailedPayload,
+  ResolvePassedEvent, ResolvePassedPayload,
+  ResolveStartEvent, ResolveStartPayload,
+  ResolveStatusEvent, ResolveStatusPayload,
+  ResolveTimeoutEvent, ResolveTimeoutPayload,
+  ValidationEvents, ValidationEventSink,
+} from './validation-event-bus.js';
