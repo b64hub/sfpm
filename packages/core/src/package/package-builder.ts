@@ -84,6 +84,11 @@ export interface BuildOptions {
   /** Installation key for unlocked packages */
   installationKey?: string;
   /**
+   * Unlocked packages are deployed as source instead of creating a package version.
+   * No DevHub required. Designed for PR validation against scratch orgs.
+   */
+  sourceOnly?: boolean;
+  /**
    * Validation level. Controls which quality gates run during the build.
    *
    * - `full`  — static analysis + org validation (default)
@@ -237,42 +242,22 @@ export class PackageBuilder {
   }
 
   /**
-   * Source hash guard — determines whether a build is necessary by comparing
-   * the current source hash against the latest artifact manifest entry.
+   * Compare the current source hash against the latest artifact manifest.
+   * Returns match info if hashes are equal, undefined otherwise.
    */
-  private async checkSourceHash(sfpmPackage: SfpmPackage): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
-    if (!(sfpmPackage instanceof SfpmMetadataPackage)) {
-      return undefined;
-    }
-
+  private async checkSourceHash(
+    sfpmPackage: SfpmMetadataPackage,
+    repo: ArtifactRepository,
+  ): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
     const currentSourceHash = await SourceHasher.calculate(sfpmPackage);
     this.logger?.debug(`Source hash: ${currentSourceHash}`);
 
-    const sourcePath = sfpmPackage.packageDefinition?.path;
-    if (!sourcePath) {
-      this.logger?.info('No package definition path, proceeding with build');
-      return undefined;
-    }
-
-    let packageWorkspacePath: string;
-    try {
-      packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
-    } catch {
-      this.logger?.info('Could not resolve package workspace path, proceeding with build');
-      return undefined;
-    }
-
-    const repo = new ArtifactRepository(packageWorkspacePath, this.logger);
     const match = await repo.checkSourceHash(currentSourceHash);
-
-    if (match) {
-      this.logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected. `
-        + `Latest version: ${match.latestVersion}, hash: ${currentSourceHash}`);
-      return match;
+    if (!match) {
+      this.logger?.info('Source changes detected, proceeding with build');
     }
 
-    this.logger?.info('Source changes detected, proceeding with build');
-    return undefined;
+    return match;
   }
 
   /**
@@ -300,6 +285,76 @@ export class PackageBuilder {
   }
 
   /**
+   * Check whether the existing manifest satisfies the current build's requirements.
+   *
+   * An unlocked package with org/full validation (not source-only) requires a
+   * packageVersionId in the manifest. A previous --source-only or --validation=local
+   * build won't have one, so a rebuild is needed despite matching source hash.
+   */
+  private async manifestSatisfiesBuild(
+    sfpmPackage: SfpmPackage,
+    repo: ArtifactRepository,
+  ): Promise<boolean> {
+    const needsPackageVersionId = sfpmPackage.type === PackageType.Unlocked
+      && !this.options.sourceOnly
+      && (this.options.validation === 'org' || this.options.validation === 'full' || !this.options.validation);
+
+    if (!needsPackageVersionId) return true;
+
+    const manifest = await repo.getManifest();
+    if (!manifest?.packageVersionId) {
+      this.logger?.info(`Build required for '${sfpmPackage.packageName}': existing build has no packageVersionId`);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Determine whether a build is needed for this package.
+   *
+   * Checks two conditions:
+   * 1. Source hash — has the source changed since the last build?
+   * 2. Manifest completeness — does the existing build output satisfy
+   *    the current build's requirements (e.g., packageVersionId for
+   *    unlocked packages with org validation)?
+   *
+   * Returns skip info when the build can be skipped, or undefined to proceed.
+   */
+  private async needsBuild(sfpmPackage: SfpmPackage): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
+    if (!(sfpmPackage instanceof SfpmMetadataPackage)) {
+      return undefined;
+    }
+
+    const sourcePath = sfpmPackage.packageDefinition?.path;
+    if (!sourcePath) {
+      this.logger?.info('No package definition path, proceeding with build');
+      return undefined;
+    }
+
+    let packageWorkspacePath: string;
+    try {
+      packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
+    } catch {
+      this.logger?.info('Could not resolve package workspace path, proceeding with build');
+      return undefined;
+    }
+
+    const repo = new ArtifactRepository(packageWorkspacePath, this.logger);
+
+    // 1. Check source hash
+    const hashMatch = await this.checkSourceHash(sfpmPackage, repo);
+    if (!hashMatch) return undefined;
+
+    // 2. Check manifest completeness
+    if (!await this.manifestSatisfiesBuild(sfpmPackage, repo)) return undefined;
+
+    this.logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected. `
+      + `Latest version: ${hashMatch.latestVersion}`);
+    return hashMatch;
+  }
+
+  /**
    * Resolve the target org for the builder based on package type.
    * Returns undefined when org validation is disabled.
    */
@@ -307,8 +362,8 @@ export class PackageBuilder {
     if (!modeConfig.orgValidation) return undefined;
 
     let username: string | undefined;
-    // When routing unlocked through source builder, use buildOrg
-    if (sfpmPackage.type === PackageType.Unlocked) {
+    // With --source-only, unlocked packages use the build org (not DevHub)
+    if (sfpmPackage.type === PackageType.Unlocked && !this.options.sourceOnly) {
       username = this.options.devhubUsername;
     } else {
       username = this.options.buildOrg;
@@ -336,11 +391,11 @@ export class PackageBuilder {
 
     // Check if build is needed (source hash comparison)
     if (!options.force) {
-      const hashSkip = await this.checkSourceHash(sfpmPackage);
-      if (hashSkip) {
+      const skip = await this.needsBuild(sfpmPackage);
+      if (skip) {
         this.sink?.skip({
-          artifactPath: hashSkip.artifactPath,
-          latestVersion: hashSkip.latestVersion,
+          artifactPath: skip.artifactPath,
+          latestVersion: skip.latestVersion,
           packageType: sfpmPackage.type as PackageType,
           reason: 'no-changes',
           version: sfpmPackage.version,
@@ -358,8 +413,10 @@ export class PackageBuilder {
     // Run pre-build hooks after analyzers have enriched the package context
     await this.runLifecycleHooks('pre', sfpmPackage);
 
-    // Route unlocked packages through source builder when no org validation
-    const buildAs = (!modeConfig.orgValidation && sfpmPackage.type === PackageType.Unlocked)
+    // Route unlocked packages through source builder when:
+    // - no org validation (local/none), or
+    // - --source-only mode (PR validation without DevHub)
+    const buildAs = ((!modeConfig.orgValidation || this.options.sourceOnly) && sfpmPackage.type === PackageType.Unlocked)
       ? PackageType.Source
       : undefined;
 

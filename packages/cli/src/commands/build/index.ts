@@ -71,6 +71,7 @@ export default class Build extends SfpmCommand {
     json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     'no-dependencies': Flags.boolean({default: false, description: 'build the specified packages without their transitive dependencies'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
+    'source-only': Flags.boolean({description: 'route all packages through source deployment (no DevHub, no package version IDs)', env: 'SFPM_SOURCE_ONLY'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
     'target-dev-hub': Flags.string({
       char: 'v',
@@ -438,13 +439,14 @@ export default class Build extends SfpmCommand {
 
     // Resolve devhub (not required when validation doesn't need an org)
     const needsOrg = validation === 'org' || validation === 'full';
+    const needsDevHub = needsOrg && !flags['source-only'];
     let devhubUsername = flags['target-dev-hub']
-    if (!devhubUsername && needsOrg) {
+    if (!devhubUsername && needsDevHub) {
       const configAggregator = await ConfigAggregator.create()
       devhubUsername = configAggregator.getPropertyValue<string>('target-dev-hub') ?? undefined
     }
 
-    if (!devhubUsername && needsOrg) {
+    if (!devhubUsername && needsDevHub) {
       this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1})
     }
 
@@ -457,6 +459,7 @@ export default class Build extends SfpmCommand {
       force: flags.force,
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
       installationKey: flags['installation-key'],
+      sourceOnly: flags['source-only'],
       validation,
       waitTime: flags.wait,
     }
