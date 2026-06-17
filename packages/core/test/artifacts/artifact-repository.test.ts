@@ -66,13 +66,13 @@ describe('ArtifactRepository', () => {
     describe('path resolution', () => {
         it('should return correct artifact path', () => {
             expect(repository.getArtifactPath()).toBe(
-                path.join(packageWorkspacePath, 'artifacts', 'artifact.tgz')
+                path.join(packageWorkspacePath, 'artifact', 'artifact.tgz')
             );
         });
 
         it('should return correct artifacts dir', () => {
             expect(repository.getArtifactsDir()).toBe(
-                path.join(packageWorkspacePath, 'artifacts')
+                path.join(packageWorkspacePath, 'artifact')
             );
         });
 
@@ -145,7 +145,7 @@ describe('ArtifactRepository', () => {
             await repository.saveManifest(manifest);
 
             expect(fs.ensureDir).toHaveBeenCalledWith(
-                path.join(packageWorkspacePath, 'artifacts')
+                path.join(packageWorkspacePath, 'artifact')
             );
             expect(fs.writeJson).toHaveBeenCalled();
             expect(fs.move).toHaveBeenCalled();
@@ -239,14 +239,14 @@ describe('ArtifactRepository', () => {
             );
 
             expect(result.artifactPath).toBe(
-                path.join(packageWorkspacePath, 'artifacts', 'artifact.tgz')
+                path.join(packageWorkspacePath, 'artifact', 'artifact.tgz')
             );
             expect(result.manifest.source).toBe('remote');
             expect(result.manifest.schemaVersion).toBe(2);
             expect(result.manifest.version).toBe('1.0.0-1');
             expect(fs.move).toHaveBeenCalledWith(
                 '/tmp/download.tgz',
-                path.join(packageWorkspacePath, 'artifacts', 'artifact.tgz'),
+                path.join(packageWorkspacePath, 'artifact', 'artifact.tgz'),
                 { overwrite: true }
             );
         });
@@ -277,7 +277,7 @@ describe('ArtifactRepository', () => {
             await repository.clean();
 
             expect(fs.remove).toHaveBeenCalledWith(
-                path.join(packageWorkspacePath, 'artifacts')
+                path.join(packageWorkspacePath, 'artifact')
             );
         });
     });

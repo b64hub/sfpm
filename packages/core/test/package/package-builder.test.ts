@@ -13,7 +13,7 @@ const {SfpmMetadataPackageStub, mockBuilderInstance, mockManifest, mockPackageFa
   const _mockRepo = {
     checkSourceHash: vi.fn(),
     getManifest: vi.fn(),
-    getPackageContentDir: vi.fn().mockReturnValue('/project/packages/my-pkg/artifacts/package'),
+    getPackageContentDir: vi.fn().mockReturnValue('/project/packages/my-pkg/artifact/package'),
     hasArtifact: vi.fn().mockReturnValue(true),
   };
 
@@ -120,7 +120,7 @@ vi.mock('../../src/package/assemblers/package-assembler.js', () => ({
     return {
       assemble: vi.fn().mockResolvedValue({
         componentCount: 10,
-        stagingDirectory: '/project/packages/my-pkg/artifacts/package',
+        stagingDirectory: '/project/packages/my-pkg/artifact/package',
       }),
     };
   },
@@ -333,7 +333,7 @@ describe('PackageBuilder', () => {
   describe('needsBuild — source hash', () => {
     it('should skip build when source hash matches', async () => {
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/artifact/package',
         latestVersion: '1.0.0',
       });
 
@@ -354,7 +354,7 @@ describe('PackageBuilder', () => {
 
     it('should proceed when force is true despite hash match', async () => {
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/artifact/package',
         latestVersion: '1.0.0',
       });
 
@@ -374,7 +374,7 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/artifact/package',
         latestVersion: '1.0.0',
       });
       mockRepo.getManifest.mockResolvedValue({
@@ -399,7 +399,7 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/artifact/package',
         latestVersion: '1.0.0',
       });
       mockRepo.getManifest.mockResolvedValue({
@@ -421,7 +421,7 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/artifact/package',
         latestVersion: '1.0.0',
       });
       mockRepo.getManifest.mockResolvedValue({
@@ -443,7 +443,7 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/artifact/package',
         latestVersion: '1.0.0',
       });
       // No packageVersionId — but sourceOnly doesn't need one
@@ -467,7 +467,7 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/artifact/package',
         latestVersion: '1.0.0',
       });
       mockRepo.getManifest.mockResolvedValue({
@@ -488,7 +488,7 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Source;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/artifact/package',
         latestVersion: '1.0.0',
       });
       mockRepo.getManifest.mockResolvedValue({

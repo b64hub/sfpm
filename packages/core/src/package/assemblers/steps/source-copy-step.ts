@@ -21,7 +21,7 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
  */
 export class SourceCopyStep implements AssemblyStep {
   /** Directories that are never part of a Salesforce package */
-  private static readonly ALWAYS_EXCLUDED = new Set(['.sfpm', '.turbo', 'artifacts', 'node_modules']);
+  private static readonly ALWAYS_EXCLUDED = new Set(['.sfpm', '.turbo', 'artifact', 'node_modules']);
   /**
    * Files excluded from the source copy.
    *
@@ -41,7 +41,7 @@ export class SourceCopyStep implements AssemblyStep {
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
     const sourceDir = path.join(this.provider.projectDir, packageDefinition.path);
-    const destinationDir = path.join(output.stagingDirectory, packageDefinition.path);
+    const destinationDir = path.join(output.stagingDirectory, 'force-app');
 
     const ig = await this.loadBuildIgnore(options);
 

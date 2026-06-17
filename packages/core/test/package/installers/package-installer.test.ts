@@ -24,12 +24,12 @@ vi.mock('../../../src/artifacts/artifact-service.js', () => ({
             setOrg: vi.fn().mockReturnThis(),
             setLogger: vi.fn().mockReturnThis(),
             setProjectDir: vi.fn().mockReturnThis(),
-            getBuildOutput: vi.fn().mockReturnValue('/test/project/packages/test-package/artifacts/package'),
+            getBuildOutput: vi.fn().mockReturnValue('/test/project/packages/test-package/artifact/package'),
             resolveArtifact: vi.fn().mockResolvedValue({
                 resolved: {
                     source: 'local',
                     version: '1.0.0',
-                    artifactPath: '/test/project/packages/test-package/artifacts/package',
+                    artifactPath: '/test/project/packages/test-package/artifact/package',
                     manifest: { sourceHash: 'abc123', schemaVersion: 2, source: 'local' },
                 },
                 orgStatus: { isInstalled: false },

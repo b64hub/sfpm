@@ -13,7 +13,7 @@ import {extractPackageVersionId, extractSourceHash, fromNpmPackageJson} from './
 /**
  * Subdirectory name for artifact storage within each package workspace.
  */
-const ARTIFACTS_DIR = 'artifacts';
+const ARTIFACTS_DIR = 'artifact';
 
 /**
  * Package-scoped artifact repository.

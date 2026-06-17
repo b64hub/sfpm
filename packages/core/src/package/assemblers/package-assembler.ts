@@ -226,6 +226,6 @@ export default class PackageAssembler {
   private initializeStagingArea(): string {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
     const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, packageDefinition.path);
-    return path.join(packageWorkspacePath, 'artifacts', 'package');
+    return path.join(packageWorkspacePath, 'artifact', 'package');
   }
 }

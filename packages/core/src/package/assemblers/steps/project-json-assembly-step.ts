@@ -42,6 +42,10 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
         packageDefinition.packages[0].version = toVersionFormat(options.versionNumber, 'salesforce');
       }
 
+      // In the artifact, metadata lives under a standard 'force-app' subdirectory
+      // regardless of the original project path
+      packageDefinition.packages[0].path = 'force-app';
+
       const pkg = packageDefinition.packages[0];
 
       output.projectDefinitionPath = await this.writeProjectDefinition(packageDefinition, pkg, output.stagingDirectory, output);

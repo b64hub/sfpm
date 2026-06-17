@@ -89,12 +89,12 @@ describe('PackageAssembler — Data packages', () => {
     const result = await assembler.assemble();
     const stagingPath = result.stagingDirectory;
 
-    expect(stagingPath).toBe(path.join('/root/packages/my-data', 'artifacts', 'package'));
+    expect(stagingPath).toBe(path.join('/root/packages/my-data', 'artifact', 'package'));
 
     // Should copy source (data directory)
     expect(mockedFs.copy).toHaveBeenCalledWith(
       path.join('/root', 'data'),
-      path.join(stagingPath, 'data'),
+      path.join(stagingPath, 'force-app'),
       expect.objectContaining({ filter: expect.any(Function) }),
     );
 
