@@ -3,6 +3,7 @@ import {
   type ProjectDefinitionProvider, type ProjectGraph, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
+import {ConfigAggregator} from '@salesforce/core'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
@@ -47,7 +48,9 @@ export default class Deploy extends SfpmCommand {
     'no-hooks': Flags.boolean({description: 'skip lifecycle hooks'}),
     quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'target-org': Flags.string({
-      char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
+      char: 'o',
+      description: 'target org username',
+      env: 'SF_TARGET_ORG',
     }),
     'test-level': Flags.string({
       char: 'l', description: 'deployment test level', options: ['NoTestRun', 'RunSpecifiedTests', 'RunLocalTests', 'RunAllTestsInOrg'],
@@ -157,6 +160,16 @@ export default class Deploy extends SfpmCommand {
     const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();
+
+    // Resolve target org: flag > env > sf config default
+    if (!flags['target-org']) {
+      const configAggregator = await ConfigAggregator.create();
+      flags['target-org'] = configAggregator.getPropertyValue<string>('target-org') ?? undefined;
+    }
+
+    if (!flags['target-org']) {
+      this.error('A target org is required. Specify one with --target-org (-o) or set a default with: sf config set target-org=<username>', {exit: 1});
+    }
 
     const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: flags.json})
 
