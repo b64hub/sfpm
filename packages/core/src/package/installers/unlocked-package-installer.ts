@@ -4,14 +4,16 @@ import {Org} from '@salesforce/core';
 import type {InstallEventSink} from '../../events/install-event-bus.js';
 
 import {ArtifactService} from '../../artifacts/artifact-service.js';
+import {type InstallOptions} from '../../index.js';
 import {Logger} from '../../types/logger.js';
 import {
   InstallationMode, PackageType, PerPackageBuildConfig,
 } from '../../types/package.js';
 import {PackageService} from '../package-service.js';
 import {SfpmUnlockedPackage} from '../sfpm-package.js';
-import {type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller} from './installer-registry.js';
-import {type InstallOptions} from '../../index.js';
+import {
+  type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller,
+} from './installer-registry.js';
 // Import strategy implementations
 import SourceDeployer from './strategies/source-deployer.js';
 import VersionInstaller from './strategies/version-installer.js';
@@ -61,7 +63,7 @@ export default class UnlockedPackageInstaller implements Installer {
   public async isInstalled(): Promise<InstallCheckResult> {
     try {
       // 1. Check ArtifactService for hash match (takes precedence)
-      const sourceHash = this.sfpmPackage.metadata.source?.sourceHash;
+      const sourceHash = this.sfpmPackage.source?.sourceHash;
       if (sourceHash) {
         const artifactService = ArtifactService.getInstance();
         const installedArtifacts = await artifactService.getInstalledPackages();
@@ -74,10 +76,10 @@ export default class UnlockedPackageInstaller implements Installer {
       }
 
       // 2. Fallback: check PackageService for 04t version
-      const packageVersionId = this.sfpmPackage.packageVersionId;
+      const {packageVersionId} = this.sfpmPackage;
       if (packageVersionId) {
         const packageService = PackageService.getInstance()
-          .setOrg(this.org!);
+        .setOrg(this.org!);
         if (this.logger) packageService.setLogger(this.logger);
 
         const isVersionInstalled = await packageService.isSubscriberVersionInstalled(packageVersionId);
@@ -150,7 +152,7 @@ export default class UnlockedPackageInstaller implements Installer {
       throw new Error(`Cannot version-install ${this.sfpmPackage.packageName}: no packageVersionId`);
     }
 
-    const buildOptions = this.sfpmPackage.metadata?.orchestration?.build as PerPackageBuildConfig | undefined;
+    const buildOptions = this.sfpmPackage.orchestration?.build as PerPackageBuildConfig | undefined;
 
     return {
       installationKey: buildOptions?.installationKey,

@@ -91,20 +91,15 @@ describe('UnlockedPackageBuilder', () => {
         };
 
         // Setup Package
-        mockSfpmPackage = new SfpmUnlockedPackage('test-package', '/tmp/project', {
-            identity: {
-                packageType: PackageType.Unlocked,
-                versionNumber: '1.0.0.0',
-                packageName: 'test-package',
-                isOrgDependent: false
-            },
-            orchestration: {
-                build: {
-                    installationKey: '123',
-                    postInstallScript: 'scripts/postinstall.sh'
-                }
+        mockSfpmPackage = new SfpmUnlockedPackage('test-package', '/tmp/project');
+        mockSfpmPackage.version = '1.0.0.0';
+        mockSfpmPackage.isOrgDependent = false;
+        mockSfpmPackage.orchestration = {
+            build: {
+                installationKey: '123',
+                postInstallScript: 'scripts/postinstall.sh'
             }
-        });
+        } as any;
 
         // Set required staging directory for build
         mockSfpmPackage.workingDirectory = '/tmp/project';

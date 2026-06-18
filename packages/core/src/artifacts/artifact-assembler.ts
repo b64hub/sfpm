@@ -224,7 +224,7 @@ export default class ArtifactAssembler {
       ? {...this.options.sourceContext, sourceHash}
       : undefined;
 
-    const generated = await toNpmPackageJson(
+    const generated = toNpmPackageJson(
       workspacePkgJson,
       this.sfpmPackage,
       this.packageVersionNumber,

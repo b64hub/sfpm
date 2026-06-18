@@ -92,28 +92,16 @@ describe('ArtifactAssembler', () => {
         mockSfpmPackage = {
             packageName,
             name: `@testorg/${packageName}`,
-            npmName: `@testorg/${packageName}`,
             version,
             type: PackageType.Unlocked,
             workingDirectory: '/tmp/builds/test-build/package',
             packageDirectory: '/project/force-app',
             dependencies: [],
-            metadata: {
-                identity: { packageName, packageType: PackageType.Unlocked, versionNumber: version },
-                source: { branch: 'main' },
-                content: {},
-                validation: {},
-                orchestration: {},
-            },
+            orchestration: {},
+            source: { branch: 'main' },
+            scope: '@testorg',
             projectDefinition: { packageAliases: {} },
             packageDefinition: { path: 'packages/my-package/force-app', versionDescription: 'Test package' },
-            toJson: vi.fn().mockResolvedValue({
-                identity: { packageName, packageType: PackageType.Unlocked, versionNumber: version },
-                source: { branch: 'main' },
-                content: {},
-                validation: {},
-                orchestration: {},
-            }),
         };
 
         mockLogger = {
@@ -270,8 +258,9 @@ describe('ArtifactAssembler', () => {
                 { spaces: 2 }
             );
 
-            // Verify sfpm metadata was retrieved from package
-            expect(mockSfpmPackage.toJson).toHaveBeenCalled();
+            // Verify adapter reads flat properties (no toJson call)
+            const writtenJson = vi.mocked(fs.writeJson).mock.calls[0][1] as any;
+            expect(writtenJson.sfpm.packageName).toBe(packageName);
         });
 
         it('should include managedDependencies for pinned dependencies', async () => {
@@ -307,13 +296,9 @@ describe('ArtifactAssembler', () => {
         });
 
         it('should filter empty values from sfpm metadata', async () => {
-            mockSfpmPackage.toJson.mockResolvedValue({
-                identity: { packageName, packageType: PackageType.Unlocked },
-                source: {},
-                content: { triggers: [], flows: [], profiles: [], fields: { all: [] } },
-                validation: {},
-                orchestration: {},
-            });
+            // Set empty values on the package to verify they get stripped
+            mockSfpmPackage.source = {};
+            mockSfpmPackage.orchestration = {};
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
             vi.mocked(fs.pathExists as any).mockImplementation(async (p: string) =>
                 p === '/project/packages/my-package/package.json');

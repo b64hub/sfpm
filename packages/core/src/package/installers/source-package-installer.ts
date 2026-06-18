@@ -6,7 +6,9 @@ import {ArtifactService} from '../../artifacts/artifact-service.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {SfpmSourcePackage} from '../sfpm-package.js';
-import {type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller} from './installer-registry.js';
+import {
+  type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller,
+} from './installer-registry.js';
 // Import strategy implementation
 import SourceDeployer from './strategies/source-deployer.js';
 
@@ -54,7 +56,7 @@ export default class SourcePackageInstaller implements Installer {
 
   public async isInstalled(): Promise<InstallCheckResult> {
     try {
-      const sourceHash = this.sfpmPackage.metadata.source?.sourceHash;
+      const sourceHash = this.sfpmPackage.source?.sourceHash;
       if (!sourceHash) {
         return {installReason: 'not-installed', needsInstall: true};
       }

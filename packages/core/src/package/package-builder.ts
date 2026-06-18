@@ -168,7 +168,9 @@ export class PackageBuilder {
 
     try {
       const metadataContribution = await analyzer.analyze(sfpmPackage);
-      merge(sfpmPackage.metadata, metadataContribution);
+      if (sfpmPackage instanceof SfpmMetadataPackage) {
+        sfpmPackage.updateContent(metadataContribution);
+      }
 
       this.sink?.analyzerComplete({
         analyzerName,
@@ -265,7 +267,7 @@ export class PackageBuilder {
    */
   private handleBuildConfiguration(sfpmPackage: SfpmPackage): void {
     if (sfpmPackage.packageDefinition?.packageOptions?.build) {
-      merge(sfpmPackage.metadata.orchestration, {
+      merge(sfpmPackage.orchestration, {
         build: sfpmPackage.packageDefinition.packageOptions.build,
       });
     }

@@ -53,14 +53,10 @@ describe('SfpmDataPackage', () => {
     expect(count).toBe(2); // export.json + Account.csv
   });
 
-  it('should produce correct toJson output', async () => {
-    const json = await dataPackage.toJson();
-
-    expect(json.packageName).toBe('my-data');
-    expect(json.packageType).toBe(PackageType.Data);
-    expect(json.content.dataDirectory).toBe('data');
-    expect(json.content.fileCount).toBe(2);
-    expect(json.orchestration).toBeDefined();
+  it('should expose flat properties for serialization', () => {
+    expect(dataPackage.packageName).toBe('my-data');
+    expect(dataPackage.type).toBe(PackageType.Data);
+    expect(dataPackage.orchestration).toBeDefined();
   });
 
   it('should expose versionNumber for DataDeployable', () => {

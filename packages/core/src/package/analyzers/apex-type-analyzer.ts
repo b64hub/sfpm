@@ -46,14 +46,14 @@ export class ApexTypeAnalyzer implements PackageAnalyzer {
       path: info.path,
     }));
 
-    return {
-      content: {
-        apex: {
-          classes,
-          tests: testClasses,
-        },
+    sfpmPackage.updateContent({
+      apex: {
+        classes,
+        tests: testClasses,
       },
-    };
+    });
+
+    return {};
   }
 
   public isEnabled(sfpmPackage: SfpmMetadataPackage): boolean {

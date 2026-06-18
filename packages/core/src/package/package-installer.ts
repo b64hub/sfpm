@@ -309,8 +309,8 @@ export default class PackageInstaller {
     // Set source hash from artifact manifest for install-skip checking.
     // The installer's isInstalled() compares this against the org's artifact record.
     if (resolved.manifest.sourceHash) {
-      sfpmPackage.metadata.source = {
-        ...sfpmPackage.metadata.source,
+      sfpmPackage.source = {
+        ...sfpmPackage.source,
         sourceHash: resolved.manifest.sourceHash,
       };
     }
