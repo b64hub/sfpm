@@ -10,6 +10,7 @@ vi.mock('fs-extra', () => {
         writeJson: vi.fn(),
         appendFile: vi.fn(),
         remove: vi.fn().mockResolvedValue(undefined),
+        move: vi.fn().mockResolvedValue(undefined),
         pathExistsSync: vi.fn(),
     };
     return {
@@ -112,10 +113,10 @@ describe('PackageAssembler', () => {
 
         // Verify core orchestration steps — cleans the entire artifacts/ directory
         expect(mockedFs.emptyDir).toHaveBeenCalledWith(path.join('/root/packages/core', 'artifact'));
-        // Copy source (with optional filter for build ignore)
+        // Copy source (to temp dir, then moved into artifact/package/force-app)
         expect(mockedFs.copy).toHaveBeenCalledWith(
             path.join('/root', 'force-app'),
-            path.join(stagingPath, 'force-app'),
+            expect.stringContaining('sfpm-stage-'),
             expect.objectContaining({ filter: expect.any(Function) })
         );
         // Write manifest

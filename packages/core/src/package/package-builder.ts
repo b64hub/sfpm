@@ -279,11 +279,6 @@ export class PackageBuilder {
     }
   }
 
-  /** Check whether a staged package contains zero deployable components or files. */
-  private async isPackageEmpty(sfpmPackage: SfpmPackage): Promise<boolean> {
-    return (await sfpmPackage.componentCount()) === 0;
-  }
-
   /**
    * Check whether the existing manifest satisfies the current build's requirements.
    *
@@ -380,7 +375,7 @@ export class PackageBuilder {
   private async runBuilder(sfpmPackage: SfpmPackage, options: RunBuilderOptions): Promise<PendingValidationDescriptor | undefined> {
     const componentCount = await this.stagePackage(sfpmPackage);
 
-    if (await this.isPackageEmpty(sfpmPackage)) {
+    if (componentCount === 0) {
       this.sink?.skip({
         packageType: sfpmPackage.type as PackageType,
         reason: 'empty-package',

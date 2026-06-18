@@ -422,13 +422,15 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     return this.getComponentSet().size;
   }
 
-  public getComponentSet(): ComponentSet {
-    if (!this.packageDirectory || !this.workingDirectory) {
+  public getComponentSet(sourcePath?: string): ComponentSet {
+    const resolvedPath = sourcePath ?? this.packageDirectory;
+
+    if (!resolvedPath) {
       throw new Error('Package must have a working directory and a defined path');
     }
 
-    if (!this._componentSet) {
-      this._componentSet = ComponentSet.fromSource(this.packageDirectory);
+    if (!this._componentSet || sourcePath) {
+      this._componentSet = ComponentSet.fromSource(resolvedPath);
     }
 
     return this._componentSet;

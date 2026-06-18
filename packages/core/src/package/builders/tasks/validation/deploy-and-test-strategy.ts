@@ -1,6 +1,7 @@
 import type {DeploySetOptions, MetadataApiDeploy, MetadataApiDeployStatus} from '@salesforce/source-deploy-retrieve';
 
 import {Org} from '@salesforce/core';
+import path from 'node:path';
 
 import type {Logger} from '../../../../types/logger.js';
 import type {SfpmMetadataPackage} from '../../../sfpm-package.js';
@@ -166,7 +167,10 @@ export class DeployAndTestStrategy implements ValidationStrategy {
     const org = await Org.create({aliasOrUsername: this.validationOrg});
     const connection = org.getConnection();
 
-    const componentSet = this.sfpmPackage.getComponentSet();
+    const metadataPath = this.sfpmPackage.workingDirectory
+      ? path.join(this.sfpmPackage.workingDirectory, 'force-app')
+      : undefined;
+    const componentSet = this.sfpmPackage.getComponentSet(metadataPath);
     const deployOptions: DeploySetOptions = {
       apiOptions: {
         runTests: testClasses,

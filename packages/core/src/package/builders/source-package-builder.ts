@@ -1,4 +1,5 @@
 import {Org} from '@salesforce/core';
+import path from 'node:path';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
 
@@ -122,8 +123,9 @@ export default class SourcePackageBuilder implements Builder {
 
     const deployService = new MetadataDeployService(this.logger);
 
-    // Deploy metadata with specified tests
-    const componentSet = this.sfpmPackage.getComponentSet();
+    // Deploy metadata with specified tests — use the artifact's metadata path
+    const metadataPath = path.join(this.workingDirectory, 'force-app');
+    const componentSet = this.sfpmPackage.getComponentSet(metadataPath);
     const deployId = await deployService.deploy(componentSet, targetOrg.getConnection(), {
       testClasses,
       testLevel: VALIDATION_TEST_LEVEL,

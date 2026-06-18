@@ -1,5 +1,7 @@
 import fs from 'fs-extra';
 import ignore from 'ignore';
+import {randomUUID} from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
@@ -51,8 +53,16 @@ export class SourceCopyStep implements AssemblyStep {
       this.logger?.debug(`[SourceCopyStep] Copying from ${sourceDir} to ${destinationDir}`);
     }
 
+    // fs.copy throws if destinationDir is inside sourceDir. Always copy to
+    // os temp first, then move into place. This is safe for all layouts.
+    const tempDir = path.join(os.tmpdir(), `sfpm-stage-${randomUUID()}`);
+
     try {
-      await fs.copy(sourceDir, destinationDir, {
+      // Detect self-copy: if destinationDir is inside sourceDir, we need to
+      // tell fs.copy to skip the artifact directory to avoid infinite recursion.
+      const artifactDir = path.join(sourceDir, 'artifact');
+
+      await fs.copy(sourceDir, tempDir, {
         filter: (src: string) => {
           // Always include the root source directory itself
           const relativePath = path.relative(sourceDir, src);
@@ -92,7 +102,12 @@ export class SourceCopyStep implements AssemblyStep {
           return !ignored;
         },
       });
+
+      // Move from temp into artifact location
+      await fs.ensureDir(path.dirname(destinationDir));
+      await fs.move(tempDir, destinationDir, {overwrite: true});
     } catch (error: any) {
+      await fs.remove(tempDir).catch(() => {});
       throw new Error(`[SourceCopyStep] Failed to copy source: ${error.message}`);
     }
   }
