@@ -22,6 +22,7 @@ import {
 import {OrgAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
 import {toVersionFormat} from '../utils/version-utils.js';
+import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
 import {
   type DataDeployable,
   ManagedPackageRef,
@@ -411,7 +412,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     if (this._analyzed) return;
     this._analyzed = true;
 
-    const {AnalyzerRegistry} = await import('./analyzers/analyzer-registry.js');
     const analyzers = AnalyzerRegistry.getAnalyzers();
     await Promise.all(analyzers.filter(a => a.isEnabled(this)).map(a => a.analyze(this)));
   }
