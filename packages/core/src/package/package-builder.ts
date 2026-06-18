@@ -203,6 +203,11 @@ export class PackageBuilder {
     try {
       await Promise.all(enabledAnalyzers.map(async analyzer => this.runAnalyzer(sfpmPackage, analyzer)));
 
+      // Mark analyzed so ensureAnalyzed() is a no-op for deploy/install paths
+      if (sfpmPackage instanceof SfpmMetadataPackage) {
+        sfpmPackage.markAnalyzed();
+      }
+
       this.sink?.analyzersComplete({
         completedCount: enabledAnalyzers.length,
       });

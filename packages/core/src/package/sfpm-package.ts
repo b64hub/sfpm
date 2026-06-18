@@ -212,6 +212,7 @@ export default abstract class SfpmPackage {
 export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceDeployable {
   protected _componentSet?: ComponentSet;
   protected _content: SfpmPackageContent;
+  private _analyzed = false;
   private _customFields?: SourceComponent[];
   private _validationState?: ValidationState;
 
@@ -396,6 +397,25 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     return this.getComponentSet().size;
   }
 
+  /**
+   * Run all registered content analyzers against this package.
+   * Cached — safe to call multiple times (no-op after first run).
+   *
+   * Build path: `PackageBuilder.runAnalyzers()` runs analyzers with event
+   * emission and calls `markAnalyzed()`, making this a no-op.
+   *
+   * Deploy/install path: call `ensureAnalyzed()` before reading
+   * content that depends on analysis (testClasses, fhtFields, etc.).
+   */
+  public async ensureAnalyzed(): Promise<void> {
+    if (this._analyzed) return;
+    this._analyzed = true;
+
+    const {AnalyzerRegistry} = await import('./analyzers/analyzer-registry.js');
+    const analyzers = AnalyzerRegistry.getAnalyzers();
+    await Promise.all(analyzers.filter(a => a.isEnabled(this)).map(a => a.analyze(this)));
+  }
+
   public getComponentSet(sourcePath?: string): ComponentSet {
     const resolvedPath = sourcePath ?? this.packageDirectory;
 
@@ -413,6 +433,14 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   /** Returns the logical manifest of the package as a JSON-compatible object. */
   public async getManifestObject() {
     return this.getComponentSet().getObject();
+  }
+
+  /**
+   * Mark the package as analyzed (prevents `ensureAnalyzed()` from re-running).
+   * Called by `PackageBuilder.runAnalyzers()` after running with event emission.
+   */
+  public markAnalyzed(): void {
+    this._analyzed = true;
   }
 
   /**

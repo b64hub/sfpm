@@ -68,6 +68,9 @@ export default class SourcePackageBuilder implements Builder {
       sourcePath: this.workingDirectory,
     });
 
+    // Ensure content analysis is done (no-op if build already ran analyzers)
+    await this.sfpmPackage.ensureAnalyzed();
+
     this.handleApexTestClasses(this.sfpmPackage);
 
     this.sink?.assembleComplete({

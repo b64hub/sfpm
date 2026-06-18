@@ -48,6 +48,8 @@ describe('ValidationTask', () => {
       testCoverage: {value: undefined as number | undefined, writable: true, configurable: true},
     });
     mockSfpmPackage.getComponentSet = vi.fn();
+    mockSfpmPackage.classifyApex = vi.fn().mockResolvedValue(undefined);
+    mockSfpmPackage.ensureAnalyzed = vi.fn().mockResolvedValue(undefined);
 
     mockLogger = {
       info: vi.fn(),

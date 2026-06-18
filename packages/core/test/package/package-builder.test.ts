@@ -52,6 +52,7 @@ const {SfpmMetadataPackageStub, mockBuilderInstance, mockManifest, mockPackageFa
         source: {},
         type: _packageType,
         updateContent: vi.fn(),
+        markAnalyzed: vi.fn(),
         version: '1.0.0',
         workingDirectory: undefined,
       };
