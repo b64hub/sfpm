@@ -8,8 +8,8 @@
  * metadata via `SfpmArtifactMetadata` (= `SfpmPackageConfig & SfpmPackageMetadataBase`).
  */
 
-import {PackageType, SfpmPackageMetadataBase} from './package.js';
 import {SfpmPackageConfig, SfpmPackageJson} from '../project/providers/types/workspace.js';
+import {PackageType, SfpmPackageMetadataBase} from './package.js';
 
 // ---------------------------------------------------------------------------
 // Artifact sfpm property
@@ -48,8 +48,8 @@ export interface NpmPackageJson extends SfpmPackageJson<SfpmArtifactMetadata> {
    */
   files?: string[];
 
-  /** Repository URL */
-  repository?: {
+  /** Repository URL (string shorthand or object form for backward compat) */
+  repository?: string | {
     type: string;
     url: string;
   };

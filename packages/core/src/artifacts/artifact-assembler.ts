@@ -240,7 +240,7 @@ export default class ArtifactAssembler {
     }
 
     const source: SfpmPackageSource | undefined = sourceContext || sourceHash
-      ? {branch: sourceContext?.branch, repositoryUrl: sourceContext?.repositoryUrl, sourceHash}
+      ? {repositoryUrl: sourceContext?.repositoryUrl, sourceHash}
       : undefined;
 
     const generated = toNpmPackageJson(

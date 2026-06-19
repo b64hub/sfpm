@@ -274,7 +274,7 @@ describe('npm-package-adapter', () => {
       const pkg = createMockPackage();
       const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {source: defaultSource});
 
-      expect(result.repository).toEqual({type: 'git', url: 'https://github.com/test/repo.git'});
+      expect(result.repository).toBe('https://github.com/test/repo.git');
       expect(result.sfpm.source?.repositoryUrl).toBeUndefined();
     });
 

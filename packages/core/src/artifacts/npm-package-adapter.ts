@@ -217,9 +217,9 @@ export function hydrateFromNpmPackageJson(pkg: SfpmPackage, packageJson: NpmPack
   // Source context: reconstruct repositoryUrl from npm top-level field
   if (sfpm.source) {
     pkg.source = {...sfpm.source};
-    restoreRepositoryUrl(pkg.source, packageJson.repository?.url);
-  } else if (packageJson.repository?.url) {
-    pkg.source = {repositoryUrl: packageJson.repository.url};
+    restoreRepositoryUrl(pkg.source, getRepositoryUrl(packageJson.repository));
+  } else if (getRepositoryUrl(packageJson.repository)) {
+    pkg.source = {repositoryUrl: getRepositoryUrl(packageJson.repository)!};
   }
 
   // Metadata packages: content + validation
@@ -270,9 +270,9 @@ export function fromNpmPackageJson(packageJson: NpmPackageJson): SfpmPackageMeta
 
   // Reconstruct repositoryUrl from npm top-level field if not already set
   if (metadata.source) {
-    restoreRepositoryUrl(metadata.source, packageJson.repository?.url);
-  } else if (packageJson.repository?.url) {
-    metadata.source = {repositoryUrl: packageJson.repository.url};
+    restoreRepositoryUrl(metadata.source, getRepositoryUrl(packageJson.repository));
+  } else if (getRepositoryUrl(packageJson.repository)) {
+    metadata.source = {repositoryUrl: getRepositoryUrl(packageJson.repository)!};
   }
 
   // Backward compat: older artifacts may have managedDependencies under sfpm
@@ -343,13 +343,19 @@ function stripRepositoryUrl(sfpmMeta: SfpmArtifactMetadata): void {
   }
 }
 
-function buildRepositoryField(url?: string): undefined | {type: string; url: string} {
+function buildRepositoryField(url?: string): string | undefined {
   if (!url) return undefined;
-  return {type: 'git', url};
+  return url;
 }
 
 function restoreRepositoryUrl(source: SfpmPackageSource, repositoryUrl?: string): void {
   if (!source.repositoryUrl && repositoryUrl) {
     source.repositoryUrl = repositoryUrl;
   }
+}
+
+/** Extract URL from the repository field (handles string and object forms). */
+function getRepositoryUrl(repository?: string | {type: string; url: string}): string | undefined {
+  if (!repository) return undefined;
+  return typeof repository === 'string' ? repository : repository.url;
 }
