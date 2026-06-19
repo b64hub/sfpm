@@ -191,14 +191,66 @@ function simplifyContent(content: Record<string, any>): Record<string, any> {
 }
 
 // ---------------------------------------------------------------------------
-// Read path: NpmPackageJson → SfpmPackageMetadataBase
+// Read path: NpmPackageJson → hydrate domain model
 // ---------------------------------------------------------------------------
 
 /**
- * Convert an npm package.json (with sfpm metadata) back to an SfpmPackageMetadataBase.
+ * Hydrate an SfpmPackage instance from an artifact's package.json.
  *
- * Derives `packageName` and `scope` from the top-level `name` field
- * (they are no longer duplicated in the `sfpm` section).
+ * Sets flat properties directly on the domain model:
+ * version, source, apiVersion, and (for metadata packages) content,
+ * testCoverage, validationState. For unlocked packages, sets packageId,
+ * packageVersionId, isOrgDependent.
+ *
+ * This is the read-side counterpart to `buildMetadataFromPackage()`.
+ */
+export function hydrateFromNpmPackageJson(pkg: SfpmPackage, packageJson: NpmPackageJson): void {
+  const {sfpm} = packageJson;
+  if (!sfpm) return;
+
+  // Version: prefer sfpm.versionNumber (has build segment), fall back to top-level
+  const version = sfpm.versionNumber || packageJson.version;
+  if (version) pkg.version = version;
+
+  if (sfpm.apiVersion) pkg.apiVersion = sfpm.apiVersion;
+
+  // Source context: reconstruct repositoryUrl from npm top-level field
+  if (sfpm.source) {
+    pkg.source = {...sfpm.source};
+    restoreRepositoryUrl(pkg.source, packageJson.repository?.url);
+  } else if (packageJson.repository?.url) {
+    pkg.source = {repositoryUrl: packageJson.repository.url};
+  }
+
+  // Metadata packages: content + validation
+  if (pkg instanceof SfpmMetadataPackage) {
+    if (sfpm.content) {
+      pkg.updateContent(sfpm.content);
+    }
+
+    if (sfpm.content?.testCoverage !== undefined) {
+      pkg.testCoverage = sfpm.content.testCoverage;
+    }
+
+    if (sfpm.validation) {
+      pkg.validationState = sfpm.validation;
+    }
+  }
+
+  // Unlocked packages: identity fields
+  if (pkg instanceof SfpmUnlockedPackage) {
+    if (sfpm.packageId) pkg.packageId = sfpm.packageId;
+    if (sfpm.packageVersionId) pkg.packageVersionId = sfpm.packageVersionId;
+    if (sfpm.isOrgDependent !== undefined) pkg.isOrgDependent = sfpm.isOrgDependent;
+  }
+}
+
+/**
+ * Convert an npm package.json (with sfpm metadata) to a raw SfpmPackageMetadataBase.
+ *
+ * Prefer `hydrateFromNpmPackageJson()` when you have a package instance.
+ * This function exists for cases where only the raw metadata bag is needed
+ * (e.g., artifact repository metadata storage).
  */
 export function fromNpmPackageJson(packageJson: NpmPackageJson): SfpmPackageMetadataBase {
   const {sfpm} = packageJson;
