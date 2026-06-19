@@ -6,6 +6,7 @@ import path from 'node:path';
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
 import {toSalesforceProjectJson} from '../../../project/providers/sfdx-project-adapter.js';
+import {ARTIFACT_SOURCE_DIR} from '../../../types/artifact.js';
 import {Logger} from '../../../types/logger.js';
 import {PackageType} from '../../../types/package.js';
 import {PackageDefinition} from '../../../types/project.js';
@@ -42,9 +43,9 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
         packageDefinition.packages[0].version = toVersionFormat(options.versionNumber, 'salesforce');
       }
 
-      // In the artifact, metadata lives under a standard 'force-app' subdirectory
+      // In the artifact, metadata lives under ARTIFACT_SOURCE_DIR
       // regardless of the original project path
-      packageDefinition.packages[0].path = 'force-app';
+      packageDefinition.packages[0].path = ARTIFACT_SOURCE_DIR;
 
       const pkg = packageDefinition.packages[0];
 

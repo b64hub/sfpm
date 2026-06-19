@@ -4,6 +4,7 @@ import path from 'node:path';
 import type {BuildEventSink} from '../../events/build-event-bus.js';
 
 import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
+import {ARTIFACT_SOURCE_DIR} from '../../types/artifact.js';
 import {BuildError} from '../../types/errors.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, PendingValidationDescriptor, type ValidationCheck} from '../../types/package.js';
@@ -127,7 +128,7 @@ export default class SourcePackageBuilder implements Builder {
     const deployService = new MetadataDeployService(this.logger);
 
     // Deploy metadata with specified tests — use the artifact's metadata path
-    const metadataPath = path.join(this.workingDirectory, 'force-app');
+    const metadataPath = path.join(this.workingDirectory, ARTIFACT_SOURCE_DIR);
     const componentSet = this.sfpmPackage.getComponentSet(metadataPath);
     const deployId = await deployService.deploy(componentSet, targetOrg.getConnection(), {
       testClasses,

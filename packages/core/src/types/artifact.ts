@@ -1,4 +1,10 @@
 /**
+ * Standard directory name for Salesforce source inside a staged artifact.
+ * All package types use this regardless of the original project path.
+ */
+export const ARTIFACT_SOURCE_DIR = 'force-app';
+
+/**
  * Source context captured at build time and persisted in artifact metadata.
  * Describes the git/VCS state when the artifact was produced.
  */

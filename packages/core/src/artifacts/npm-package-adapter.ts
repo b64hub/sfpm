@@ -13,7 +13,7 @@ import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage, SfpmUnlockedPackage} 
  *   Extracts SFPM metadata from a published artifact's package.json for
  *   artifact resolution and installation.
  */
-import {SfpmPackageSource} from '../types/artifact.js';
+import {ARTIFACT_SOURCE_DIR, SfpmPackageSource} from '../types/artifact.js';
 import {NpmPackageJson, SfpmArtifactMetadata} from '../types/npm.js';
 import {
   PackageType,
@@ -79,7 +79,8 @@ export function toNpmPackageJson(
   const additionalKeywords = options.additionalKeywords ?? [];
   const keywords = [...new Set([...additionalKeywords, ...baseKeywords, ...sfpmKeywords])];
 
-  const packageSourcePath = pkg.packageDefinition?.path || 'force-app';
+  // Artifact always stages source under ARTIFACT_SOURCE_DIR regardless of original path
+  const packageSourcePath = ARTIFACT_SOURCE_DIR;
 
   // Start from workspace package.json, omit workspace-only fields.
   const {devDependencies: _devDeps, private: _private, scripts: _scripts, ...staticFields} = workspacePkgJson;
