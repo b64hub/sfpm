@@ -325,12 +325,9 @@ export default class PackageInstaller {
     // Always set version from resolved (authoritative)
     sfpmPackage.version = resolved.version;
 
-    // Ensure source hash from manifest (may not be in package.json)
+    // Ensure source hash from manifest
     if (resolved.manifest.sourceHash) {
-      sfpmPackage.source = {
-        ...sfpmPackage.source,
-        sourceHash: resolved.manifest.sourceHash,
-      };
+      sfpmPackage.sourceHash = resolved.manifest.sourceHash;
     }
 
     // For unlocked packages, ensure packageVersionId from manifest

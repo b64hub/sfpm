@@ -7,7 +7,6 @@ import type {WorkspacePackageJson} from '../project/providers/types/workspace.js
 import {GitService} from '../git/git-service.js';
 import Git from '../git/git.js';
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
-import {SfpmPackageSource} from '../types/artifact.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
@@ -228,26 +227,22 @@ export default class ArtifactAssembler {
     // Read the workspace package.json as the base for the artifact
     const workspacePkgJson = await this.readWorkspacePackageJson();
 
-    // Merge sourceHash into the source context for the artifact.
-    // Auto-resolve git context when not explicitly provided.
-    let sourceContext;
+    // Auto-resolve git context for repository URL
+    let repositoryUrl: string | undefined;
     try {
       const git = new Git(this.projectDirectory, this.logger);
       const gitService = new GitService(git, this.logger);
-      sourceContext = await gitService.getPackageSourceContext();
+      const gitContext = await gitService.getPackageSourceContext();
+      repositoryUrl = gitContext.repositoryUrl;
     } catch {
-      // No git available — continue without source context
+      // No git available
     }
-
-    const source: SfpmPackageSource | undefined = sourceContext || sourceHash
-      ? {repositoryUrl: sourceContext?.repositoryUrl, sourceHash}
-      : undefined;
 
     const generated = toNpmPackageJson(
       workspacePkgJson,
       this.sfpmPackage,
       this.packageVersionNumber,
-      {...this.options, source},
+      {...this.options, repositoryUrl, sourceHash},
     );
 
     await fs.writeJson(packageJsonPath, generated, {spaces: 2});

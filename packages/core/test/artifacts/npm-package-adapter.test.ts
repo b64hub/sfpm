@@ -40,11 +40,7 @@ function createUnlockedPackageJson(overrides?: Partial<NpmPackageJson>): NpmPack
       packageName: 'sfpm-artifact',
       packageType: PackageType.Unlocked,
       packageVersionId: '04tJz000000lZn7IAE',
-      source: {
-        branch: 'feat-orgs',
-        commitSHA: 'f1dc9cd8e9521b01b07e021171dd7c0b18291682',
-        sourceHash: '8dbb986ebe459f428313e9a07d7e1842361589acf2460aafb9bd38f58a99c960',
-      },
+      sourceHash: '8dbb986ebe459f428313e9a07d7e1842361589acf2460aafb9bd38f58a99c960',
       versionNumber: '0.1.0-2',
     } as any,
     version: '0.1.0',
@@ -59,11 +55,7 @@ function createSourcePackageJson(): NpmPackageJson {
       orchestration: {},
       packageName: 'my-source-pkg',
       packageType: PackageType.Source,
-      source: {
-        branch: 'main',
-        commitSHA: 'abc123',
-        sourceHash: 'def456',
-      },
+      sourceHash: 'def456',
       versionNumber: '1.0.0-1',
     } as any,
     version: '1.0.0',
@@ -96,21 +88,10 @@ describe('npm-package-adapter', () => {
       expect(metadata.source?.repositoryUrl).toBe('https://github.com/b64hub/sfpm-bootstrap.git');
     });
 
-    it('should not overwrite existing repositoryUrl in sfpm.source', () => {
-      const packageJson = createUnlockedPackageJson();
-      // Simulate a package.json that still has repositoryUrl in sfpm.source
-      (packageJson.sfpm as any).source.repositoryUrl = 'https://internal.repo.com';
-
-      const metadata = fromNpmPackageJson(packageJson);
-      expect(metadata.source?.repositoryUrl).toBe('https://internal.repo.com');
-    });
-
-    it('should preserve source metadata', () => {
+    it('should read sourceHash from flat sfpm.sourceHash', () => {
       const packageJson = createUnlockedPackageJson();
       const metadata = fromNpmPackageJson(packageJson);
 
-      expect(metadata.source?.branch).toBe('feat-orgs');
-      expect((metadata.source as any)?.commitSHA).toBe('f1dc9cd8e9521b01b07e021171dd7c0b18291682');
       expect(metadata.source?.sourceHash).toBe('8dbb986ebe459f428313e9a07d7e1842361589acf2460aafb9bd38f58a99c960');
     });
 
@@ -269,13 +250,13 @@ describe('npm-package-adapter', () => {
       expect(result).not.toHaveProperty('main');
     });
 
-    it('should put repository at top level and remove from sfpm.source', async () => {
+    it('should put repository at top level and not include in sfpm', () => {
       const workspace = createWorkspacePkgJson();
       const pkg = createMockPackage();
-      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {source: defaultSource});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {repositoryUrl: 'https://github.com/test/repo.git'});
 
       expect(result.repository).toBe('https://github.com/test/repo.git');
-      expect(result.sfpm.source?.repositoryUrl).toBeUndefined();
+      expect((result.sfpm as any).source).toBeUndefined();
     });
 
     it('should omit private, devDependencies, and scripts from artifact', async () => {

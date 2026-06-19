@@ -185,8 +185,8 @@ export default class UnlockedPackageBuilder implements Builder {
       ...(packageConfig?.definitionFile
         ? {definitionfile: path.join(this.workingDirectory, packageConfig.definitionFile)}
         : {}),
-      ...(this.sfpmPackage.source?.tag
-        ? {tag: this.sfpmPackage.source.tag}
+      ...(this.sfpmPackage.tag
+        ? {tag: this.sfpmPackage.tag}
         : {}),
     };
 

@@ -13,7 +13,7 @@ import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage, SfpmUnlockedPackage} 
  *   Extracts SFPM metadata from a published artifact's package.json for
  *   artifact resolution and installation.
  */
-import {ARTIFACT_SOURCE_DIR, SfpmPackageSource} from '../types/artifact.js';
+import {ARTIFACT_SOURCE_DIR} from '../types/artifact.js';
 import {NpmPackageJson, SfpmArtifactMetadata} from '../types/npm.js';
 import {
   PackageType,
@@ -35,8 +35,10 @@ export interface ToNpmPackageJsonOptions {
   additionalKeywords?: string[];
   /** Pre-classified managed dependencies (alias → packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
-  /** Source context (git commit, branch, repo, sourceHash) to embed in the artifact */
-  source?: SfpmPackageSource;
+  /** Repository URL to set as top-level npm field */
+  repositoryUrl?: string;
+  /** Source hash of the package content */
+  sourceHash?: string;
 }
 
 /**
@@ -62,13 +64,13 @@ export function toNpmPackageJson(
     ...buildMetadata,
   } as SfpmArtifactMetadata;
 
-  // Inject source context from build options (not from the domain model)
-  if (options.source) {
-    sfpmMeta.source = {...options.source};
+  // Inject sourceHash directly on the sfpm object (no nested source)
+  if (options.sourceHash) {
+    sfpmMeta.sourceHash = options.sourceHash;
   }
 
-  // Remove repositoryUrl from sfpm.source — it lives at the npm top-level `repository`
-  stripRepositoryUrl(sfpmMeta);
+  // Clean up legacy nested source if it leaked from workspace config
+  delete (sfpmMeta as any).source;
 
   // sourceBehaviorOptions is a project-level setting, not a per-package concern.
   delete (sfpmMeta as any).sourceBehaviorOptions;
@@ -107,7 +109,7 @@ export function toNpmPackageJson(
   }
 
   // Add repository if available (npm convention — top-level field)
-  const repository = buildRepositoryField(options.source?.repositoryUrl);
+  const repository = buildRepositoryField(options.repositoryUrl);
   if (repository) {
     packageJson.repository = repository;
   }
@@ -140,7 +142,6 @@ function buildMetadataFromPackage(pkg: SfpmPackage, baseVersion: string): Record
   }
 
   if (pkg.apiVersion) base.apiVersion = pkg.apiVersion;
-  if (pkg.source) base.source = pkg.source;
 
   // Metadata packages: add content + validation
   if (pkg instanceof SfpmMetadataPackage) {
@@ -214,12 +215,10 @@ export function hydrateFromNpmPackageJson(pkg: SfpmPackage, packageJson: NpmPack
 
   if (sfpm.apiVersion) pkg.apiVersion = sfpm.apiVersion;
 
-  // Source context: reconstruct repositoryUrl from npm top-level field
-  if (sfpm.source) {
-    pkg.source = {...sfpm.source};
-    restoreRepositoryUrl(pkg.source, getRepositoryUrl(packageJson.repository));
-  } else if (getRepositoryUrl(packageJson.repository)) {
-    pkg.source = {repositoryUrl: getRepositoryUrl(packageJson.repository)!};
+  // Source hash
+  const {sourceHash} = sfpm;
+  if (sourceHash) {
+    pkg.sourceHash = sourceHash;
   }
 
   // Metadata packages: content + validation
@@ -262,17 +261,16 @@ export function fromNpmPackageJson(packageJson: NpmPackageJson): SfpmPackageMeta
 
   const metadata: SfpmPackageMetadataBase = {
     ...sfpm,
-    ...(sfpm.source ? {source: {...sfpm.source}} : {}),
     packageName,
     scope: scope || '',
     versionNumber: sfpm.versionNumber || packageJson.version,
   };
 
-  // Reconstruct repositoryUrl from npm top-level field if not already set
-  if (metadata.source) {
-    restoreRepositoryUrl(metadata.source, getRepositoryUrl(packageJson.repository));
-  } else if (getRepositoryUrl(packageJson.repository)) {
-    metadata.source = {repositoryUrl: getRepositoryUrl(packageJson.repository)!};
+  // Reconstruct source for the metadata bag (external consumers)
+  const {sourceHash} = sfpm;
+  const repositoryUrl = getRepositoryUrl(packageJson.repository);
+  if (sourceHash || repositoryUrl) {
+    metadata.source = {repositoryUrl, sourceHash};
   }
 
   // Backward compat: older artifacts may have managedDependencies under sfpm
@@ -293,7 +291,7 @@ export function extractPackageVersionId(packageJson: NpmPackageJson): string | u
 }
 
 export function extractSourceHash(packageJson: NpmPackageJson): string | undefined {
-  return packageJson.sfpm?.source?.sourceHash;
+  return packageJson.sfpm?.sourceHash;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,22 +334,9 @@ function removeEmptyValues<T>(obj: T): T {
   return obj;
 }
 
-function stripRepositoryUrl(sfpmMeta: SfpmArtifactMetadata): void {
-  if (sfpmMeta?.source?.repositoryUrl) {
-    const {repositoryUrl: _, ...rest} = sfpmMeta.source;
-    sfpmMeta.source = rest;
-  }
-}
-
 function buildRepositoryField(url?: string): string | undefined {
   if (!url) return undefined;
   return url;
-}
-
-function restoreRepositoryUrl(source: SfpmPackageSource, repositoryUrl?: string): void {
-  if (!source.repositoryUrl && repositoryUrl) {
-    source.repositoryUrl = repositoryUrl;
-  }
 }
 
 /** Extract URL from the repository field (handles string and object forms). */

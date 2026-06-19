@@ -63,7 +63,7 @@ export default class UnlockedPackageInstaller implements Installer {
   public async isInstalled(): Promise<InstallCheckResult> {
     try {
       // 1. Check ArtifactService for hash match (takes precedence)
-      const sourceHash = this.sfpmPackage.source?.sourceHash;
+      const {sourceHash} = this.sfpmPackage;
       if (sourceHash) {
         const artifactService = ArtifactService.getInstance();
         const installedArtifacts = await artifactService.getInstalledPackages();

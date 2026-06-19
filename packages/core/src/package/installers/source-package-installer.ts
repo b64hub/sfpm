@@ -56,7 +56,7 @@ export default class SourcePackageInstaller implements Installer {
 
   public async isInstalled(): Promise<InstallCheckResult> {
     try {
-      const sourceHash = this.sfpmPackage.source?.sourceHash;
+      const {sourceHash} = this.sfpmPackage;
       if (!sourceHash) {
         return {installReason: 'not-installed', needsInstall: true};
       }

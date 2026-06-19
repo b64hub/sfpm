@@ -8,7 +8,7 @@ import path from 'node:path';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {Logger} from '../types/logger.js';
 
-import {ARTIFACT_SOURCE_DIR, SfpmPackageSource} from '../types/artifact.js';
+import {ARTIFACT_SOURCE_DIR} from '../types/artifact.js';
 import {
   MetadataFile,
   PackageType,
@@ -67,7 +67,7 @@ export default abstract class SfpmPackage {
   public projectDefinition?: ProjectDefinition;
   public projectDirectory: string;
   public readonly scope: string | undefined;
-  public source?: SfpmPackageSource;
+  public sourceHash?: string;
   public workingDirectory: string | undefined;
   private _apiVersion?: string;
   private _packageName: string;
@@ -610,6 +610,8 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
 }
 
 export class SfpmUnlockedPackage extends SfpmMetadataPackage {
+  /** SF packaging tag (label for the package version, set at build time) */
+  public tag?: string;
   private _isOrgDependent = false;
   private _packageId?: string;
   private _packageVersionId?: string;
