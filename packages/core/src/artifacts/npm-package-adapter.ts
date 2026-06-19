@@ -69,11 +69,10 @@ export function toNpmPackageJson(
     sfpmMeta.sourceHash = options.sourceHash;
   }
 
-  // Clean up legacy nested source if it leaked from workspace config
+  // Clean up project-level config that shouldn't be in the artifact
   delete (sfpmMeta as any).source;
-
-  // sourceBehaviorOptions is a project-level setting, not a per-package concern.
   delete (sfpmMeta as any).sourceBehaviorOptions;
+  delete (sfpmMeta as any).metadataDependencies;
 
   // Build keywords
   const baseKeywords = workspacePkgJson.keywords ?? [];
