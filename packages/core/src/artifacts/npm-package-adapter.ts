@@ -20,6 +20,7 @@ import {
   SfpmPackageMetadataBase,
   SfpmUnlockedPackageMetadata,
 } from '../types/package.js';
+import {extractScope, stripScope} from '../utils/scope-utils.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 
 // ---------------------------------------------------------------------------
@@ -55,7 +56,7 @@ export function toNpmPackageJson(
   const baseVersion = toVersionFormat(version, 'semver', {includeBuildNumber: false});
 
   // Build sfpm metadata from flat package properties.
-  const buildMetadata = removeEmptyValues(buildMetadataFromPackage(pkg));
+  const buildMetadata = removeEmptyValues(buildMetadataFromPackage(pkg, baseVersion));
   const sfpmMeta = {
     ...workspacePkgJson.sfpm,
     ...buildMetadata,
@@ -120,35 +121,30 @@ export function toNpmPackageJson(
 /**
  * Construct the sfpm metadata object by reading flat properties from the
  * domain model. This is the single source of truth for the artifact JSON shape.
+ *
+ * Omits fields derivable from top-level npm fields:
+ * - `packageName` / `scope` — derivable from top-level `name`
+ * - `versionNumber` — only emitted when it includes a build segment
+ *   that differs from the top-level `version`
  */
-function buildMetadataFromPackage(pkg: SfpmPackage): Record<string, any> {
+function buildMetadataFromPackage(pkg: SfpmPackage, baseVersion: string): Record<string, any> {
   const base: Record<string, any> = {
-    packageName: pkg.packageName,
     packageType: pkg.type,
-    scope: pkg.scope,
-    versionNumber: pkg.version,
   };
 
+  // Only emit versionNumber when it carries a build segment the top-level version doesn't
+  const fullVersion = pkg.version;
+  if (fullVersion && fullVersion !== baseVersion) {
+    base.versionNumber = fullVersion;
+  }
+
   if (pkg.apiVersion) base.apiVersion = pkg.apiVersion;
-  if (pkg.orchestration) base.orchestration = pkg.orchestration;
   if (pkg.source) base.source = pkg.source;
 
-  // Metadata packages: add content + validation + orchestration from definition
+  // Metadata packages: add content + validation
   if (pkg instanceof SfpmMetadataPackage) {
-    base.content = pkg.resolveContentMetadata();
-    base.packageName = pkg.name || base.packageName;
+    base.content = simplifyContent(pkg.resolveContentMetadata());
     base.packageType = pkg.type || pkg.packageDefinition?.type;
-    base.versionNumber = pkg.version || pkg.packageDefinition?.version;
-
-    const defOrchestration = pkg.resolveOrchestrationMetadata();
-    base.orchestration = {
-      ...base.orchestration,
-      ...defOrchestration,
-      install: {
-        ...defOrchestration.install,
-        ...base.orchestration?.install,
-      },
-    };
 
     if (pkg.validationState) {
       base.validation = pkg.validationState;
@@ -167,13 +163,30 @@ function buildMetadataFromPackage(pkg: SfpmPackage): Record<string, any> {
     base.content = {
       dataDirectory: pkg.packageDefinition?.path || '',
     };
-    base.orchestration = {
-      build: pkg.packageDefinition?.packageOptions?.build,
-      install: pkg.packageDefinition?.packageOptions?.install,
-    };
   }
 
   return base;
+}
+
+/**
+ * Simplify content for artifact serialization.
+ * Apex classes/tests → names only (no paths).
+ */
+function simplifyContent(content: Record<string, any>): Record<string, any> {
+  const simplified = {...content};
+
+  if (simplified.apex) {
+    simplified.apex = {...simplified.apex};
+    if (Array.isArray(simplified.apex.classes)) {
+      simplified.apex.classes = simplified.apex.classes.map((c: any) => (typeof c === 'string' ? c : c.name));
+    }
+
+    if (Array.isArray(simplified.apex.tests)) {
+      simplified.apex.tests = simplified.apex.tests.map((t: any) => (typeof t === 'string' ? t : t.name));
+    }
+  }
+
+  return simplified;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,13 +195,23 @@ function buildMetadataFromPackage(pkg: SfpmPackage): Record<string, any> {
 
 /**
  * Convert an npm package.json (with sfpm metadata) back to an SfpmPackageMetadataBase.
+ *
+ * Derives `packageName` and `scope` from the top-level `name` field
+ * (they are no longer duplicated in the `sfpm` section).
  */
 export function fromNpmPackageJson(packageJson: NpmPackageJson): SfpmPackageMetadataBase {
   const {sfpm} = packageJson;
 
+  // Derive packageName and scope from top-level name (canonical source)
+  const topLevelName = packageJson.name || '';
+  const packageName = sfpm.packageName ?? stripScope(topLevelName);
+  const scope = sfpm.scope ?? extractScope(topLevelName);
+
   const metadata: SfpmPackageMetadataBase = {
     ...sfpm,
     ...(sfpm.source ? {source: {...sfpm.source}} : {}),
+    packageName,
+    scope: scope || '',
     versionNumber: sfpm.versionNumber || packageJson.version,
   };
 

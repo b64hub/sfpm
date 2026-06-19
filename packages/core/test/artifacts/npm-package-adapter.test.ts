@@ -254,8 +254,9 @@ describe('npm-package-adapter', () => {
       const pkg = createMockPackage();
       const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
 
-      // Build metadata is merged
-      expect(result.sfpm.packageName).toBe('my-pkg');
+      // packageName is no longer in sfpm — derived from top-level name
+      expect(result.sfpm.packageName).toBeUndefined();
+      expect(result.sfpm.packageType).toBe(PackageType.Unlocked);
       // Workspace config is preserved
       expect(result.sfpm.packageOptions).toEqual({deploy: {optimize: true}});
     });

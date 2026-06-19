@@ -258,9 +258,10 @@ describe('ArtifactAssembler', () => {
                 { spaces: 2 }
             );
 
-            // Verify adapter reads flat properties (no toJson call)
+            // packageName is no longer in sfpm — derived from top-level name
             const writtenJson = vi.mocked(fs.writeJson).mock.calls[0][1] as any;
-            expect(writtenJson.sfpm.packageName).toBe(packageName);
+            expect(writtenJson.sfpm.packageType).toBe(PackageType.Unlocked);
+            expect(writtenJson.name).toContain(packageName);
         });
 
         it('should include managedDependencies for pinned dependencies', async () => {
