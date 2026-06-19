@@ -96,9 +96,10 @@ export function toVersionFormat(
       + 'Expected major.minor.patch.build or valid semver.');
   }
 
-  // Step 2: Strip build segment if requested
+  // Step 2: Strip build segment if requested.
+  // Only remove the prerelease/build after '-' — never strip the patch (.N).
   if (!includeBuild) {
-    return normalized.replace(/[-.]([\dA-Za-z]+)$/, '');
+    return normalized.replace(/-[\dA-Za-z]+$/, '');
   }
 
   // Step 3: Convert to target format

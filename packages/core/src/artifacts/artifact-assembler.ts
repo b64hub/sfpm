@@ -4,6 +4,8 @@ import path from 'node:path';
 
 import type {WorkspacePackageJson} from '../project/providers/types/workspace.js';
 
+import {GitService} from '../git/git-service.js';
+import Git from '../git/git.js';
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
 import {SfpmPackageSource} from '../types/artifact.js';
 import {ArtifactError} from '../types/errors.js';
@@ -56,8 +58,6 @@ export interface ArtifactAssemblerOptions {
   changelogProvider?: ChangelogProvider;
   /** Pre-classified managed dependencies (alias -> packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
-  /** Git source context (commit, branch, repo URL) to embed in the artifact */
-  sourceContext?: SfpmPackageSource;
 }
 
 /**
@@ -188,8 +188,17 @@ export default class ArtifactAssembler {
    * Write the manifest.json sidecar to the artifacts directory.
    */
   private async finalizeManifest(sourceHash: string): Promise<void> {
+    // Resolve commit from git for the local manifest
+    let commit: string | undefined;
+    try {
+      const git = new Git(this.projectDirectory, this.logger);
+      commit = await git.getHeadCommit();
+    } catch {
+      // No git available
+    }
+
     await this.repository.finalizeArtifact(this.sfpmPackage.name, this.packageVersionNumber, sourceHash, {
-      commit: this.options.sourceContext?.commit,
+      commit,
     });
   }
 
@@ -219,9 +228,19 @@ export default class ArtifactAssembler {
     // Read the workspace package.json as the base for the artifact
     const workspacePkgJson = await this.readWorkspacePackageJson();
 
-    // Merge sourceHash into the source context for the artifact
-    const source: SfpmPackageSource | undefined = this.options.sourceContext || sourceHash
-      ? {...this.options.sourceContext, sourceHash}
+    // Merge sourceHash into the source context for the artifact.
+    // Auto-resolve git context when not explicitly provided.
+    let sourceContext;
+    try {
+      const git = new Git(this.projectDirectory, this.logger);
+      const gitService = new GitService(git, this.logger);
+      sourceContext = await gitService.getPackageSourceContext();
+    } catch {
+      // No git available — continue without source context
+    }
+
+    const source: SfpmPackageSource | undefined = sourceContext || sourceHash
+      ? {branch: sourceContext?.branch, repositoryUrl: sourceContext?.repositoryUrl, sourceHash}
       : undefined;
 
     const generated = toNpmPackageJson(
