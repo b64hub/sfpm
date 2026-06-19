@@ -24,7 +24,7 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
  */
 export class SourceCopyStep implements AssemblyStep {
   /** Directories that are never part of a Salesforce package */
-  private static readonly ALWAYS_EXCLUDED = new Set(['.sfpm', '.turbo', 'artifact', 'node_modules']);
+  private static readonly ALWAYS_EXCLUDED = new Set(['.sfdx', '.sfpm', '.turbo', 'artifact', 'node_modules']);
   /**
    * Files excluded from the source copy.
    *

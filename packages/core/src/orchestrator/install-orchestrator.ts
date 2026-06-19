@@ -154,7 +154,7 @@ export class InstallOrchestrator {
     this.installBus = new InstallEventBus();
     this.orchestrationBus = new OrchestrationEventBus(randomUUID());
     const task = new InstallOrchestrationTask(provider, options, logger, this.installBus);
-    this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: true}, task, logger, this.orchestrationBus);
+    this.orchestrator = new Orchestrator(graph, {...options}, task, logger, this.orchestrationBus);
   }
 
   // ========================================================================
@@ -174,7 +174,7 @@ export class InstallOrchestrator {
     return new InstallOrchestrator(
       provider,
       graph,
-      {...options, source: InstallationSource.Artifact},
+      {...options, includeManagedPackages: true, source: InstallationSource.Artifact},
       logger,
     );
   }
