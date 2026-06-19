@@ -84,7 +84,8 @@ export function toNpmPackageJson(
   const packageSourcePath = ARTIFACT_SOURCE_DIR;
 
   // Start from workspace package.json, omit workspace-only fields.
-  const {devDependencies: _devDeps, private: _private, scripts: _scripts, ...staticFields} = workspacePkgJson;
+  // Keep scripts — npm lifecycle hooks (postinstall, etc.) need to travel with the artifact.
+  const {devDependencies: _devDeps, private: _private, ...staticFields} = workspacePkgJson;
 
   const packageJson: NpmPackageJson = {
     ...staticFields,

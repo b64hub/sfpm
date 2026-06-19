@@ -259,18 +259,18 @@ describe('npm-package-adapter', () => {
       expect((result.sfpm as any).source).toBeUndefined();
     });
 
-    it('should omit private, devDependencies, and scripts from artifact', async () => {
+    it('should omit private and devDependencies from artifact but keep scripts', () => {
       const workspace = createWorkspacePkgJson({
         devDependencies: {'@types/node': '^20.0.0'},
         private: true,
-        scripts: {'sfpm:build': 'echo build'},
+        scripts: {'postinstall': 'echo done'},
       });
       const pkg = createMockPackage();
       const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
 
       expect(result.private).toBeUndefined();
       expect(result.devDependencies).toBeUndefined();
-      expect(result.scripts).toBeUndefined();
+      expect(result.scripts).toEqual({'postinstall': 'echo done'});
     });
 
     it('should merge keywords from workspace and build', async () => {
