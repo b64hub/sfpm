@@ -31,7 +31,7 @@ import {
   getPackageDefinitionByPath,
   getPackageType,
 } from './project-definition-provider.js';
-import {toSalesforceProjectJson} from './sfdx-project-adapter.js';
+import {type SalesforceProjectJson, toSalesforceProjectJson} from './sfdx-project-adapter.js';
 import {toPackageDefinition} from './workspace-adapter.js';
 
 // ---------------------------------------------------------------------------
@@ -70,7 +70,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
    * Remove SFPM-specific fields that Salesforce CLI doesn't understand.
    * Delegates to the shared `toSalesforceProjectJson()` adapter.
    */
-  static cleanForSalesforce(definition: ProjectDefinition): Record<string, unknown> {
+  static cleanForSalesforce(definition: ProjectDefinition): SalesforceProjectJson {
     return toSalesforceProjectJson(definition);
   }
 

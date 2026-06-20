@@ -5,11 +5,13 @@ import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
+import ProjectService from '../../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../../project/providers/sfdx-project-adapter.js';
 import {ARTIFACT_SOURCE_DIR} from '../../../types/artifact.js';
 import {Logger} from '../../../types/logger.js';
 import {PackageType} from '../../../types/package.js';
 import {PackageDefinition} from '../../../types/project.js';
+import {stripScope} from '../../../utils/scope-utils.js';
 import {toVersionFormat} from '../../../utils/version-utils.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 
@@ -64,6 +66,33 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
   }
 
   /**
+   * Builds a map of dependency name → Package2 ID (0Ho) for direct unlocked
+   * dependencies. Used to populate packageAliases in the artifact sfdx-project.json
+   * so it can be resolved standalone without querying the DevHub.
+   */
+  private async buildDependencyPackageIds(): Promise<Record<string, string>> {
+    const projectService = await ProjectService.getInstance();
+    const graph = projectService.getProjectGraph();
+    const node = graph.getNode(this.packageName);
+    if (!node) return {};
+
+    const depIds: Record<string, string> = {};
+    for (const dep of node.dependencies) {
+      if (dep.isManaged) continue;
+
+      const {packageId} = dep.definition;
+      if (packageId) {
+        depIds[stripScope(dep.name)] = packageId;
+      } else if (dep.definition.type === 'unlocked' || !dep.definition.type) {
+        this.logger?.warn(`Dependency "${dep.name}" is unlocked but has no packageId (0Ho). `
+          + 'It will not be resolvable from the artifact\'s sfdx-project.json.');
+      }
+    }
+
+    return depIds;
+  }
+
+  /**
    * Count components now that the full staging directory structure is complete.
    * Data packages contain data files (CSV, JSON) rather than Salesforce metadata,
    * so ComponentSet would report 0. Count actual files instead.
@@ -103,8 +132,11 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
       (pkg.metadataDependencies as any).seed = output.metadataPaths.seed;
     }
 
+    // Resolve dependency Package2 IDs for standalone artifact resolution
+    const dependencyPackageIds = await this.buildDependencyPackageIds();
+
     // Convert to SF format for sfdx-project.json output
-    const sfProjectJson = toSalesforceProjectJson(packageDefinition);
+    const sfProjectJson = toSalesforceProjectJson(packageDefinition, {dependencyPackageIds});
     const projectJsonPath = path.join(stagingDir, 'sfdx-project.json');
     await fs.writeJson(projectJsonPath, sfProjectJson, {spaces: 4});
 

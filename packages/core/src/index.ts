@@ -101,7 +101,8 @@ export {
   type ResolveForPackageOptions,
 } from './project/providers/project-definition-provider.js';
 export {
-  fromSalesforceProjectJson, toSalesforceProjectJson,
+  fromSalesforceProjectJson, type PackageDependency,
+  type PackageDirectory, type ProjectJsonOptions, type SalesforceProjectJson, toSalesforceProjectJson,
 } from './project/providers/sfdx-project-adapter.js';
 export {SfdxProjectProvider} from './project/providers/sfdx-project-provider.js';
 export * from './project/providers/types/workspace.js';
