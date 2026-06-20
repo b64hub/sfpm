@@ -2,6 +2,7 @@ import {Org} from '@salesforce/core';
 import {merge} from 'lodash-es';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+import type {DependencyAnalyzer} from '../types/dependency-analysis.js';
 
 import {ArtifactRepository} from '../artifacts/artifact-repository.js';
 import {BuildEventBus, BuildEventSink} from '../events/build-event-bus.js';
@@ -35,19 +36,19 @@ export type ValidationLevel = 'full' | 'local' | 'none' | 'org';
  * Internal configuration resolved from {@link ValidationLevel}.
  */
 interface ModeConfig {
-  /** Whether to run dependency analysis (cross-package reference validation) */
-  dependencyAnalysis: boolean;
+  /** Whether and how to run dependency analysis (cross-package reference validation) */
+  dependencyAnalysis: 'error' | 'warn' | false;
   /** Whether to connect to and validate against an org */
   orgValidation: boolean;
 }
 
 const VALIDATION_CONFIGS: Record<ValidationLevel, ModeConfig> = {
   full: {
-    dependencyAnalysis: true,
+    dependencyAnalysis: 'error',
     orgValidation: true,
   },
   local: {
-    dependencyAnalysis: true,
+    dependencyAnalysis: 'warn',
     orgValidation: false,
   },
   none: {
@@ -55,7 +56,7 @@ const VALIDATION_CONFIGS: Record<ValidationLevel, ModeConfig> = {
     orgValidation: false,
   },
   org: {
-    dependencyAnalysis: true,
+    dependencyAnalysis: 'warn',
     orgValidation: true,
   },
 };
@@ -77,6 +78,12 @@ export interface BuildOptions {
   buildNumber?: string;
   /** Target org for source package validation (deploy + test) */
   buildOrg?: string;
+  /**
+   * Pluggable dependency analyzer for cross-package reference validation.
+   * Must be initialized before passing to the builder.
+   * When provided and `validation` includes analysis, violations are reported.
+   */
+  dependencyAnalyzer?: DependencyAnalyzer;
   /** DevHub username or alias for unlocked package builds */
   devhubUsername?: string;
   /** Force build even if no source changes detected (skip hash check) */
@@ -423,6 +430,12 @@ export class PackageBuilder {
       : undefined;
 
     const builderOptions: BuilderOptions = {
+      ...(modeConfig.dependencyAnalysis && this.options.dependencyAnalyzer && {
+        dependencyAnalysis: {
+          dependencyAnalyzer: this.options.dependencyAnalyzer,
+          warnOnly: modeConfig.dependencyAnalysis === 'warn',
+        },
+      }),
       installationKey: this.options.installationKey,
       validation: modeConfig.orgValidation,
       waitTime: this.options.waitTime,

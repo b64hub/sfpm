@@ -2,13 +2,16 @@ import {
   BuildEventBus,
   BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions,
   type BuildWatcherPayload,
+  type DependencyAnalyzer,
   LifecycleEngine,
   type OrchestrationResult,
+  PackageFactory,
   PackageType,
   type PendingValidationDescriptor, ProjectService, ValidationEventBus, ValidationResolver,
   type WatcherState,
 } from '@b64hub/sfpm-core'
 import {ScratchOrgProvider} from '@b64hub/sfpm-orgs'
+import {MetadataDependencyService} from '@b64hub/sfpm-static-analyzer'
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {
   Args, Flags,
@@ -452,9 +455,20 @@ export default class Build extends SfpmCommand {
 
     const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
 
+    // Initialize dependency analyzer for cross-package reference validation
+    // Only when validation level includes analysis (full, local, org)
+    let dependencyAnalyzer: DependencyAnalyzer | undefined;
+    if (validation !== 'none') {
+      const analyzer = new MetadataDependencyService(projectDir);
+      const factory = new PackageFactory(projectConfig);
+      await analyzer.initialize(factory.createAll());
+      dependencyAnalyzer = analyzer;
+    }
+
     const buildOptions: BuildOrchestratorOptions = {
       buildNumber: flags['build-number'],
       buildOrg: flags['build-org'],
+      dependencyAnalyzer,
       devhubUsername,
       force: flags.force,
       ignoreFilesConfig: sfpmConfig.ignoreFiles,
