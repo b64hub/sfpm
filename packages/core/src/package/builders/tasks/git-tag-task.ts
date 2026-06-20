@@ -4,6 +4,10 @@ import {toVersionFormat} from '../../../utils/version-utils.js';
 import SfpmPackage from '../../sfpm-package.js';
 import {BuildTask, BuildTaskContext, BuildTaskResult} from '../builder-registry.js';
 
+/**
+ * @deprecated git tagging is no longer part of build
+ * Kept for future reference when implementing publish
+ */
 class GitTagTask implements BuildTask {
   public readonly name = 'git-tag';
   private readonly logger?: Logger;
