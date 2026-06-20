@@ -25,10 +25,11 @@ export interface GraphQueryOptions {
 }
 
 export class PackageNode {
+  /** @internal */
+  readonly _dependencies: Set<PackageNode> = new Set();
+  /** @internal */
+  readonly _dependents: Set<PackageNode> = new Set();
   public readonly definition: PackageDefinition;
-  // Graph connections
-  public readonly dependencies: Set<PackageNode> = new Set();
-  public readonly dependents: Set<PackageNode> = new Set();
   /** Whether this is an external/managed package not part of the project source */
   public readonly isManaged: boolean;
   public readonly name: string;
@@ -50,6 +51,14 @@ export class PackageNode {
     }
   }
 
+  get dependencies(): ReadonlySet<PackageNode> {
+    return this._dependencies;
+  }
+
+  get dependents(): ReadonlySet<PackageNode> {
+    return this._dependents;
+  }
+
   get version(): string | undefined {
     if (this.isManaged) return undefined;
     return this.definition.version;
@@ -57,7 +66,7 @@ export class PackageNode {
 }
 
 export class ProjectGraph {
-  private nodes: Map<string, PackageNode> = new Map();
+  private readonly nodes: Map<string, PackageNode> = new Map();
 
   constructor(provider: ProjectDefinitionProvider) {
     this.buildGraph(provider.getProjectDefinition());
@@ -401,8 +410,8 @@ export class ProjectGraph {
         for (const depName of Object.keys(def.dependencies)) {
           const depNode = this.resolveNode(depName);
           if (depNode) {
-            node.dependencies.add(depNode);
-            depNode.dependents.add(node);
+            node._dependencies.add(depNode);
+            depNode._dependents.add(node);
           }
         }
       }
@@ -412,8 +421,8 @@ export class ProjectGraph {
         for (const depName of Object.keys(def.managedDependencies)) {
           const depNode = this.resolveNode(depName);
           if (depNode) {
-            node.dependencies.add(depNode);
-            depNode.dependents.add(node);
+            node._dependencies.add(depNode);
+            depNode._dependents.add(node);
           }
         }
       }
