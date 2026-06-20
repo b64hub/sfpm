@@ -35,27 +35,27 @@ export type ValidationLevel = 'full' | 'local' | 'none' | 'org';
  * Internal configuration resolved from {@link ValidationLevel}.
  */
 interface ModeConfig {
-  /** Whether to run static analysis (dependency checks, etc.) */
-  analysis: boolean;
+  /** Whether to run dependency analysis (cross-package reference validation) */
+  dependencyAnalysis: boolean;
   /** Whether to connect to and validate against an org */
   orgValidation: boolean;
 }
 
 const VALIDATION_CONFIGS: Record<ValidationLevel, ModeConfig> = {
   full: {
-    analysis: true,
+    dependencyAnalysis: true,
     orgValidation: true,
   },
   local: {
-    analysis: true,
+    dependencyAnalysis: true,
     orgValidation: false,
   },
   none: {
-    analysis: false,
+    dependencyAnalysis: false,
     orgValidation: false,
   },
   org: {
-    analysis: true,
+    dependencyAnalysis: true,
     orgValidation: true,
   },
 };
@@ -408,9 +408,9 @@ export class PackageBuilder {
 
     const modeConfig = resolveModeConfig(this.options.validation);
 
-    if (modeConfig.analysis) {
-      await this.runAnalyzers(sfpmPackage);
-    }
+    // Content analyzers always run — they enrich the package model
+    // with data needed for deployment (test classes, FHT fields, etc.)
+    await this.runAnalyzers(sfpmPackage);
 
     // Run pre-build hooks after analyzers have enriched the package context
     await this.runLifecycleHooks('pre', sfpmPackage);

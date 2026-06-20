@@ -540,7 +540,7 @@ describe('PackageBuilder', () => {
       expect(AnalyzerRegistry.getAnalyzers).toHaveBeenCalled();
     });
 
-    it('should NOT run analyzers when validation is none', async () => {
+    it('should run content analyzers even when validation is none', async () => {
       const {AnalyzerRegistry} = await import('../../src/package/analyzers/analyzer-registry.js');
       vi.mocked(AnalyzerRegistry.getAnalyzers).mockClear();
 
@@ -550,7 +550,9 @@ describe('PackageBuilder', () => {
 
       await builder.build('my-pkg');
 
-      expect(AnalyzerRegistry.getAnalyzers).not.toHaveBeenCalled();
+      // Content analyzers always run — they enrich the package model
+      // with data needed for deployment (test classes, FHT fields, etc.)
+      expect(AnalyzerRegistry.getAnalyzers).toHaveBeenCalled();
     });
   });
 });
