@@ -368,7 +368,7 @@ export class Orchestrator<TContext = void> {
 
     let {levels} = resolution;
 
-    if (this.options.includeDependencies === false) {
+    if (!includeDeps) {
       levels = this.filterToRequestedPackages(levels, packageNames);
     }
 
