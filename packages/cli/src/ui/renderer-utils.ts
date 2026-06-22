@@ -5,11 +5,11 @@
 /**
  * Output modes for progress rendering.
  *
- * - `interactive` — Full UI with spinners, colors, boxes
- * - `quiet`       — Only errors and final results
- * - `json`        — Structured JSON output for CI/CD
+ * - `interactive` — Full UI with listr, spinners, colors, boxes
+ * - `plain`       — Line-by-line text with colors and symbols, no cursor tricks
+ * - `json`        — Silent during execution; structured JSON envelope at completion
  */
-export type OutputMode = 'interactive' | 'json' | 'quiet';
+export type OutputMode = 'interactive' | 'json' | 'plain';
 
 /**
  * Logger interface for rendering output.

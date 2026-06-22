@@ -138,7 +138,7 @@ export class InstallProgressRenderer {
     };
 
     if (!this.isInteractive()) {
-      if (this.mode === 'quiet') {
+      if (this.mode === 'plain') {
         this.logger.error(error);
       }
 
@@ -352,7 +352,7 @@ export class InstallProgressRenderer {
     };
 
     if (!this.isInteractive()) {
-      if (this.mode === 'quiet') {
+      if (this.mode === 'plain') {
         this.logger.error(event.error);
       }
 
@@ -539,7 +539,7 @@ export class InstallProgressRenderer {
   }
 
   /**
-   * Log an event for JSON output and quiet mode
+   * Log an event for JSON output
    */
   private logEvent(type: string, data: any): void {
     this.events.push({

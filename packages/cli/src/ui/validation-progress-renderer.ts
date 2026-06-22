@@ -122,7 +122,7 @@ export class ValidationProgressRenderer {
     const name = (event as any).packageName ?? 'unknown';
     this.packages.set(name, {status: 'failed'});
 
-    if (this.mode === 'quiet' || this.mode === 'json') return;
+    if (this.mode === 'json') return;
 
     const details = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
     this.writeResult(`${chalk.red('✖')} ${chalk.cyan(name)}${details} ${chalk.dim('—')} ${chalk.red(event.error)}`);
@@ -132,7 +132,7 @@ export class ValidationProgressRenderer {
     const name = (event as any).packageName ?? 'unknown';
     this.packages.set(name, {status: 'done'});
 
-    if (this.mode === 'quiet' || this.mode === 'json') return;
+    if (this.mode === 'json') return;
 
     const details = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
     this.writeResult(`${chalk.green('✔')} ${chalk.cyan(name)}${details}`);
@@ -184,7 +184,7 @@ export class ValidationProgressRenderer {
     const name = (event as any).packageName ?? 'unknown';
     this.packages.set(name, {status: 'timed-out'});
 
-    if (this.mode === 'quiet' || this.mode === 'json') return;
+    if (this.mode === 'json') return;
 
     this.writeResult(`${chalk.yellow('⚠')} ${chalk.bold(name)} ${chalk.yellow('timed out')} ${chalk.dim(`after ${formatDuration(event.elapsedMs)}`)}`);
   }
