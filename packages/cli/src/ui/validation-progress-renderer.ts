@@ -13,7 +13,7 @@ import ora, {Ora} from 'ora';
 
 import type {OutputLogger, OutputMode} from './renderer-utils.js';
 
-import {formatDuration} from './renderer-utils.js';
+import {formatDuration, sym} from './renderer-utils.js';
 
 // ============================================================================
 // Per-package tracking
@@ -122,20 +122,20 @@ export class ValidationProgressRenderer {
     const name = (event as any).packageName ?? 'unknown';
     this.packages.set(name, {status: 'failed'});
 
-    if (this.mode === 'quiet' || this.mode === 'json') return;
+    if (this.mode === 'json') return;
 
     const details = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
-    this.writeResult(`${chalk.red('✖')} ${chalk.cyan(name)}${details} ${chalk.dim('—')} ${chalk.red(event.error)}`);
+    this.writeResult(`${sym.fail} ${chalk.cyan(name)}${details} ${chalk.dim('—')} ${chalk.red(event.error)}`);
   }
 
   private onPassed(event: ResolvePassedEvent): void {
     const name = (event as any).packageName ?? 'unknown';
     this.packages.set(name, {status: 'done'});
 
-    if (this.mode === 'quiet' || this.mode === 'json') return;
+    if (this.mode === 'json') return;
 
     const details = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
-    this.writeResult(`${chalk.green('✔')} ${chalk.cyan(name)}${details}`);
+    this.writeResult(`${sym.success} ${chalk.cyan(name)}${details}`);
   }
 
   private onStart(event: ResolveStartEvent): void {
@@ -184,9 +184,9 @@ export class ValidationProgressRenderer {
     const name = (event as any).packageName ?? 'unknown';
     this.packages.set(name, {status: 'timed-out'});
 
-    if (this.mode === 'quiet' || this.mode === 'json') return;
+    if (this.mode === 'json') return;
 
-    this.writeResult(`${chalk.yellow('⚠')} ${chalk.bold(name)} ${chalk.yellow('timed out')} ${chalk.dim(`after ${formatDuration(event.elapsedMs)}`)}`);
+    this.writeResult(`${sym.warn} ${chalk.bold(name)} ${chalk.yellow('timed out')} ${chalk.dim(`after ${formatDuration(event.elapsedMs)}`)}`);
   }
 
   // ========================================================================

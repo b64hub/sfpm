@@ -1,8 +1,10 @@
 import {Org} from '@salesforce/core';
+import path from 'node:path';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
 
 import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
+import {ARTIFACT_SOURCE_DIR} from '../../types/artifact.js';
 import {BuildError} from '../../types/errors.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType, PendingValidationDescriptor, type ValidationCheck} from '../../types/package.js';
@@ -67,6 +69,9 @@ export default class SourcePackageBuilder implements Builder {
       sourcePath: this.workingDirectory,
     });
 
+    // Ensure content analysis is done (no-op if build already ran analyzers)
+    await this.sfpmPackage.ensureAnalyzed();
+
     this.handleApexTestClasses(this.sfpmPackage);
 
     this.sink?.assembleComplete({
@@ -122,8 +127,9 @@ export default class SourcePackageBuilder implements Builder {
 
     const deployService = new MetadataDeployService(this.logger);
 
-    // Deploy metadata with specified tests
-    const componentSet = this.sfpmPackage.getComponentSet();
+    // Deploy metadata with specified tests — use the artifact's metadata path
+    const metadataPath = path.join(this.workingDirectory, ARTIFACT_SOURCE_DIR);
+    const componentSet = this.sfpmPackage.getComponentSet(metadataPath);
     const deployId = await deployService.deploy(componentSet, targetOrg.getConnection(), {
       testClasses,
       testLevel: VALIDATION_TEST_LEVEL,

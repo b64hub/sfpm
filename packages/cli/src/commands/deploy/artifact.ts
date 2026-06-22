@@ -31,13 +31,13 @@ export default class DeployArtifact extends Deploy {
         includeDependencies: !flags['no-dependencies'],
         mode: InstallationMode.SourceDeploy,
         source: InstallationSource.Artifact,
-        targetOrg: flags['target-org'],
+        targetOrg: flags['target-org']!,
         versionInstall: flags['installation-key'] ? {installationKeys: {'*': flags['installation-key']}} : undefined,
       },
       ctx.logger,
     );
 
-    const renderer = this.createRenderer(ctx.mode, flags['target-org'])
+    const renderer = this.createRenderer(ctx.mode, flags['target-org']!)
     renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
 
     await this.runOrchestrator(orchestrator, ctx.resolvedPackages, renderer, flags)

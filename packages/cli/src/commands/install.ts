@@ -1,6 +1,5 @@
 import {
-  InstallEventBus,
-  InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, ProjectService, type TestLevel,
+  InstallOrchestrator, LifecycleEngine, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {Args, Flags} from '@oclif/core'
@@ -8,7 +7,7 @@ import {Args, Flags} from '@oclif/core'
 import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../sfpm-command.js'
-import {InstallProgressRenderer, OutputMode} from '../ui/install-progress-renderer.js'
+import {InstallProgressRenderer} from '../ui/install-progress-renderer.js'
 import {resolvePackageInputs} from '../utils/package-resolver.js'
 
 export default class Install extends SfpmCommand {
@@ -28,16 +27,14 @@ export default class Install extends SfpmCommand {
    */
   static override examples = [
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox',
-    '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --quiet',
+    '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --plain',
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --json',
     '<%= config.bin %> <%= command.id %> package-a package-b -o my-sandbox',
   ]
   static override flags = {
     force: Flags.boolean({char: 'f', description: 'force reinstall even if already installed'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key for unlocked packages'}),
-    json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     'no-dependencies': Flags.boolean({description: 'only install the specified packages, skip transitive dependencies'}),
-    quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'target-org': Flags.string({
       char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
     }),
@@ -48,7 +45,7 @@ export default class Install extends SfpmCommand {
   }
   static override strict = false
 
-  public async execute(): Promise<void> {
+  public async execute(): Promise<any> {
     const {args, argv, flags} = await this.parse(Install)
 
     const packages = argv.length > 0 ? argv as string[] : [args.packages]
@@ -74,9 +71,9 @@ export default class Install extends SfpmCommand {
     const projectGraph = projectService.getProjectGraph();
 
     // Resolve user input (scoped or unscoped) to canonical scoped package names
-    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: flags.json})
+    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: this.outputMode === 'json'})
 
-    const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
+    const mode = this.outputMode;
 
     const sfpmConfig = projectService.getSfpmConfig();
 
@@ -102,48 +99,6 @@ export default class Install extends SfpmCommand {
       targetOrg: flags['target-org'],
     });
 
-    // Single-package mode: install exactly one package without orchestration.
-    // Activates when a single package is specified with --no-dependencies.
-    // Designed for external orchestrators (Turbo, CI matrix) that handle
-    // dependency ordering themselves.
-    if (resolvedPackages.length === 1 && flags['no-dependencies']) {
-      const installBus = new InstallEventBus()
-      const task = new InstallOrchestrationTask(
-        projectConfig,
-        installOptions,
-        this.sfpmLogger,
-        installBus,
-      )
-
-      renderer.attachTo(installBus)
-
-      try {
-        const context = await task.setup()
-        const result = await task.processSinglePackage(resolvedPackages[0], 0, context)
-
-        if (flags.json) {
-          this.logJson(result)
-        }
-
-        if (!result.success) {
-          this.error(`Install failed for: ${resolvedPackages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 2})
-        }
-      } catch (error) {
-        renderer.handleError(error as Error)
-        if (flags.json) {
-          this.logJson({error: (error as Error).message, success: false})
-        }
-
-        if (error instanceof Error) {
-          this.error(error.message, {exit: 2})
-        }
-
-        throw error
-      }
-
-      return
-    }
-
     const orchestrator = InstallOrchestrator.forArtifact(
       projectConfig,
       projectGraph,
@@ -162,19 +117,14 @@ export default class Install extends SfpmCommand {
 
       await tracer.shutdown()
 
-      if (flags.json) {
-        this.logJson(result)
-      }
-
       if (!result.success) {
         const failedNames = result.failedPackages.join(', ')
         this.error(`Install failed for: ${failedNames}`, {exit: 2})
       }
+
+      return result
     } catch (error) {
       renderer.handleError(error as Error)
-      if (flags.json) {
-        this.logJson({error: (error as Error).message, success: false})
-      }
 
       if (error instanceof Error) {
         this.error(error.message, {exit: 2})

@@ -19,6 +19,7 @@ import type {Logger} from '../types/logger.js';
 import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import type {WorkspacePackageJson} from './providers/types/workspace.js';
 
+import {DIST_DIR} from '../types/artifact.js';
 import {PackageType} from '../types/package.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {fromSalesforceProjectJson} from './providers/sfdx-project-adapter.js';
@@ -144,8 +145,9 @@ export class WorkspaceInitializer {
     // 3. turbo.json
     this.scaffoldTurboJson(options, result);
 
-    // 4. .gitignore addition for sfdx-project.json (it's now generated)
+    // 4. .gitignore additions for generated/build outputs
     this.ensureGitignoreEntry(options.projectDir, 'sfdx-project.json', result);
+    this.ensureGitignoreEntry(options.projectDir, DIST_DIR, result);
 
     return result;
   }
@@ -329,7 +331,7 @@ export class WorkspaceInitializer {
           dependsOn: ['^sfpm:build'],
           env: ['SF_DEV_HUB', 'SFPM_FORCE_BUILD', 'SFDX_AUTH_URL', 'SF_ACCESS_TOKEN'],
           inputs: options.turboInputs ?? ['$TURBO_DEFAULT$'],
-          outputs: [],
+          outputs: [`${DIST_DIR}/**`],
         },
         'sfpm:deploy': {
           cache: true,

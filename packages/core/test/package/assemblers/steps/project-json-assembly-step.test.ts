@@ -28,6 +28,11 @@ vi.mock('../../../../src/project/project-service.js', () => ({
     default: {
         getInstance: vi.fn().mockResolvedValue({
             resolveForPackage: mockResolveForPackage,
+            getProjectGraph: vi.fn().mockReturnValue({
+                getNode: vi.fn().mockReturnValue({
+                    dependencies: new Set(),
+                }),
+            }),
         }),
     },
 }));

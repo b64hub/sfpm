@@ -43,7 +43,7 @@ export {
   type ArtifactHistoryOptions, type ArtifactResolution, ArtifactService, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
 } from './artifacts/artifact-service.js';
 export {
-  extractPackageVersionId, extractSourceHash, fromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions,
+  extractPackageVersionId, extractSourceHash, fromNpmPackageJson, hydrateFromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions,
 } from './artifacts/npm-package-adapter.js';
 export {
   type DownloadResult,
@@ -101,7 +101,8 @@ export {
   type ResolveForPackageOptions,
 } from './project/providers/project-definition-provider.js';
 export {
-  fromSalesforceProjectJson, toSalesforceProjectJson,
+  fromSalesforceProjectJson, type PackageDependency,
+  type PackageDirectory, type ProjectJsonOptions, type SalesforceProjectJson, toSalesforceProjectJson,
 } from './project/providers/sfdx-project-adapter.js';
 export {SfdxProjectProvider} from './project/providers/sfdx-project-provider.js';
 export * from './project/providers/types/workspace.js';

@@ -9,11 +9,11 @@ import {PackageType} from '../../src/types/package.js';
 // Hoisted mocks (accessible inside vi.mock factories)
 // ============================================================================
 
-const {SfpmMetadataPackageStub, mockBuilderInstance, mockManifest, mockPackageFactoryFn, mockRepo} = vi.hoisted(() => {
+const {SfpmMetadataPackageStub, mockBuilderInstance, mockPackageFactoryFn, mockRepo} = vi.hoisted(() => {
   const _mockRepo = {
     checkSourceHash: vi.fn(),
-    getManifest: vi.fn(),
-    getPackageContentDir: vi.fn().mockReturnValue('/project/packages/my-pkg/artifacts/package'),
+    getDistDir: vi.fn().mockReturnValue('/project/packages/my-pkg/dist'),
+    getPackageVersionId: vi.fn(),
     hasArtifact: vi.fn().mockReturnValue(true),
   };
 
@@ -23,15 +23,6 @@ const {SfpmMetadataPackageStub, mockBuilderInstance, mockManifest, mockPackageFa
     tasks: [] as any[],
   };
 
-  const _mockManifest = {
-    generatedAt: Date.now(),
-    name: '@test/my-pkg',
-    schemaVersion: 2 as const,
-    source: 'local' as const,
-    sourceHash: 'abc123',
-    version: '1.0.0',
-  };
-
   // Dynamically set by tests before each run
   let _packageType = 'source';
   const _mockPackageFactoryFn = {
@@ -39,30 +30,20 @@ const {SfpmMetadataPackageStub, mockBuilderInstance, mockManifest, mockPackageFa
     set packageType(v: string) { _packageType = v; },
     create(name: string) {
       return {
-        _metadata: {
-          content: {},
-          orchestration: {},
-          packageName: name,
-          packageType: _packageType,
-          scope: '@test',
-          source: {},
-        },
+        _content: {},
         _packageDefinition: {path: 'force-app'},
         componentCount: vi.fn().mockResolvedValue(10),
-        metadata: {
-          content: {},
-          orchestration: {},
-          packageName: name,
-          packageType: _packageType,
-          scope: '@test',
-          source: {},
-        },
         name: `@test/${name}`,
+        orchestration: {},
         packageDefinition: {path: 'force-app'},
         packageName: name,
         projectDirectory: '/project',
+        scope: '@test',
         setBuildNumber: vi.fn(),
+        source: {},
         type: _packageType,
+        updateContent: vi.fn(),
+        markAnalyzed: vi.fn(),
         version: '1.0.0',
         workingDirectory: undefined,
       };
@@ -72,7 +53,6 @@ const {SfpmMetadataPackageStub, mockBuilderInstance, mockManifest, mockPackageFa
   return {
     SfpmMetadataPackageStub: class SfpmMetadataPackageStub {},
     mockBuilderInstance: _mockBuilderInstance,
-    mockManifest: _mockManifest,
     mockPackageFactoryFn: _mockPackageFactoryFn,
     mockRepo: _mockRepo,
   };
@@ -120,7 +100,7 @@ vi.mock('../../src/package/assemblers/package-assembler.js', () => ({
     return {
       assemble: vi.fn().mockResolvedValue({
         componentCount: 10,
-        stagingDirectory: '/project/packages/my-pkg/artifacts/package',
+        stagingDirectory: '/project/packages/my-pkg/dist',
       }),
     };
   },
@@ -184,7 +164,7 @@ describe('PackageBuilder', () => {
     mockBuilderInstance.exec.mockResolvedValue({});
     mockBuilderInstance.tasks = [];
     mockRepo.checkSourceHash.mockResolvedValue(undefined);
-    mockRepo.getManifest.mockResolvedValue(undefined);
+    mockRepo.getPackageVersionId.mockReturnValue(undefined);
   });
 
   // ==========================================================================
@@ -333,7 +313,7 @@ describe('PackageBuilder', () => {
   describe('needsBuild — source hash', () => {
     it('should skip build when source hash matches', async () => {
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/dist',
         latestVersion: '1.0.0',
       });
 
@@ -354,7 +334,7 @@ describe('PackageBuilder', () => {
 
     it('should proceed when force is true despite hash match', async () => {
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/dist',
         latestVersion: '1.0.0',
       });
 
@@ -374,13 +354,10 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/dist',
         latestVersion: '1.0.0',
       });
-      mockRepo.getManifest.mockResolvedValue({
-        ...mockManifest,
-        packageVersionId: undefined,
-      });
+      mockRepo.getPackageVersionId.mockReturnValue(undefined);
 
       const builder = new PackageBuilder(mockProvider, {
         devhubUsername: 'hub@test.com',
@@ -399,13 +376,10 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/dist',
         latestVersion: '1.0.0',
       });
-      mockRepo.getManifest.mockResolvedValue({
-        ...mockManifest,
-        packageVersionId: undefined,
-      });
+      mockRepo.getPackageVersionId.mockReturnValue(undefined);
 
       const builder = new PackageBuilder(mockProvider, {
         devhubUsername: 'hub@test.com',
@@ -421,13 +395,10 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/dist',
         latestVersion: '1.0.0',
       });
-      mockRepo.getManifest.mockResolvedValue({
-        ...mockManifest,
-        packageVersionId: '04tXXXXXXXXXXXXX',
-      });
+      mockRepo.getPackageVersionId.mockReturnValue('04tXXXXXXXXXXXXX');
 
       const builder = new PackageBuilder(mockProvider, {
         devhubUsername: 'hub@test.com',
@@ -443,14 +414,11 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/dist',
         latestVersion: '1.0.0',
       });
       // No packageVersionId — but sourceOnly doesn't need one
-      mockRepo.getManifest.mockResolvedValue({
-        ...mockManifest,
-        packageVersionId: undefined,
-      });
+      mockRepo.getPackageVersionId.mockReturnValue(undefined);
 
       const builder = new PackageBuilder(mockProvider, {
         sourceOnly: true,
@@ -467,13 +435,10 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/dist',
         latestVersion: '1.0.0',
       });
-      mockRepo.getManifest.mockResolvedValue({
-        ...mockManifest,
-        packageVersionId: undefined,
-      });
+      mockRepo.getPackageVersionId.mockReturnValue(undefined);
 
       const builder = new PackageBuilder(mockProvider, {
         validation: 'local',
@@ -488,13 +453,10 @@ describe('PackageBuilder', () => {
       mockPackageFactoryFn.packageType = PackageType.Source;
 
       mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/artifacts/package',
+        artifactPath: '/project/packages/my-pkg/dist',
         latestVersion: '1.0.0',
       });
-      mockRepo.getManifest.mockResolvedValue({
-        ...mockManifest,
-        packageVersionId: undefined,
-      });
+      mockRepo.getPackageVersionId.mockReturnValue(undefined);
 
       const builder = new PackageBuilder(mockProvider, {
         buildOrg: 'build@test.com',
@@ -550,7 +512,7 @@ describe('PackageBuilder', () => {
       expect(AnalyzerRegistry.getAnalyzers).toHaveBeenCalled();
     });
 
-    it('should NOT run analyzers when validation is none', async () => {
+    it('should run content analyzers even when validation is none', async () => {
       const {AnalyzerRegistry} = await import('../../src/package/analyzers/analyzer-registry.js');
       vi.mocked(AnalyzerRegistry.getAnalyzers).mockClear();
 
@@ -560,7 +522,9 @@ describe('PackageBuilder', () => {
 
       await builder.build('my-pkg');
 
-      expect(AnalyzerRegistry.getAnalyzers).not.toHaveBeenCalled();
+      // Content analyzers always run — they enrich the package model
+      // with data needed for deployment (test classes, FHT fields, etc.)
+      expect(AnalyzerRegistry.getAnalyzers).toHaveBeenCalled();
     });
   });
 });

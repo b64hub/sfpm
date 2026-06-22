@@ -6,8 +6,6 @@ import {Flags} from '@oclif/core';
 import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
 import path from 'node:path';
 
-import type {OutputMode} from '../../ui/renderer-utils.js';
-
 import SfpmCommand from '../../sfpm-command.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
@@ -23,10 +21,8 @@ export default class PoolFill extends SfpmCommand {
     'batch-size': Flags.integer({description: 'max concurrent org creations (default: 5)', min: 1}),
     'definition-file': Flags.string({char: 'd', description: 'org definition file (scratch org or sandbox)'}),
     'expiry-days': Flags.integer({description: 'scratch org expiry in days (default: 7)', min: 1}),
-    json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
     max: Flags.integer({description: 'maximum number of orgs to allocate (overrides config)', min: 1}),
     'name-pattern': Flags.string({description: 'override sandbox name prefix from definition file (e.g., SB → SB1, SB2, ...)'}),
-    quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     tag: Flags.string({char: 't', description: 'pool tag', required: true}),
     'target-dev-hub': Flags.string({
       char: 'v',
@@ -46,9 +42,9 @@ export default class PoolFill extends SfpmCommand {
     }),
   }
 
-  public async execute(): Promise<void> {
+  public async execute(): Promise<any> {
     const {flags} = await this.parse(PoolFill);
-    const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
+    const mode = this.outputMode;
 
     try {
       const orgConfig = await this.loadOrgConfig(this.sfpmLogger);
@@ -89,19 +85,12 @@ export default class PoolFill extends SfpmCommand {
 
       const result = await manager!.provision(flags.tag as string, config);
 
-      if (flags.json) {
-        this.logJson({...result, events: renderer.getJsonOutput().events, success: result.failed === 0});
-        return;
-      }
-
       if (result.failed > 0 && result.succeeded.length === 0) {
         this.error(`Pool provisioning failed: ${result.errors.join(', ')}`, {exit: 1});
       }
-    } catch (error) {
-      if (flags.json) {
-        this.logJson({error: (error as Error).message, success: false});
-      }
 
+      return {...result, events: renderer.getJsonOutput().events, success: result.failed === 0};
+    } catch (error) {
       throw error;
     }
   }

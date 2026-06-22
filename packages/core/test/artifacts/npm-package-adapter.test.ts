@@ -40,11 +40,7 @@ function createUnlockedPackageJson(overrides?: Partial<NpmPackageJson>): NpmPack
       packageName: 'sfpm-artifact',
       packageType: PackageType.Unlocked,
       packageVersionId: '04tJz000000lZn7IAE',
-      source: {
-        branch: 'feat-orgs',
-        commitSHA: 'f1dc9cd8e9521b01b07e021171dd7c0b18291682',
-        sourceHash: '8dbb986ebe459f428313e9a07d7e1842361589acf2460aafb9bd38f58a99c960',
-      },
+      sourceHash: '8dbb986ebe459f428313e9a07d7e1842361589acf2460aafb9bd38f58a99c960',
       versionNumber: '0.1.0-2',
     } as any,
     version: '0.1.0',
@@ -59,11 +55,7 @@ function createSourcePackageJson(): NpmPackageJson {
       orchestration: {},
       packageName: 'my-source-pkg',
       packageType: PackageType.Source,
-      source: {
-        branch: 'main',
-        commitSHA: 'abc123',
-        sourceHash: 'def456',
-      },
+      sourceHash: 'def456',
       versionNumber: '1.0.0-1',
     } as any,
     version: '1.0.0',
@@ -96,21 +88,10 @@ describe('npm-package-adapter', () => {
       expect(metadata.source?.repositoryUrl).toBe('https://github.com/b64hub/sfpm-bootstrap.git');
     });
 
-    it('should not overwrite existing repositoryUrl in sfpm.source', () => {
-      const packageJson = createUnlockedPackageJson();
-      // Simulate a package.json that still has repositoryUrl in sfpm.source
-      (packageJson.sfpm as any).source.repositoryUrl = 'https://internal.repo.com';
-
-      const metadata = fromNpmPackageJson(packageJson);
-      expect(metadata.source?.repositoryUrl).toBe('https://internal.repo.com');
-    });
-
-    it('should preserve source metadata', () => {
+    it('should read sourceHash from flat sfpm.sourceHash', () => {
       const packageJson = createUnlockedPackageJson();
       const metadata = fromNpmPackageJson(packageJson);
 
-      expect(metadata.source?.branch).toBe('feat-orgs');
-      expect((metadata.source as any)?.commitSHA).toBe('f1dc9cd8e9521b01b07e021171dd7c0b18291682');
       expect(metadata.source?.sourceHash).toBe('8dbb986ebe459f428313e9a07d7e1842361589acf2460aafb9bd38f58a99c960');
     });
 
@@ -208,23 +189,14 @@ describe('npm-package-adapter', () => {
 
     function createMockPackage(overrides?: Record<string, any>) {
       return {
-        metadata: {
-          packageName: 'my-pkg',
-          packageType: PackageType.Unlocked,
-          versionNumber: '1.0.0-1',
-          orchestration: {},
-        },
         name: 'my-pkg',
-        npmName: '@myorg/my-pkg',
+        orchestration: {},
         packageDefinition: {path: 'force-app', versionDescription: 'My package'},
         packageName: 'my-pkg',
-        toJson: async () => ({
-          packageName: 'my-pkg',
-          packageType: PackageType.Unlocked,
-          versionNumber: '1.0.0-1',
-          orchestration: {},
-        }),
+        scope: '@myorg',
+        source: undefined,
         type: PackageType.Unlocked,
+        version: '1.0.0-1',
         ...overrides,
       } as any;
     }
@@ -235,7 +207,7 @@ describe('npm-package-adapter', () => {
     it('should inherit static fields from workspace package.json', async () => {
       const workspace = createWorkspacePkgJson();
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
 
       expect(result.name).toBe('@myorg/my-pkg');
       expect(result.author).toBe('Test Author');
@@ -246,7 +218,7 @@ describe('npm-package-adapter', () => {
     it('should overlay build version onto workspace version', async () => {
       const workspace = createWorkspacePkgJson();
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
 
       expect(result.version).toBe('1.0.0');
       expect(result.sfpm.versionNumber).toBe('1.0.0-1');
@@ -261,10 +233,11 @@ describe('npm-package-adapter', () => {
         },
       } as Partial<WorkspacePackageJson>);
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
 
-      // Build metadata is merged
-      expect(result.sfpm.packageName).toBe('my-pkg');
+      // packageName is no longer in sfpm — derived from top-level name
+      expect(result.sfpm.packageName).toBeUndefined();
+      expect(result.sfpm.packageType).toBe(PackageType.Unlocked);
       // Workspace config is preserved
       expect(result.sfpm.packageOptions).toEqual({deploy: {optimize: true}});
     });
@@ -272,38 +245,38 @@ describe('npm-package-adapter', () => {
     it('should not include a main field', async () => {
       const workspace = createWorkspacePkgJson();
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
 
       expect(result).not.toHaveProperty('main');
     });
 
-    it('should put repository at top level and remove from sfpm.source', async () => {
+    it('should put repository at top level and not include in sfpm', () => {
       const workspace = createWorkspacePkgJson();
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {source: defaultSource});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {repositoryUrl: 'https://github.com/test/repo.git'});
 
-      expect(result.repository).toEqual({type: 'git', url: 'https://github.com/test/repo.git'});
-      expect(result.sfpm.source?.repositoryUrl).toBeUndefined();
+      expect(result.repository).toBe('https://github.com/test/repo.git');
+      expect((result.sfpm as any).source).toBeUndefined();
     });
 
-    it('should omit private, devDependencies, and scripts from artifact', async () => {
+    it('should omit private and devDependencies from artifact but keep scripts', () => {
       const workspace = createWorkspacePkgJson({
         devDependencies: {'@types/node': '^20.0.0'},
         private: true,
-        scripts: {'sfpm:build': 'echo build'},
+        scripts: {'postinstall': 'echo done'},
       });
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
 
       expect(result.private).toBeUndefined();
       expect(result.devDependencies).toBeUndefined();
-      expect(result.scripts).toBeUndefined();
+      expect(result.scripts).toEqual({'postinstall': 'echo done'});
     });
 
     it('should merge keywords from workspace and build', async () => {
       const workspace = createWorkspacePkgJson({keywords: ['my-org']});
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {
         additionalKeywords: ['custom'],
       });
 
@@ -317,7 +290,7 @@ describe('npm-package-adapter', () => {
     it('should deduplicate keywords', async () => {
       const workspace = createWorkspacePkgJson({keywords: ['sfpm', 'salesforce']});
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
 
       const sfpmCount = result.keywords!.filter(k => k === 'sfpm').length;
       expect(sfpmCount).toBe(1);
@@ -326,7 +299,7 @@ describe('npm-package-adapter', () => {
     it('should include files with package source path', async () => {
       const workspace = createWorkspacePkgJson();
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
 
       expect(result.files).toContain('force-app/**');
       expect(result.files).toContain('sfdx-project.json');
@@ -337,7 +310,7 @@ describe('npm-package-adapter', () => {
         managedDependencies: {'Old Dep@1.0.0': '04tOLD'},
       });
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {
         managedDependencies: {'Nebula Logger@4.16.0': '04taA000005CtsHQAS'},
       });
 
@@ -349,24 +322,19 @@ describe('npm-package-adapter', () => {
         managedDependencies: {'Nebula Logger@4.16.0': '04taA000005CtsHQAS'},
       });
       const pkg = createMockPackage();
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
 
       expect(result.managedDependencies).toEqual({'Nebula Logger@4.16.0': '04taA000005CtsHQAS'});
     });
 
-    it('should strip empty values from sfpm metadata', async () => {
+    it('should strip empty values from sfpm metadata', () => {
       const workspace = createWorkspacePkgJson();
       const pkg = createMockPackage({
-        toJson: async () => ({
-          content: {fields: {all: []}},
-          packageName: 'my-pkg',
-          packageType: PackageType.Unlocked,
-          orchestration: {},
-          source: {},
-        }),
+        orchestration: {},
+        source: {},
       });
 
-      const result = await toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
+      const result = toNpmPackageJson(workspace, pkg, '1.0.0-1', {});
       const sfpm = result.sfpm;
 
       // Empty nested objects/arrays from build metadata should be stripped

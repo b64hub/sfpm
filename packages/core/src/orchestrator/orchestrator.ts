@@ -127,6 +127,17 @@ export class Orchestrator<TContext = void> {
    * @returns OrchestrationResult with per-package outcomes.
    */
   public async executeAll(packageNames: string[]): Promise<OrchestrationResult> {
+    if (packageNames.length === 0) {
+      return {
+        duration: 0,
+        failedPackages: [],
+        pendingValidations: [],
+        results: [],
+        skippedPackages: [],
+        success: true,
+      };
+    }
+
     const orchestrationStart = Date.now();
     const includeDeps = this.options.includeDependencies !== false;
 
@@ -346,13 +357,18 @@ export class Orchestrator<TContext = void> {
    */
   private resolveLevels(packageNames: string[]): PackageNode[][] {
     const includeManaged = this.options.includeManagedPackages !== false;
-    const resolution = this.graph.resolveDependencies(packageNames, {includeManaged});
+    const includeDeps = this.options.includeDependencies !== false;
 
+    if (!includeDeps && packageNames.length === 1) {
+      return [[this.graph.getNode(packageNames[0])!]];
+    }
+
+    const resolution = this.graph.resolveDependencies(packageNames, {includeManaged});
     this.checkCircularDependencies(resolution, packageNames);
 
     let {levels} = resolution;
 
-    if (this.options.includeDependencies === false) {
+    if (!includeDeps) {
       levels = this.filterToRequestedPackages(levels, packageNames);
     }
 

@@ -10,6 +10,7 @@ vi.mock('fs-extra', () => {
         writeJson: vi.fn(),
         appendFile: vi.fn(),
         remove: vi.fn().mockResolvedValue(undefined),
+        move: vi.fn().mockResolvedValue(undefined),
         pathExistsSync: vi.fn(),
     };
     return {
@@ -79,7 +80,7 @@ describe('PackageAssembler', () => {
     });
 
     it('should initialize staging directory in constructor', () => {
-        expect((assembler as any).stagingDirectory).toBe(path.join('/root/packages/core', 'artifacts', 'package'));
+        expect((assembler as any).stagingDirectory).toBe(path.join('/root/packages/core', 'dist'));
     });
 
     it('should allow fluent configuration', () => {
@@ -108,14 +109,14 @@ describe('PackageAssembler', () => {
         const result = await assembler.assemble();
         const stagingPath = result.stagingDirectory;
 
-        expect(stagingPath).toBe(path.join('/root/packages/core', 'artifacts', 'package'));
+        expect(stagingPath).toBe(path.join('/root/packages/core', 'dist'));
 
-        // Verify core orchestration steps — cleans the entire artifacts/ directory
-        expect(mockedFs.emptyDir).toHaveBeenCalledWith(path.join('/root/packages/core', 'artifacts'));
-        // Copy source (with optional filter for build ignore)
+        // Verify core orchestration steps — cleans the dist/ directory
+        expect(mockedFs.emptyDir).toHaveBeenCalledWith(path.join('/root/packages/core', 'dist'));
+        // Copy source (to temp dir, then moved into dist/force-app)
         expect(mockedFs.copy).toHaveBeenCalledWith(
             path.join('/root', 'force-app'),
-            path.join(stagingPath, 'force-app'),
+            expect.stringContaining('sfpm-stage-'),
             expect.objectContaining({ filter: expect.any(Function) })
         );
         // Write manifest

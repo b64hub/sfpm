@@ -9,6 +9,7 @@ vi.mock('fs-extra', () => {
     writeJson: vi.fn(),
     appendFile: vi.fn(),
     remove: vi.fn().mockResolvedValue(undefined),
+    move: vi.fn().mockResolvedValue(undefined),
     pathExistsSync: vi.fn(),
   };
   return {
@@ -89,12 +90,12 @@ describe('PackageAssembler — Data packages', () => {
     const result = await assembler.assemble();
     const stagingPath = result.stagingDirectory;
 
-    expect(stagingPath).toBe(path.join('/root/packages/my-data', 'artifacts', 'package'));
+    expect(stagingPath).toBe(path.join('/root/packages/my-data', 'dist'));
 
-    // Should copy source (data directory)
+    // Should copy source (to temp dir, then moved into dist/force-app)
     expect(mockedFs.copy).toHaveBeenCalledWith(
       path.join('/root', 'data'),
-      path.join(stagingPath, 'data'),
+      expect.stringContaining('sfpm-stage-'),
       expect.objectContaining({ filter: expect.any(Function) }),
     );
 

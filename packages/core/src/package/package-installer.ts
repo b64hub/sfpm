@@ -1,8 +1,11 @@
 import {Org} from '@salesforce/core';
+import fs from 'fs-extra';
+import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {ArtifactResolution, ArtifactService} from '../artifacts/artifact-service.js';
+import {hydrateFromNpmPackageJson} from '../artifacts/npm-package-adapter.js';
 import {InstallEventBus, InstallEventSink} from '../events/install-event-bus.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {ArtifactResolutionOptions} from '../types/artifact.js';
@@ -298,31 +301,39 @@ export default class PackageInstaller {
 
   /**
    * Hydrate the SfpmPackage with data from the resolved artifact.
-   * Sets version, source hash, packageVersionId, and working directory.
+   * Reads the artifact's package.json and sets flat properties on the domain model.
    */
   private hydratePackageFromArtifact(sfpmPackage: SfpmPackage, resolution: ArtifactResolution): void {
     const {resolved} = resolution;
 
-    // Set version from resolved artifact
-    sfpmPackage.version = resolved.version;
+    // Set working directory to the build output (artifacts/package/)
+    sfpmPackage.workingDirectory = resolved.artifactPath;
 
-    // Set source hash from artifact manifest for install-skip checking.
-    // The installer's isInstalled() compares this against the org's artifact record.
-    if (resolved.manifest.sourceHash) {
-      sfpmPackage.metadata.source = {
-        ...sfpmPackage.metadata.source,
-        sourceHash: resolved.manifest.sourceHash,
-      };
+    // Hydrate from the artifact's package.json (version, source, content, etc.)
+    try {
+      const packageJsonPath = path.join(resolved.artifactPath, 'package.json');
+      if (fs.existsSync(packageJsonPath)) {
+        const packageJson = fs.readJsonSync(packageJsonPath);
+        if (packageJson?.sfpm) {
+          hydrateFromNpmPackageJson(sfpmPackage, packageJson);
+        }
+      }
+    } catch {
+      // Fall through to manifest-based hydration
     }
 
-    // For unlocked packages, set the packageVersionId
+    // Always set version from resolved (authoritative)
+    sfpmPackage.version = resolved.version;
+
+    // Ensure source hash from manifest
+    if (resolved.manifest.sourceHash) {
+      sfpmPackage.sourceHash = resolved.manifest.sourceHash;
+    }
+
+    // For unlocked packages, ensure packageVersionId from manifest
     if (sfpmPackage instanceof SfpmUnlockedPackage && resolved.packageVersionId) {
       sfpmPackage.packageVersionId = resolved.packageVersionId;
     }
-
-    // Set working directory to the build output (artifacts/package/)
-    // Content is already assembled — no extraction needed.
-    sfpmPackage.workingDirectory = resolved.artifactPath;
   }
 
   private async resolveArtifact(artifactService: ArtifactService, sfpmPackage: SfpmPackage): Promise<void> {

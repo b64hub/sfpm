@@ -14,6 +14,47 @@ import {stripScope} from '../../utils/scope-utils.js';
 import {toSalesforceVersionWithToken} from '../../utils/version-utils.js';
 
 // ---------------------------------------------------------------------------
+// Output types for sfdx-project.json
+// ---------------------------------------------------------------------------
+
+export interface PackageDependency {
+  package: string;
+  versionNumber?: string;
+}
+
+export interface PackageDirectory {
+  default?: boolean;
+  dependencies?: PackageDependency[];
+  namespace?: string;
+  package: string;
+  path: string;
+  seedMetadata?: {path: string};
+  unpackagedMetadata?: {path: string};
+  versionDescription?: string;
+  versionNumber: string;
+}
+
+export interface SalesforceProjectJson {
+  packageAliases?: Record<string, string>;
+  packageDirectories: PackageDirectory[];
+  sfdcLoginUrl?: string;
+  sourceApiVersion?: string;
+  sourceBehaviorOptions?: string[];
+}
+
+export interface ProjectJsonOptions {
+  /**
+   * Map of dependency name (scope-stripped) → Package2 ID (0Ho).
+   * When provided, these are used to:
+   * 1. Identify unlocked dependencies (presence in the map = unlocked)
+   * 2. Add Package2 IDs to packageAliases for standalone resolution
+   *
+   * When not provided, falls back to inferring unlocked deps from definition.packages.
+   */
+  dependencyPackageIds?: Record<string, string>;
+}
+
+// ---------------------------------------------------------------------------
 // ProjectDefinition → sfdx-project.json
 // ---------------------------------------------------------------------------
 
@@ -28,22 +69,32 @@ import {toSalesforceVersionWithToken} from '../../utils/version-utils.js';
  * - `dependencies` record → `dependencies` array of `{package, versionNumber}`
  *
  * Strips SFPM-specific fields that Salesforce CLI doesn't understand.
+ *
+ * @param options.dependencyPackageIds - When provided, used to identify unlocked
+ *   dependencies and add their Package2 IDs to packageAliases. Required for
+ *   single-package definitions where the dependency packages are not in
+ *   definition.packages.
  */
-export function toSalesforceProjectJson(definition: ProjectDefinition): Record<string, unknown> {
+export function toSalesforceProjectJson(definition: ProjectDefinition, options?: ProjectJsonOptions): SalesforceProjectJson {
+  const dependencyPackageIds = options?.dependencyPackageIds;
+
   // Build set of unlocked package names — only these are real SF package
   // dependencies. Source/data packages are SFPM-only constructs.
-  const unlockedPackageNames = new Set(definition.packages
-  .filter(pkg => pkg.type === 'unlocked' || !pkg.type)
-  .map(pkg => stripScope(pkg.name)));
+  // When dependencyPackageIds is provided, use it as the authoritative source.
+  const unlockedPackageNames = dependencyPackageIds
+    ? new Set(Object.keys(dependencyPackageIds))
+    : new Set(definition.packages
+    .filter(pkg => pkg.type === 'unlocked' || !pkg.type)
+    .map(pkg => stripScope(pkg.name)));
 
   const packageAliases: Record<string, string> = {};
-  const packageDirectories: Record<string, unknown>[] = [];
+  const packageDirectories: PackageDirectory[] = [];
 
   for (const pkgDef of definition.packages) {
     const sfName = stripScope(pkgDef.name);
     const sfVersion = toSalesforceVersionWithToken(pkgDef.version, pkgDef.type as Exclude<PackageType, 'managed'>);
 
-    const sfPkg: Record<string, unknown> = {
+    const sfPkg: PackageDirectory = {
       package: sfName,
       path: pkgDef.path,
       versionNumber: sfVersion,
@@ -62,7 +113,7 @@ export function toSalesforceProjectJson(definition: ProjectDefinition): Record<s
     }
 
     // Build SF dependencies array from workspace deps + managed deps
-    const sfDeps: Array<{package: string; versionNumber?: string}> = [];
+    const sfDeps: PackageDependency[] = [];
 
     if (pkgDef.dependencies) {
       for (const [depName, depVersion] of Object.entries(pkgDef.dependencies)) {
@@ -110,7 +161,14 @@ export function toSalesforceProjectJson(definition: ProjectDefinition): Record<s
     }
   }
 
-  const result: Record<string, unknown> = {
+  // Add dependency Package2 IDs to packageAliases when explicitly provided
+  if (dependencyPackageIds) {
+    for (const [depName, packageId] of Object.entries(dependencyPackageIds)) {
+      packageAliases[depName] = packageId;
+    }
+  }
+
+  const result: SalesforceProjectJson = {
     packageDirectories,
     ...(definition.sfdcLoginUrl ? {sfdcLoginUrl: definition.sfdcLoginUrl} : {}),
     ...(definition.sourceApiVersion ? {sourceApiVersion: definition.sourceApiVersion} : {}),

@@ -5,16 +5,11 @@ import * as childProcess from 'child_process';
 import { toVersionFormat } from '../../src/utils/version-utils.js';
 import { PackageType } from '../../src/types/package.js';
 
-// Create a mock repository instance that we can control
+// Create a mock repository instance (no longer used by assembler, but kept for mock setup)
 const mockRepository = {
-    getArtifactPath: vi.fn(),
-    getArtifactsDir: vi.fn(),
+    getDistDir: vi.fn(),
     getPackageWorkspacePath: vi.fn(),
-    getManifest: vi.fn(),
-    getManifestSync: vi.fn(),
-    saveManifest: vi.fn(),
-    calculateFileHash: vi.fn(),
-    finalizeArtifact: vi.fn(),
+    readDistPackageJson: vi.fn(),
 };
 
 vi.mock('fs-extra', () => {
@@ -79,41 +74,24 @@ describe('ArtifactAssembler', () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        // Configure mock repository for this test (flat paths)
-        mockRepository.getArtifactPath.mockReturnValue('/project/packages/my-package/artifacts/artifact.tgz');
-        mockRepository.getArtifactsDir.mockReturnValue('/project/packages/my-package/artifacts');
+        // Configure mock repository for this test
+        mockRepository.getDistDir.mockReturnValue('/project/packages/my-package/dist');
         mockRepository.getPackageWorkspacePath.mockReturnValue('/project/packages/my-package');
-        mockRepository.getManifest.mockResolvedValue(undefined);
-        mockRepository.getManifestSync.mockReturnValue(undefined);
-        mockRepository.saveManifest.mockResolvedValue(undefined);
-        mockRepository.calculateFileHash.mockResolvedValue('mockhash123');
-        mockRepository.finalizeArtifact.mockResolvedValue(undefined);
+        mockRepository.readDistPackageJson.mockResolvedValue(undefined);
 
         mockSfpmPackage = {
             packageName,
             name: `@testorg/${packageName}`,
-            npmName: `@testorg/${packageName}`,
             version,
             type: PackageType.Unlocked,
             workingDirectory: '/tmp/builds/test-build/package',
             packageDirectory: '/project/force-app',
             dependencies: [],
-            metadata: {
-                identity: { packageName, packageType: PackageType.Unlocked, versionNumber: version },
-                source: { branch: 'main' },
-                content: {},
-                validation: {},
-                orchestration: {},
-            },
+            orchestration: {},
+            source: { branch: 'main' },
+            scope: '@testorg',
             projectDefinition: { packageAliases: {} },
             packageDefinition: { path: 'packages/my-package/force-app', versionDescription: 'Test package' },
-            toJson: vi.fn().mockResolvedValue({
-                identity: { packageName, packageType: PackageType.Unlocked, versionNumber: version },
-                source: { branch: 'main' },
-                content: {},
-                validation: {},
-                orchestration: {},
-            }),
         };
 
         mockLogger = {
@@ -152,8 +130,7 @@ describe('ArtifactAssembler', () => {
         );
     });
 
-    it('should initialize with correct repository', () => {
-        expect((assembler as any).repository).toBeDefined();
+    it('should initialize correctly', () => {
         expect((assembler as any).options).toBeDefined();
     });
 
@@ -185,7 +162,7 @@ describe('ArtifactAssembler', () => {
 
             const result = await assembler.assemble();
 
-            // Should return the package content directory (no tarball)
+            // Should return the package content directory
             expect(result).toBe('/tmp/builds/test-build/package');
             
             // Should generate package.json in the package directory
@@ -199,16 +176,7 @@ describe('ArtifactAssembler', () => {
                 { spaces: 2 }
             );
             
-            // Should finalize manifest (no artifactHash)
-            expect(mockRepository.finalizeArtifact).toHaveBeenCalledWith(
-                scopedName,
-                version,
-                expect.any(String),
-                expect.objectContaining({
-                    commit: undefined,
-                })
-            );
-            
+            // Should NOT call finalizeArtifact (manifest eliminated)
             // Should NOT create tarball or cleanup
             expect(childProcess.execSync).not.toHaveBeenCalled();
             expect(fs.remove).not.toHaveBeenCalledWith('/tmp/builds/test-build');
@@ -270,8 +238,10 @@ describe('ArtifactAssembler', () => {
                 { spaces: 2 }
             );
 
-            // Verify sfpm metadata was retrieved from package
-            expect(mockSfpmPackage.toJson).toHaveBeenCalled();
+            // packageName is no longer in sfpm — derived from top-level name
+            const writtenJson = vi.mocked(fs.writeJson).mock.calls[0][1] as any;
+            expect(writtenJson.sfpm.packageType).toBe(PackageType.Unlocked);
+            expect(writtenJson.name).toContain(packageName);
         });
 
         it('should include managedDependencies for pinned dependencies', async () => {
@@ -307,13 +277,9 @@ describe('ArtifactAssembler', () => {
         });
 
         it('should filter empty values from sfpm metadata', async () => {
-            mockSfpmPackage.toJson.mockResolvedValue({
-                identity: { packageName, packageType: PackageType.Unlocked },
-                source: {},
-                content: { triggers: [], flows: [], profiles: [], fields: { all: [] } },
-                validation: {},
-                orchestration: {},
-            });
+            // Set empty values on the package to verify they get stripped
+            mockSfpmPackage.source = {};
+            mockSfpmPackage.orchestration = {};
             vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
             vi.mocked(fs.pathExists as any).mockImplementation(async (p: string) =>
                 p === '/project/packages/my-package/package.json');

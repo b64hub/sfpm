@@ -1,7 +1,10 @@
+import type {Org} from '@salesforce/core';
+
 import {
   assembleArtifactTask,
   type Builder,
   type BuilderOptions,
+  type BuilderResult,
   type BuildTaskRegistration,
   type Logger,
   PackageType,
@@ -54,21 +57,16 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
     ];
   }
 
-  /**
-   * Data packages do not require a DevHub connection.
-   */
-  public async connect(_username: string): Promise<void> {
-    // No-op: data packages don't need DevHub
+  public async connect(_targetOrg: Org): Promise<void> {
+    // No-op: data packages don't need an org connection
   }
 
   /**
    * Execute the build: validate SFDMU export.json and data files.
-   *
-   * Pre/post build tasks are handled by PackageBuilder — this method
-   * contains only the SFDMU-specific validation logic.
    */
-  public async exec(): Promise<void> {
+  public async exec(): Promise<BuilderResult> {
     await this.validate();
+    return {};
   }
 
   /**

@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs-extra';
 import { ArtifactResolver } from '../../src/artifacts/artifact-resolver.js';
 import { ArtifactRepository } from '../../src/artifacts/artifact-repository.js';
-import { ArtifactManifest } from '../../src/types/artifact.js';
 import { ArtifactError } from '../../src/types/errors.js';
 
 // Mock external dependencies
@@ -36,6 +35,18 @@ describe('ArtifactResolver', () => {
         getRegistryUrl: vi.fn().mockReturnValue('https://registry.npmjs.org'),
     });
 
+    // Mock dist/package.json content
+    const createMockDistPackageJson = (overrides?: Record<string, any>) => ({
+        name: '@testorg/test-package',
+        version: '1.0.0-1',
+        sfpm: {
+            packageType: 'unlocked',
+            sourceHash: 'abc123',
+            packageVersionId: '04t1234567890',
+        },
+        ...overrides,
+    });
+
     // Factory for creating a resolver with mock dependencies
     const createResolverWithMocks = (mockRegistryClient?: ReturnType<typeof createMockRegistryClient>) => {
         const repository = new ArtifactRepository(packageWorkspacePath, mockLogger);
@@ -48,19 +59,6 @@ describe('ArtifactResolver', () => {
         const repository = new ArtifactRepository(packageWorkspacePath, mockLogger);
         return new ArtifactResolver(repository, undefined, mockLogger);
     };
-
-    const createMockManifest = (overrides?: Partial<ArtifactManifest>): ArtifactManifest => ({
-        name: '@testorg/test-package',
-        version: '1.0.0-1',
-        sourceHash: 'abc123',
-        artifactHash: 'def456',
-        generatedAt: Date.now() - 60000,
-        schemaVersion: 2,
-        source: 'local',
-        commit: 'commit123',
-        lastCheckedRemote: Date.now() - 30 * 60 * 1000, // 30 minutes ago (within TTL)
-        ...overrides,
-    });
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -119,56 +117,42 @@ describe('ArtifactResolver', () => {
     });
 
     describe('resolve', () => {
-        describe('TTL and cache behavior', () => {
-            it('should use local manifest when TTL is valid', async () => {
-                const manifest = createMockManifest();
+        describe('local resolution', () => {
+            it('should resolve from dist/package.json when available', async () => {
+                const distPkgJson = createMockDistPackageJson();
 
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
+                vi.mocked(fs.readJson).mockResolvedValue(distPkgJson as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
 
                 const result = await resolver.resolve('@testorg/test-package');
 
                 expect(result.version).toBe('1.0.0-1');
                 expect(result.source).toBe('local');
+                expect(result.artifactPath).toContain('dist');
             });
 
-            it('should check remote when TTL is expired', async () => {
-                const mockRegistryClient = createMockRegistryClient(['1.0.0-1']);
-                const testResolver = createResolverWithMocks(mockRegistryClient);
-                
-                const manifest = createMockManifest({
-                    lastCheckedRemote: Date.now() - 90 * 60 * 1000, // 90 minutes ago (expired)
-                });
+            it('should return local version when requested version matches', async () => {
+                const distPkgJson = createMockDistPackageJson();
 
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
+                vi.mocked(fs.readJson).mockResolvedValue(distPkgJson as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
-                vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-                vi.mocked(fs.writeJson).mockResolvedValue(undefined as never);
-                vi.mocked(fs.move).mockResolvedValue(undefined as never);
-                vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
 
-                const result = await testResolver.resolve('@testorg/test-package');
+                const result = await resolver.resolve('@testorg/test-package', { version: '1.0.0-1' });
 
                 expect(result.version).toBe('1.0.0-1');
-                expect(result.source).toBe('local');
-                expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('@testorg/test-package');
             });
 
             it('should check remote when forceRefresh is true', async () => {
                 const mockRegistryClient = createMockRegistryClient(['1.0.0-1']);
                 const testResolver = createResolverWithMocks(mockRegistryClient);
-                
-                const manifest = createMockManifest(); // Valid TTL
+
+                const distPkgJson = createMockDistPackageJson();
 
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
+                vi.mocked(fs.readJson).mockResolvedValue(distPkgJson as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
-                vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-                vi.mocked(fs.writeJson).mockResolvedValue(undefined as never);
-                vi.mocked(fs.move).mockResolvedValue(undefined as never);
-                vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
 
                 await testResolver.resolve('@testorg/test-package', { forceRefresh: true });
 
@@ -176,34 +160,29 @@ describe('ArtifactResolver', () => {
             });
         });
 
-        describe('version selection', () => {
-            it('should return the single local version when no version specified', async () => {
-                const manifest = createMockManifest();
+        describe('remote resolution', () => {
+            it('should check remote when no local build exists', async () => {
+                const mockRegistryClient = createMockRegistryClient(['1.0.0-1']);
+                const testResolver = createResolverWithMocks(mockRegistryClient);
 
-                vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
-                vi.mocked(fs.existsSync).mockReturnValue(true);
+                // No dist/package.json
+                vi.mocked(fs.pathExists).mockResolvedValue(false as never);
+                vi.mocked(fs.existsSync).mockReturnValue(false);
+                vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
+                vi.mocked(fs.emptyDir).mockResolvedValue(undefined as never);
+                vi.mocked(fs.remove).mockResolvedValue(undefined as never);
+                vi.mocked(fs.readJson).mockResolvedValue(createMockDistPackageJson() as never);
 
-                const result = await resolver.resolve('@testorg/test-package');
+                const result = await testResolver.resolve('@testorg/test-package');
 
-                expect(result.version).toBe('1.0.0-1');
-            });
-
-            it('should return local version when requested version matches', async () => {
-                const manifest = createMockManifest();
-
-                vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
-                vi.mocked(fs.existsSync).mockReturnValue(true);
-
-                const result = await resolver.resolve('@testorg/test-package', { version: '1.0.0-1' });
-
-                expect(result.version).toBe('1.0.0-1');
+                expect(mockRegistryClient.getVersions).toHaveBeenCalled();
+                expect(mockRegistryClient.downloadPackage).toHaveBeenCalled();
+                expect(result.source).toBe('remote');
             });
         });
 
         describe('error handling', () => {
-            it('should throw ArtifactError when no version found', async () => {
+            it('should throw ArtifactError when no version found locally or remotely', async () => {
                 vi.mocked(fs.pathExists).mockResolvedValue(false as never);
                 vi.mocked(fs.existsSync).mockReturnValue(false);
 
@@ -217,98 +196,88 @@ describe('ArtifactResolver', () => {
                 mockRegistryClient.getVersions.mockRejectedValue(new Error('Network error'));
                 const testResolver = createResolverWithMocks(mockRegistryClient);
 
-                const manifest = createMockManifest({
-                    lastCheckedRemote: Date.now() - 90 * 60 * 1000, // Expired TTL
-                });
+                const distPkgJson = createMockDistPackageJson();
 
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
+                vi.mocked(fs.readJson).mockResolvedValue(distPkgJson as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
-                vi.mocked(fs.writeJson).mockResolvedValue(undefined as never);
-                vi.mocked(fs.move).mockResolvedValue(undefined as never);
-                vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
 
-                const result = await testResolver.resolve('@testorg/test-package');
+                // forceRefresh to trigger remote check, which will fail
+                const result = await testResolver.resolve('@testorg/test-package', { forceRefresh: true });
+                
+                // Should fall back to local
                 expect(result.version).toBe('1.0.0-1');
+                expect(result.source).toBe('local');
             });
         });
 
         describe('packageVersionId extraction', () => {
-            it('should include packageVersionId from manifest if present', async () => {
-                const manifest = createMockManifest({
-                    packageVersionId: '04t1234567890',
-                });
+            it('should include packageVersionId from dist/package.json', async () => {
+                const distPkgJson = createMockDistPackageJson();
 
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
+                vi.mocked(fs.readJson).mockResolvedValue(distPkgJson as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
 
                 const result = await resolver.resolve('@testorg/test-package');
 
+                expect(result.packageVersionId).toBe('04t1234567890');
                 expect(result.manifest.packageVersionId).toBe('04t1234567890');
+            });
+
+            it('should return undefined packageVersionId when not present', async () => {
+                const distPkgJson = createMockDistPackageJson({
+                    sfpm: { packageType: 'source', sourceHash: 'abc123' },
+                });
+
+                vi.mocked(fs.pathExists).mockResolvedValue(true as never);
+                vi.mocked(fs.readJson).mockResolvedValue(distPkgJson as never);
+                vi.mocked(fs.existsSync).mockReturnValue(true);
+
+                const result = await resolver.resolve('@testorg/test-package');
+
+                expect(result.packageVersionId).toBeUndefined();
             });
         });
 
         describe('manifest shape', () => {
-            it('should return ResolvedArtifact with manifest field', async () => {
-                const manifest = createMockManifest();
+            it('should return ResolvedArtifact with manifest field for backward compatibility', async () => {
+                const distPkgJson = createMockDistPackageJson();
 
                 vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-                vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
+                vi.mocked(fs.readJson).mockResolvedValue(distPkgJson as never);
                 vi.mocked(fs.existsSync).mockReturnValue(true);
 
                 const result = await resolver.resolve('@testorg/test-package');
 
                 expect(result.manifest).toBeDefined();
                 expect(result.manifest.sourceHash).toBe('abc123');
-                expect(result.manifest.artifactHash).toBe('def456');
                 expect(result.manifest.schemaVersion).toBe(2);
+                expect(result.manifest.source).toBe('local');
+                expect(result.manifest.name).toBe('@testorg/test-package');
             });
         });
     });
 
-    describe('TTL calculation', () => {
-        it('should treat missing lastCheckedRemote as expired', async () => {
-            const mockRegistryClient = createMockRegistryClient(['1.0.0-1']);
+    describe('version selection', () => {
+        it('should select highest version from combined local and remote', async () => {
+            const mockRegistryClient = createMockRegistryClient(['1.0.0-1', '1.0.0-2', '2.0.0-1']);
             const testResolver = createResolverWithMocks(mockRegistryClient);
-            
-            const manifest = createMockManifest({
-                lastCheckedRemote: undefined,
-            });
+
+            const distPkgJson = createMockDistPackageJson({ version: '1.0.0-1' });
 
             vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-            vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
+            vi.mocked(fs.readJson).mockResolvedValue(distPkgJson as never);
             vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-            vi.mocked(fs.writeJson).mockResolvedValue(undefined as never);
-            vi.mocked(fs.move).mockResolvedValue(undefined as never);
             vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
+            vi.mocked(fs.emptyDir).mockResolvedValue(undefined as never);
+            vi.mocked(fs.remove).mockResolvedValue(undefined as never);
 
-            await testResolver.resolve('@testorg/test-package');
+            const result = await testResolver.resolve('@testorg/test-package', { forceRefresh: true });
 
-            expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('@testorg/test-package');
-        });
-
-        it('should respect custom TTL setting', async () => {
-            const mockRegistryClient = createMockRegistryClient(['1.0.0-1']);
-            const testResolver = createResolverWithMocks(mockRegistryClient);
-            
-            const manifest = createMockManifest({
-                lastCheckedRemote: Date.now() - 10 * 60 * 1000, // 10 minutes ago
-            });
-
-            vi.mocked(fs.pathExists).mockResolvedValue(true as never);
-            vi.mocked(fs.readJson).mockResolvedValue(manifest as never);
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
-            vi.mocked(fs.writeJson).mockResolvedValue(undefined as never);
-            vi.mocked(fs.move).mockResolvedValue(undefined as never);
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never);
-
-            // With 5 minute TTL, 10 minutes ago should be expired
-            await testResolver.resolve('@testorg/test-package', { ttlMinutes: 5 });
-
-            expect(mockRegistryClient.getVersions).toHaveBeenCalledWith('@testorg/test-package');
+            // Should select highest version (2.0.0-1) from remote
+            expect(result.version).toBe('2.0.0-1');
+            expect(result.source).toBe('remote');
         });
     });
 });

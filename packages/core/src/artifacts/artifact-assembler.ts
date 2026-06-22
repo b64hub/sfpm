@@ -4,15 +4,14 @@ import path from 'node:path';
 
 import type {WorkspacePackageJson} from '../project/providers/types/workspace.js';
 
+import {GitService} from '../git/git-service.js';
+import Git from '../git/git.js';
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
-import {SfpmPackageSource} from '../types/artifact.js';
 import {ArtifactError} from '../types/errors.js';
 import {Logger} from '../types/logger.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
-import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
-import {ArtifactRepository} from './artifact-repository.js';
 import {toNpmPackageJson} from './npm-package-adapter.js';
 
 /**
@@ -56,8 +55,6 @@ export interface ArtifactAssemblerOptions {
   changelogProvider?: ChangelogProvider;
   /** Pre-classified managed dependencies (alias -> packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
-  /** Git source context (commit, branch, repo URL) to embed in the artifact */
-  sourceContext?: SfpmPackageSource;
 }
 
 /**
@@ -65,18 +62,17 @@ export interface ArtifactAssemblerOptions {
  *
  * The assembly flow (post-build):
  * 1. Calculate source hash from staged package content
- * 2. Generate package.json with sfpm metadata
+ * 2. Generate package.json with sfpm metadata (includes sourceHash, version, etc.)
  * 3. Generate changelog.json
- * 4. Write manifest.json to artifacts/
  *
- * Tarballing is deferred to the publish step — the build output in
- * `artifacts/package/` is raw, deployable content.
+ * All build metadata lives in `dist/package.json` under the `sfpm` field —
+ * no sidecar manifest file. The dist directory is flat, publishable, and
+ * directly cacheable by Turbo.
  */
 export default class ArtifactAssembler {
   private changelogProvider: ChangelogProvider;
   private options: ArtifactAssemblerOptions;
   private packageVersionNumber: string;
-  private repository: ArtifactRepository;
   private sink?: ArtifactEventSink;
 
   constructor(
@@ -90,24 +86,13 @@ export default class ArtifactAssembler {
     this.sink = sink;
     this.packageVersionNumber = toVersionFormat(sfpmPackage.version || '0.0.0.1', 'semver');
 
-    // Create package-scoped repository
-    const sourcePath = sfpmPackage.packageDefinition?.path;
-    if (!sourcePath) {
-      throw new ArtifactError(sfpmPackage.name, 'assembly', 'Package definition path is not set', {
-        version: this.packageVersionNumber,
-      });
-    }
-
-    const packageWorkspacePath = resolvePackageWorkspacePath(projectDirectory, sourcePath);
-    this.repository = new ArtifactRepository(packageWorkspacePath, logger, sfpmPackage.name);
-
     this.changelogProvider = options.changelogProvider || new StubChangelogProvider();
   }
 
   /**
    * @description Orchestrates the artifact assembly process.
-   * Generates metadata files (package.json, changelog, manifest) in the
-   * already-staged `artifacts/package/` directory. No tarball is created.
+   * Generates metadata files (package.json, changelog) in the
+   * already-staged `dist/` directory.
    */
   public async assemble(): Promise<string> {
     const startTime = Date.now();
@@ -125,9 +110,6 @@ export default class ArtifactAssembler {
 
       // 4. Generate changelog
       await this.generateChangelog(packageDir);
-
-      // 5. Finalize manifest (no artifact hash — no tarball)
-      await this.finalizeManifest(currentSourceHash);
 
       this.emitComplete(packageDir, currentSourceHash, startTime);
       return packageDir;
@@ -184,15 +166,6 @@ export default class ArtifactAssembler {
     });
   }
 
-  /**
-   * Write the manifest.json sidecar to the artifacts directory.
-   */
-  private async finalizeManifest(sourceHash: string): Promise<void> {
-    await this.repository.finalizeArtifact(this.sfpmPackage.name, this.packageVersionNumber, sourceHash, {
-      commit: this.options.sourceContext?.commit,
-    });
-  }
-
   // =========================================================================
   // Event Emission Helpers
   // =========================================================================
@@ -219,16 +192,22 @@ export default class ArtifactAssembler {
     // Read the workspace package.json as the base for the artifact
     const workspacePkgJson = await this.readWorkspacePackageJson();
 
-    // Merge sourceHash into the source context for the artifact
-    const source: SfpmPackageSource | undefined = this.options.sourceContext || sourceHash
-      ? {...this.options.sourceContext, sourceHash}
-      : undefined;
+    // Auto-resolve git context for repository URL
+    let repositoryUrl: string | undefined;
+    try {
+      const git = new Git(this.projectDirectory, this.logger);
+      const gitService = new GitService(git, this.logger);
+      const gitContext = await gitService.getPackageSourceContext();
+      repositoryUrl = gitContext.repositoryUrl;
+    } catch {
+      // No git available
+    }
 
-    const generated = await toNpmPackageJson(
+    const generated = toNpmPackageJson(
       workspacePkgJson,
       this.sfpmPackage,
       this.packageVersionNumber,
-      {...this.options, source},
+      {...this.options, repositoryUrl, sourceHash},
     );
 
     await fs.writeJson(packageJsonPath, generated, {spaces: 2});

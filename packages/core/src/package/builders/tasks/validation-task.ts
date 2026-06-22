@@ -71,6 +71,9 @@ class ValidationTask implements BuildTask {
   }
 
   public async exec(): Promise<BuildTaskResult | void> {
+    // Ensure content analysis is done (no-op if build already ran analyzers)
+    await this.sfpmPackage.ensureAnalyzed();
+
     const testClasses = this.guardTestClasses();
     this.emitTestStart(testClasses.length);
 

@@ -143,6 +143,112 @@ describe('toSalesforceProjectJson', () => {
     expect(dirs[0].seedMetadata).toEqual({path: 'seed-meta'});
     expect(dirs[0].unpackagedMetadata).toEqual({path: 'unpackaged-meta'});
   });
+
+  describe('with dependencyPackageIds option', () => {
+    it('adds dependency Package2 IDs to packageAliases', () => {
+      // Single-package definition (as produced by resolveForPackage)
+      const singlePkgDef: ProjectDefinition = {
+        packages: [{
+          dependencies: {'@myorg/utils': '^1.0.0'},
+          name: '@myorg/core',
+          packageId: '0HoAAAAAAAAAAAA',
+          default: true,
+          path: 'source',
+          type: 'unlocked',
+          version: '1.2.0',
+        }],
+      };
+
+      const result = toSalesforceProjectJson(singlePkgDef, {
+        dependencyPackageIds: {utils: '0HoBBBBBBBBBBBBB'},
+      });
+
+      expect(result.packageAliases).toEqual({
+        core: '0HoAAAAAAAAAAAA',
+        utils: '0HoBBBBBBBBBBBBB',
+      });
+    });
+
+    it('uses dependencyPackageIds to identify unlocked deps for dependencies array', () => {
+      // Source package depending on an unlocked package
+      const singlePkgDef: ProjectDefinition = {
+        packages: [{
+          dependencies: {'@myorg/core': '^1.2.0'},
+          name: '@myorg/data',
+          default: true,
+          path: 'source',
+          type: 'source',
+          version: '1.0.0',
+        }],
+      };
+
+      const result = toSalesforceProjectJson(singlePkgDef, {
+        dependencyPackageIds: {core: '0HoAAAAAAAAAAAA'},
+      });
+
+      // Without the option, 'core' would be missing from dependencies
+      // because it's not in definition.packages
+      expect(result.packageDirectories[0].dependencies).toEqual([
+        {package: 'core', versionNumber: '1.2.0.LATEST'},
+      ]);
+      expect(result.packageAliases).toEqual({
+        core: '0HoAAAAAAAAAAAA',
+      });
+    });
+
+    it('still includes managed dependencies alongside resolved deps', () => {
+      const singlePkgDef: ProjectDefinition = {
+        packages: [{
+          dependencies: {'@myorg/utils': '^1.0.0'},
+          managedDependencies: {'nebula-logger': '04tXXXXXXXXXXXXX'},
+          name: '@myorg/core',
+          packageId: '0HoAAAAAAAAAAAA',
+          default: true,
+          path: 'source',
+          type: 'unlocked',
+          version: '1.2.0',
+        }],
+      };
+
+      const result = toSalesforceProjectJson(singlePkgDef, {
+        dependencyPackageIds: {utils: '0HoBBBBBBBBBBBBB'},
+      });
+
+      expect(result.packageDirectories[0].dependencies).toEqual([
+        {package: 'utils', versionNumber: '1.0.0.LATEST'},
+        {package: 'nebula-logger'},
+      ]);
+      expect(result.packageAliases).toEqual({
+        core: '0HoAAAAAAAAAAAA',
+        'nebula-logger': '04tXXXXXXXXXXXXX',
+        utils: '0HoBBBBBBBBBBBBB',
+      });
+    });
+
+    it('does not include source package deps when not in dependencyPackageIds', () => {
+      // Package depends on both unlocked and source packages
+      const singlePkgDef: ProjectDefinition = {
+        packages: [{
+          dependencies: {'@myorg/utils': '^1.0.0', '@myorg/data': '^1.0.0'},
+          name: '@myorg/core',
+          packageId: '0HoAAAAAAAAAAAA',
+          default: true,
+          path: 'source',
+          type: 'unlocked',
+          version: '1.2.0',
+        }],
+      };
+
+      // Only utils is provided — data is a source package without a packageId
+      const result = toSalesforceProjectJson(singlePkgDef, {
+        dependencyPackageIds: {utils: '0HoBBBBBBBBBBBBB'},
+      });
+
+      expect(result.packageDirectories[0].dependencies).toEqual([
+        {package: 'utils', versionNumber: '1.0.0.LATEST'},
+      ]);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

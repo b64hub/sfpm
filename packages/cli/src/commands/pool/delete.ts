@@ -2,8 +2,6 @@ import {createPoolServices} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {ConfigAggregator, OrgTypes} from '@salesforce/core';
 
-import type {OutputMode} from '../../ui/renderer-utils.js';
-
 import SfpmCommand from '../../sfpm-command.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
@@ -19,9 +17,7 @@ export default class PoolDelete extends SfpmCommand {
   ]
   static override flags = {
     'in-progress-only': Flags.boolean({description: 'only delete orgs with "In Progress" status'}),
-    json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
     'my-pool': Flags.boolean({description: 'only delete orgs created by the current user'}),
-    quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     tag: Flags.string({char: 't', description: 'pool tag to delete from', required: true}),
     'target-dev-hub': Flags.string({
       char: 'v',
@@ -42,9 +38,9 @@ export default class PoolDelete extends SfpmCommand {
     }),
   }
 
-  public async execute(): Promise<void> {
+  public async execute(): Promise<any> {
     const {flags} = await this.parse(PoolDelete);
-    const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
+    const mode = this.outputMode;
 
     try {
       const {devhub} = await connectDevHub({
@@ -72,20 +68,12 @@ export default class PoolDelete extends SfpmCommand {
         myPool: flags['my-pool'],
       });
 
-      if (flags.json) {
-        this.logJson({
-          ...result,
-          events: renderer.getJsonOutput().events,
-          success: result.errors.length === 0,
-        });
-      }
-
-      // Interactive summary already rendered by the renderer via events
+      return {
+        ...result,
+        events: renderer.getJsonOutput().events,
+        success: result.errors.length === 0,
+      };
     } catch (error) {
-      if (flags.json) {
-        this.logJson({error: (error as Error).message, success: false});
-      }
-
       throw error;
     }
   }

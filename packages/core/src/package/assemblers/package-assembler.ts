@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 
+import {DIST_DIR} from '../../types/artifact.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {resolvePackageWorkspacePath} from '../../utils/workspace-path.js';
@@ -203,29 +204,27 @@ export default class PackageAssembler {
   }
 
   /**
-   * Ensures the artifacts directory is clean before a fresh build.
-   * Removes any previous build output (manifest, tarball, package content)
-   * to prevent stale data from leaking into the new build.
+   * Ensures the dist directory is clean before a fresh build.
+   * Removes any previous build output to prevent stale data from leaking
+   * into the new build.
    */
   private async ensureStagingDirectoryExists(): Promise<void> {
-    // Clean the entire artifacts/ directory (parent of package/)
-    await fs.emptyDir(path.dirname(this.stagingDirectory));
+    await fs.emptyDir(this.stagingDirectory);
     await fs.ensureDir(this.stagingDirectory);
   }
 
   /**
-   * @description Resolves the path for the artifact output directory.
+   * @description Resolves the path for the build output directory.
    *
-   * Stages directly into `<packageWorkspace>/artifacts/package/` so that
-   * the assembled content IS the build output — no temp directories, no
-   * tarballing. The `artifacts/` directory is Turbo-cacheable and serves
-   * as the deployment source for `sfpm deploy`.
+   * Stages directly into `<packageWorkspace>/dist/` so that the assembled
+   * content IS the publishable build output — flat, Turbo-cacheable, and
+   * directly usable by `npm publish ./dist`.
    *
    * @returns {string} The absolute path to the staging directory.
    */
   private initializeStagingArea(): string {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
     const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, packageDefinition.path);
-    return path.join(packageWorkspacePath, 'artifacts', 'package');
+    return path.join(packageWorkspacePath, DIST_DIR);
   }
 }

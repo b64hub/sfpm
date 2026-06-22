@@ -2,6 +2,7 @@ import {Org} from '@salesforce/core';
 import {merge} from 'lodash-es';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+import type {DependencyAnalyzer} from '../types/dependency-analysis.js';
 
 import {ArtifactRepository} from '../artifacts/artifact-repository.js';
 import {BuildEventBus, BuildEventSink} from '../events/build-event-bus.js';
@@ -35,27 +36,27 @@ export type ValidationLevel = 'full' | 'local' | 'none' | 'org';
  * Internal configuration resolved from {@link ValidationLevel}.
  */
 interface ModeConfig {
-  /** Whether to run static analysis (dependency checks, etc.) */
-  analysis: boolean;
+  /** Whether and how to run dependency analysis (cross-package reference validation) */
+  dependencyAnalysis: 'error' | 'warn' | false;
   /** Whether to connect to and validate against an org */
   orgValidation: boolean;
 }
 
 const VALIDATION_CONFIGS: Record<ValidationLevel, ModeConfig> = {
   full: {
-    analysis: true,
+    dependencyAnalysis: 'error',
     orgValidation: true,
   },
   local: {
-    analysis: true,
+    dependencyAnalysis: 'warn',
     orgValidation: false,
   },
   none: {
-    analysis: false,
+    dependencyAnalysis: false,
     orgValidation: false,
   },
   org: {
-    analysis: true,
+    dependencyAnalysis: 'warn',
     orgValidation: true,
   },
 };
@@ -77,6 +78,12 @@ export interface BuildOptions {
   buildNumber?: string;
   /** Target org for source package validation (deploy + test) */
   buildOrg?: string;
+  /**
+   * Pluggable dependency analyzer for cross-package reference validation.
+   * Must be initialized before passing to the builder.
+   * When provided and `validation` includes analysis, violations are reported.
+   */
+  dependencyAnalyzer?: DependencyAnalyzer;
   /** DevHub username or alias for unlocked package builds */
   devhubUsername?: string;
   /** Force build even if no source changes detected (skip hash check) */
@@ -168,7 +175,9 @@ export class PackageBuilder {
 
     try {
       const metadataContribution = await analyzer.analyze(sfpmPackage);
-      merge(sfpmPackage.metadata, metadataContribution);
+      if (sfpmPackage instanceof SfpmMetadataPackage) {
+        sfpmPackage.updateContent(metadataContribution);
+      }
 
       this.sink?.analyzerComplete({
         analyzerName,
@@ -200,6 +209,11 @@ export class PackageBuilder {
 
     try {
       await Promise.all(enabledAnalyzers.map(async analyzer => this.runAnalyzer(sfpmPackage, analyzer)));
+
+      // Mark analyzed so ensureAnalyzed() is a no-op for deploy/install paths
+      if (sfpmPackage instanceof SfpmMetadataPackage) {
+        sfpmPackage.markAnalyzed();
+      }
 
       this.sink?.analyzersComplete({
         completedCount: enabledAnalyzers.length,
@@ -242,7 +256,7 @@ export class PackageBuilder {
   }
 
   /**
-   * Compare the current source hash against the latest artifact manifest.
+   * Compare the current source hash against the previous build's dist/package.json.
    * Returns match info if hashes are equal, undefined otherwise.
    */
   private async checkSourceHash(
@@ -265,7 +279,7 @@ export class PackageBuilder {
    */
   private handleBuildConfiguration(sfpmPackage: SfpmPackage): void {
     if (sfpmPackage.packageDefinition?.packageOptions?.build) {
-      merge(sfpmPackage.metadata.orchestration, {
+      merge(sfpmPackage.orchestration, {
         build: sfpmPackage.packageDefinition.packageOptions.build,
       });
     }
@@ -279,16 +293,11 @@ export class PackageBuilder {
     }
   }
 
-  /** Check whether a staged package contains zero deployable components or files. */
-  private async isPackageEmpty(sfpmPackage: SfpmPackage): Promise<boolean> {
-    return (await sfpmPackage.componentCount()) === 0;
-  }
-
   /**
-   * Check whether the existing manifest satisfies the current build's requirements.
+   * Check whether the existing build output satisfies the current build's requirements.
    *
    * An unlocked package with org/full validation (not source-only) requires a
-   * packageVersionId in the manifest. A previous --source-only or --validation=local
+   * packageVersionId in dist/package.json. A previous --source-only or --validation=local
    * build won't have one, so a rebuild is needed despite matching source hash.
    */
   private async manifestSatisfiesBuild(
@@ -301,8 +310,8 @@ export class PackageBuilder {
 
     if (!needsPackageVersionId) return true;
 
-    const manifest = await repo.getManifest();
-    if (!manifest?.packageVersionId) {
+    const packageVersionId = repo.getPackageVersionId();
+    if (!packageVersionId) {
       this.logger?.info(`Build required for '${sfpmPackage.packageName}': existing build has no packageVersionId`);
       return false;
     }
@@ -315,7 +324,7 @@ export class PackageBuilder {
    *
    * Checks two conditions:
    * 1. Source hash — has the source changed since the last build?
-   * 2. Manifest completeness — does the existing build output satisfy
+   * 2. Build completeness — does the existing build output satisfy
    *    the current build's requirements (e.g., packageVersionId for
    *    unlocked packages with org validation)?
    *
@@ -346,7 +355,7 @@ export class PackageBuilder {
     const hashMatch = await this.checkSourceHash(sfpmPackage, repo);
     if (!hashMatch) return undefined;
 
-    // 2. Check manifest completeness
+    // 2. Check build completeness
     if (!await this.manifestSatisfiesBuild(sfpmPackage, repo)) return undefined;
 
     this.logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected. `
@@ -380,7 +389,7 @@ export class PackageBuilder {
   private async runBuilder(sfpmPackage: SfpmPackage, options: RunBuilderOptions): Promise<PendingValidationDescriptor | undefined> {
     const componentCount = await this.stagePackage(sfpmPackage);
 
-    if (await this.isPackageEmpty(sfpmPackage)) {
+    if (componentCount === 0) {
       this.sink?.skip({
         packageType: sfpmPackage.type as PackageType,
         reason: 'empty-package',
@@ -406,9 +415,9 @@ export class PackageBuilder {
 
     const modeConfig = resolveModeConfig(this.options.validation);
 
-    if (modeConfig.analysis) {
-      await this.runAnalyzers(sfpmPackage);
-    }
+    // Content analyzers always run — they enrich the package model
+    // with data needed for deployment (test classes, FHT fields, etc.)
+    await this.runAnalyzers(sfpmPackage);
 
     // Run pre-build hooks after analyzers have enriched the package context
     await this.runLifecycleHooks('pre', sfpmPackage);
@@ -421,6 +430,12 @@ export class PackageBuilder {
       : undefined;
 
     const builderOptions: BuilderOptions = {
+      ...(modeConfig.dependencyAnalysis && this.options.dependencyAnalyzer && {
+        dependencyAnalysis: {
+          dependencyAnalyzer: this.options.dependencyAnalyzer,
+          warnOnly: modeConfig.dependencyAnalysis === 'warn',
+        },
+      }),
       installationKey: this.options.installationKey,
       validation: modeConfig.orgValidation,
       waitTime: this.options.waitTime,

@@ -1,9 +1,12 @@
 import fs from 'fs-extra';
 import ignore from 'ignore';
+import {randomUUID} from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
+import {ARTIFACT_SOURCE_DIR} from '../../../types/artifact.js';
 import {Logger} from '../../../types/logger.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 
@@ -21,7 +24,7 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
  */
 export class SourceCopyStep implements AssemblyStep {
   /** Directories that are never part of a Salesforce package */
-  private static readonly ALWAYS_EXCLUDED = new Set(['.sfpm', '.turbo', 'node_modules']);
+  private static readonly ALWAYS_EXCLUDED = new Set(['.sfdx', '.sfpm', '.turbo', 'dist', 'node_modules']);
   /**
    * Files excluded from the source copy.
    *
@@ -41,7 +44,7 @@ export class SourceCopyStep implements AssemblyStep {
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
     const sourceDir = path.join(this.provider.projectDir, packageDefinition.path);
-    const destinationDir = path.join(output.stagingDirectory, packageDefinition.path);
+    const destinationDir = path.join(output.stagingDirectory, ARTIFACT_SOURCE_DIR);
 
     const ig = await this.loadBuildIgnore(options);
 
@@ -51,8 +54,12 @@ export class SourceCopyStep implements AssemblyStep {
       this.logger?.debug(`[SourceCopyStep] Copying from ${sourceDir} to ${destinationDir}`);
     }
 
+    // fs.copy throws if destinationDir is inside sourceDir. Always copy to
+    // os temp first, then move into place. This is safe for all layouts.
+    const tempDir = path.join(os.tmpdir(), `sfpm-stage-${randomUUID()}`);
+
     try {
-      await fs.copy(sourceDir, destinationDir, {
+      await fs.copy(sourceDir, tempDir, {
         filter: (src: string) => {
           // Always include the root source directory itself
           const relativePath = path.relative(sourceDir, src);
@@ -92,7 +99,12 @@ export class SourceCopyStep implements AssemblyStep {
           return !ignored;
         },
       });
+
+      // Move from temp into artifact location
+      await fs.ensureDir(path.dirname(destinationDir));
+      await fs.move(tempDir, destinationDir, {overwrite: true});
     } catch (error: any) {
+      await fs.remove(tempDir).catch(() => {});
       throw new Error(`[SourceCopyStep] Failed to copy source: ${error.message}`);
     }
   }

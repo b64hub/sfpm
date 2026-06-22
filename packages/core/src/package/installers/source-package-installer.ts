@@ -5,8 +5,10 @@ import type {InstallEventSink} from '../../events/install-event-bus.js';
 import {ArtifactService} from '../../artifacts/artifact-service.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
-import {SfpmSourcePackage} from '../sfpm-package.js';
-import {type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller} from './installer-registry.js';
+import {SfpmMetadataPackage} from '../sfpm-package.js';
+import {
+  type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller,
+} from './installer-registry.js';
 // Import strategy implementation
 import SourceDeployer from './strategies/source-deployer.js';
 
@@ -16,7 +18,7 @@ export interface SourcePackageInstallerOptions {
 }
 
 /**
- * Adapter that bridges {@link SfpmSourcePackage} with the
+ * Adapter that bridges {@link SfpmMetadataPackage} with the
  * {@link SourceDeployer} strategy. Source packages always use source
  * deployment — there is no version-install path.
  */
@@ -25,13 +27,13 @@ export interface SourcePackageInstallerOptions {
 export default class SourcePackageInstaller implements Installer {
   private readonly logger?: Logger;
   private org?: Org;
-  private readonly sfpmPackage: SfpmSourcePackage;
+  private readonly sfpmPackage: SfpmMetadataPackage;
   private readonly sink?: InstallEventSink;
   private readonly sourceDeployer: SourceDeployer;
   private readonly testLevel?: string;
 
-  constructor(_workingDirectory: string, sfpmPackage: SfpmSourcePackage, options?: SourcePackageInstallerOptions, logger?: Logger, sink?: InstallEventSink) {
-    if (!(sfpmPackage instanceof SfpmSourcePackage)) {
+  constructor(_workingDirectory: string, sfpmPackage: SfpmMetadataPackage, options?: SourcePackageInstallerOptions, logger?: Logger, sink?: InstallEventSink) {
+    if (!(sfpmPackage instanceof SfpmMetadataPackage)) {
       throw new TypeError(`SourcePackageInstaller received incompatible package type: ${(sfpmPackage as unknown as {constructor: {name: string}}).constructor.name}`);
     }
 
@@ -54,13 +56,13 @@ export default class SourcePackageInstaller implements Installer {
 
   public async isInstalled(): Promise<InstallCheckResult> {
     try {
-      const sourceHash = this.sfpmPackage.metadata.source?.sourceHash;
+      const {sourceHash} = this.sfpmPackage;
       if (!sourceHash) {
         return {installReason: 'not-installed', needsInstall: true};
       }
 
       const artifactService = ArtifactService.getInstance();
-      const {isInstalled, versionNumber} = await artifactService.isArtifactInstalled(this.sfpmPackage.name);
+      const {isInstalled} = await artifactService.isArtifactInstalled(this.sfpmPackage.name);
 
       if (!isInstalled) {
         return {installReason: 'not-installed', needsInstall: true};
