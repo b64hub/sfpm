@@ -256,7 +256,7 @@ export class PackageBuilder {
   }
 
   /**
-   * Compare the current source hash against the latest artifact manifest.
+   * Compare the current source hash against the previous build's dist/package.json.
    * Returns match info if hashes are equal, undefined otherwise.
    */
   private async checkSourceHash(
@@ -294,10 +294,10 @@ export class PackageBuilder {
   }
 
   /**
-   * Check whether the existing manifest satisfies the current build's requirements.
+   * Check whether the existing build output satisfies the current build's requirements.
    *
    * An unlocked package with org/full validation (not source-only) requires a
-   * packageVersionId in the manifest. A previous --source-only or --validation=local
+   * packageVersionId in dist/package.json. A previous --source-only or --validation=local
    * build won't have one, so a rebuild is needed despite matching source hash.
    */
   private async manifestSatisfiesBuild(
@@ -310,8 +310,8 @@ export class PackageBuilder {
 
     if (!needsPackageVersionId) return true;
 
-    const manifest = await repo.getManifest();
-    if (!manifest?.packageVersionId) {
+    const packageVersionId = repo.getPackageVersionId();
+    if (!packageVersionId) {
       this.logger?.info(`Build required for '${sfpmPackage.packageName}': existing build has no packageVersionId`);
       return false;
     }
@@ -324,7 +324,7 @@ export class PackageBuilder {
    *
    * Checks two conditions:
    * 1. Source hash — has the source changed since the last build?
-   * 2. Manifest completeness — does the existing build output satisfy
+   * 2. Build completeness — does the existing build output satisfy
    *    the current build's requirements (e.g., packageVersionId for
    *    unlocked packages with org validation)?
    *
@@ -355,7 +355,7 @@ export class PackageBuilder {
     const hashMatch = await this.checkSourceHash(sfpmPackage, repo);
     if (!hashMatch) return undefined;
 
-    // 2. Check manifest completeness
+    // 2. Check build completeness
     if (!await this.manifestSatisfiesBuild(sfpmPackage, repo)) return undefined;
 
     this.logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected. `

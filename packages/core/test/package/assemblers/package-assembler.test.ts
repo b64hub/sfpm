@@ -80,7 +80,7 @@ describe('PackageAssembler', () => {
     });
 
     it('should initialize staging directory in constructor', () => {
-        expect((assembler as any).stagingDirectory).toBe(path.join('/root/packages/core', 'artifact', 'package'));
+        expect((assembler as any).stagingDirectory).toBe(path.join('/root/packages/core', 'dist'));
     });
 
     it('should allow fluent configuration', () => {
@@ -109,11 +109,11 @@ describe('PackageAssembler', () => {
         const result = await assembler.assemble();
         const stagingPath = result.stagingDirectory;
 
-        expect(stagingPath).toBe(path.join('/root/packages/core', 'artifact', 'package'));
+        expect(stagingPath).toBe(path.join('/root/packages/core', 'dist'));
 
-        // Verify core orchestration steps — cleans the entire artifacts/ directory
-        expect(mockedFs.emptyDir).toHaveBeenCalledWith(path.join('/root/packages/core', 'artifact'));
-        // Copy source (to temp dir, then moved into artifact/package/force-app)
+        // Verify core orchestration steps — cleans the dist/ directory
+        expect(mockedFs.emptyDir).toHaveBeenCalledWith(path.join('/root/packages/core', 'dist'));
+        // Copy source (to temp dir, then moved into dist/force-app)
         expect(mockedFs.copy).toHaveBeenCalledWith(
             path.join('/root', 'force-app'),
             expect.stringContaining('sfpm-stage-'),

@@ -24,7 +24,7 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
  */
 export class SourceCopyStep implements AssemblyStep {
   /** Directories that are never part of a Salesforce package */
-  private static readonly ALWAYS_EXCLUDED = new Set(['.sfdx', '.sfpm', '.turbo', 'artifact', 'node_modules']);
+  private static readonly ALWAYS_EXCLUDED = new Set(['.sfdx', '.sfpm', '.turbo', 'dist', 'node_modules']);
   /**
    * Files excluded from the source copy.
    *
@@ -59,10 +59,6 @@ export class SourceCopyStep implements AssemblyStep {
     const tempDir = path.join(os.tmpdir(), `sfpm-stage-${randomUUID()}`);
 
     try {
-      // Detect self-copy: if destinationDir is inside sourceDir, we need to
-      // tell fs.copy to skip the artifact directory to avoid infinite recursion.
-      const artifactDir = path.join(sourceDir, 'artifact');
-
       await fs.copy(sourceDir, tempDir, {
         filter: (src: string) => {
           // Always include the root source directory itself

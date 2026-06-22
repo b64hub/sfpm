@@ -12,8 +12,6 @@ import {Logger} from '../types/logger.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';
-import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
-import {ArtifactRepository} from './artifact-repository.js';
 import {toNpmPackageJson} from './npm-package-adapter.js';
 
 /**
@@ -64,18 +62,17 @@ export interface ArtifactAssemblerOptions {
  *
  * The assembly flow (post-build):
  * 1. Calculate source hash from staged package content
- * 2. Generate package.json with sfpm metadata
+ * 2. Generate package.json with sfpm metadata (includes sourceHash, version, etc.)
  * 3. Generate changelog.json
- * 4. Write manifest.json to artifacts/
  *
- * Tarballing is deferred to the publish step — the build output in
- * `artifacts/package/` is raw, deployable content.
+ * All build metadata lives in `dist/package.json` under the `sfpm` field —
+ * no sidecar manifest file. The dist directory is flat, publishable, and
+ * directly cacheable by Turbo.
  */
 export default class ArtifactAssembler {
   private changelogProvider: ChangelogProvider;
   private options: ArtifactAssemblerOptions;
   private packageVersionNumber: string;
-  private repository: ArtifactRepository;
   private sink?: ArtifactEventSink;
 
   constructor(
@@ -89,24 +86,13 @@ export default class ArtifactAssembler {
     this.sink = sink;
     this.packageVersionNumber = toVersionFormat(sfpmPackage.version || '0.0.0.1', 'semver');
 
-    // Create package-scoped repository
-    const sourcePath = sfpmPackage.packageDefinition?.path;
-    if (!sourcePath) {
-      throw new ArtifactError(sfpmPackage.name, 'assembly', 'Package definition path is not set', {
-        version: this.packageVersionNumber,
-      });
-    }
-
-    const packageWorkspacePath = resolvePackageWorkspacePath(projectDirectory, sourcePath);
-    this.repository = new ArtifactRepository(packageWorkspacePath, logger, sfpmPackage.name);
-
     this.changelogProvider = options.changelogProvider || new StubChangelogProvider();
   }
 
   /**
    * @description Orchestrates the artifact assembly process.
-   * Generates metadata files (package.json, changelog, manifest) in the
-   * already-staged `artifacts/package/` directory. No tarball is created.
+   * Generates metadata files (package.json, changelog) in the
+   * already-staged `dist/` directory.
    */
   public async assemble(): Promise<string> {
     const startTime = Date.now();
@@ -124,9 +110,6 @@ export default class ArtifactAssembler {
 
       // 4. Generate changelog
       await this.generateChangelog(packageDir);
-
-      // 5. Finalize manifest (no artifact hash — no tarball)
-      await this.finalizeManifest(currentSourceHash);
 
       this.emitComplete(packageDir, currentSourceHash, startTime);
       return packageDir;
@@ -180,24 +163,6 @@ export default class ArtifactAssembler {
     this.logger?.info(`Assembling artifact for ${this.sfpmPackage.name}@${this.packageVersionNumber}`);
     this.sink?.artifactStart({
       version: this.packageVersionNumber,
-    });
-  }
-
-  /**
-   * Write the manifest.json sidecar to the artifacts directory.
-   */
-  private async finalizeManifest(sourceHash: string): Promise<void> {
-    // Resolve commit from git for the local manifest
-    let commit: string | undefined;
-    try {
-      const git = new Git(this.projectDirectory, this.logger);
-      commit = await git.getHeadCommit();
-    } catch {
-      // No git available
-    }
-
-    await this.repository.finalizeArtifact(this.sfpmPackage.name, this.packageVersionNumber, sourceHash, {
-      commit,
     });
   }
 

@@ -198,17 +198,17 @@ export class ArtifactService {
   /**
    * Get the build output directory for a package, if a build exists.
    *
-   * Checks for a manifest in the package workspace's `artifacts/` directory.
-   * Returns the path to `artifacts/package/` (the deployable content) or
+   * Checks for a `dist/package.json` in the package workspace.
+   * Returns the path to `dist/` (the deployable content) or
    * `undefined` if no build has been run.
    *
    * @param packageWorkspacePath - Package workspace root
-   * @returns Absolute path to `artifacts/package/` or undefined
+   * @returns Absolute path to `dist/` or undefined
    */
   public getBuildOutput(packageWorkspacePath: string): string | undefined {
     const repo = this.getRepository(packageWorkspacePath);
     if (!repo.hasArtifact()) return undefined;
-    return repo.getPackageContentDir();
+    return repo.getDistDir();
   }
 
   public async getInstalledPackages(orderBy: string = 'Name'): Promise<InstalledArtifact[]> {
@@ -246,8 +246,8 @@ export class ArtifactService {
 
   /**
    * Get an ArtifactRepository for the given package workspace path.
-   * Use this for lower-level artifact operations like reading manifests,
-   * checking if artifacts exist, getting metadata, etc.
+   * Use this for lower-level artifact operations like checking if builds exist,
+   * getting metadata, reading dist/package.json, etc.
    */
   public getRepository(packageWorkspacePath: string, packageName?: string): ArtifactRepository {
     return new ArtifactRepository(packageWorkspacePath, this.logger, packageName);

@@ -90,9 +90,9 @@ describe('PackageAssembler — Data packages', () => {
     const result = await assembler.assemble();
     const stagingPath = result.stagingDirectory;
 
-    expect(stagingPath).toBe(path.join('/root/packages/my-data', 'artifact', 'package'));
+    expect(stagingPath).toBe(path.join('/root/packages/my-data', 'dist'));
 
-    // Should copy source (to temp dir, then moved into artifact/package/force-app)
+    // Should copy source (to temp dir, then moved into dist/force-app)
     expect(mockedFs.copy).toHaveBeenCalledWith(
       path.join('/root', 'data'),
       expect.stringContaining('sfpm-stage-'),

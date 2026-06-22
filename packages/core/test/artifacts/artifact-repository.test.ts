@@ -1,21 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 import fs from 'fs-extra';
-import { execSync } from 'node:child_process';
 import { ArtifactRepository } from '../../src/artifacts/artifact-repository.js';
-import { ArtifactManifest } from '../../src/types/artifact.js';
-import { PackageType, ValidationState } from '../../src/types/package.js';
 
-// Mock package.json content for tgz extraction (flat sfpm metadata structure)
-const mockPackageJson = {
+// Mock package.json content (flat sfpm metadata structure)
+const mockDistPackageJson = {
     name: '@testorg/test-package',
     version: '1.0.0-1',
     sfpm: {
         packageName: '@testorg/test-package',
-        packageType: PackageType.Unlocked,
+        packageType: 'unlocked',
         versionNumber: '1.0.0-1',
         packageId: '0Ho1234567890',
         packageVersionId: '04t1234567890',
+        sourceHash: 'abc123',
         orchestration: {},
         source: {
             sourceHash: 'abc123',
@@ -25,9 +23,6 @@ const mockPackageJson = {
 
 // Mock external dependencies
 vi.mock('fs-extra');
-vi.mock('node:child_process', () => ({
-    execSync: vi.fn().mockImplementation(() => JSON.stringify(mockPackageJson))
-}));
 
 describe('ArtifactRepository', () => {
     let repository: ArtifactRepository;
@@ -41,19 +36,6 @@ describe('ArtifactRepository', () => {
         trace: vi.fn(),
     };
 
-    const createMockManifest = (overrides?: Partial<ArtifactManifest>): ArtifactManifest => ({
-        name: '@testorg/test-package',
-        version: '1.0.0-1',
-        sourceHash: 'abc123',
-        artifactHash: 'def456',
-        generatedAt: Date.now() - 60000,
-        schemaVersion: 2,
-        source: 'local',
-        commit: 'commit123',
-        lastCheckedRemote: Date.now() - 30 * 60 * 1000,
-        ...overrides,
-    });
-
     beforeEach(() => {
         vi.clearAllMocks();
         repository = new ArtifactRepository(packageWorkspacePath, mockLogger);
@@ -64,205 +46,123 @@ describe('ArtifactRepository', () => {
     });
 
     describe('path resolution', () => {
-        it('should return correct artifact path', () => {
-            expect(repository.getArtifactPath()).toBe(
-                path.join(packageWorkspacePath, 'artifact', 'artifact.tgz')
-            );
-        });
-
-        it('should return correct artifacts dir', () => {
-            expect(repository.getArtifactsDir()).toBe(
-                path.join(packageWorkspacePath, 'artifact')
+        it('should return correct dist dir', () => {
+            expect(repository.getDistDir()).toBe(
+                path.join(packageWorkspacePath, 'dist')
             );
         });
 
         it('should return correct package workspace path', () => {
             expect(repository.getPackageWorkspacePath()).toBe(packageWorkspacePath);
         });
+
+        it('should return dist dir for deprecated getPackageContentDir', () => {
+            expect(repository.getPackageContentDir()).toBe(
+                path.join(packageWorkspacePath, 'dist')
+            );
+        });
+
+        it('should return dist dir for deprecated getArtifactsDir', () => {
+            expect(repository.getArtifactsDir()).toBe(
+                path.join(packageWorkspacePath, 'dist')
+            );
+        });
     });
 
     describe('existence checks', () => {
-        it('should return true if manifest exists', () => {
+        it('should return true if dist/package.json exists', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
             expect(repository.hasArtifact()).toBe(true);
+            expect(fs.existsSync).toHaveBeenCalledWith(
+                path.join(packageWorkspacePath, 'dist', 'package.json')
+            );
         });
 
-        it('should return false if manifest does not exist', () => {
+        it('should return false if dist/package.json does not exist', () => {
             vi.mocked(fs.existsSync).mockReturnValue(false);
             expect(repository.hasArtifact()).toBe(false);
         });
-
-        it('should check if tarball exists', () => {
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            expect(repository.hasTarball()).toBe(true);
-        });
-
-        it('should return false if tarball does not exist', () => {
-            vi.mocked(fs.existsSync).mockReturnValue(false);
-            expect(repository.hasTarball()).toBe(false);
-        });
     });
 
-    describe('manifest operations', () => {
-        it('should load manifest async', async () => {
-            const manifest = createMockManifest();
+    describe('checkSourceHash', () => {
+        it('should return match when source hash matches dist/package.json', async () => {
             vi.mocked(fs.pathExists).mockResolvedValue(true);
-            vi.mocked(fs.readJson).mockResolvedValue(manifest);
+            vi.mocked(fs.readJson).mockResolvedValue(mockDistPackageJson);
 
-            const result = await repository.getManifest();
-            expect(result).toEqual(manifest);
+            const result = await repository.checkSourceHash('abc123');
+
+            expect(result).toEqual({
+                artifactPath: path.join(packageWorkspacePath, 'dist'),
+                latestVersion: '1.0.0-1',
+            });
         });
 
-        it('should return undefined if manifest does not exist', async () => {
+        it('should return undefined when source hash does not match', async () => {
+            vi.mocked(fs.pathExists).mockResolvedValue(true);
+            vi.mocked(fs.readJson).mockResolvedValue(mockDistPackageJson);
+
+            const result = await repository.checkSourceHash('different-hash');
+            expect(result).toBeUndefined();
+        });
+
+        it('should return undefined when no previous build exists', async () => {
             vi.mocked(fs.pathExists).mockResolvedValue(false);
 
-            const result = await repository.getManifest();
+            const result = await repository.checkSourceHash('abc123');
             expect(result).toBeUndefined();
         });
 
-        it('should load manifest sync', () => {
-            const manifest = createMockManifest();
-            vi.mocked(fs.existsSync).mockReturnValue(true);
-            vi.mocked(fs.readJsonSync).mockReturnValue(manifest);
+        it('should return undefined when package.json has no sourceHash', async () => {
+            vi.mocked(fs.pathExists).mockResolvedValue(true);
+            vi.mocked(fs.readJson).mockResolvedValue({
+                name: '@testorg/test-package',
+                version: '1.0.0',
+                sfpm: { packageType: 'source' },
+            });
 
-            const result = repository.getManifestSync();
-            expect(result).toEqual(manifest);
+            const result = await repository.checkSourceHash('abc123');
+            expect(result).toBeUndefined();
+        });
+    });
+
+    describe('metadata reading', () => {
+        it('should extract packageVersionId from dist/package.json', () => {
+            vi.mocked(fs.existsSync).mockReturnValue(true);
+            vi.mocked(fs.readJsonSync).mockReturnValue(mockDistPackageJson);
+
+            expect(repository.getPackageVersionId()).toBe('04t1234567890');
         });
 
-        it('should return undefined for sync when manifest does not exist', () => {
+        it('should return undefined when no dist/package.json exists', () => {
             vi.mocked(fs.existsSync).mockReturnValue(false);
 
-            const result = repository.getManifestSync();
-            expect(result).toBeUndefined();
+            expect(repository.getPackageVersionId()).toBeUndefined();
         });
 
-        it('should save manifest atomically', async () => {
-            const manifest = createMockManifest();
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
-            vi.mocked(fs.move).mockResolvedValue(undefined as any);
-
-            await repository.saveManifest(manifest);
-
-            expect(fs.ensureDir).toHaveBeenCalledWith(
-                path.join(packageWorkspacePath, 'artifact')
-            );
-            expect(fs.writeJson).toHaveBeenCalled();
-            expect(fs.move).toHaveBeenCalled();
-        });
-
-        it('should update lastCheckedRemote timestamp', async () => {
-            const manifest = createMockManifest();
-            vi.mocked(fs.pathExists).mockResolvedValue(true);
-            vi.mocked(fs.readJson).mockResolvedValue(manifest);
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
-            vi.mocked(fs.move).mockResolvedValue(undefined as any);
-
-            await repository.updateLastCheckedRemote();
-
-            // Verify saveManifest was called (via writeJson)
-            expect(fs.writeJson).toHaveBeenCalled();
-        });
-    });
-
-    describe('finalizeArtifact', () => {
-        it('should write manifest with correct fields', async () => {
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
-            vi.mocked(fs.move).mockResolvedValue(undefined as any);
-
-            await repository.finalizeArtifact(
-                '@testorg/test-package',
-                '1.0.0-1',
-                'sourcehash',
-                { commit: 'abc123', packageVersionId: '04t000' }
-            );
-
-            expect(fs.writeJson).toHaveBeenCalledWith(
-                expect.stringContaining('manifest.json.tmp'),
-                expect.objectContaining({
-                    name: '@testorg/test-package',
-                    version: '1.0.0-1',
-                    sourceHash: 'sourcehash',
-                    commit: 'abc123',
-                    packageVersionId: '04t000',
-                    schemaVersion: 2,
-                    source: 'local',
-                    generatedAt: expect.any(Number),
-                }),
-                { spaces: 4 }
-            );
-        });
-
-        it('should write manifest without optional fields', async () => {
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
-            vi.mocked(fs.move).mockResolvedValue(undefined as any);
-
-            await repository.finalizeArtifact(
-                '@testorg/test-package',
-                '1.0.0-1',
-                'sourcehash',
-            );
-
-            expect(fs.writeJson).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    name: '@testorg/test-package',
-                    schemaVersion: 2,
-                    source: 'local',
-                }),
-                { spaces: 4 }
-            );
-        });
-    });
-
-    describe('localizeTarball', () => {
-        it('should move tarball, calculate hash, and write manifest', async () => {
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-            vi.mocked(fs.move).mockResolvedValue(undefined as any);
-            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
-            // Mock createReadStream for hash calculation
-            const mockStream = {
-                on: vi.fn().mockImplementation(function(this: any, event: string, cb: Function) {
-                    if (event === 'end') setTimeout(cb, 0);
-                    return this;
-                }),
-            };
-            vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
-
-            const result = await repository.localizeTarball(
-                '/tmp/download.tgz',
-                '@testorg/test-package',
-                '1.0.0-1'
-            );
-
-            expect(result.artifactPath).toBe(
-                path.join(packageWorkspacePath, 'artifact', 'artifact.tgz')
-            );
-            expect(result.manifest.source).toBe('remote');
-            expect(result.manifest.schemaVersion).toBe(2);
-            expect(result.manifest.version).toBe('1.0.0-1');
-            expect(fs.move).toHaveBeenCalledWith(
-                '/tmp/download.tgz',
-                path.join(packageWorkspacePath, 'artifact', 'artifact.tgz'),
-                { overwrite: true }
-            );
-        });
-    });
-
-    describe('metadata extraction', () => {
-        it('should extract metadata from tarball', () => {
+        it('should extract sourceHash from dist/package.json', () => {
             vi.mocked(fs.existsSync).mockReturnValue(true);
+            vi.mocked(fs.readJsonSync).mockReturnValue(mockDistPackageJson);
+
+            expect(repository.getSourceHash()).toBe('abc123');
+        });
+
+        it('should extract version from dist/package.json', () => {
+            vi.mocked(fs.existsSync).mockReturnValue(true);
+            vi.mocked(fs.readJsonSync).mockReturnValue(mockDistPackageJson);
+
+            expect(repository.getVersion()).toBe('1.0.0-1');
+        });
+
+        it('should get metadata from dist/package.json', () => {
+            vi.mocked(fs.existsSync).mockReturnValue(true);
+            vi.mocked(fs.readJsonSync).mockReturnValue(mockDistPackageJson);
 
             const metadata = repository.getMetadata();
-            // execSync is mocked to return mockPackageJson
             expect(metadata).toBeDefined();
             expect(metadata?.packageVersionId).toBe('04t1234567890');
         });
 
-        it('should return undefined when tarball does not exist', () => {
+        it('should return undefined metadata when no dist/package.json exists', () => {
             vi.mocked(fs.existsSync).mockReturnValue(false);
 
             const metadata = repository.getMetadata();
@@ -271,131 +171,45 @@ describe('ArtifactRepository', () => {
     });
 
     describe('clean', () => {
-        it('should remove the artifacts directory', async () => {
+        it('should remove the dist directory', async () => {
             vi.mocked(fs.remove).mockResolvedValue(undefined as any);
 
             await repository.clean();
 
             expect(fs.remove).toHaveBeenCalledWith(
-                path.join(packageWorkspacePath, 'artifact')
+                path.join(packageWorkspacePath, 'dist')
             );
         });
     });
 
-    describe('updateArtifactValidation', () => {
-        it('should extract, patch, repack and update manifest hash', async () => {
-            const passedState: ValidationState = {
-                status: 'passed',
-                checks: [{ type: 'deploy', status: 'passed' }],
-                testCoverage: 85,
-            };
+    describe('readDistPackageJson', () => {
+        it('should read dist/package.json asynchronously', async () => {
+            vi.mocked(fs.pathExists).mockResolvedValue(true);
+            vi.mocked(fs.readJson).mockResolvedValue(mockDistPackageJson);
 
-            const manifest = createMockManifest();
-
-            // Artifact exists
-            vi.mocked(fs.pathExists).mockImplementation(async (p: any) => {
-                if (p.endsWith('artifact.tgz')) return true;
-                if (p.endsWith('manifest.json')) return true;
-                return false;
-            });
-
-            // ensureDir for temp directory
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-
-            // readJson for package.json inside extracted tarball and manifest
-            vi.mocked(fs.readJson).mockImplementation(async (p: any) => {
-                if (p.endsWith('package.json')) {
-                    return { ...mockPackageJson };
-                }
-                return manifest;
-            });
-
-            vi.mocked(fs.writeJson).mockResolvedValue(undefined as any);
-            vi.mocked(fs.remove).mockResolvedValue(undefined as any);
-            vi.mocked(fs.move).mockResolvedValue(undefined as any);
-
-            // Mock execSync for tar commands
-            const { execSync: mockExec } = await import('node:child_process');
-
-            // Mock calculateFileHash — it uses createReadStream internally
-            const hashSpy = vi.spyOn(repository, 'calculateFileHash').mockResolvedValue('newhash789');
-
-            await repository.updateArtifactValidation(passedState);
-
-            // Verify tar extract was called
-            expect(mockExec).toHaveBeenCalledWith(
-                expect.stringContaining('tar -xzf'),
-                expect.objectContaining({ timeout: 30_000 }),
+            const result = await repository.readDistPackageJson();
+            expect(result).toEqual(mockDistPackageJson);
+            expect(fs.readJson).toHaveBeenCalledWith(
+                path.join(packageWorkspacePath, 'dist', 'package.json')
             );
-
-            // Verify package.json was written with validation state
-            expect(fs.writeJson).toHaveBeenCalledWith(
-                expect.stringContaining('package.json'),
-                expect.objectContaining({
-                    sfpm: expect.objectContaining({
-                        validation: passedState,
-                    }),
-                }),
-                { spaces: 2 },
-            );
-
-            // Verify tar repack was called
-            expect(mockExec).toHaveBeenCalledWith(
-                expect.stringContaining('tar -czf'),
-                expect.objectContaining({ timeout: 60_000 }),
-            );
-
-            // Verify manifest was updated with new artifact hash (flat shape)
-            expect(fs.writeJson).toHaveBeenCalledWith(
-                expect.stringContaining('.tmp'),
-                expect.objectContaining({
-                    artifactHash: 'newhash789',
-                }),
-                { spaces: 4 },
-            );
-
-            // Verify temp dir cleanup
-            expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('.repack-tmp'));
-
-            hashSpy.mockRestore();
         });
 
-        it('should throw if artifact does not exist', async () => {
+        it('should return undefined if dist/package.json does not exist', async () => {
             vi.mocked(fs.pathExists).mockResolvedValue(false);
 
-            const state: ValidationState = {
-                status: 'passed',
-                checks: [],
-            };
-
-            await expect(
-                repository.updateArtifactValidation(state),
-            ).rejects.toThrow('Artifact not found');
+            const result = await repository.readDistPackageJson();
+            expect(result).toBeUndefined();
         });
 
-        it('should clean up temp directory even on error', async () => {
+        it('should return undefined and warn on read error', async () => {
             vi.mocked(fs.pathExists).mockResolvedValue(true);
-            vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-            vi.mocked(fs.remove).mockResolvedValue(undefined as any);
+            vi.mocked(fs.readJson).mockRejectedValue(new Error('parse error'));
 
-            // Make tar extract fail
-            const { execSync: mockExec } = await import('node:child_process');
-            vi.mocked(mockExec).mockImplementation(() => {
-                throw new Error('tar failed');
-            });
-
-            const state: ValidationState = {
-                status: 'failed',
-                checks: [],
-                error: 'Deploy failed',
-            };
-
-            await expect(
-                repository.updateArtifactValidation(state),
-            ).rejects.toThrow('Failed to update artifact validation state');
-
-            // Verify cleanup still happened
-            expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining('.repack-tmp'));
+            const result = await repository.readDistPackageJson();
+            expect(result).toBeUndefined();
+            expect(mockLogger.warn).toHaveBeenCalledWith(
+                expect.stringContaining('Failed to read dist/package.json')
+            );
         });
     });
 });

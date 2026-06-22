@@ -5,6 +5,12 @@
 export const ARTIFACT_SOURCE_DIR = 'force-app';
 
 /**
+ * Standard directory name for build output within each package workspace.
+ * The dist directory is flat, publishable, and directly cacheable by Turbo.
+ */
+export const DIST_DIR = 'dist';
+
+/**
  * Source context captured at build time and persisted in artifact metadata.
  * Describes the git/VCS state when the artifact was produced.
  */
@@ -19,9 +25,11 @@ export interface SfpmPackageSource {
 /**
  * Per-package artifact manifest (v2).
  *
- * Lives at `<packageWorkspace>/artifacts/manifest.json` alongside `artifact.tgz`.
- * Tracks metadata for the single artifact on disk — version history is managed
- * by Turborepo's content-addressed cache, not by SFPM.
+ * @deprecated The manifest sidecar has been eliminated. Build metadata is now
+ * stored directly in `dist/package.json` under the `sfpm` field. This type is
+ * retained temporarily for migration compatibility but should not be used in
+ * new code. Read source hash, version, and packageVersionId from the dist
+ * package.json instead.
  */
 export interface ArtifactManifest {
   /** SHA-256 hash of artifact.tgz */
