@@ -4,8 +4,9 @@ import {Command, Flags} from '@oclif/core';
 import chalk from 'chalk';
 import gradient from 'gradient-string';
 
-import {CliLogger, CliLoggerFactory} from './logger.js';
 import type {OutputMode} from './ui/renderer-utils.js';
+
+import {CliLogger, CliLoggerFactory} from './logger.js';
 
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error'] as const;
 
@@ -25,13 +26,13 @@ export interface JsonEnvelope<T = unknown> {
  *
  * Precedence:
  *   1. `--json`  → json
- *   2. `--plain` → plain
+ *   2. `--plain` or `--turbo` → plain
  *   3. CI=true / TERM=dumb / !isTTY → plain (auto-detect)
  *   4. Otherwise → interactive
  */
-function resolveOutputMode(flags: {json?: boolean; plain?: boolean}): OutputMode {
+function resolveOutputMode(flags: {json?: boolean; plain?: boolean; turbo?: boolean}): OutputMode {
   if (flags.json) return 'json';
-  if (flags.plain) return 'plain';
+  if (flags.plain || flags.turbo) return 'plain';
   if (process.env.CI === 'true') return 'plain';
   if (process.env.TERM === 'dumb') return 'plain';
   if (!process.stdout.isTTY) return 'plain';
@@ -58,10 +59,8 @@ export default abstract class SfpmCommand extends Command {
       exclusive: ['json'],
     }),
   };
-
   /** Resolved output mode for this execution. */
   protected outputMode!: OutputMode;
-
   /** Pino-backed logger for diagnostic output (writes to stderr). */
   protected sfpmLogger!: CliLogger;
 

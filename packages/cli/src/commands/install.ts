@@ -1,6 +1,5 @@
 import {
-  InstallEventBus,
-  InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, ProjectService, type TestLevel,
+  InstallOrchestrator, LifecycleEngine, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {Args, Flags} from '@oclif/core'
@@ -8,7 +7,7 @@ import {Args, Flags} from '@oclif/core'
 import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../sfpm-command.js'
-import {InstallProgressRenderer, OutputMode} from '../ui/install-progress-renderer.js'
+import {InstallProgressRenderer} from '../ui/install-progress-renderer.js'
 import {resolvePackageInputs} from '../utils/package-resolver.js'
 
 export default class Install extends SfpmCommand {
@@ -99,41 +98,6 @@ export default class Install extends SfpmCommand {
       mode,
       targetOrg: flags['target-org'],
     });
-
-    // Single-package mode: install exactly one package without orchestration.
-    // Activates when a single package is specified with --no-dependencies.
-    // Designed for external orchestrators (Turbo, CI matrix) that handle
-    // dependency ordering themselves.
-    if (resolvedPackages.length === 1 && flags['no-dependencies']) {
-      const installBus = new InstallEventBus()
-      const task = new InstallOrchestrationTask(
-        projectConfig,
-        installOptions,
-        this.sfpmLogger,
-        installBus,
-      )
-
-      renderer.attachTo(installBus)
-
-      try {
-        const context = await task.setup()
-        const result = await task.processSinglePackage(resolvedPackages[0], 0, context)
-
-        if (!result.success) {
-          this.error(`Install failed for: ${resolvedPackages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 2})
-        }
-      } catch (error) {
-        renderer.handleError(error as Error)
-
-        if (error instanceof Error) {
-          this.error(error.message, {exit: 2})
-        }
-
-        throw error
-      }
-
-      return
-    }
 
     const orchestrator = InstallOrchestrator.forArtifact(
       projectConfig,

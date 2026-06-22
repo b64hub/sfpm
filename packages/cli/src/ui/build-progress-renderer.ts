@@ -225,15 +225,10 @@ export class BuildProgressRenderer {
       success: true,
     };
 
-    const duration = calculateDuration(this.timings.buildStart, event.timestamp);
     if (event.version) this.packageVersions.set(event.packageName, event.version);
 
     const version = event.version ? ` @ ${event.version}` : '';
     this.display.subtaskUpdate(event.packageName, 'build', `artifact${chalk.dim(version)}`);
-    this.display.packageComplete(
-      event.packageName,
-      `${chalk.dim(version)} ${chalk.gray(`(${duration})`)}`,
-    );
   }
 
   private handleBuilderComplete(_event: BuilderCompleteEvent): void {
@@ -385,7 +380,7 @@ export class BuildProgressRenderer {
     } else if (event.success) {
       const version = this.packageVersions.get(event.packageName);
       const versionSuffix = version ? ` @ ${version}` : '';
-      this.display.packageComplete(event.packageName, `${chalk.dim(versionSuffix)} ${chalk.gray(`(${duration})`)}`);
+      this.display.packageComplete(event.packageName, `${formatDuration(event.duration)}${chalk.dim(versionSuffix)}`);
     } else {
       this.display.packageFail(event.packageName, event.error || 'Build failed');
     }
