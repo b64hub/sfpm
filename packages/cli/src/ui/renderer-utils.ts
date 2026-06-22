@@ -1,6 +1,50 @@
+import chalk from 'chalk';
+
 // ============================================================================
 // Shared Types & Utilities for Progress Renderers
 // ============================================================================
+
+// ============================================================================
+// Symbols
+// ============================================================================
+
+/**
+ * Raw (uncolored) symbols. Use for contexts that apply their
+ * own styling (e.g., listr2 icon overrides).
+ */
+export const rawSym = {
+  fail: '✖',
+  progress: '●',
+  skip: '○',
+  success: '✔',
+  warn: '⚠',
+} as const;
+
+/**
+ * Standardized symbols for progress rendering.
+ *
+ * Pre-colored with their semantic color so every call site
+ * renders the same symbol the same way.
+ *
+ * @example
+ * ```ts
+ * logger.log(`${sym.success} Package built`);
+ * logger.log(`${sym.fail} Deploy failed — ${error.message}`);
+ * logger.log(`${sym.skip} Already installed`);
+ * ```
+ */
+export const sym = {
+  /** Red ✖  — failure, error */
+  fail: chalk.red(rawSym.fail),
+  /** Dim ●  — in-progress, running */
+  progress: chalk.dim(rawSym.progress),
+  /** Yellow ○  — skipped */
+  skip: chalk.yellow(rawSym.skip),
+  /** Green ✔  — success, complete */
+  success: chalk.green(rawSym.success),
+  /** Yellow ⚠  — warning */
+  warn: chalk.yellow(rawSym.warn),
+} as const;
 
 /**
  * Output modes for progress rendering.

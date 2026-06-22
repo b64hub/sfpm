@@ -3,6 +3,8 @@ import type {OrchestrationLevelStartEvent} from '@b64hub/sfpm-core';
 import chalk from 'chalk';
 import {Listr} from 'listr2';
 
+import {rawSym} from './renderer-utils.js';
+
 // ============================================================================
 // Deferred Promise Utility
 // ============================================================================
@@ -199,7 +201,7 @@ export class OrchestrationListrManager {
           collapseSkips: true,
           collapseSubtasks: true,
           icon: {
-            SKIPPED_WITH_COLLAPSE: '○',
+            SKIPPED_WITH_COLLAPSE: rawSym.skip,
           },
         },
       },

@@ -15,7 +15,7 @@ import type {
 } from './renderer-utils.js';
 
 import {infoBox, successBox} from './boxes.js';
-import {formatDuration, terminalLink} from './renderer-utils.js';
+import {formatDuration, sym, terminalLink} from './renderer-utils.js';
 
 export type {OutputMode} from './renderer-utils.js';
 
@@ -130,15 +130,15 @@ export class PoolProgressRenderer {
     this.taskExecutionDeferred?.reject(error);
 
     if (this.singleTaskRef) {
-      this.singleTaskRef.title = chalk.red(`✗ ${error.message}`);
+      this.singleTaskRef.title = `${sym.fail} ${error.message}`;
     }
 
     if (this.provisionTask) {
-      this.provisionTask.title = chalk.red(`✗ ${error.message}`);
+      this.provisionTask.title = `${sym.fail} ${error.message}`;
     }
 
     if (this.taskExecutionTask) {
-      this.taskExecutionTask.title = chalk.red(`✗ ${error.message}`);
+      this.taskExecutionTask.title = `${sym.fail} ${error.message}`;
     }
   }
 
@@ -268,7 +268,7 @@ export class PoolProgressRenderer {
     if (!this.isInteractive()) return;
 
     if (this.singleTaskRef) {
-      this.singleTaskRef.title = chalk.green(`✓ Claimed ${payload.username}`);
+      this.singleTaskRef.title = `${sym.success} Claimed ${payload.username}`;
     }
   }
 
@@ -288,7 +288,7 @@ export class PoolProgressRenderer {
     if (!this.isInteractive()) return;
 
     if (this.singleTaskRef) {
-      this.singleTaskRef.title = chalk.yellow(`⊘ Skipped ${payload.username}: ${payload.reason}`);
+      this.singleTaskRef.title = `${sym.skip} Skipped ${payload.username}: ${payload.reason}`;
     }
   }
 
