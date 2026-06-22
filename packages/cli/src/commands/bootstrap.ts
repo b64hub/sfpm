@@ -69,8 +69,6 @@ export default class Bootstrap extends SfpmCommand {
   ]
   static override flags = {
     force: Flags.boolean({char: 'f', description: 'force rebuild, re-promote, and re-install all packages'}),
-    json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
-    quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'target-org': Flags.string({char: 'o', description: 'target org username (must also be a DevHub)', required: true}),
     tier: Flags.string({
       char: 't',
@@ -82,11 +80,10 @@ export default class Bootstrap extends SfpmCommand {
   public async execute(): Promise<BootstrapResult | void> {
     const {flags} = await this.parse(Bootstrap)
 
-    const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive'
     const ctx: BootstrapContext = {
-      isInteractive: mode === 'interactive',
+      isInteractive: this.outputMode === 'interactive',
       logger: this.sfpmLogger,
-      mode,
+      mode: this.outputMode,
       targetOrg: flags['target-org'],
     }
 
@@ -327,19 +324,17 @@ export default class Bootstrap extends SfpmCommand {
       tier,
     }
 
-    if (flags.json) {
-      this.logJson(result)
-      return result
+    if (this.outputMode !== 'json') {
+      this.renderFinalResult(result, ctx)
     }
 
-    this.renderFinalResult(result, ctx)
     return result
   }
 
   private handleAllUpToDate(
     statuses: PackageStatus[],
     tier: BootstrapTier,
-    flags: {force?: boolean; json?: boolean; 'target-org': string},
+    _flags: {force?: boolean; 'target-org': string},
     ctx: BootstrapContext,
   ): BootstrapResult | void {
     const result: BootstrapResult = {
@@ -361,10 +356,6 @@ export default class Bootstrap extends SfpmCommand {
         Packages: statuses.map(s => `${stripScope(s.name)} (${s.installedVersion})`).join(', '),
         'Target Org': ctx.targetOrg,
       }))
-    }
-
-    if (flags.json) {
-      this.logJson(result)
     }
 
     return result

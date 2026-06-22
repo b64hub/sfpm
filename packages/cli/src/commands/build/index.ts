@@ -60,7 +60,7 @@ export default class Build extends SfpmCommand {
    */
   static override examples = [
     '<%= config.bin %> <%= command.id %> my-package -v my-devhub',
-    '<%= config.bin %> <%= command.id %> my-package -v my-devhub --quiet',
+    '<%= config.bin %> <%= command.id %> my-package -v my-devhub --plain',
     '<%= config.bin %> <%= command.id %> my-package -v my-devhub --json',
     '<%= config.bin %> <%= command.id %> my-package -v my-devhub --force',
     '<%= config.bin %> <%= command.id %> package-a package-b -v my-devhub',
@@ -71,9 +71,7 @@ export default class Build extends SfpmCommand {
     'build-org': Flags.string({char: 'o', description: 'target org for source package validation (deploy + test)'}),
     force: Flags.boolean({char: 'f', description: 'build even if no source changes detected', env: 'SFPM_FORCE_BUILD'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key'}),
-    json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     'no-dependencies': Flags.boolean({default: false, description: 'build the specified packages without their transitive dependencies'}),
-    quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'source-only': Flags.boolean({description: 'route all packages through source deployment (no DevHub, no package version IDs)', env: 'SFPM_SOURCE_ONLY'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
     'target-dev-hub': Flags.string({
@@ -187,9 +185,6 @@ export default class Build extends SfpmCommand {
       )
     } catch (error) {
       renderer.handleError(error as Error)
-      if (resolved.mode === 'json') {
-        this.logJson({error: (error as Error).message, success: false})
-      }
 
       throw error
     }
@@ -234,9 +229,6 @@ export default class Build extends SfpmCommand {
       await this.handleValidationResults(pendingValidations, resolved)
     } catch (error) {
       renderer.handleError(error as Error)
-      if (resolved.mode === 'json') {
-        this.logJson({error: (error as Error).message, success: false})
-      }
 
       throw error
     }
@@ -403,7 +395,7 @@ export default class Build extends SfpmCommand {
         stateId: id,
         watcherPid: pid,
       });
-    } else if (resolved.mode !== 'quiet') {
+    } else {
       this.log(chalk.yellow(`\nValidation watcher started ${chalk.dim(`(PID ${pid})`)} for: ${chalk.bold(pkgNames)}`));
       this.log(chalk.dim('Run \'sfpm watch status\' to check progress.'));
     }
@@ -435,7 +427,7 @@ export default class Build extends SfpmCommand {
     const sfpmConfig = projectService.getSfpmConfig();
 
     // Resolve user input to canonical scoped package names
-    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: flags.json})
+    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: this.outputMode === 'json'})
 
     // Resolve validation level: --no-validation → 'none', --validation=X → X, default → 'full'
     const validation = (flags.validation === 'false' ? 'none' : flags.validation ?? 'full') as 'full' | 'local' | 'none' | 'org';
@@ -453,7 +445,7 @@ export default class Build extends SfpmCommand {
       this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1})
     }
 
-    const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
+    const mode = this.outputMode;
 
     // Initialize dependency analyzer for cross-package reference validation
     // Only when validation level includes analysis (full, local, org)

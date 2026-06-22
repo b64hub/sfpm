@@ -17,9 +17,7 @@ export default class PoolList extends SfpmCommand {
     '<%= config.bin %> pool list --tag dev-pool -v my-devhub --json',
   ]
   static override flags = {
-    json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
     'my-pool': Flags.boolean({description: 'only show orgs created by the current user'}),
-    quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     tag: Flags.string({char: 't', description: 'pool tag to query (omit to list all pools)'}),
     'target-dev-hub': Flags.string({
       char: 'v',
@@ -40,9 +38,9 @@ export default class PoolList extends SfpmCommand {
     }),
   }
 
-  public async execute(): Promise<void> {
+  public async execute(): Promise<any> {
     const {flags} = await this.parse(PoolList);
-    const mode = flags.json ? 'json' as const : flags.quiet ? 'quiet' as const : 'interactive' as const;
+    const mode = this.outputMode;
 
     try {
       const {devhub} = await connectDevHub({
@@ -59,26 +57,18 @@ export default class PoolList extends SfpmCommand {
       const orgs = await manager.list(flags.tag, flags['my-pool']);
       querySpinner?.succeed(`Found ${orgs.length} org(s) ${flags.tag ? `in pool "${flags.tag}"` : ''}`);
 
-      if (flags.json) {
-        this.logJson({
-          data: orgs, success: true, tag: flags.tag ?? 'all', total: orgs.length,
-        });
-        return;
-      }
-
-      if (mode === 'interactive') {
+      if (mode !== 'json') {
         const renderer = new PoolProgressRenderer({
           logger: {error: (msg: Error | string) => this.error(msg), log: (msg: string) => this.log(msg)},
           mode,
         });
         renderer.renderOrgList(orgs, flags.tag ?? 'all');
       }
-    } catch (error) {
-      if (flags.json) {
-        this.logJson({error: (error as Error).message, success: false});
-        return;
-      }
 
+      return {
+        data: orgs, success: true, tag: flags.tag ?? 'all', total: orgs.length,
+      };
+    } catch (error) {
       throw error;
     }
   }

@@ -6,8 +6,6 @@ import {
 import chalk from 'chalk';
 import ora from 'ora';
 
-import type {OutputMode} from '../../ui/renderer-utils.js';
-
 import SfpmCommand from '../../sfpm-command.js';
 import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
 
@@ -23,10 +21,8 @@ export default class PoolFetch extends SfpmCommand {
   ]
   static override flags = {
     alias: Flags.string({char: 'a', description: 'set a local alias for the fetched org'}),
-    json: Flags.boolean({description: 'output as JSON', exclusive: ['quiet']}),
     limit: Flags.integer({description: 'max orgs to return when using --all', min: 1}),
     'my-pool': Flags.boolean({description: 'only fetch from orgs created by the current user'}),
-    quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'send-to': Flags.string({description: 'email org details to this address instead of local login'}),
     'source-tracking': Flags.boolean({default: false, description: 'enable source tracking after fetch'}),
     tag: Flags.string({char: 't', description: 'pool tag to fetch from', required: true}),
@@ -49,9 +45,9 @@ export default class PoolFetch extends SfpmCommand {
     }),
   }
 
-  public async execute(): Promise<void> {
+  public async execute(): Promise<any> {
     const {flags} = await this.parse(PoolFetch);
-    const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
+    const mode = this.outputMode;
 
     let devhubAlias = flags['target-dev-hub'];
     if (!devhubAlias) {
@@ -123,9 +119,8 @@ export default class PoolFetch extends SfpmCommand {
         }
       }
 
-      if (flags.json) {
-        this.logJson({data: {...org, frontDoorUrl}, success: true, tag: flags.tag});
-        return;
+      if (this.outputMode === 'json') {
+        return {data: {...org, frontDoorUrl}, success: true, tag: flags.tag};
       }
 
       renderer.renderFetchedOrg(org, frontDoorUrl);
@@ -135,10 +130,6 @@ export default class PoolFetch extends SfpmCommand {
       }
     } catch (error) {
       spinner?.fail(`Failed to connect to ${devhubAlias}`);
-
-      if (flags.json) {
-        this.logJson({error: (error as Error).message, success: false});
-      }
 
       throw error;
     }

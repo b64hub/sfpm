@@ -37,16 +37,14 @@ export default class Deploy extends SfpmCommand {
    */
   static override examples = [
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox',
-    '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --quiet',
+    '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --plain',
     '<%= config.bin %> <%= command.id %> my-package -o my-sandbox --json',
     '<%= config.bin %> <%= command.id %> package-a package-b -o my-sandbox',
   ]
   static override flags = {
     force: Flags.boolean({char: 'f', description: 'force deploy even if already installed'}),
-    json: Flags.boolean({description: 'output as JSON for CI/CD', exclusive: ['quiet']}),
     'no-dependencies': Flags.boolean({description: 'only deploy the specified packages, skip transitive dependencies'}),
     'no-hooks': Flags.boolean({description: 'skip lifecycle hooks'}),
-    quiet: Flags.boolean({char: 'q', description: 'only show errors', exclusive: ['json']}),
     'target-org': Flags.string({
       char: 'o',
       description: 'target org username',
@@ -133,19 +131,12 @@ export default class Deploy extends SfpmCommand {
     try {
       const result = await orchestrator.installAll(resolvedPackages)
 
-      if (flags.json) {
-        this.logJson(result)
-      }
-
       if (!result.success) {
         const failedNames = result.failedPackages.join(', ')
         this.error(`Deploy failed for: ${failedNames}`, {exit: 2})
       }
     } catch (error) {
       renderer.handleError(error as Error)
-      if (flags.json) {
-        this.logJson({error: (error as Error).message, success: false})
-      }
 
       if (error instanceof Error) {
         this.error(error.message, {exit: 2})
@@ -171,9 +162,9 @@ export default class Deploy extends SfpmCommand {
       this.error('A target org is required. Specify one with --target-org (-o) or set a default with: sf config set target-org=<username>', {exit: 1});
     }
 
-    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: flags.json})
+    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: this.outputMode === 'json'})
 
-    const mode: OutputMode = flags.json ? 'json' : flags.quiet ? 'quiet' : 'interactive';
+    const mode = this.outputMode;
 
     const sfpmConfig = projectService.getSfpmConfig();
 
@@ -214,18 +205,11 @@ export default class Deploy extends SfpmCommand {
       const context = await task.setup()
       const result = await task.processSinglePackage(resolvedPackages[0], 0, context)
 
-      if (flags.json) {
-        this.logJson(result)
-      }
-
       if (!result.success) {
         this.error(`Deploy failed for: ${resolvedPackages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 2})
       }
     } catch (error) {
       renderer.handleError(error as Error)
-      if (flags.json) {
-        this.logJson({error: (error as Error).message, success: false})
-      }
 
       if (error instanceof Error) {
         this.error(error.message, {exit: 2})
