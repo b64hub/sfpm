@@ -2,7 +2,7 @@
  * Standard directory name for Salesforce source inside a staged artifact.
  * All package types use this regardless of the original project path.
  */
-export const ARTIFACT_SOURCE_DIR = 'force-app';
+export const FORCE_APP_DIR = 'force-app';
 
 /**
  * Standard directory name for build output within each package workspace.

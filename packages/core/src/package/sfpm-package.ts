@@ -8,7 +8,7 @@ import path from 'node:path';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {Logger} from '../types/logger.js';
 
-import {ARTIFACT_SOURCE_DIR} from '../types/artifact.js';
+import {FORCE_APP_DIR} from '../types/artifact.js';
 import {
   MetadataFile,
   PackageType,
@@ -126,7 +126,7 @@ export default abstract class SfpmPackage {
 
     // In a staging/artifact context the source is always under ARTIFACT_SOURCE_DIR
     // regardless of the original project path.
-    return path.join(this.workingDirectory, ARTIFACT_SOURCE_DIR);
+    return path.join(this.workingDirectory, FORCE_APP_DIR);
   }
 
   get packageName(): string {

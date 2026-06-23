@@ -7,7 +7,7 @@ import type {ProjectDefinitionProvider} from '../../../project/providers/project
 
 import ProjectService from '../../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../../project/providers/sfdx-project-adapter.js';
-import {ARTIFACT_SOURCE_DIR} from '../../../types/artifact.js';
+import {FORCE_APP_DIR} from '../../../types/artifact.js';
 import {Logger} from '../../../types/logger.js';
 import {PackageType} from '../../../types/package.js';
 import {PackageDefinition} from '../../../types/project.js';
@@ -47,7 +47,7 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
 
       // In the artifact, metadata lives under ARTIFACT_SOURCE_DIR
       // regardless of the original project path
-      packageDefinition.packages[0].path = ARTIFACT_SOURCE_DIR;
+      packageDefinition.packages[0].path = FORCE_APP_DIR;
 
       const pkg = packageDefinition.packages[0];
 

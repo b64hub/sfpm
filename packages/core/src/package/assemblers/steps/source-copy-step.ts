@@ -6,7 +6,7 @@ import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
-import {ARTIFACT_SOURCE_DIR} from '../../../types/artifact.js';
+import {FORCE_APP_DIR} from '../../../types/artifact.js';
 import {Logger} from '../../../types/logger.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 
@@ -44,7 +44,7 @@ export class SourceCopyStep implements AssemblyStep {
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
     const sourceDir = path.join(this.provider.projectDir, packageDefinition.path);
-    const destinationDir = path.join(output.stagingDirectory, ARTIFACT_SOURCE_DIR);
+    const destinationDir = path.join(output.stagingDirectory, FORCE_APP_DIR);
 
     const ig = await this.loadBuildIgnore(options);
 
