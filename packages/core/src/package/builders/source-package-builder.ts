@@ -82,8 +82,35 @@ export default class SourcePackageBuilder implements Builder {
     // Validate if enabled and an org is available
     const pendingValidation = await this.validate();
 
+    // Build validation state based on what was done
+    const validationState = this.buildValidationState(pendingValidation);
+
     return {
+      packageType: PackageType.Source,
       pendingValidation,
+      validationState,
+    };
+  }
+
+  /**
+   * Construct validation state from the build outcome.
+   *
+   * - If validation ran (pendingValidation returned), status is 'pending' with
+   *   a deploy check queued.
+   * - If validation was skipped (no org, disabled, or no Apex), no state is set.
+   */
+  private buildValidationState(pendingValidation: PendingValidationDescriptor | undefined) {
+    if (!pendingValidation) return;
+
+    const checks: ValidationCheck[] = ['deploy'];
+    if (this.sfpmPackage.hasApex) {
+      checks.push('test');
+    }
+
+    return {
+      checks,
+      pending: pendingValidation,
+      status: 'pending' as const,
     };
   }
 

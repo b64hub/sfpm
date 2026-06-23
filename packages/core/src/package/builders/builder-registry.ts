@@ -81,6 +81,11 @@ export interface BuildTaskRegistration {
  * should not mutate sfpmPackage directly.
  */
 export interface BuilderResult {
+  /**
+   * Effective package type as built — may differ from the project definition
+   *  (e.g., unlocked built as source via --source-only)
+   */
+  packageType?: PackageType;
   /** Package version ID (04t) — set by unlocked package builds */
   packageVersionId?: string;
   /** Pending validation descriptor when validation was initiated asynchronously */

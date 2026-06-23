@@ -235,6 +235,10 @@ export class PackageBuilder {
    * Apply builder result to the package domain model.
    */
   private applyBuilderResult(sfpmPackage: SfpmPackage, result: BuilderResult): void {
+    if (result.packageType) {
+      sfpmPackage.type = result.packageType;
+    }
+
     if (result.version) {
       sfpmPackage.version = result.version;
     }

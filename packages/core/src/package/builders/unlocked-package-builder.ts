@@ -70,6 +70,7 @@ export default class UnlockedPackageBuilder implements Builder {
     // Return build results — no more side-effect mutations
     const {validationState} = this.sfpmPackage;
     return {
+      packageType: PackageType.Unlocked,
       packageVersionId: this.sfpmPackage.packageVersionId,
       pendingValidation: validationState?.status === 'pending' ? validationState.pending : undefined,
       validationState,
