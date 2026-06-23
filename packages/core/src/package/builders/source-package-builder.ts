@@ -130,7 +130,9 @@ export default class SourcePackageBuilder implements Builder {
    * Skipped (returns undefined) when:
    * - Validation is disabled (`options.validation === false`)
    * - No build org is available
-   * - Package has no Apex (nothing to validate)
+   *
+   * When the package has no Apex, deploys with NoTestRun (deploy-only validation).
+   * When the package has Apex, deploys with RunSpecifiedTests.
    */
   private async validate(): Promise<PendingValidationDescriptor | undefined> {
     const targetOrg = this.buildOrg;
@@ -144,12 +146,17 @@ export default class SourcePackageBuilder implements Builder {
       });
     }
 
-    this.logger?.info(`Validating '${this.sfpmPackage.packageName}' against ${targetOrg.getUsername()} [deploy+test]`);
-    this.logger?.info(`Running ${testClasses.length} test class(es): ${testClasses.join(', ')}`);
+    // No Apex → deploy-only validation (no tests to run)
+    const testLevel = testClasses.length > 0 ? VALIDATION_TEST_LEVEL : 'NoTestRun';
+
+    this.logger?.info(`Validating '${this.sfpmPackage.packageName}' against ${targetOrg.getUsername()} [${testLevel}]`);
+    if (testClasses.length > 0) {
+      this.logger?.info(`Running ${testClasses.length} test class(es): ${testClasses.join(', ')}`);
+    }
 
     this.sink?.taskValidateStart({
       testCount: testClasses.length,
-      testLevel: VALIDATION_TEST_LEVEL,
+      testLevel,
     });
 
     const deployService = new MetadataDeployService(this.logger);
@@ -158,8 +165,8 @@ export default class SourcePackageBuilder implements Builder {
     const metadataPath = path.join(this.workingDirectory, ARTIFACT_SOURCE_DIR);
     const componentSet = this.sfpmPackage.getComponentSet(metadataPath);
     const deployId = await deployService.deploy(componentSet, targetOrg.getConnection(), {
-      testClasses,
-      testLevel: VALIDATION_TEST_LEVEL,
+      testClasses: testClasses.length > 0 ? testClasses : undefined,
+      testLevel,
     });
 
     // Return pending descriptor — the orchestrator decides whether to await resolution
