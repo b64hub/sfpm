@@ -146,7 +146,6 @@ function buildMetadataFromPackage(pkg: SfpmPackage, baseVersion: string): Record
   // Metadata packages: add content + validation
   if (pkg instanceof SfpmMetadataPackage) {
     base.content = simplifyContent(pkg.resolveContentMetadata());
-    base.packageType = pkg.type || pkg.packageDefinition?.type;
 
     if (pkg.validationState) {
       base.validation = pkg.validationState;
@@ -155,7 +154,7 @@ function buildMetadataFromPackage(pkg: SfpmPackage, baseVersion: string): Record
 
   // Unlocked packages: add identity fields
   if (pkg instanceof SfpmUnlockedPackage) {
-    base.isOrgDependent = pkg.isOrgDependent;
+    if (pkg.isOrgDependent) base.isOrgDependent = pkg.isOrgDependent;
     if (pkg.packageId) base.packageId = pkg.packageId;
     if (pkg.packageVersionId) base.packageVersionId = pkg.packageVersionId;
   }
