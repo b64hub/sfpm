@@ -20,6 +20,13 @@ export interface DeployComponentError {
   problem: string;
 }
 
+
+export class DeployError extends Error {
+  constructor(message: string, public readonly deployId: string) {
+    super(message);
+  }
+}
+
 /** A single Apex test failure. */
 export interface TestFailure {
   /** The failure message from Salesforce */
@@ -95,8 +102,11 @@ export interface DeployProgress {
 export class MetadataDeployService {
   private readonly logger?: Logger;
   private readonly pendingDeploys = new Map<string, MetadataApiDeploy>();
+  private targetOrg: Org;
 
-  constructor(logger?: Logger) {
+
+  constructor(targetOrg: Org, logger?: Logger) {
+    this.targetOrg = targetOrg;
     this.logger = logger;
   }
 
@@ -111,7 +121,6 @@ export class MetadataDeployService {
    */
   public async awaitDeploy(
     deployId: string,
-    targetOrg: string,
     onProgress?: (progress: DeployProgress) => void,
   ): Promise<DeployResult> {
     const deploy = this.pendingDeploys.get(deployId);
@@ -120,7 +129,7 @@ export class MetadataDeployService {
       return this.awaitInProcess(deploy, onProgress);
     }
 
-    return this.awaitFreshPoll(deployId, targetOrg, onProgress);
+    return this.awaitFreshPoll(deployId, onProgress);
   }
 
   /**
@@ -129,7 +138,6 @@ export class MetadataDeployService {
    */
   public async deploy(
     componentSet: ComponentSet,
-    usernameOrConnection: string | Connection,
     options?: DeployOptions,
   ): Promise<string> {
     const testLevel = this.getTestLevel(options);
@@ -139,15 +147,15 @@ export class MetadataDeployService {
         ...(options?.testClasses?.length && {runTests: options.testClasses}),
         testLevel: testLevel,
       },
-      usernameOrConnection,
+      usernameOrConnection: this.targetOrg.getConnection(),
     };
 
     let deploy: MetadataApiDeploy;
     try {
-      this.logger?.info(`Starting deployment against ${usernameOrConnection} with test level '${testLevel}'`);
+      this.logger?.debug(`Starting deployment against ${this.targetOrg.getUsername()} with test level '${testLevel}'`);
       deploy = await componentSet.deploy(deployOptions);
     } catch (err) {
-      this.logger?.error(`Failed to start deploy against '${usernameOrConnection}': ${(err as Error).message}`);
+      this.logger?.error(`Failed to start deploy against '${this.targetOrg.getUsername()}': ${(err as Error).message}`);
       throw err as Error;
     }
 
@@ -157,7 +165,7 @@ export class MetadataDeployService {
 
     const deployId = deploy.id;
 
-    this.logger?.info(`Deployment started: ${deployId} against ${usernameOrConnection} with test level '${testLevel}'`);
+    this.logger?.debug(`Deployment started: ${deployId} against ${this.targetOrg.getUsername()} with test level '${testLevel}'`);
     this.pendingDeploys.set(deployId, deploy);
 
     return deployId;
@@ -165,15 +173,13 @@ export class MetadataDeployService {
 
   private async awaitFreshPoll(
     deployId: string,
-    targetOrg: string,
     onProgress?: (progress: DeployProgress) => void,
     pollingIntervalMs = 5000,
     maxWaitMs = 7_200_000,
   ): Promise<DeployResult> {
-    this.logger?.info(`Fresh-polling deploy '${deployId}' against ${targetOrg}`);
+    this.logger?.debug(`Fresh-polling deploy '${deployId}' against ${this.targetOrg.getUsername()}`);
 
-    const org = await Org.create({aliasOrUsername: targetOrg});
-    const connection = org.getConnection();
+    const connection = this.targetOrg.getConnection();
 
     const deadline = Date.now() + maxWaitMs;
 
@@ -200,7 +206,7 @@ export class MetadataDeployService {
       });
     }
 
-    throw new Error(`Deploy '${deployId}' timed out after ${maxWaitMs / 60_000} minutes`);
+    throw new DeployError(`Deploy '${deployId}' timed out after ${maxWaitMs / 60_000} minutes`, deployId);
   }
 
   private async awaitInProcess(
