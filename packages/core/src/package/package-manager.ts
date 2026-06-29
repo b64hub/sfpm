@@ -1,137 +1,248 @@
-import SfpmPackage from "./sfpm-package.js";
-import { ArtifactService } from "../artifacts/artifact-service.js";
-import { PackageService, SubscriberPackage, Package2 } from "./package-service.js";
-import { InstalledArtifact, PackageType } from '../types/package.js';
-import { Logger } from "../types/logger.js";
+import {Org} from '@salesforce/core';
 
+import ArtifactService from '../artifacts/artifact-service.js';
+import {Logger} from '../types/logger.js';
+import {InstalledArtifact, PackageType} from '../types/package.js';
+import {InstallCheckResult} from './installers/installer-registry.js';
+import {VersionInstallable} from './installers/types.js';
+import PackageService from './package-service.js';
+import SfpmPackage from './sfpm-package.js';
+
+/**
+ * Consolidation layer across sfpm artifacts and Salesforce subscriber packages.
+ *
+ * Merges data from {@link ArtifactService} (sfpm custom object records) and
+ * {@link PackageService} (Salesforce packaging SDK) into a unified view.
+ *
+ * **Not** an install orchestrator — see {@link PackageInstaller} for that.
+ * Installers use the manager for `isInstalled()` checks via the singleton.
+ */
 export default class PackageManager {
-    private artifactService: ArtifactService;
-    private packageService: PackageService;
-    private logger: Logger;
+  private static instances = new Map<string, PackageManager>();
+  private artifactService: ArtifactService;
+  private logger?: Logger;
+  private packageService: PackageService;
 
-    constructor(artifactService: ArtifactService, packageService: PackageService, logger: Logger) {
-        this.logger = logger;
-        this.artifactService = artifactService;
-        this.packageService = packageService;
+  constructor(
+    artifactService: ArtifactService,
+    packageService: PackageService,
+    logger?: Logger,
+  ) {
+    this.artifactService = artifactService;
+    this.packageService = packageService;
+    this.logger = logger;
+  }
+
+  // -----------------------------------------------------------------------
+  // Singleton — one manager per org, keyed by username.
+  // Caches service instances so query-level caches (installed packages,
+  // artifacts) survive across callers within the same process.
+  // -----------------------------------------------------------------------
+
+  /** Drop the cached instance for an org (e.g. after re-auth). */
+  public static clearInstance(targetOrg: Org): void {
+    const username = targetOrg.getUsername();
+    if (username) {
+      this.instances.delete(username);
+    }
+  }
+
+  /**
+   * Get or create a PackageManager for the given org.
+   * First call per username creates the instance; subsequent calls return it.
+   */
+  public static getInstance(targetOrg: Org, logger?: Logger): PackageManager {
+    const username = targetOrg.getUsername();
+    if (!username) {
+      throw new Error('Target org has no username');
     }
 
-    public async getInstalledPackages(): Promise<InstalledArtifact[]> {
-        // ArtifactService already handles errors and returns empty array on failure
-        return await this.artifactService.getInstalledPackages("Name");
+    let manager = this.instances.get(username);
+    if (!manager) {
+      const artifactService = new ArtifactService(targetOrg);
+      const packageService = new PackageService(targetOrg, logger);
+      manager = new PackageManager(artifactService, packageService, logger);
+      this.instances.set(username, manager);
     }
 
-    /**
-     * Check whether an artifact is installed in a Org
-     * @param sfpmPackage - Package to check
-     * @returns Object with isInstalled flag and versionNumber if found
-     */
-    public async isArtifactInstalledInOrg(
-        sfpmPackage: SfpmPackage
-    ): Promise<{ isInstalled: boolean; versionNumber?: string }> {
-        this.logger.debug(`Checking if ${sfpmPackage.name} is installed in the Org.`);
-        return await this.artifactService.isArtifactInstalled(sfpmPackage.name, sfpmPackage.version);
-    }
+    return manager;
+  }
 
-    /**
-     * Updates or creates information about an artifact in the org
-     * @param sfpmPackage - Package to upsert artifact for
-     * @returns Artifact record ID or undefined if failed
-     */
-    public async upsertArtifactInOrg(sfpmPackage: SfpmPackage): Promise<string | undefined> {
-        return await this.artifactService.upsertArtifact(sfpmPackage);
-    }
+  // -----------------------------------------------------------------------
+  // Service accessors
+  // -----------------------------------------------------------------------
 
-    /**
-     * Retrieves all 2GP packages installed in the org
-     */
-    public async getAllInstalled2GPPackages(): Promise<SubscriberPackage[]> {
-        return await this.packageService.getAllInstalled2GPPackages();
-    }
+  /**
+   * Return all installed packages: sfpm artifacts merged with subscriber packages.
+   *
+   * Artifacts tracked by sfpm get `isInstalledBySfpm: true` and are enriched
+   * with subscriber version data when a matching 2GP package exists.
+   * Subscriber packages without sfpm artifacts are appended separately.
+   */
+  public async getAllInstalledArtifacts(): Promise<InstalledArtifact[]> {
+    try {
+      const [artifacts, installedPackages] = await Promise.all([
+        this.artifactService.getInstalledPackages('Name'),
+        this.packageService.listInstalledPackages(),
+      ]);
 
-    /**
-     * Retrieves all managed packages (1GP) in the org
-     */
-    public async getAllInstalledManagedPackages(): Promise<SubscriberPackage[]> {
-        return await this.packageService.getAllInstalledManagedPackages();
-    }
+      const installedArtifacts: InstalledArtifact[] = [];
+      const matchedPackageIds = new Set<string>();
 
-    /**
-     * List all packages created in DevHub
-     * @throws Error if org is not a DevHub
-     */
-    public async listAllPackages(): Promise<Package2[]> {
-        return await this.packageService.listAllPackages();
-    }
+      // Pass 1: sfpm artifacts, enriched with subscriber package data
+      for (const artifact of artifacts) {
+        const installedArtifact: InstalledArtifact = {
+          commitId: artifact.sourceVersion,
+          isInstalledBySfpm: true,
+          name: artifact.name,
+          version: artifact.version,
+        };
 
-    /**
-     * Return all artifacts including sfpm as well as external unlocked/managed packages
-     */
-    public async getAllInstalledArtifacts(): Promise<InstalledArtifact[]> {
-        try {
-            const artifacts = await this.artifactService.getInstalledPackages('Name');
-            const installedArtifacts: InstalledArtifact[] = [];
-            const installed2GPPackages = await this.packageService.getAllInstalled2GPPackages();
+        const matchedPkg = installedPackages.find(pkg => pkg.SubscriberPackage?.Name === artifact.name);
 
-            artifacts.forEach((artifact) => {
-                const installedArtifact: InstalledArtifact = {
-                    name: artifact.name,
-                    version: artifact.version,
-                    commitId: artifact.sourceVersion,
-                    isInstalledBySfpm: true,
-                };
-
-                const packageFound = installed2GPPackages.find((elem) => elem.name === artifact.name);
-                if (packageFound) {
-
-                    installedArtifact.subscriberVersionId = packageFound.subscriberPackageVersionId;
-
-                    if (packageFound.isOrgDependent) {
-                        installedArtifact.type = PackageType.Unlocked;
-                        installedArtifact.isOrgDependent = true;
-                    } else {
-                        installedArtifact.type = PackageType.Unlocked;
-                    }
-
-                } else {
-                    installedArtifact.subscriberVersionId = 'N/A';
-                    installedArtifact.type = PackageType.Source;
-                }
-                installedArtifacts.push(installedArtifact);
-            });
-
-            // Add 2GP packages that don't have sfpm artifacts
-            installed2GPPackages.forEach((installed2GPPackage) => {
-                const packageFound = installedArtifacts.find((elem) => elem.name === installed2GPPackage.name);
-
-                if (packageFound) {
-                    return;
-                }
-
-                const installedArtifact: InstalledArtifact = {
-                    name: installed2GPPackage.name,
-                    version: installed2GPPackage.versionNumber || 'N/A',
-                    commitId: 'N/A',
-                };
-
-                if (installed2GPPackage.isOrgDependent) {
-                    installedArtifact.type = PackageType.Unlocked;
-                    installedArtifact.isOrgDependent = true;
-                } else if ((installed2GPPackage as any).type === 'managed') {
-                    installedArtifact.type = PackageType.Managed;
-                } else {
-                    installedArtifact.type = PackageType.Unlocked;
-                }
-
-                installedArtifact.subscriberVersionId = installed2GPPackage.subscriberPackageVersionId;
-                installedArtifact.isInstalledBySfpm = false;
-                installedArtifacts.push(installedArtifact);
-            });
-
-            return installedArtifacts;
-        } catch (error) {
-            this.logger.warn('Unable to fetch all installed artifacts');
-            return [];
+        if (matchedPkg) {
+          matchedPackageIds.add(matchedPkg.SubscriberPackageVersionId);
+          installedArtifact.subscriberVersionId = matchedPkg.SubscriberPackageVersionId;
+          installedArtifact.type = PackageType.Unlocked;
+          installedArtifact.isOrgDependent = matchedPkg.SubscriberPackageVersion?.IsOrgDependent ?? false;
+        } else {
+          installedArtifact.subscriberVersionId = 'N/A';
+          installedArtifact.type = PackageType.Source;
         }
+
+        installedArtifacts.push(installedArtifact);
+      }
+
+      // Pass 2: subscriber packages not tracked by sfpm
+      for (const pkg of installedPackages) {
+        if (matchedPackageIds.has(pkg.SubscriberPackageVersionId)) {
+          continue;
+        }
+
+        const spv = pkg.SubscriberPackageVersion;
+        const versionNumber = spv
+          ? `${spv.MajorVersion}.${spv.MinorVersion}.${spv.PatchVersion}.${spv.BuildNumber}`
+          : 'N/A';
+
+        let type: PackageType;
+        if (spv?.IsOrgDependent) {
+          type = PackageType.Unlocked;
+        } else if (spv?.Package2ContainerOptions === 'Managed') {
+          type = PackageType.Managed;
+        } else {
+          type = PackageType.Unlocked;
+        }
+
+        installedArtifacts.push({
+          isInstalledBySfpm: false,
+          isOrgDependent: spv?.IsOrgDependent ?? false,
+          name: pkg.SubscriberPackage?.Name ?? 'N/A',
+          subscriberVersionId: pkg.SubscriberPackageVersionId,
+          type,
+          version: versionNumber,
+        });
+      }
+
+      return installedArtifacts;
+    } catch {
+      this.logger?.warn('Unable to fetch all installed artifacts, returning empty list');
+      return [];
+    }
+  }
+
+  public getArtifactService(): ArtifactService {
+    return this.artifactService;
+  }
+
+  // -----------------------------------------------------------------------
+  // Install checks
+  // -----------------------------------------------------------------------
+
+  public getPackageService(): PackageService {
+    return this.packageService;
+  }
+
+  // -----------------------------------------------------------------------
+  // Query — merged view
+  // -----------------------------------------------------------------------
+
+  /**
+   * Check whether a package is already installed in the target org.
+   *
+   * Combines two checks:
+   * 1. **Artifact check** — if it's an SfpmPackage, compare source hash against the sfpm artifact record
+   * 2. **Version check** — if it has a `packageVersionId`, check whether that 04t is installed
+   *
+   * Either check succeeding means the package doesn't need installation.
+   */
+  public async isInstalled(sfpmPackage: SfpmPackage | VersionInstallable): Promise<InstallCheckResult> {
+    // Check 1: artifact hash match (sfpm-managed packages only)
+    if (sfpmPackage instanceof SfpmPackage) {
+      const artifactResult = await this.isArtifactInstalled(sfpmPackage.name, sfpmPackage.sourceHash);
+      if (!artifactResult.needsInstall) {
+        return artifactResult;
+      }
     }
 
+    // Check 2: subscriber package version match (unlocked / managed)
+    const versionId = isVersionInstallable(sfpmPackage) ? sfpmPackage.packageVersionId : undefined;
+    if (versionId) {
+      return this.isPackageVersionInstalled(versionId);
+    }
+
+    return {installReason: 'not-installed', needsInstall: true};
+  }
+
+  // -----------------------------------------------------------------------
+  // Private
+  // -----------------------------------------------------------------------
+
+  private async isArtifactInstalled(name: string, sourceHash?: string): Promise<InstallCheckResult> {
+    try {
+      if (sourceHash) {
+        const installedArtifacts = await this.artifactService.getInstalledPackages();
+        const installed = installedArtifacts.find(a => a.name === name);
+
+        if (installed?.checksum && installed.checksum === sourceHash) {
+          this.logger?.debug(`Package ${name} already installed with matching hash ${sourceHash}`);
+          return {installReason: 'hash-match', needsInstall: false};
+        }
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error.message : String(error);
+      this.logger?.warn(`Unable to check if ${name} is installed, proceeding with install: ${err}`);
+      return {installReason: 'check-failed', needsInstall: true};
+    }
+
+    return {installReason: 'not-installed', needsInstall: true};
+  }
+
+  private async isPackageVersionInstalled(packageVersionId: string): Promise<InstallCheckResult> {
+    try {
+      const isVersionInstalled = await this.packageService.isSubscriberVersionInstalled(packageVersionId);
+      if (isVersionInstalled) {
+        this.logger?.debug(`Package version ${packageVersionId} already installed`);
+        return {installReason: 'version-installed', needsInstall: false};
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error.message : String(error);
+      this.logger?.warn(`Unable to check if ${packageVersionId} is installed, proceeding with install: ${err}`);
+      return {installReason: 'check-failed', needsInstall: true};
+    }
+
+    return {installReason: 'not-installed', needsInstall: true};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Type guard — VersionInstallable is an interface, not a class
+// ---------------------------------------------------------------------------
+
+function isVersionInstallable(value: unknown): value is VersionInstallable {
+  return (
+    typeof value === 'object'
+    && value !== null
+    && 'packageVersionId' in value
+    && typeof (value as VersionInstallable).packageVersionId === 'string'
+  );
 }
