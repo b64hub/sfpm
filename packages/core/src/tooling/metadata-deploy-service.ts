@@ -1,8 +1,7 @@
 import type {
   ComponentSet, DeploySetOptions, MetadataApiDeploy, MetadataApiDeployStatus,
 } from '@salesforce/source-deploy-retrieve';
-
-import {Connection, Org} from '@salesforce/core';
+import {type Connection, Org} from '@salesforce/core';
 
 import type {Logger} from '../types/logger.js';
 

@@ -7,7 +7,10 @@ import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
 import {FORCE_APP_DIR} from '../../types/artifact.js';
 import {BuildError} from '../../types/errors.js';
 import {Logger} from '../../types/logger.js';
-import {PackageType, PendingValidationDescriptor, type ValidationCheck} from '../../types/package.js';
+import {PackageType} from '../../types/package.js';
+import {
+  PendingValidationDescriptor, type ValidationCheck
+} from '../validation/types.js'
 import SfpmPackage, {SfpmMetadataPackage, SfpmSourcePackage} from '../sfpm-package.js';
 import {
   Builder, BuilderOptions, BuilderResult, BuildTaskRegistration, RegisterBuilder,
@@ -159,12 +162,13 @@ export default class SourcePackageBuilder implements Builder {
       testLevel,
     });
 
-    const deployService = new MetadataDeployService(this.logger);
+    const deployService = new MetadataDeployService(targetOrg, this.logger);
 
     // Deploy metadata with specified tests — use the artifact's metadata path
     const metadataPath = path.join(this.workingDirectory, FORCE_APP_DIR);
+    
     const componentSet = this.sfpmPackage.getComponentSet(metadataPath);
-    const deployId = await deployService.deploy(componentSet, targetOrg.getConnection(), {
+    const deployId = await deployService.deploy(componentSet, {
       testClasses: testClasses.length > 0 ? testClasses : undefined,
       testLevel,
     });
