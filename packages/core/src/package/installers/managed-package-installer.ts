@@ -4,23 +4,22 @@ import type {InstallEventSink} from '../../events/install-event-bus.js';
 
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
-import {PackageService} from '../package-service.js';
-import {type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller} from './installer-registry.js';
-import VersionInstaller from './strategies/version-installer.js';
+import PackageManager from '../package-manager.js';
+import {
+  type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller,
+} from './installer-registry.js';
 import {ManagedPackageRef, type VersionInstallable} from './types.js';
 
 /**
- * Adapter for managed (external/subscriber) packages.
+ * Installs managed (external/subscriber) packages via the Tooling API.
  *
- * Managed packages always use version-install via the Tooling API — there
- * is no local source to deploy. The adapter simply forwards the
- * {@link VersionInstallable} payload (typically a {@link ManagedPackageRef})
- * to the {@link VersionInstaller}.
+ * Managed packages always use version-install — there is no local source
+ * to deploy. Uses {@link PackageService.installPackage} directly.
  */
 // eslint-disable-next-line new-cap
 @RegisterInstaller(PackageType.Managed)
 export default class ManagedPackageInstaller implements Installer {
-  private readonly installable: VersionInstallable;
+  private readonly installable: ManagedPackageRef & VersionInstallable;
   private readonly logger?: Logger;
   private org?: Org;
   private readonly sink?: InstallEventSink;
@@ -35,15 +34,13 @@ export default class ManagedPackageInstaller implements Installer {
     this.org = targetOrg;
 
     const username = targetOrg.getUsername()!;
-    this.sink?.connectionStart({orgType: 'production', username});
+    this.sink?.connectionStart({orgType: 'sandbox', username});
     this.sink?.connectionComplete({username});
   }
 
   public async isInstalled(): Promise<InstallCheckResult> {
     try {
-      const packageService = PackageService.getInstance()
-        .setOrg(this.org!);
-      if (this.logger) packageService.setLogger(this.logger);
+      const packageService = PackageManager.getInstance(this.org!).getPackageService();
 
       const isInstalled = await packageService.isSubscriberVersionInstalled(this.installable.packageVersionId);
 
@@ -61,8 +58,14 @@ export default class ManagedPackageInstaller implements Installer {
 
   public async run(): Promise<InstallerResult> {
     this.logger?.info(`Installing managed package: ${this.installable.packageName}`);
-    const targetOrg = this.org!.getUsername()!;
-    const result = await new VersionInstaller(this.logger, this.sink).install(this.installable, targetOrg);
-    return {installId: result.deployId};
+
+    const packageService = PackageManager.getInstance(this.org!).getPackageService();
+
+    const result = await packageService.installPackage(this.installable.packageVersionId, {
+      installationKey: this.installable.installationKey,
+      wait: 30,
+    });
+
+    return {installId: result.Id};
   }
 }

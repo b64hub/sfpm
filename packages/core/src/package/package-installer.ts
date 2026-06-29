@@ -221,6 +221,7 @@ export default class PackageInstaller {
 
     return this.runInstaller(sfpmPackage, {
       checkInstalled: !this.options.force,
+      installAs: this.resolveInstallAs(sfpmPackage),
     });
   }
 
@@ -351,6 +352,17 @@ export default class PackageInstaller {
     );
 
     this.hydratePackageFromArtifact(sfpmPackage, resolution);
+  }
+
+  /**
+   * Determine if an unlocked package should be routed to the source installer.
+   * Returns undefined for non-unlocked packages (use natural type).
+   */
+  private resolveInstallAs(sfpmPackage: SfpmPackage): PackageType | undefined {
+    if (sfpmPackage.type !== PackageType.Unlocked) return undefined;
+    if (this.options.mode === InstallationMode.SourceDeploy) return PackageType.Source;
+    if (!(sfpmPackage as SfpmUnlockedPackage).packageVersionId) return PackageType.Source;
+    return undefined;
   }
 
   /**
