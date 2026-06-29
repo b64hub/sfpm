@@ -8,8 +8,8 @@ import { SfpmMetadataPackage } from '../sfpm-package.js';
 import {
   type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller,
 } from './installer-registry.js';
-// Import strategy implementation
-import SourceDeployer from './strategies/source-deployer.js';
+
+import PackageManager from '../package-manager.js';
 import { MetadataDeployService } from '../../tooling/metadata-deploy-service.js';
 
 export interface SourcePackageInstallerOptions {
@@ -63,26 +63,25 @@ export default class SourcePackageInstaller implements Installer {
   }
 
   public async isInstalled(): Promise<InstallCheckResult> {
-    const manager = PackageManager.getInstance(this.targetOrg.getUsername()!);
+    this.requireTargetOrg();
 
+    const manager = PackageManager.getInstance(this.targetOrg!);
     return manager.isInstalled(this.sfpmPackage);
   }
 
   public async run(): Promise<InstallerResult> {
-    if (!this.targetOrg) {
-      throw new Error('Ensure to conect to target org before runnnig installer');
-    }
+    this.requireTargetOrg();
 
     const {componentSet} = this.sfpmPackage;
 
-    const username = this.targetOrg.getUsername()!;
+    const username = this.targetOrg?.getUsername()!;
 
-    this.logger?.info(`Using source deployment strategy for package: ${this.sfpmPackage.name}`);
-    this.logger?.info(`Deploying source to ${username}`);
+    this.logger?.debug(`Using source deployment strategy for package: ${this.sfpmPackage.name}`);
+    this.logger?.debug(`Deploying source to ${username}`);
 
     this.sink?.deployStart({targetOrg: username});
 
-    const deployService = new MetadataDeployService(this.targetOrg, this.logger);
+    const deployService = new MetadataDeployService(this.targetOrg!, this.logger);
 
     const deployId = await deployService.deploy(componentSet, {
       testLevel: this.options?.testLevel as 'NoTestRun' | 'RunLocalTests' | 'RunSpecifiedTests' | undefined,
@@ -99,8 +98,14 @@ export default class SourcePackageInstaller implements Installer {
     }
 
     this.sink?.deployComplete({targetOrg: username});
-    this.logger?.info('Source deployment completed successfully');
+    this.logger?.debug('Source deployment completed successfully');
 
     return { installId: deployId };
+  }
+
+  private requireTargetOrg(): void {
+    if (!this.targetOrg) {
+      throw new Error('Ensure to conect to target org before runnnig installer');
+    }
   }
 }
