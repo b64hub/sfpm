@@ -10,7 +10,6 @@ import './package/installers/managed-package-installer.js';
 import './package/analyzers/apex-type-analyzer.js';
 import './package/analyzers/fht-analyzer.js';
 import './package/analyzers/ft-analyzer.js';
-import './package/analyzers/manifest-analyzer.js';
 import './package/analyzers/picklist-analyzer.js';
 
 /**
@@ -76,7 +75,6 @@ export {assembleArtifactTask, default as AssembleArtifactTask, type AssembleArti
 export {
   type InstallCheckResult, type Installer, type InstallerConstructor, InstallerRegistry, type InstallerResult, RegisterInstaller,
 } from './package/installers/installer-registry.js';
-export {default as SourceDeployer} from './package/installers/strategies/source-deployer.js';
 export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
@@ -84,7 +82,7 @@ export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from '
 export {type BuildOptions, PackageBuilder, type ValidationLevel} from './package/package-builder.js';
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
 export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
-export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
+export {type Package2, PackageService} from './package/package-service.js';
 export {
   isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';

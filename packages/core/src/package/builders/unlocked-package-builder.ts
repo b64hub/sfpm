@@ -10,7 +10,7 @@ import ProjectService from '../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
 import {BuildError} from '../../types/errors.js';
 import {Logger} from '../../types/logger.js';
-import {PackageType, PendingValidationDescriptor, PerPackageBuildConfig} from '../../types/package.js';
+import {PackageType, PerPackageBuildConfig} from '../../types/package.js'
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
   Builder, BuilderOptions, BuilderResult, BuildTaskRegistration, RegisterBuilder,

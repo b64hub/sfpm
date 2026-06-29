@@ -282,12 +282,6 @@ export class PackageBuilder {
    * Merge package definition build options and assign build number.
    */
   private handleBuildConfiguration(sfpmPackage: SfpmPackage): void {
-    if (sfpmPackage.packageDefinition?.packageOptions?.build) {
-      merge(sfpmPackage.orchestration, {
-        build: sfpmPackage.packageDefinition.packageOptions.build,
-      });
-    }
-
     if (this.options.buildNumber) {
       sfpmPackage.setBuildNumber(this.options.buildNumber);
     } else if (sfpmPackage.type !== PackageType.Unlocked) {

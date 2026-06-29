@@ -7,9 +7,7 @@ import {ComponentSet} from '@salesforce/source-deploy-retrieve';
  */
 export interface VersionInstallable {
   installationKey?: string;
-  packageName: string;
   packageVersionId: string;
-  versionNumber?: string;
 }
 
 /**
@@ -19,7 +17,6 @@ export interface VersionInstallable {
  */
 export interface SourceDeployable {
   componentSet: ComponentSet;
-  packageName: string;
   versionNumber?: string;
 }
 
@@ -33,7 +30,6 @@ export interface SourceDeployable {
 export interface DataDeployable {
   /** Absolute path to the directory containing the data files */
   dataDirectory: string;
-  packageName: string;
   versionNumber?: string;
 }
 

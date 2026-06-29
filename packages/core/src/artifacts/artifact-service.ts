@@ -81,7 +81,7 @@ interface CachedArtifact {
   version?: string;
 }
 
-export class ArtifactService {
+export default class ArtifactService {
   /** Singleton instance for shared cache across operations */
   private static instance?: ArtifactService;
   /** Whether the artifact object is available in the org. Starts true, flipped to false on first failure. */
@@ -93,12 +93,12 @@ export class ArtifactService {
   /** In-memory cache of installed artifacts keyed by package name. Lazy-loaded on first access. */
   private installedArtifactsCache: Map<string, CachedArtifact> | null = null;
   private logger?: Logger;
-  private org?: Org;
   private projectDir?: string;
+  private targetOrg?: Org;
 
-  constructor(logger?: Logger, org?: Org) {
+  constructor(targetOrg: Org, logger?: Logger) {
     this.logger = logger;
-    this.org = org;
+    this.targetOrg = targetOrg;
   }
 
   /**
@@ -158,7 +158,7 @@ export class ArtifactService {
     options?: ArtifactHistoryOptions,
     source?: SfpmPackageSource,
   ): Promise<string | undefined> {
-    if (!this.org) {
+    if (!this.targetOrg) {
       throw new Error('Org connection required for createHistoryRecord');
     }
 
@@ -179,7 +179,7 @@ export class ArtifactService {
       };
       /* eslint-enable camelcase */
 
-      const result = await this.org
+      const result = await this.targetOrg
       .getConnection()
       .sobject('Sfpm_Artifact_History__c')
       .create(historyData);
@@ -212,7 +212,7 @@ export class ArtifactService {
   }
 
   public async getInstalledPackages(orderBy: string = 'Name'): Promise<InstalledArtifact[]> {
-    if (!this.org) {
+    if (!this.targetOrg) {
       throw new Error('Org connection required for getInstalledPackages');
     }
 
@@ -272,7 +272,7 @@ export class ArtifactService {
     packageName: string,
     version?: string,
   ): Promise<{isInstalled: boolean; versionNumber?: string}> {
-    if (!this.org) {
+    if (!this.targetOrg) {
       throw new Error('Org connection required for isArtifactInstalled');
     }
 
@@ -342,7 +342,7 @@ export class ArtifactService {
       isInstalled: false,
     };
 
-    if (this.org) {
+    if (this.targetOrg) {
       // Ensure cache is loaded (lazy loading)
       await this.ensureCacheLoaded();
 
@@ -380,7 +380,7 @@ export class ArtifactService {
    * Useful when using the singleton pattern to configure after getInstance().
    */
   public setOrg(org: Org | undefined): this {
-    this.org = org;
+    this.targetOrg = org;
     return this;
   }
 
@@ -399,7 +399,7 @@ export class ArtifactService {
    * @returns Artifact record ID
    */
   public async upsertArtifact(sfpmPackage: SfpmPackage, source?: SfpmPackageSource): Promise<string | undefined> {
-    if (!this.org) {
+    if (!this.targetOrg) {
       throw new Error('Org connection required for upsertArtifact');
     }
 
@@ -425,7 +425,7 @@ export class ArtifactService {
 
       if (artifactId) {
         // Update existing record
-        const result = await this.org
+        const result = await this.targetOrg
         .getConnection()
         .sobject('SfpmArtifact__c')
         .update({
@@ -437,7 +437,7 @@ export class ArtifactService {
         this.logger?.info(`Updated artifact record: ${resultId}`);
       } else {
         // Create new record
-        const result = await this.org.getConnection().sobject('SfpmArtifact__c').create(artifactData);
+        const result = await this.targetOrg.getConnection().sobject('SfpmArtifact__c').create(artifactData);
         resultId = Array.isArray(result) ? result[0].id! : result.id!;
 
         this.logger?.info(`Created new artifact record: ${resultId}`);
@@ -480,7 +480,7 @@ export class ArtifactService {
     // Mark as attempted to prevent repeated failures
     this.cacheLoadAttempted = true;
 
-    if (!this.org) {
+    if (!this.targetOrg) {
       this.logger?.debug('No org connection available - skipping cache load');
       return;
     }
@@ -488,7 +488,7 @@ export class ArtifactService {
     try {
       const records = await this.query<SfpmArtifact__c>(
         soql`SELECT ${ARTIFACT_FIELDS.join(', ')} FROM SfpmArtifact__c ORDER BY Name ASC`,
-        this.org.getConnection(),
+        this.targetOrg.getConnection(),
         false,
       );
 

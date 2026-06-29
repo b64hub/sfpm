@@ -1,4 +1,4 @@
-import type {PendingValidationDescriptor} from '../types/package.js';
+import type {PendingValidationDescriptor} from '../package/validation/types.js';
 
 import {TypedEventEmitter} from './typed-event-emitter.js';
 

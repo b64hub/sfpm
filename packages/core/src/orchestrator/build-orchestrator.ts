@@ -4,8 +4,8 @@ import type {
   OrchestrationResult,
   PackageResult,
 } from '../events/orchestration-event-bus.js';
+import type {PendingValidationDescriptor} from '../package/validation/types.js';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
-import type {PendingValidationDescriptor} from '../types/package.js';
 
 import {BuildEventBus} from '../events/build-event-bus.js';
 import {OrchestrationEventBus} from '../events/orchestration-event-bus.js';

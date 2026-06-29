@@ -151,7 +151,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
     this.emit('package:query:start', {names: sfNames});
 
     const service = new PackageService(this.org, this.logger);
-    const allPackages = await service.listAllPackages();
+    const allPackages = await service.listPackages();
 
     const nameSet = new Set(sfNames);
     const result = new Map<string, Package2>();

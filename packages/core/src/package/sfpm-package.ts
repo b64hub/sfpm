@@ -27,6 +27,7 @@ import {
   type DataDeployable,
   ManagedPackageRef,
   type SourceDeployable,
+  type VersionInstallable,
 } from './installers/types.js';
 import {ORG_ALIAS_DEFAULT_DIR, OrgAliasResolution, OrgAliasResolver} from './org-alias-resolver.js';
 
@@ -609,7 +610,7 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
   }
 }
 
-export class SfpmUnlockedPackage extends SfpmMetadataPackage {
+export class SfpmUnlockedPackage extends SfpmMetadataPackage implements VersionInstallable {
   /** SF packaging tag (label for the package version, set at build time) */
   public tag?: string;
   private _isOrgDependent = false;
@@ -637,11 +638,11 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
     this._packageId = val;
   }
 
-  get packageVersionId(): string | undefined {
-    return this._packageVersionId;
+  get packageVersionId(): string {
+    return this._packageVersionId!;
   }
 
-  set packageVersionId(val: string | undefined) {
+  set packageVersionId(val: string) {
     this._packageVersionId = val;
   }
 
