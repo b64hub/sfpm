@@ -1,16 +1,16 @@
-import { Org } from '@salesforce/core';
+import {Org} from '@salesforce/core';
 
-import type { InstallEventSink } from '../../events/install-event-bus.js';
+import type {InstallEventSink} from '../../events/install-event-bus.js';
 
-import { Logger } from '../../types/logger.js';
-import { PackageType } from '../../types/package.js';
-import { SfpmMetadataPackage } from '../sfpm-package.js';
+import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
+import {Logger} from '../../types/logger.js';
+import {PackageType} from '../../types/package.js';
+import {resolveOrgType} from '../../utils/org-utils.js';
+import PackageManager from '../package-manager.js';
+import {SfpmMetadataPackage} from '../sfpm-package.js';
 import {
   type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller,
 } from './installer-registry.js';
-
-import PackageManager from '../package-manager.js';
-import { MetadataDeployService } from '../../tooling/metadata-deploy-service.js';
 
 export interface SourcePackageInstallerOptions {
   /** Salesforce test level for the deployment */
@@ -26,18 +26,19 @@ export interface SourcePackageInstallerOptions {
 @RegisterInstaller(PackageType.Source)
 export default class SourcePackageInstaller implements Installer {
   private readonly logger?: Logger;
-  private targetOrg?: Org;
+  private readonly options?: SourcePackageInstallerOptions;
   private readonly sfpmPackage: SfpmMetadataPackage;
   private readonly sink?: InstallEventSink;
-  private readonly options?: SourcePackageInstallerOptions;
+  private targetOrg?: Org;
 
   constructor(
-    sfpmPackage: SfpmMetadataPackage, 
-    options?: SourcePackageInstallerOptions, 
-    logger?: Logger, 
-    sink?: InstallEventSink
+    sfpmPackage: SfpmMetadataPackage,
+    options?: SourcePackageInstallerOptions,
+    logger?: Logger,
+    sink?: InstallEventSink,
   ) {
     this.sfpmPackage = sfpmPackage;
+    this.options = options;
     this.logger = logger;
     this.sink = sink;
   }
@@ -46,20 +47,12 @@ export default class SourcePackageInstaller implements Installer {
     const username = targetOrg.getUsername();
 
     if (!username) {
-      throw Error('Target org must have a valid username');
+      throw new Error('Target org must have a valid username');
     }
 
-    let orgType: string;
-    if (await targetOrg.isSandbox()) {
-      orgType = 'sandbox';
-    } else if (targetOrg.isScratch()) {
-      orgType = 'scratch'
-    } else if (targetOrg.isDevHubOrg()) {
-      orgType = 'devhub'
-    }
-    this.sink?.connectionStart({ orgType: orgType, username });
+    this.sink?.connectionStart({orgType: await resolveOrgType(targetOrg), username});
     this.targetOrg = targetOrg;
-    this.sink?.connectionComplete({ username });
+    this.sink?.connectionComplete({username});
   }
 
   public async isInstalled(): Promise<InstallCheckResult> {
@@ -73,7 +66,7 @@ export default class SourcePackageInstaller implements Installer {
     this.requireTargetOrg();
 
     const {componentSet} = this.sfpmPackage;
-
+    // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain -- checked in requireTargetOrg()
     const username = this.targetOrg?.getUsername()!;
 
     this.logger?.debug(`Using source deployment strategy for package: ${this.sfpmPackage.name}`);
@@ -100,7 +93,7 @@ export default class SourcePackageInstaller implements Installer {
     this.sink?.deployComplete({targetOrg: username});
     this.logger?.debug('Source deployment completed successfully');
 
-    return { installId: deployId };
+    return {installId: deployId};
   }
 
   private requireTargetOrg(): void {

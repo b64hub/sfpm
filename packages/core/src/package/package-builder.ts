@@ -10,7 +10,7 @@ import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {IgnoreFilesConfig} from '../types/config.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
-import {PackageType, PendingValidationDescriptor} from '../types/package.js';
+import {PackageType} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
@@ -21,6 +21,7 @@ import {
   BuildTaskContext, BuildTaskRegistration, BuildTaskResult,
 } from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
+import {PendingValidationDescriptor} from './validation/types.js';
 
 /**
  * Validation level for builds.

@@ -1,6 +1,6 @@
 import {Lifecycle, Org, SfProject} from '@salesforce/core';
 import {Duration} from '@salesforce/kit';
-import {PackageVersion, PackageVersionCreateRequestResult} from '@salesforce/packaging';
+import {PackageVersion, PackageVersionCreateRequestResult, SubscriberPackageVersion} from '@salesforce/packaging';
 import fs from 'fs-extra';
 import path from 'node:path';
 
@@ -85,7 +85,9 @@ export default class UnlockedPackageBuilder implements Builder {
    * Used both in the happy path and the verify-after-failure recovery.
    */
   private applyCreateResult(result: PackageVersionCreateRequestResult): void {
-    this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId ?? undefined;
+    if (result.SubscriberPackageVersionId) {
+      this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
+    }
 
     if (result.VersionNumber) {
       this.sfpmPackage.version = result.VersionNumber;

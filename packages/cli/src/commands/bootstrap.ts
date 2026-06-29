@@ -448,7 +448,7 @@ export default class Bootstrap extends SfpmCommand {
     const results: Array<{error?: string; name: string; success: boolean}> = []
 
     // Pre-fetch all packages once to avoid repeated API calls
-    const allPackages = await devhubService.listAllPackages()
+    const allPackages = await devhubService.listPackages()
 
     for (const name of packageNames) {
       const unscopedName = stripScope(name)
@@ -467,7 +467,7 @@ export default class Bootstrap extends SfpmCommand {
         }
 
         // Get the latest non-released version (the one we just built)
-        const versions = await devhubService.getPackage2VersionById(pkg.Id) // eslint-disable-line no-await-in-loop
+        const versions = await devhubService.listPackageVersions({packages: [pkg.Id]}) // eslint-disable-line no-await-in-loop
         const unpromoted = versions.find(v => !v.IsReleased)
 
         if (!unpromoted) {
@@ -541,9 +541,9 @@ export default class Bootstrap extends SfpmCommand {
     }
 
     const devhubService = new PackageService(org, ctx.logger)
-    const installed = await devhubService.getAllInstalled2GPPackages()
-    const installedByName = new Map(installed.map(p => [p.name, p]))
-    const allDevHubPackages = await devhubService.listAllPackages()
+    const installed = await devhubService.listInstalledPackages()
+    const installedByName = new Map(installed.map(p => [p.SubscriberPackage?.Name ?? '', p]))
+    const allDevHubPackages = await devhubService.listPackages()
 
     const statuses: PackageStatus[] = []
 
@@ -569,10 +569,10 @@ export default class Bootstrap extends SfpmCommand {
 
       // Get released versions
       // eslint-disable-next-line no-await-in-loop
-      const releasedVersions = await devhubService.getPackage2VersionById(devhubPkg.Id, undefined, false, true)
+      const releasedVersions = await devhubService.listPackageVersions({isReleased: true, packages: [devhubPkg.Id]})
       // Get all versions (to detect unreleased)
       const allVersions = releasedVersions.length === 0
-        ? await devhubService.getPackage2VersionById(devhubPkg.Id) // eslint-disable-line no-await-in-loop
+        ? await devhubService.listPackageVersions({packages: [devhubPkg.Id]}) // eslint-disable-line no-await-in-loop
         : releasedVersions
 
       const latestReleased = releasedVersions[0]
@@ -581,13 +581,17 @@ export default class Bootstrap extends SfpmCommand {
         : undefined
 
       const installedPkg = installedByName.get(unscopedName)
+      const installedSpv = installedPkg?.SubscriberPackageVersion
+      const installedVersion = installedSpv
+        ? `${installedSpv.MajorVersion}.${installedSpv.MinorVersion}.${installedSpv.PatchVersion}.${installedSpv.BuildNumber}`
+        : undefined
 
       const action = resolveAction({
         force,
         hasPackage: true,
         hasReleasedVersions: releasedVersions.length > 0,
         hasUnreleasedVersions: allVersions.length > 0 && releasedVersions.length === 0,
-        installedVersion: installedPkg?.versionNumber,
+        installedVersion,
         latestVersion,
       })
 
@@ -598,7 +602,7 @@ export default class Bootstrap extends SfpmCommand {
 
       statuses.push({
         action,
-        installedVersion: installedPkg?.versionNumber,
+        installedVersion,
         latestReleasedVersion: versionStr,
         name: pkg.name,
         subscriberVersionId: latest?.SubscriberPackageVersionId,

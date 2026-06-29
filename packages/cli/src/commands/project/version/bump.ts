@@ -146,13 +146,15 @@ export default class ProjectVersionBump extends SfpmCommand {
     if (flags.targetorg) {
       const org = await Org.create({aliasOrUsername: flags.targetorg});
       const packageService = new PackageService(org);
-      await packageService.preloadInstalled2GPPackages();
+      await packageService.preloadInstalledPackages();
 
       const fetcher: OrgPackageVersionFetcher = {
         async getInstalledVersion(packageName: string): Promise<null | string> {
-          const installed = await packageService.getAllInstalled2GPPackages();
-          const match = installed.find(pkg => pkg.name === packageName);
-          return match?.versionNumber ?? null;
+          const installed = await packageService.listInstalledPackages();
+          const match = installed.find(pkg => pkg.SubscriberPackage?.Name === packageName);
+          if (!match?.SubscriberPackageVersion) return null;
+          const spv = match.SubscriberPackageVersion;
+          return `${spv.MajorVersion}.${spv.MinorVersion}.${spv.PatchVersion}.${spv.BuildNumber}`;
         },
       };
 

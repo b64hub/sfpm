@@ -12,24 +12,6 @@ import './package/analyzers/fht-analyzer.js';
 import './package/analyzers/ft-analyzer.js';
 import './package/analyzers/picklist-analyzer.js';
 
-/**
- * @deprecated dead code
- */
-export class SfpmCore {
-  project!: ProjectService;
-
-  private constructor() {}
-
-  /**
-   * Creates and initializes a new SfpmCore instance.
-   * This is the recommended way to create an SfpmCore instance.
-   */
-  static async create(options: {apiKey: string; projectPath?: string; verbose?: boolean;}): Promise<SfpmCore> {
-    const core = new SfpmCore();
-    core.project = await ProjectService.create(options.projectPath);
-    return core;
-  }
-}
 export {ApexClassifier, type ApexClassInfo} from './apex/apex-classifier.js';
 export {
   ApexTestService, type ClassCoverage, type RunTestsOptions, type TestClassResult, type TestMethodResult, type TestRunResult,
@@ -38,8 +20,9 @@ export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type Change
 
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
 export {ArtifactResolver, type DownloadTarget} from './artifacts/artifact-resolver.js';
-export {
-  type ArtifactHistoryOptions, type ArtifactResolution, ArtifactService, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
+export {default as ArtifactService} from './artifacts/artifact-service.js';
+export type {
+  ArtifactHistoryOptions, ArtifactResolution, SfpmArtifactHistory__c, // eslint-disable-line camelcase
 } from './artifacts/artifact-service.js';
 export {
   extractPackageVersionId, extractSourceHash, fromNpmPackageJson, hydrateFromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions,
@@ -86,6 +69,7 @@ export {type Package2, PackageService} from './package/package-service.js';
 export {
   isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';
+export {type PendingValidationDescriptor, type ValidationState} from './package/validation/types.js';
 export {
   type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
 } from './package/validation/validation-poller.js';

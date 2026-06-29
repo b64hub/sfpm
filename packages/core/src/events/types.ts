@@ -20,7 +20,7 @@ export interface BaseEvent {
 // ============================================================================
 
 export interface ConnectionStartPayload {
-  orgType: 'devhub' | 'sandbox' | 'scratch';
+  orgType: 'devhub' | 'sandbox' | 'scratch' | undefined;
   username: string;
 }
 

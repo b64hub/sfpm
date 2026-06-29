@@ -5,6 +5,7 @@ import type {InstallOptions} from '../package-installer.js';
 
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
+import {resolveOrgType} from '../../utils/org-utils.js';
 import PackageManager from '../package-manager.js';
 import {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
@@ -99,13 +100,3 @@ export default class UnlockedPackageInstaller implements Installer {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-async function resolveOrgType(org: Org): Promise<'devhub' | 'sandbox' | 'scratch' | undefined> {
-  if (await org.isSandbox()) return 'sandbox';
-  if (org.isScratch()) return 'scratch';
-  if (org.isDevHubOrg()) return 'devhub';
-  return undefined;
-}

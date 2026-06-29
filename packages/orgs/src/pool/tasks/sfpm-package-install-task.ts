@@ -147,7 +147,7 @@ export class SfpmPackageInstallTask implements PoolOrgTask {
     const packageService = new PackageService(this.devhub, logger);
 
     // Find the Package2 by name
-    const allPackages = await packageService.listAllPackages();
+    const allPackages = await packageService.listPackages();
     const sfpmPackage = allPackages.find(p => p.Name === SFPM_PACKAGE_NAME);
 
     if (!sfpmPackage) {
@@ -156,12 +156,10 @@ export class SfpmPackageInstallTask implements PoolOrgTask {
     }
 
     // Get the latest released version
-    const versions = await packageService.getPackage2VersionById(
-      sfpmPackage.Id,
-      undefined,
-      false,
-      true,
-    );
+    const versions = await packageService.listPackageVersions({
+      isReleased: true,
+      packages: [sfpmPackage.Id],
+    });
 
     if (versions.length === 0) {
       logger.warn(`No released versions found for "${SFPM_PACKAGE_NAME}"`);

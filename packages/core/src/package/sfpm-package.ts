@@ -16,7 +16,6 @@ import {
   SfpmPackageOrchestration,
   SfpmUnlockedPackageMetadata,
   type TestLevel,
-  type ValidationState,
   VersionFormat,
 } from '../types/package.js';
 import {OrgAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
@@ -30,6 +29,7 @@ import {
   type VersionInstallable,
 } from './installers/types.js';
 import {ORG_ALIAS_DEFAULT_DIR, OrgAliasResolution, OrgAliasResolver} from './org-alias-resolver.js';
+import {type ValidationState} from './validation/types.js';
 
 const TEST_COVERAGE_THRESHOLD = 75;
 const DEFAULT_API_VERSION = '65.0';
