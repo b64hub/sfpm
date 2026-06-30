@@ -24,7 +24,6 @@ export interface PackageResult<TResult> {
   duration: number;
   error?: string;
   packageName: string;
-  pendingValidation?: PendingValidationDescriptor;
   result?: TResult;
   skipped: boolean;
   success: boolean;
@@ -34,7 +33,6 @@ export interface PackageResult<TResult> {
 export interface OrchestrationResult<TResult> {
   duration: number;
   failedPackages: string[];
-  pendingValidations: PendingValidationDescriptor[];
   results: PackageResult<TResult>[];
   skippedPackages: string[];
   success: boolean;
@@ -128,7 +126,7 @@ export class OrchestrationEventBus<TResult> extends TypedEventEmitter<Orchestrat
   }
 
   // Convenience methods
-  complete(p: OrchestrationCompletePayload<TResult): void {
+  complete(p: OrchestrationCompletePayload<TResult>): void {
     this.emit('complete', p as any);
   }
 

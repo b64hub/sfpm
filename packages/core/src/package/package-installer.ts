@@ -8,11 +8,10 @@ import ArtifactService, {ArtifactResolution} from '../artifacts/artifact-service
 import {hydrateFromNpmPackageJson} from '../artifacts/npm-package-adapter.js';
 import {InstallEventBus, InstallEventSink} from '../events/install-event-bus.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
-import {ArtifactResolutionOptions} from '../types/artifact.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
 import {
-  InstallationMode, InstallationSource, PackageType, type TestLevel,
+  InstallOptions, PackageType, PackageOrigin, TestLevel,
 } from '../types/package.js';
 import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {installerFactory, InstallTaskContext, InstallTaskRegistration} from './installers/installer-registry.js';
@@ -26,29 +25,6 @@ import './installers/managed-package-installer.js';
 import SfpmPackage, {
   isOrgAliasable, PackageFactory, SfpmUnlockedPackage,
 } from './sfpm-package.js';
-
-export interface InstallOptions {
-  artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
-
-  deployment?: {
-    /**
-     * Salesforce test level for source deployments.
-     */
-    testLevel?: TestLevel;
-  };
-  /** Force reinstall even if already installed with matching version/hash */
-  force?: boolean;
-  /**
-   * Set specific installation mode (mainly for unlocked packages, overrides auto-detection).
-   */
-  mode?: InstallationMode;
-  /**
-   * Where to install from: 'local' (project source) or 'artifact'.
-   */
-  source?: InstallationSource;
-  updateArtifact?: boolean;
-  versionInstall?: {installationKeys?: {[packageName: string]: string}};
-}
 
 export interface InstallResult {
   /** Salesforce deploy ID or PackageInstallRequest ID (when available) */
@@ -168,7 +144,7 @@ export default class PackageInstaller {
 
     try {
       // Source-local deploy: skip artifact resolution entirely — deploy from project source
-      if (this.options.source === InstallationSource.Local) {
+      if (this.options.origin === PackageOrigin.Local) {
         return await this.deploySource(sfpmPackage);
       }
 

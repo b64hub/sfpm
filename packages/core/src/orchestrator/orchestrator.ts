@@ -33,7 +33,7 @@ export interface OrchestratorOptions {
  * @typeParam TContext — Shared context type returned by `setup()` and threaded
  *   to each `processSinglePackage()` call.
  */
-export interface OrchestrationTask<TResult = void> {
+export interface OrchestrationTask<TResult> {
   /**
    * Process a single package. Must return a {@link PackageResult}.
    *
@@ -83,11 +83,9 @@ interface LevelOutcome<TResult> {
  *
  * Domain-specific behaviour is supplied via an {@link OrchestrationTask}.
  * Orchestration events are emitted through the {@link OrchestrationEventBus}.
- *
- * @typeParam TContext — Shared context created by the task's `setup()` call.
  */
-export class Orchestrator<TResult = void> {
-  readonly bus: OrchestrationEventBus;
+export class Orchestrator<TResult> {
+  readonly bus: OrchestrationEventBus<TResult>;
   private readonly graph: ProjectGraph;
   private readonly logger: Logger | undefined;
   private readonly options: OrchestratorOptions;
@@ -98,7 +96,7 @@ export class Orchestrator<TResult = void> {
     options: OrchestratorOptions,
     task: OrchestrationTask<TResult>,
     logger?: Logger,
-    bus?: OrchestrationEventBus,
+    bus?: OrchestrationEventBus<TResult>,
   ) {
     this.graph = graph;
     this.options = options;
@@ -124,7 +122,6 @@ export class Orchestrator<TResult = void> {
       return {
         duration: 0,
         failedPackages: [],
-        pendingValidations: [],
         results: [],
         skippedPackages: [],
         success: true,
@@ -151,10 +148,6 @@ export class Orchestrator<TResult = void> {
     return this.buildOrchestrationResult(tracker, orchestrationStart);
   }
 
-  // ========================================================================
-  // Dependency resolution
-  // ========================================================================
-
   /**
    * Build the final OrchestrationResult, emit orchestration:complete, and return.
    */
@@ -164,15 +157,9 @@ export class Orchestrator<TResult = void> {
   ): OrchestrationResult<TResult> {
     const totalDuration = Date.now() - orchestrationStart;
 
-    // Collect pending validations from all successful package results
-    const pendingValidations = tracker.results
-    .filter(r => r.pendingValidation)
-    .map(r => r.pendingValidation!);
-
     const result: OrchestrationResult<TResult> = {
       duration: totalDuration,
       failedPackages: [...tracker.failedPackages],
-      pendingValidations,
       results: tracker.results,
       skippedPackages: [...tracker.skippedPackages],
       success: tracker.failedPackages.size === 0,

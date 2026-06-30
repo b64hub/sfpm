@@ -90,7 +90,7 @@ function sortHooks(hooks: RegisteredHook[]): RegisteredHook[] {
  * await lifecycle.run('install', 'pre', context);
  * ```
  */
-export class LifecycleEngine {
+export default class LifecycleEngine {
   private static initializedStage?: string;
   private static instance?: LifecycleEngine;
   private readonly _stage: string = DEFAULT_STAGE

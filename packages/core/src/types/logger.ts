@@ -21,7 +21,7 @@
  * const service = new OrgService(hubOrg, logger);
  * ```
  */
-export interface Logger {
+export default interface Logger {
   /**
    * Create a child logger with bound context fields (e.g., package name).
    * Messages from the child are prefixed with the bound values.

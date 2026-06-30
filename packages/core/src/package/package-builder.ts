@@ -68,7 +68,7 @@ function resolveModeConfig(validation?: ValidationLevel): ModeConfig {
  * 5. Execute the builder (via {@link builderFactory})
  * 6. Run post-build hooks
  */
-export class PackageBuilder {
+export default class PackageBuilder {
   private bus?: BuildEventBus;
   private ignoreFilesConfig?: IgnoreFilesConfig;
   private logger: Logger | undefined;

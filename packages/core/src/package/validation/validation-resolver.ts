@@ -3,14 +3,14 @@ import type {Connection} from '@salesforce/core';
 import {Org} from '@salesforce/core';
 import fs from 'node:fs';
 
-import type {ScopedValidationSink, ValidationEventBus, ValidationEventSink} from '../../events/validation-event-bus.js';
-import type {Logger} from '../../types/logger.js';
+import type {ScopedValidationSink, ValidationEventBus, ValidationEventSink} from '../../events/index.js';
+import type Logger from '../../types/logger.js';
 import type {
   PendingValidationDescriptor,
   ValidationCheck,
   ValidationStateFailed,
   ValidationStatePassed,
-} from './types.js';
+} from '../../types/validation.js';
 
 import {type DeployResult, MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
 import {type PackageValidationResult, ValidationPoller} from './validation-poller.js';

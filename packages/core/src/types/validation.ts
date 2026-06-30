@@ -1,7 +1,14 @@
 
-// ============================================================================
-// Validation State (build outcome, travels with the artifact)
-// ============================================================================
+/**
+ * Validation level for builds.
+ *
+ * - `none`  — assemble only, no analysis, no org interaction
+ * - `local` — static analysis only (dependency checks), no org
+ * - `org`   — org validation only (deploy+test for source, SF API for unlocked)
+ * - `full`  — static analysis + org validation (default)
+ */
+export type ValidationLevel = 'full' | 'local' | 'none' | 'org';
+
 
 /** Individual validation check that was performed during the build. */
 export type ValidationCheck = 'dependencies' | 'deploy' | 'test';

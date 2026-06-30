@@ -69,7 +69,7 @@ export {type Package2, PackageService} from './package/package-service.js';
 export {
   isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';
-export {type PendingValidationDescriptor, type ValidationState} from './package/validation/types.js';
+export {type PendingValidationDescriptor, type ValidationState} from './types/validation.js';
 export {
   type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
 } from './package/validation/validation-poller.js';

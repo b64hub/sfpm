@@ -18,7 +18,7 @@ import {
   type TestLevel,
   VersionFormat,
 } from '../types/package.js';
-import {OrgAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {OrgAliasConfig, PackageDefin../types/types.jsion} from '../types/project.js';
 import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';

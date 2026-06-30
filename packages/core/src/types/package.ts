@@ -1,18 +1,24 @@
-import {PackageManifestObject} from '@salesforce/source-deploy-retrieve';
-
-import type {SfpmPackageSource} from './artifact.js';
-
-import {PackageInstallConfig} from './project.js';
+import type { SfpmPackageSource, ArtifactResolutionOptions } from './artifact.js';
+import { PackageInstallConfig } from './project.js';
+import { ValidationLevel } from './validation.js';
+import { DependencyAnalyzer } from './dependency-analysis.js';
 
 /**
  * Salesforce test levels for metadata API deployments.
  *
  * Mirrors the `testLevel` values accepted by the Salesforce Metadata API
- * and `@salesforce/source-deploy-retrieve`.
+ * and `@salesforce/source-deploy-retrieve` 
  */
-export type TestLevel = 'NoTestRun' | 'RunAllTestsInOrg' | 'RunLocalTests' | 'RunRelevantTests' | 'RunSpecifiedTests';
+export declare const enum TestLevel {
+  NoTestRun = 'NoTestRun',
+  RunAllTestsInOrg = 'RunAllTestsInOrg',
+  RunLocalTests = 'RunLocalTests',
+  RunRelevantTests = 'RunRelevantTests',
+  RunSpecifiedTests = 'RunSpecifiedTests',
+}
 
-export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked'}
+
+export enum PackageType { Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked' }
 
 /**
  * Version format variants used by different consumers.
@@ -23,10 +29,10 @@ export type VersionFormat = 'salesforce' | 'semver';
 
 /**
  * Where the package code comes from for installation.
- * - `local`: Install directly from project source directory
- * - `artifact`: Install from built artifact (local or fetched from npm - resolver abstracts this)
+ * - `local`: Install from built ./dist
+ * - `artifact`: Install from node_modules
  */
-export enum InstallationSource {
+export enum PackageOrigin {
   Artifact = 'artifact',
   Local = 'local',
 }
@@ -37,9 +43,63 @@ export enum InstallationSource {
  * - `source-deploy`: Deploy source via metadata API
  * - `version-install`: Install package version using packageVersionId
  */
-export enum InstallationMode {
+export enum UnlockedInstallationMode {
   SourceDeploy = 'source-deploy',
   VersionInstall = 'version-install',
+}
+
+export interface BuildOptions {
+  /** Build number for version generation */
+  buildNumber?: string;
+  /** Target org for source package validation (deploy + test) */
+  buildOrg?: string;
+  /**
+   * Pluggable dependency analyzer for cross-package reference validation.
+   * Must be initialized before passing to the builder.
+   * When provided and `validation` includes analysis, violations are reported.
+   */
+  dependencyAnalyzer?: DependencyAnalyzer;
+  /** DevHub username or alias for unlocked package builds */
+  devhubUsername?: string;
+  /** Force build even if no source changes detected (skip hash check) */
+  force?: boolean;
+  /** Installation key for unlocked packages */
+  installationKey?: string;
+  /**
+   * Unlocked packages are deployed as source instead of creating a package version.
+   * No DevHub required. Designed for PR validation against scratch orgs.
+   */
+  sourceOnly?: boolean;
+  /**
+   * Validation level. Controls which quality gates run during the build.
+   *
+   * - `full`  — static analysis + org validation (default)
+   * - `org`   — org validation only (skip static analysis)
+   * - `local` — static analysis only (no org connection)
+   * - `none`  — assemble only
+   */
+  validation?: ValidationLevel;
+  /** Timeout in minutes for package version creation (default: 120) */
+  waitTime?: number;
+}
+
+export interface InstallOptions {
+  artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
+
+  testLevel?: TestLevel;
+  /** Force reinstall even if already installed with matching version/hash */
+  force?: boolean;
+  /**
+   * Override default installation mode for unlocked packages
+   */
+  mode?: UnlockedInstallationMode;
+  /**
+   * Where to install from: 'local' (project source) or 'artifact'.
+   */
+  origin?: PackageOrigin;
+  updateArtifact?: boolean;
+  versionInstall?: { installationKeys?: { [packageName: string]: string } };
+  waitTime?: number
 }
 
 export type MetadataFile = string | {
@@ -96,7 +156,7 @@ export interface SfpmPackageContent {
 
 export interface SfpmPackageOrchestration {
   build?: PerPackageBuildConfig;
-  creationDetails?: {duration?: number; timestamp?: number};
+  creationDetails?: { duration?: number; timestamp?: number };
   install?: PackageInstallConfig;
   installation?: {
     installationTime?: number;

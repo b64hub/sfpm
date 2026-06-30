@@ -2,7 +2,7 @@ import type {Org} from '@salesforce/core';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
 
-import {PendingValidationDescriptor, ValidationState} from '../../package/validation/types.js';
+import {PendingValidationDescriptor, ValidationState} from '../../types/validation.js';
 import {DependencyAnalyzer} from '../../types/dependency-analysis.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js'

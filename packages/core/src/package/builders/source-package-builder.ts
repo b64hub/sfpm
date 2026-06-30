@@ -10,7 +10,7 @@ import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {
   PendingValidationDescriptor, type ValidationCheck
-} from '../validation/types.js'
+} from '../../types/validation.js'
 import SfpmPackage, {SfpmMetadataPackage, SfpmSourcePackage} from '../sfpm-package.js';
 import {
   Builder, BuilderOptions, BuilderResult, BuildTaskRegistration, RegisterBuilder,

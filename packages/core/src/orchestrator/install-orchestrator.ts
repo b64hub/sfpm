@@ -117,7 +117,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
  */
 export class InstallOrchestrator {
   readonly installBus: InstallEventBus;
-  readonly orchestrationBus: OrchestrationEventBus;
+  readonly orchestrationBus: OrchestrationEventBus<InstallResult>;
   private readonly orchestrator: Orchestrator<InstallResult>;
 
   constructor(
