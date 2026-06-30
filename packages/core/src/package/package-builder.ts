@@ -1,8 +1,7 @@
 import {Org} from '@salesforce/core';
-import {merge} from 'lodash-es';
+
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
-import type {DependencyAnalyzer} from '../types/dependency-analysis.js';
 
 import {ArtifactRepository} from '../artifacts/artifact-repository.js';
 import {BuildEventBus, BuildEventSink} from '../events/build-event-bus.js';
@@ -10,7 +9,8 @@ import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import {IgnoreFilesConfig} from '../types/config.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
 import {Logger} from '../types/logger.js';
-import {PackageType} from '../types/package.js';
+import {PackageType, BuildOptions} from '../types/package.js';
+
 import {getPipelineRunId} from '../utils/pipeline.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
@@ -18,20 +18,10 @@ import {AnalyzerRegistry, PackageAnalyzer} from './analyzers/analyzer-registry.j
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
   Builder, builderFactory, BuilderOptions, BuilderResult,
-  BuildTaskContext, BuildTaskRegistration, BuildTaskResult,
+  BuildTaskContext, BuildTaskResult,
 } from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
-import {PendingValidationDescriptor} from './validation/types.js';
-
-/**
- * Validation level for builds.
- *
- * - `none`  — assemble only, no analysis, no org interaction
- * - `local` — static analysis only (dependency checks), no org
- * - `org`   — org validation only (deploy+test for source, SF API for unlocked)
- * - `full`  — static analysis + org validation (default)
- */
-export type ValidationLevel = 'full' | 'local' | 'none' | 'org';
+import {ValidationLevel, PendingValidationDescriptor} from '../types/validation.js';
 
 /**
  * Internal configuration resolved from {@link ValidationLevel}.
@@ -66,54 +56,12 @@ function resolveModeConfig(validation?: ValidationLevel): ModeConfig {
   return VALIDATION_CONFIGS[validation ?? 'full'];
 }
 
-/**
- * Options for {@link PackageBuilder.runBuilder}.
- */
-interface RunBuilderOptions {
-  /** Build even if source hash matches a previous build. */
-  force: boolean;
-}
-
-export interface BuildOptions {
-  /** Build number for version generation */
-  buildNumber?: string;
-  /** Target org for source package validation (deploy + test) */
-  buildOrg?: string;
-  /**
-   * Pluggable dependency analyzer for cross-package reference validation.
-   * Must be initialized before passing to the builder.
-   * When provided and `validation` includes analysis, violations are reported.
-   */
-  dependencyAnalyzer?: DependencyAnalyzer;
-  /** DevHub username or alias for unlocked package builds */
-  devhubUsername?: string;
-  /** Force build even if no source changes detected (skip hash check) */
-  force?: boolean;
-  /** Installation key for unlocked packages */
-  installationKey?: string;
-  /**
-   * Unlocked packages are deployed as source instead of creating a package version.
-   * No DevHub required. Designed for PR validation against scratch orgs.
-   */
-  sourceOnly?: boolean;
-  /**
-   * Validation level. Controls which quality gates run during the build.
-   *
-   * - `full`  — static analysis + org validation (default)
-   * - `org`   — org validation only (skip static analysis)
-   * - `local` — static analysis only (no org connection)
-   * - `none`  — assemble only
-   */
-  validation?: ValidationLevel;
-  /** Timeout in minutes for package version creation (default: 120) */
-  waitTime?: number;
-}
 
 /**
  * Orchestrator for package builds.
  *
  * Manages the full build lifecycle:
- * 1. Stage package content to `artifacts/package/`
+ * 1. Stage package content to `./dist`
  * 2. Check if build is needed (source hash comparison)
  * 3. Run analyzers
  * 4. Run pre-build hooks
@@ -132,13 +80,11 @@ export class PackageBuilder {
     provider: ProjectDefinitionProvider,
     options?: BuildOptions,
     logger?: Logger,
-    ignoreFilesConfig?: IgnoreFilesConfig,
     bus?: BuildEventBus,
   ) {
     this.options = options || {};
     this.logger = logger;
     this.provider = provider;
-    this.ignoreFilesConfig = ignoreFilesConfig;
     this.bus = bus;
   }
 

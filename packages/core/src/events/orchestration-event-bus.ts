@@ -1,5 +1,3 @@
-import type {PendingValidationDescriptor} from '../package/validation/types.js';
-
 import {TypedEventEmitter} from './typed-event-emitter.js';
 
 // ============================================================================
@@ -22,21 +20,22 @@ export interface OrchestrationBaseEvent {
 // ============================================================================
 
 /** Result of a single package build/install within an orchestration run. */
-export interface PackageResult {
+export interface PackageResult<TResult> {
   duration: number;
   error?: string;
   packageName: string;
   pendingValidation?: PendingValidationDescriptor;
+  result?: TResult;
   skipped: boolean;
   success: boolean;
 }
 
 /** Aggregated result of a multi-package orchestration run. */
-export interface OrchestrationResult {
+export interface OrchestrationResult<TResult> {
   duration: number;
   failedPackages: string[];
   pendingValidations: PendingValidationDescriptor[];
-  results: PackageResult[];
+  results: PackageResult<TResult>[];
   skippedPackages: string[];
   success: boolean;
 }
@@ -74,8 +73,8 @@ export interface OrchestrationLevelCompletePayload {
   succeeded: string[];
 }
 
-export interface OrchestrationCompletePayload {
-  results: PackageResult[];
+export interface OrchestrationCompletePayload<TResult> {
+  results: PackageResult<TResult>[];
   totalDuration: number;
 }
 
@@ -92,15 +91,15 @@ export type OrchestrationStartEvent = OrchestrationBaseEvent & OrchestrationStar
 export type OrchestrationLevelStartEvent = OrchestrationBaseEvent & OrchestrationLevelStartPayload;
 export type OrchestrationPackageCompleteEvent = OrchestrationBaseEvent & OrchestrationPackageCompletePayload;
 export type OrchestrationLevelCompleteEvent = OrchestrationBaseEvent & OrchestrationLevelCompletePayload;
-export type OrchestrationCompleteEvent = OrchestrationBaseEvent & OrchestrationCompletePayload;
+export type OrchestrationCompleteEvent<TResult> = OrchestrationBaseEvent & OrchestrationCompletePayload<TResult>;
 export type OrchestrationErrorEvent = OrchestrationBaseEvent & OrchestrationErrorPayload;
 
 // ============================================================================
 // Orchestration Event Map
 // ============================================================================
 
-export interface OrchestrationEvents {
-  complete: [OrchestrationCompleteEvent];
+export interface OrchestrationEvents<TResult> {
+  complete: [OrchestrationCompleteEvent<TResult>];
   error: [OrchestrationErrorEvent];
   'level:complete': [OrchestrationLevelCompleteEvent];
   'level:start': [OrchestrationLevelStartEvent];
@@ -120,7 +119,7 @@ export interface OrchestrationEvents {
  *
  * Convenience methods accept Payload types (source of truth).
  */
-export class OrchestrationEventBus extends TypedEventEmitter<OrchestrationEvents> {
+export class OrchestrationEventBus<TResult> extends TypedEventEmitter<OrchestrationEvents<TResult>> {
   private readonly orchestrationId: string;
 
   constructor(orchestrationId: string) {
@@ -129,7 +128,7 @@ export class OrchestrationEventBus extends TypedEventEmitter<OrchestrationEvents
   }
 
   // Convenience methods
-  complete(p: OrchestrationCompletePayload): void {
+  complete(p: OrchestrationCompletePayload<TResult): void {
     this.emit('complete', p as any);
   }
 

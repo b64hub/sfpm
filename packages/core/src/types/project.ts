@@ -66,6 +66,9 @@ export interface PackageOptions {
   skip?: string[];
 }
 
+/**
+ * TODO: To be reviewed against BuildOptions
+ */
 export interface PackageBuildConfig {
   asyncValidation?: boolean;
   skipValidation?: boolean;
@@ -103,6 +106,8 @@ export interface PackageHookConfig {
  *
  * Controls install-time and deploy-time behavior that is not hook-specific:
  * script assembly, optimized deployment, etc.
+ * 
+ * TODO: Could be canonical shape for InstallOptions?
  */
 export interface PackageInstallConfig {
   optimize?: boolean;
