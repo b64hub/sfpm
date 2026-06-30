@@ -6,7 +6,7 @@ import {
 import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
-import type {Logger} from '../types/logger.js';
+import type Logger from '../types/logger.js';
 
 import {FORCE_APP_DIR} from '../types/artifact.js';
 import {
@@ -14,11 +14,11 @@ import {
   PackageType,
   SfpmPackageContent,
   SfpmPackageOrchestration,
-  SfpmUnlockedPackageMetadata,
-  type TestLevel,
+  TestLevel,
   VersionFormat,
 } from '../types/package.js';
-import {OrgAliasConfig, PackageDefin../types/types.jsion} from '../types/project.js';
+import {OrgAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {type ValidationState} from '../types/validation.js';
 import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
@@ -29,7 +29,6 @@ import {
   type VersionInstallable,
 } from './installers/types.js';
 import {ORG_ALIAS_DEFAULT_DIR, OrgAliasResolution, OrgAliasResolver} from './org-alias-resolver.js';
-import {type ValidationState} from './validation/types.js';
 
 const TEST_COVERAGE_THRESHOLD = 75;
 const DEFAULT_API_VERSION = '65.0';

@@ -1,16 +1,15 @@
 import {Org} from '@salesforce/core';
 
-
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+import type {HookContext, HookTiming} from '../types/lifecycle.js';
+import type {PendingValidationDescriptor, ValidationLevel} from '../types/validation.js';
 
 import {ArtifactRepository} from '../artifacts/artifact-repository.js';
 import {BuildEventBus, BuildEventSink} from '../events/build-event-bus.js';
-import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
+import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
 import {IgnoreFilesConfig} from '../types/config.js';
-import {HookContext, HookTiming} from '../types/lifecycle.js';
-import {Logger} from '../types/logger.js';
-import {PackageType, BuildOptions} from '../types/package.js';
-
+import Logger from '../types/logger.js';
+import {BuildOptions, PackageType} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
@@ -21,7 +20,6 @@ import {
   BuildTaskContext, BuildTaskResult,
 } from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
-import {ValidationLevel, PendingValidationDescriptor} from '../types/validation.js';
 
 /**
  * Internal configuration resolved from {@link ValidationLevel}.
@@ -56,7 +54,6 @@ function resolveModeConfig(validation?: ValidationLevel): ModeConfig {
   return VALIDATION_CONFIGS[validation ?? 'full'];
 }
 
-
 /**
  * Orchestrator for package builds.
  *
@@ -70,11 +67,11 @@ function resolveModeConfig(validation?: ValidationLevel): ModeConfig {
  */
 export default class PackageBuilder {
   private bus?: BuildEventBus;
-  private ignoreFilesConfig?: IgnoreFilesConfig;
-  private logger: Logger | undefined;
+  private logger?: Logger;
   private options: BuildOptions;
   private provider: ProjectDefinitionProvider;
   private sink?: BuildEventSink;
+  // private ignoreFilesConfig?: IgnoreFilesConfig;
 
   constructor(
     provider: ProjectDefinitionProvider,
@@ -82,10 +79,10 @@ export default class PackageBuilder {
     logger?: Logger,
     bus?: BuildEventBus,
   ) {
-    this.options = options || {};
-    this.logger = logger;
-    this.provider = provider;
     this.bus = bus;
+    this.logger = logger;
+    this.options = options || {};
+    this.provider = provider;
   }
 
   /**
@@ -105,7 +102,7 @@ export default class PackageBuilder {
 
     this.handleBuildConfiguration(sfpmPackage);
 
-    return this.runBuilder(sfpmPackage, {force: this.options.force ?? false});
+    return this.runBuilder(sfpmPackage);
   }
 
   public async dryRun(packageName: string): Promise<PendingValidationDescriptor | undefined> {
@@ -309,6 +306,20 @@ export default class PackageBuilder {
   }
 
   /**
+   * Route unlocked packages through source builder when:
+   * no org validation (local/none), or
+   * --source-only mode (PR validation without DevHub)
+   * @param sfpmPackage
+   * @param modeConfig
+   */
+  private resolveBuildAs(sfpmPackage: SfpmPackage, modeConfig: ModeConfig): PackageType | undefined {
+    if (sfpmPackage.type !== PackageType.Unlocked) return undefined;
+    if (this.options.sourceOnly) return PackageType.Source;
+    if (!modeConfig.orgValidation) return PackageType.Source;
+    return undefined;
+  }
+
+  /**
    * Resolve the target org for the builder based on package type.
    * Returns undefined when org validation is disabled.
    */
@@ -331,7 +342,7 @@ export default class PackageBuilder {
   /**
    * Unified build flow: stage → check → analyze → hooks → build → hooks.
    */
-  private async runBuilder(sfpmPackage: SfpmPackage, options: RunBuilderOptions): Promise<PendingValidationDescriptor | undefined> {
+  private async runBuilder(sfpmPackage: SfpmPackage): Promise<PendingValidationDescriptor | undefined> {
     const componentCount = await this.stagePackage(sfpmPackage);
 
     if (componentCount === 0) {
@@ -344,7 +355,7 @@ export default class PackageBuilder {
     }
 
     // Check if build is needed (source hash comparison)
-    if (!options.force) {
+    if (!this.options.force) {
       const skip = await this.needsBuild(sfpmPackage);
       if (skip) {
         this.sink?.skip({
@@ -367,12 +378,7 @@ export default class PackageBuilder {
     // Run pre-build hooks after analyzers have enriched the package context
     await this.runLifecycleHooks('pre', sfpmPackage);
 
-    // Route unlocked packages through source builder when:
-    // - no org validation (local/none), or
-    // - --source-only mode (PR validation without DevHub)
-    const buildAs = ((!modeConfig.orgValidation || this.options.sourceOnly) && sfpmPackage.type === PackageType.Unlocked)
-      ? PackageType.Source
-      : undefined;
+    const buildAs = this.resolveBuildAs(sfpmPackage, modeConfig);
 
     const builderOptions: BuilderOptions = {
       ...(modeConfig.dependencyAnalysis && this.options.dependencyAnalyzer && {

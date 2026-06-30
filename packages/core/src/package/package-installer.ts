@@ -7,24 +7,24 @@ import type {ProjectDefinitionProvider} from '../project/providers/project-defin
 import ArtifactService, {ArtifactResolution} from '../artifacts/artifact-service.js';
 import {hydrateFromNpmPackageJson} from '../artifacts/npm-package-adapter.js';
 import {InstallEventBus, InstallEventSink} from '../events/install-event-bus.js';
-import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
+import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {
-  InstallOptions, PackageType, PackageOrigin, TestLevel,
+  InstallOptions, PackageOrigin, PackageType,
 } from '../types/package.js';
 import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {installerFactory, InstallTaskContext, InstallTaskRegistration} from './installers/installer-registry.js';
 import UpdateArtifactTask from './installers/tasks/update-artifact.js';
 import {ManagedPackageRef} from './installers/types.js';
 import PackageManager from './package-manager.js';
+import SfpmPackage, {
+  isOrgAliasable, PackageFactory, SfpmUnlockedPackage,
+} from './sfpm-package.js';
 // Import installers to trigger registration
 import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
 import './installers/managed-package-installer.js';
-import SfpmPackage, {
-  isOrgAliasable, PackageFactory, SfpmUnlockedPackage,
-} from './sfpm-package.js';
 
 export interface InstallResult {
   /** Salesforce deploy ID or PackageInstallRequest ID (when available) */
@@ -325,7 +325,7 @@ export default class PackageInstaller {
    */
   private resolveInstallAs(sfpmPackage: SfpmPackage): PackageType | undefined {
     if (sfpmPackage.type !== PackageType.Unlocked) return undefined;
-    if (this.options.mode === InstallationMode.SourceDeploy) return PackageType.Source;
+    if (this.options.sourceOnly) return PackageType.Source;
     if (!(sfpmPackage as SfpmUnlockedPackage).packageVersionId) return PackageType.Source;
     return undefined;
   }

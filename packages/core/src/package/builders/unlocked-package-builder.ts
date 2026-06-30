@@ -44,14 +44,14 @@ export default class UnlockedPackageBuilder implements Builder {
     ];
   }
 
-  public async connect(targetOrg: Org): Promise<void> {
-    this.devhubOrg = targetOrg;
-
-    if (!this.devhubOrg.isDevHubOrg()) {
+  public async connect(buildOrg: Org | undefined): Promise<void> {
+    if (!buildOrg && !buildOrg.isDevHubOrg()) {
       throw new BuildError(this.sfpmPackage.packageName, 'Must connect to a dev hub org', {
         buildStep: 'connect',
       });
     }
+
+    this.devhubOrg = buildOrg;
   }
 
   public async exec(): Promise<BuilderResult> {

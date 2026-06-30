@@ -1,13 +1,14 @@
-import type { SfpmPackageSource, ArtifactResolutionOptions } from './artifact.js';
-import { PackageInstallConfig } from './project.js';
-import { ValidationLevel } from './validation.js';
-import { DependencyAnalyzer } from './dependency-analysis.js';
+import type {ArtifactResolutionOptions, SfpmPackageSource} from './artifact.js';
+
+import {DependencyAnalyzer} from './dependency-analysis.js';
+import {PackageInstallConfig} from './project.js';
+import {ValidationLevel} from './validation.js';
 
 /**
  * Salesforce test levels for metadata API deployments.
  *
  * Mirrors the `testLevel` values accepted by the Salesforce Metadata API
- * and `@salesforce/source-deploy-retrieve` 
+ * and `@salesforce/source-deploy-retrieve`
  */
 export declare const enum TestLevel {
   NoTestRun = 'NoTestRun',
@@ -17,8 +18,7 @@ export declare const enum TestLevel {
   RunSpecifiedTests = 'RunSpecifiedTests',
 }
 
-
-export enum PackageType { Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked' }
+export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked'}
 
 /**
  * Version format variants used by different consumers.
@@ -32,20 +32,9 @@ export type VersionFormat = 'salesforce' | 'semver';
  * - `local`: Install from built ./dist
  * - `artifact`: Install from node_modules
  */
-export enum PackageOrigin {
+export const enum PackageOrigin {
   Artifact = 'artifact',
   Local = 'local',
-}
-
-/**
- * How an unlocked package will be installed.
- * Source packages always use source-deploy; this enum only applies to unlocked packages.
- * - `source-deploy`: Deploy source via metadata API
- * - `version-install`: Install package version using packageVersionId
- */
-export enum UnlockedInstallationMode {
-  SourceDeploy = 'source-deploy',
-  VersionInstall = 'version-install',
 }
 
 export interface BuildOptions {
@@ -66,7 +55,7 @@ export interface BuildOptions {
   /** Installation key for unlocked packages */
   installationKey?: string;
   /**
-   * Unlocked packages are deployed as source instead of creating a package version.
+   * Unlocked packages are built as source instead of creating a package version.
    * No DevHub required. Designed for PR validation against scratch orgs.
    */
   sourceOnly?: boolean;
@@ -86,19 +75,22 @@ export interface BuildOptions {
 export interface InstallOptions {
   artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
 
-  testLevel?: TestLevel;
   /** Force reinstall even if already installed with matching version/hash */
   force?: boolean;
-  /**
-   * Override default installation mode for unlocked packages
-   */
-  mode?: UnlockedInstallationMode;
+  /** Installation key for unlocked packages */
+  installationKey?: string;
   /**
    * Where to install from: 'local' (project source) or 'artifact'.
    */
   origin?: PackageOrigin;
+  /**
+   * Unlocked packages are deployed as source instead of installing a package version.
+   */
+  sourceOnly?: boolean;
+  testLevel?: TestLevel;
+  /** Update sfpm artifact records in org upon installation */
   updateArtifact?: boolean;
-  versionInstall?: { installationKeys?: { [packageName: string]: string } };
+
   waitTime?: number
 }
 
@@ -156,7 +148,7 @@ export interface SfpmPackageContent {
 
 export interface SfpmPackageOrchestration {
   build?: PerPackageBuildConfig;
-  creationDetails?: { duration?: number; timestamp?: number };
+  creationDetails?: {duration?: number; timestamp?: number};
   install?: PackageInstallConfig;
   installation?: {
     installationTime?: number;

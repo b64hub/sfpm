@@ -2,10 +2,10 @@ import type {Org} from '@salesforce/core';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
 
-import {PendingValidationDescriptor, ValidationState} from '../../types/validation.js';
 import {DependencyAnalyzer} from '../../types/dependency-analysis.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js'
+import {PendingValidationDescriptor, ValidationState} from '../../types/validation.js';
 import SfpmPackage from '../sfpm-package.js';
 
 // ============================================================================
@@ -105,7 +105,7 @@ export interface Builder {
    * Connect to the target org (DevHub for unlocked, build org for source).
    * Optional — not all builds require an org connection.
    */
-  connect(targetOrg: Org): Promise<void>;
+  connect(buildOrg: Org | undefined): Promise<void>;
   /**
    * Execute the build and return results.
    * Includes validation when applicable — no separate validate() call needed.

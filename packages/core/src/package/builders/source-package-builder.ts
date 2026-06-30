@@ -9,7 +9,7 @@ import {BuildError} from '../../types/errors.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {
-  PendingValidationDescriptor, type ValidationCheck
+  PendingValidationDescriptor, type ValidationCheck,
 } from '../../types/validation.js'
 import SfpmPackage, {SfpmMetadataPackage, SfpmSourcePackage} from '../sfpm-package.js';
 import {
@@ -63,8 +63,8 @@ export default class SourcePackageBuilder implements Builder {
     this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});
   }
 
-  public async connect(targetOrg: Org): Promise<void> {
-    this.buildOrg = targetOrg;
+  public async connect(buildOrg: Org | undefined): Promise<void> {
+    this.buildOrg = buildOrg;
   }
 
   public async exec(): Promise<BuilderResult> {
@@ -166,7 +166,7 @@ export default class SourcePackageBuilder implements Builder {
 
     // Deploy metadata with specified tests — use the artifact's metadata path
     const metadataPath = path.join(this.workingDirectory, FORCE_APP_DIR);
-    
+
     const componentSet = this.sfpmPackage.getComponentSet(metadataPath);
     const deployId = await deployService.deploy(componentSet, {
       testClasses: testClasses.length > 0 ? testClasses : undefined,
