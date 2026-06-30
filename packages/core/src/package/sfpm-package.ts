@@ -16,7 +16,7 @@ import {
   TestLevel,
   VersionFormat,
 } from '../types/package.js';
-import {OrgAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {OrgAliasConfig, PackageDefinition} from '../types/project.js';
 import {type ValidationState} from '../types/validation.js';
 import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
 import {toVersionFormat} from '../utils/version-utils.js';

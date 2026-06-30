@@ -84,43 +84,22 @@ export default class PackageService {
     'HasPassedCodeCoverageCheck',
     'Branch',
   ];
-  private devhub?: Org;
   /** Cached installed packages. Populated by {@link preloadInstalledPackages}. */
   private installedCache?: InstalledPackages[];
   private logger?: Logger;
-  private targetOrg?: Org;
+  private targetOrg: Org;
 
   constructor(targetOrg: Org, logger?: Logger) {
-    this.connect(targetOrg);
+    this.targetOrg = targetOrg;
     this.logger = logger;
+    this.clearCache();
   }
-
-  // -----------------------------------------------------------------------
-  // Connection
-  // -----------------------------------------------------------------------
 
   /**
    * Clear the installed packages cache.
    */
   public clearCache(): void {
     this.installedCache = undefined;
-  }
-
-  public connect(targetOrg: Org): void {
-    this.targetOrg = targetOrg;
-    this.clearCache();
-  }
-
-  // -----------------------------------------------------------------------
-  // Package — Create
-  // -----------------------------------------------------------------------
-
-  public connectDevhub(devhub: Org): void {
-    if (!devhub.isDevHubOrg()) {
-      throw new Error('Only a devhub org can be connected as a devhub');
-    }
-
-    this.devhub = devhub;
   }
 
   // -----------------------------------------------------------------------
@@ -147,7 +126,7 @@ export default class PackageService {
       projectPath?: string;
     },
   ): Promise<{Id: string}> {
-    const connection = this.requireDevhubConnection();
+    const connection = await this.requireDevhubConnection();
     const project = await SfProject.resolve(options?.projectPath);
 
     const createOptions: PackageCreateOptions = {
@@ -205,7 +184,7 @@ export default class PackageService {
     },
     onProgress?: (progress: PackageVersionCreateReportProgress) => void,
   ): Promise<PackageVersionCreateRequestResult> {
-    const connection = this.requireDevhubConnection(options?.apiVersion);
+    const connection = await this.requireDevhubConnection(options?.apiVersion);
     const waitDuration = Duration.minutes(options?.wait ?? 0);
     const frequency = options?.wait && options?.skipvalidation ? Duration.seconds(5) : Duration.seconds(30);
 
@@ -279,7 +258,7 @@ export default class PackageService {
     packageId: string,
     options?: {projectPath?: string; undelete?: boolean},
   ): Promise<PackageSaveResult> {
-    const connection = this.requireDevhubConnection();
+    const connection = await this.requireDevhubConnection();
     const project = await this.maybeResolveProject(options?.projectPath);
 
     const pkg = new Package({connection, packageAliasOrId: packageId, project});
@@ -300,7 +279,7 @@ export default class PackageService {
     idOrAlias: string,
     options?: {projectPath?: string; undelete?: boolean},
   ): Promise<PackageSaveResult> {
-    const connection = this.requireDevhubConnection();
+    const connection = await this.requireDevhubConnection();
     const project = await this.maybeResolveProject(options?.projectPath);
 
     const pv = new PackageVersion({connection, idOrAlias, project});
@@ -343,7 +322,7 @@ export default class PackageService {
    * @param requestId - The package version create request ID (08c) — required
    */
   public async getVersionCreateStatus(requestId: string): Promise<PackageVersionCreateRequestResult> {
-    const connection = this.requireDevhubConnection();
+    const connection = await this.requireDevhubConnection();
     return PackageVersion.getCreateStatus(requestId, connection);
   }
 
@@ -492,7 +471,7 @@ export default class PackageService {
    * Wraps `Package.list()` from the SDK.
    */
   public async listPackages(): Promise<PackagingSObjects.Package2[]> {
-    const connection = this.requireDevhubConnection();
+    const connection = await this.requireDevhubConnection();
     return Package.list(connection);
   }
 
@@ -505,7 +484,7 @@ export default class PackageService {
    * @param options - Filter and display options
    */
   public async listPackageVersions(options?: PackageVersionListOptions & {projectPath?: string}): Promise<PackageVersionListResult[]> {
-    const connection = this.requireDevhubConnection();
+    const connection = await this.requireDevhubConnection();
 
     // ponytail: project is optional in the SDK — resolve when available, skip when not
     let project: SfProject | undefined;
@@ -541,7 +520,7 @@ export default class PackageService {
    * On transient failure, verifies server-side state before propagating.
    */
   public async promoteVersion(idOrAlias: string): Promise<void> {
-    const connection = this.requireDevhubConnection();
+    const connection = await this.requireDevhubConnection();
     const pv = new PackageVersion({connection, idOrAlias});
 
     const versionData = await pv.getData();
@@ -581,7 +560,7 @@ export default class PackageService {
     idOrAlias: string,
     options?: {projectPath?: string; verbose?: boolean},
   ): Promise<PackageVersionReportResult> {
-    const connection = this.requireDevhubConnection();
+    const connection = await this.requireDevhubConnection();
     const project = await this.maybeResolveProject(options?.projectPath);
 
     const pv = new PackageVersion({connection, idOrAlias, project});
@@ -669,7 +648,7 @@ export default class PackageService {
       skipAncestorCheck?: boolean;
     },
   ): Promise<PackageSaveResult> {
-    const connection = this.requireDevhubConnection();
+    const connection = await this.requireDevhubConnection();
     const project = await this.maybeResolveProject(options.projectPath);
 
     const pkg = new Package({connection, packageAliasOrId: packageId, project});
@@ -707,7 +686,7 @@ export default class PackageService {
       versionName?: string;
     },
   ): Promise<PackageSaveResult> {
-    const connection = this.requireDevhubConnection();
+    const connection = await this.requireDevhubConnection();
     const project = await this.maybeResolveProject(options.projectPath);
 
     const pv = new PackageVersion({connection, idOrAlias, project});
@@ -745,12 +724,12 @@ export default class PackageService {
     return () => Lifecycle.getInstance().removeAllListeners(event);
   }
 
-  private requireDevhubConnection(apiVersion?: string): Connection {
-    if (!this.devhub) {
-      throw new Error('Devhub must be connected');
+  private async requireDevhubConnection(apiVersion?: string): Promise<Connection> {
+    if (!this.targetOrg || !this.targetOrg.determineIfDevHubOrg()) {
+      throw new Error('Connected org must be a devhub to use this method');
     }
 
-    return this.devhub.getConnection(apiVersion);
+    return this.targetOrg.getConnection(apiVersion);
   }
 
   private requireTargetOrgConnection(): Connection {
