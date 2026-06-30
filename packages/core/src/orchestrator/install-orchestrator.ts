@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
-import {ArtifactService} from '../artifacts/artifact-service.js';
+import PackageManager from '../package/package-manager.js';
 import {InstallEventBus} from '../events/install-event-bus.js';
 import {
   OrchestrationEventBus,
@@ -11,7 +11,7 @@ import {
   PackageResult,
 } from '../events/orchestration-event-bus.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
-import PackageInstaller, {InstallOptions} from '../package/package-installer.js';
+import PackageInstaller, {InstallOptions, InstallResult} from '../package/package-installer.js';
 import {ProjectGraph} from '../project/project-graph.js';
 import {Logger} from '../types/logger.js';
 import {InstallationSource} from '../types/package.js';
@@ -21,22 +21,7 @@ import {
   OrchestratorOptions,
 } from './orchestrator.js';
 
-export interface InstallOrchestratorOptions extends InstallOptions, OrchestratorOptions {
-  targetOrg: string;
-}
-
-/**
- * Shared context created once per orchestration run and threaded to each
- * single-package install so they share a connection and cache.
- */
-interface InstallContext {
-  artifactService: ArtifactService;
-  org: Org;
-}
-
-// ============================================================================
-// Task implementation
-// ============================================================================
+export type InstallOrchestratorOptions = InstallOptions & OrchestratorOptions;
 
 /**
  * {@link OrchestrationTask} for package installations.
@@ -45,18 +30,21 @@ interface InstallContext {
  * delegates individual package installs to PackageInstaller.
  * Installers emit events directly on the shared InstallEventBus.
  */
-export class InstallOrchestrationTask implements OrchestrationTask<InstallContext> {
+export class InstallOrchestrationTask implements OrchestrationTask<InstallResult> {
+  private readonly targetOrg: Org;
   private readonly installBus: InstallEventBus;
-  private readonly logger: Logger | undefined;
   private readonly options: InstallOrchestratorOptions;
   private readonly provider: ProjectDefinitionProvider;
+  private readonly logger?: Logger;
 
   constructor(
+    targetOrg: Org,
     provider: ProjectDefinitionProvider,
     options: InstallOrchestratorOptions,
     logger?: Logger,
     installBus?: InstallEventBus,
   ) {
+    this.targetOrg = targetOrg;
     this.provider = provider;
     this.options = options;
     this.logger = logger;
@@ -66,8 +54,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
   async processSinglePackage(
     packageName: string,
     _level: number,
-    context: InstallContext,
-  ): Promise<PackageResult> {
+  ): Promise<PackageResult<InstallResult>> {
     const start = Date.now();
     const pkgLogger = this.logger?.child?.({package: packageName}) ?? this.logger;
 
@@ -88,17 +75,17 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
       this.provider,
       this.options,
       pkgLogger,
-      context.org,
+      this.targetOrg,
       this.installBus,
     );
-    // Org already provided via constructor — no connect() needed
 
     let success = true;
     let skipped = false;
     let error: string | undefined;
+    let result: InstallResult | undefined;
 
     try {
-      const result = await installer.install(packageName);
+      result = await installer.install(packageName);
       if (result.skipped) {
         skipped = true;
       }
@@ -109,20 +96,8 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
 
     const duration = Date.now() - start;
     return {
-      duration, error, packageName, skipped, success,
+      duration, error, packageName, result, skipped, success,
     };
-  }
-
-  async setup(): Promise<InstallContext> {
-    const org = await Org.create({aliasOrUsername: this.options.targetOrg});
-
-    // Use singleton instance - cache is lazy-loaded automatically on first access
-    const artifactService = ArtifactService.getInstance()
-    .setOrg(org)
-    .setProjectDir(this.provider.projectDir)
-    .setLogger(this.logger);
-
-    return {artifactService, org};
   }
 }
 
@@ -143,9 +118,10 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallContex
 export class InstallOrchestrator {
   readonly installBus: InstallEventBus;
   readonly orchestrationBus: OrchestrationEventBus;
-  private readonly orchestrator: Orchestrator<InstallContext>;
+  private readonly orchestrator: Orchestrator<InstallResult>;
 
   constructor(
+    targetOrg: Org,
     provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
     options: InstallOrchestratorOptions,
@@ -153,8 +129,8 @@ export class InstallOrchestrator {
   ) {
     this.installBus = new InstallEventBus();
     this.orchestrationBus = new OrchestrationEventBus(randomUUID());
-    const task = new InstallOrchestrationTask(provider, options, logger, this.installBus);
-    this.orchestrator = new Orchestrator(graph, {...options}, task, logger, this.orchestrationBus);
+    const task = new InstallOrchestrationTask(targetOrg, provider, options, logger, this.installBus);
+    this.orchestrator = new Orchestrator(graph, options, task, logger, this.orchestrationBus);
   }
 
   // ========================================================================
@@ -166,12 +142,14 @@ export class InstallOrchestrator {
    * Uses artifact resolution (local or npm) to find the best version.
    */
   static forArtifact(
+    targetOrg: Org,
     provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
     options: Omit<InstallOrchestratorOptions, 'source'> & {source?: never},
     logger?: Logger,
   ): InstallOrchestrator {
     return new InstallOrchestrator(
+      targetOrg,
       provider,
       graph,
       {...options, includeManagedPackages: true, source: InstallationSource.Artifact},
@@ -184,12 +162,14 @@ export class InstallOrchestrator {
    * Deploys source metadata via the metadata API without artifact resolution.
    */
   static forSource(
+    targetOrg: Org,
     provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
     options: Omit<InstallOrchestratorOptions, 'mode' | 'source'> & {mode?: never; source?: never},
     logger?: Logger,
   ): InstallOrchestrator {
     return new InstallOrchestrator(
+      targetOrg,
       provider,
       graph,
       {...options, includeManagedPackages: false, source: InstallationSource.Local},
@@ -209,7 +189,7 @@ export class InstallOrchestrator {
    *   are resolved and installed first.
    * @returns OrchestrationResult with per-package outcomes.
    */
-  public async installAll(packageNames: string[]): Promise<OrchestrationResult> {
+  public async installAll(packageNames: string[]): Promise<OrchestrationResult<InstallResult>> {
     return this.orchestrator.executeAll(packageNames);
   }
 }

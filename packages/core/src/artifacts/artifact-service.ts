@@ -82,8 +82,6 @@ interface CachedArtifact {
 }
 
 export default class ArtifactService {
-  /** Singleton instance for shared cache across operations */
-  private static instance?: ArtifactService;
   /** Whether the artifact object is available in the org. Starts true, flipped to false on first failure. */
   private artifactAvailable = true;
   /** Track if we've attempted to load the cache (even if it failed) to avoid repeated attempts */
@@ -99,36 +97,6 @@ export default class ArtifactService {
   constructor(targetOrg: Org, logger?: Logger) {
     this.logger = logger;
     this.targetOrg = targetOrg;
-  }
-
-  /**
-   * Get the singleton instance of ArtifactService.
-   * Use this to share the preloaded cache across multiple operations.
-   *
-   * @example
-   * ```typescript
-   * const service = ArtifactService.getInstance();
-   * service.setOrg(org);
-   * service.setLogger(logger);
-   *
-   * // Later, in other classes:
-   * const service = ArtifactService.getInstance(); // Same instance with cache
-   * ```
-   */
-  public static getInstance(): ArtifactService {
-    if (!ArtifactService.instance) {
-      ArtifactService.instance = new ArtifactService();
-    }
-
-    return ArtifactService.instance;
-  }
-
-  /**
-   * Reset the singleton instance (primarily for testing).
-   * This clears the cached instance, allowing a fresh start.
-   */
-  public static resetInstance(): void {
-    ArtifactService.instance = undefined;
   }
 
   /**

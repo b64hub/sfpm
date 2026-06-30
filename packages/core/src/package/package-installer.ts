@@ -1,23 +1,23 @@
-import {Org} from '@salesforce/core';
+import { Org } from '@salesforce/core';
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+import type { ProjectDefinitionProvider } from '../project/providers/project-definition-provider.js';
 
-import {ArtifactResolution, ArtifactService} from '../artifacts/artifact-service.js';
-import {hydrateFromNpmPackageJson} from '../artifacts/npm-package-adapter.js';
-import {InstallEventBus, InstallEventSink} from '../events/install-event-bus.js';
-import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
-import {ArtifactResolutionOptions} from '../types/artifact.js';
-import {HookContext, HookTiming} from '../types/lifecycle.js';
-import {Logger} from '../types/logger.js';
+import ArtifactService, { ArtifactResolution } from '../artifacts/artifact-service.js';
+import { hydrateFromNpmPackageJson } from '../artifacts/npm-package-adapter.js';
+import { InstallEventBus, InstallEventSink } from '../events/install-event-bus.js';
+import { LifecycleEngine } from '../lifecycle/lifecycle-engine.js';
+import { ArtifactResolutionOptions } from '../types/artifact.js';
+import { HookContext, HookTiming } from '../types/lifecycle.js';
+import { Logger } from '../types/logger.js';
 import {
   InstallationMode, InstallationSource, PackageType, type TestLevel,
 } from '../types/package.js';
-import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
-import {installerFactory, InstallTaskContext, InstallTaskRegistration} from './installers/installer-registry.js';
+import { resolvePackageWorkspacePath } from '../utils/workspace-path.js';
+import { installerFactory, InstallTaskContext, InstallTaskRegistration } from './installers/installer-registry.js';
 import UpdateArtifactTask from './installers/tasks/update-artifact.js';
-import {ManagedPackageRef} from './installers/types.js';
+import { ManagedPackageRef } from './installers/types.js';
 import SfpmPackage, {
   isOrgAliasable, PackageFactory, SfpmUnlockedPackage,
 } from './sfpm-package.js';
@@ -25,6 +25,7 @@ import SfpmPackage, {
 import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
 import './installers/managed-package-installer.js';
+import PackageManager from './package-manager.js';
 
 export interface InstallOptions {
   artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
@@ -46,7 +47,7 @@ export interface InstallOptions {
    */
   source?: InstallationSource;
   updateArtifact?: boolean;
-  versionInstall?: {installationKeys?: {[packageName: string]: string}};
+  versionInstall?: { installationKeys?: { [packageName: string]: string } };
 }
 
 export interface InstallResult {
@@ -101,7 +102,7 @@ export default class PackageInstaller {
     if (usernameOrOrg instanceof Org) {
       this.targetOrg = usernameOrOrg;
     } else {
-      this.targetOrg = await Org.create({aliasOrUsername: usernameOrOrg});
+      this.targetOrg = await Org.create({ aliasOrUsername: usernameOrOrg });
     }
   }
 
@@ -120,7 +121,7 @@ export default class PackageInstaller {
     }
 
     const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
-    const buildOutput = ArtifactService.getInstance().getBuildOutput(packageWorkspacePath);
+    const buildOutput = PackageManager.getInstance(this.targetOrg).getArtifactService().getBuildOutput(packageWorkspacePath);
 
     if (!buildOutput) {
       throw new Error(`No build found for ${sfpmPackage.name}. Run 'sfpm build' before deploying.`);
@@ -204,9 +205,9 @@ export default class PackageInstaller {
 
     // Use singleton artifact service
     const artifactService = ArtifactService.getInstance()
-    .setOrg(this.targetOrg)
-    .setProjectDir(this.provider.projectDir)
-    .setLogger(this.logger);
+      .setOrg(this.targetOrg)
+      .setProjectDir(this.provider.projectDir)
+      .setLogger(this.logger);
 
     await this.resolveArtifact(artifactService, sfpmPackage);
 
@@ -234,7 +235,7 @@ export default class PackageInstaller {
    * the installer's {@link Installer.isInstalled} method.
    */
   public async installManagedPackage(managedRef: ManagedPackageRef): Promise<InstallResult> {
-    const {packageName} = managedRef;
+    const { packageName } = managedRef;
     const sink = this.bus?.forPackage(packageName);
 
     const installer = installerFactory(this.provider.projectDir, managedRef, this.options, this.logger, sink);
@@ -305,7 +306,7 @@ export default class PackageInstaller {
    * Reads the artifact's package.json and sets flat properties on the domain model.
    */
   private hydratePackageFromArtifact(sfpmPackage: SfpmPackage, resolution: ArtifactResolution): void {
-    const {resolved} = resolution;
+    const { resolved } = resolution;
 
     // Set working directory to the build output (artifacts/package/)
     sfpmPackage.workingDirectory = resolved.artifactPath;
@@ -446,7 +447,7 @@ export default class PackageInstaller {
 
     try {
       await this.runHooks('pre', sfpmPackage, sink);
-      await this.runTasks('pre', {sfpmPackage, targetOrg: this.targetOrg, workingDirectory: this.provider.projectDir});
+      await this.runTasks('pre', { sfpmPackage, targetOrg: this.targetOrg, workingDirectory: this.provider.projectDir });
 
       const result = await installer.run();
 

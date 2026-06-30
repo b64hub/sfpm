@@ -1,5 +1,5 @@
 import { InstallTask, InstallTaskContext } from '../installer-registry.js';
-import { ArtifactService } from '../../../artifacts/artifact-service.js';
+import PackageManager from '../../package-manager.js';
 
 export default class UpdateArtifactTask implements InstallTask {
   public name = 'update-artifact';
@@ -7,9 +7,9 @@ export default class UpdateArtifactTask implements InstallTask {
   public constructor(private ctx: InstallTaskContext) {}
 
   public async exec(): Promise<void> {
-    const artifactService = ArtifactService.getInstance()
-      .setOrg(this.ctx.targetOrg)
-      .setLogger(this.ctx.logger);
+    const {targetOrg, logger} = this.ctx;
+
+    const artifactService = PackageManager.getInstance(targetOrg, logger).getArtifactService();
 
     await artifactService.upsertArtifact(this.ctx.sfpmPackage);
     await artifactService.createHistoryRecord(this.ctx.sfpmPackage, {
