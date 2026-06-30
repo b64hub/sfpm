@@ -83,7 +83,7 @@ export default class PackageInstaller {
    */
   public async deploySource(sfpmPackage: SfpmPackage): Promise<InstallResult> {
     // Resolve build output from the package workspace
-    const sourcePath = sfpmPackage.packageDefinition?.path;
+    const sourcePath = sfpmPackage.packageDirectory();
     if (!sourcePath) {
       throw new Error(`No package definition path for ${sfpmPackage.name}`);
     }

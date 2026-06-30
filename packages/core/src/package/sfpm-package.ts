@@ -13,7 +13,6 @@ import {
   MetadataFile,
   PackageType,
   SfpmPackageContent,
-  SfpmPackageOrchestration,
   TestLevel,
   VersionFormat,
 } from '../types/package.js';
@@ -62,7 +61,6 @@ const PROFILE_SUPPORTED_METADATA_TYPES = new Set([
 
 export default abstract class SfpmPackage {
   protected _packageDefinition?: PackageDefinition;
-  public orchestration: SfpmPackageOrchestration;
   public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
   public projectDefinition?: ProjectDefinition;
   public projectDirectory: string;
@@ -78,7 +76,6 @@ export default abstract class SfpmPackage {
     this.projectDirectory = projectDirectory;
     this._packageName = stripScope(packageName);
     this.scope = extractScope(packageName);
-    this.orchestration = {} as SfpmPackageOrchestration;
   }
 
   get apiVersion(): string {
@@ -215,6 +212,7 @@ export default abstract class SfpmPackage {
 export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceDeployable {
   protected _componentSet?: ComponentSet;
   protected _content: SfpmPackageContent;
+  public testLevel?: TestLevel;
   private _analyzed = false;
   private _customFields?: SourceComponent[];
   private _validationState?: ValidationState;
@@ -355,18 +353,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     this._content.testCoverage = coverage;
   }
 
-  get testLevel(): TestLevel | undefined {
-    return this.orchestration?.install?.testLevel;
-  }
-
-  set testLevel(level: TestLevel) {
-    if (!this.orchestration.install) {
-      this.orchestration.install = {};
-    }
-
-    this.orchestration.install.testLevel = level;
-  }
-
   get testSuites(): string[] {
     return this.getComponentSet()
     .getSourceComponents()
@@ -457,14 +443,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
       ...this._content,
       metadataCount: components.toArray().length,
       testCoverage: this.testCoverage,
-    };
-  }
-
-  /** Resolves orchestration metadata from the package definition. */
-  public resolveOrchestrationMetadata(): Partial<SfpmPackageOrchestration> {
-    return {
-      build: this.packageDefinition?.packageOptions?.build as any,
-      install: this.packageDefinition?.packageOptions?.deploy,
     };
   }
 

@@ -80,7 +80,7 @@ export interface InstallOptions {
   /** Installation key for unlocked packages */
   installationKey?: string;
   /**
-   * Where to install from: 'local' (project source) or 'artifact'.
+   * Where to install from: 'local' (project source ./dist) or 'artifact' (installed node_modules).
    */
   origin?: PackageOrigin;
   /**
@@ -146,18 +146,6 @@ export interface SfpmPackageContent {
   testCoverage?: number;
 }
 
-export interface SfpmPackageOrchestration {
-  build?: PerPackageBuildConfig;
-  creationDetails?: {duration?: number; timestamp?: number};
-  install?: PackageInstallConfig;
-  installation?: {
-    installationTime?: number;
-    subDirectory?: string;
-    targetOrg: string;
-    timestamp?: number
-  }[];
-}
-
 /**
  * Per-package build configuration from project config (package.json / sfdx-project.json).
  * These are static settings that travel with the package definition, not runtime build params.
@@ -203,7 +191,6 @@ export interface SfpmDataPackageContent {
 export interface SfpmPackageMetadataBase {
   [key: string]: any;
   apiVersion?: string;
-  orchestration: SfpmPackageOrchestration;
   // package name without npm scope. This is used for user-facing messages and Salesforce operations, but should not be used as a unique identifier since it is not guaranteed to be unique across scopes.
   packageName: string;
   packageType: Omit<PackageType, 'managed'>;
