@@ -61,8 +61,6 @@ const PROFILE_SUPPORTED_METADATA_TYPES = new Set([
 
 export default abstract class SfpmPackage {
   protected _packageDefinition?: PackageDefinition;
-  public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
-  public projectDefinition?: ProjectDefinition;
   public projectDirectory: string;
   public readonly scope: string | undefined;
   public sourceHash?: string;
@@ -81,7 +79,6 @@ export default abstract class SfpmPackage {
   get apiVersion(): string {
     return (
       this._apiVersion
-      || this.projectDefinition?.sourceApiVersion
       || process.env.SFPM_API_VERSION
       || DEFAULT_API_VERSION
     );
@@ -730,7 +727,6 @@ export class PackageFactory {
     const sfpmPackage = this.createPackageInstance(packageType, packageName, projectDirectory);
     sfpmPackage.type = packageType;
 
-    sfpmPackage.projectDefinition = this.provider.getProjectDefinition();
     sfpmPackage.packageDefinition = packageDefinition;
     sfpmPackage.version = packageDefinition.version;
 

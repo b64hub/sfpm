@@ -23,7 +23,7 @@ import {
   SubscriberPackageVersion,
 } from '@salesforce/packaging';
 
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {soql} from '../utils/soql.js';
 
 import Package2VersionStatus = PackagingSObjects.Package2VersionStatus;
@@ -32,6 +32,8 @@ import Package2VersionStatus = PackagingSObjects.Package2VersionStatus;
 // Types — SDK re-exports + thin types for raw SOQL results
 // ---------------------------------------------------------------------------
 
+/** Re-export SDK type */
+export {PackageVersionCreateRequestResult} from '@salesforce/packaging';
 /** Re-export SDK type for backward compat */
 export type Package2 = PackagingSObjects.Package2;
 
