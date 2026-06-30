@@ -46,7 +46,7 @@ export default class ProjectService {
 
     const definitionProvider = provider ?? await ProjectService.detectProvider(projectRoot, sfpmConfig);
     const {definition} = definitionProvider.resolve();
-    const graph = new ProjectGraph(definitionProvider);
+    const graph = ProjectGraph.buildGraph(definitionProvider.getProjectDefinition());
 
     if (definitionProvider instanceof WorkspaceProvider) {
       WorkspaceProvider.ensureSfdxProject(projectRoot, definition);
@@ -60,7 +60,7 @@ export default class ProjectService {
    */
   public static createFromProject(project: SfProject, sfpmConfig: SfpmConfig = {}): ProjectService {
     const provider = new SfdxProjectProvider(project);
-    const graph = new ProjectGraph(provider);
+    const graph = ProjectGraph.buildGraph(provider.getProjectDefinition());
 
     return new ProjectService(graph, sfpmConfig, provider);
   }
@@ -224,6 +224,7 @@ export default class ProjectService {
    */
   public async saveProjectDefinition(definition: ProjectDefinition): Promise<void> {
     for (const pkg of definition.packages) {
+      // eslint-disable-next-line no-await-in-loop -- file writes sequentially to avoid locks
       await this.definitionProvider.updatePackageConfig(pkg.name, pkg);
     }
 
