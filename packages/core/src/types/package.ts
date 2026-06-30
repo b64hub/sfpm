@@ -1,7 +1,6 @@
 import type {ArtifactResolutionOptions, SfpmPackageSource} from './artifact.js';
 
 import {DependencyAnalyzer} from './dependency-analysis.js';
-import {PackageInstallConfig} from './project.js';
 import {ValidationLevel} from './validation.js';
 
 /**
