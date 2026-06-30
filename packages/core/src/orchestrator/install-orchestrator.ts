@@ -3,7 +3,6 @@ import {randomUUID} from 'node:crypto';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
-import PackageManager from '../package/package-manager.js';
 import {InstallEventBus} from '../events/install-event-bus.js';
 import {
   OrchestrationEventBus,
@@ -12,6 +11,7 @@ import {
 } from '../events/orchestration-event-bus.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import PackageInstaller, {InstallOptions, InstallResult} from '../package/package-installer.js';
+import PackageManager from '../package/package-manager.js';
 import {ProjectGraph} from '../project/project-graph.js';
 import {Logger} from '../types/logger.js';
 import {InstallationSource} from '../types/package.js';
@@ -31,11 +31,11 @@ export type InstallOrchestratorOptions = InstallOptions & OrchestratorOptions;
  * Installers emit events directly on the shared InstallEventBus.
  */
 export class InstallOrchestrationTask implements OrchestrationTask<InstallResult> {
-  private readonly targetOrg: Org;
   private readonly installBus: InstallEventBus;
+  private readonly logger?: Logger;
   private readonly options: InstallOrchestratorOptions;
   private readonly provider: ProjectDefinitionProvider;
-  private readonly logger?: Logger;
+  private readonly targetOrg: Org;
 
   constructor(
     targetOrg: Org,
@@ -72,10 +72,10 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
     }
 
     const installer = new PackageInstaller(
+      this.targetOrg,
       this.provider,
       this.options,
       pkgLogger,
-      this.targetOrg,
       this.installBus,
     );
 
