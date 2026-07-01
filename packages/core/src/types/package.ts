@@ -9,13 +9,7 @@ import {ValidationLevel} from './validation.js';
  * Mirrors the `testLevel` values accepted by the Salesforce Metadata API
  * and `@salesforce/source-deploy-retrieve`
  */
-export declare const enum TestLevel {
-  NoTestRun = 'NoTestRun',
-  RunAllTestsInOrg = 'RunAllTestsInOrg',
-  RunLocalTests = 'RunLocalTests',
-  RunRelevantTests = 'RunRelevantTests',
-  RunSpecifiedTests = 'RunSpecifiedTests',
-}
+export type TestLevel = 'NoTestRun' | 'RunAllTestsInOrg' | 'RunLocalTests' | 'RunRelevantTests' | 'RunSpecifiedTests';
 
 export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Source = 'source', Unlocked = 'unlocked'}
 
@@ -47,10 +41,12 @@ export interface BuildOptions {
    * When provided and `validation` includes analysis, violations are reported.
    */
   dependencyAnalyzer?: DependencyAnalyzer;
-  /** DevHub username or alias for unlocked package builds */
-
   /** Force build even if no source changes detected (skip hash check) */
   force?: boolean;
+  /** DevHub username or alias for unlocked package builds */
+
+  /** Path to a .forceignore file for controlling which files are included in the build output */
+  ignoreFile?: string;
 
   unlocked?: UnlockedBuildOptions;
   /**
@@ -81,6 +77,8 @@ export interface InstallOptions {
   artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
   /** Force reinstall even if already installed with matching version/hash */
   force?: boolean;
+  /** Path to a .forceignore file for controlling which files are deployed */
+  ignoreFile?: string;
   /**
    * Where to install from: 'local' (project source ./dist) or 'artifact' (installed node_modules).
    */

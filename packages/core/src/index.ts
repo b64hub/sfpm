@@ -108,6 +108,7 @@ export * from './types/config.js';
 export * from './types/dependency-analysis.js';
 export * from './types/errors.js';
 export * from './types/lifecycle.js';
+export {default as Logger} from './types/logger.js';
 export * from './types/logger.js';
 export * from './types/npm.js';
 export * from './types/org.js';

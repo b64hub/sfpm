@@ -6,17 +6,12 @@ import {LifecycleHooks} from './lifecycle.js';
 
 /**
  * Stage-specific .forceignore file mappings.
- * Each stage can have a custom ignore file for fine-grained control
- * over which metadata is included during that lifecycle phase.
+ * @deprecated Use `BuildOptions.ignoreFile` and `InstallOptions.ignoreFile` instead.
  */
 export interface IgnoreFilesConfig {
-  /** Ignore file for production builds */
   build?: string;
-  /** Ignore file for prepare/staging phase */
   prepare?: string;
-  /** Ignore file for quick builds (no validation) */
   quickbuild?: string;
-  /** Ignore file for validation builds */
   validate?: string;
 }
 
@@ -64,16 +59,7 @@ export interface SfpmConfig {
   hooks?: LifecycleHooks[];
 
   /**
-   * Stage-specific .forceignore files.
-   * Configure different ignore patterns for different lifecycle stages.
-   *
-   * @example
-   * ```typescript
-   * ignoreFiles: {
-   *   build: '.forceignore.build',
-   *   validate: '.forceignore.validate',
-   * }
-   * ```
+   * @deprecated Use `BuildOptions.ignoreFile` and `InstallOptions.ignoreFile` instead.
    */
   ignoreFiles?: IgnoreFilesConfig;
 

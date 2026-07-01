@@ -114,7 +114,7 @@ export class SourceCopyStep implements AssemblyStep {
    * Returns `null` when no build ignore file is configured or the file does not exist.
    */
   private async loadBuildIgnore(options: AssemblyOptions): Promise<null | ReturnType<typeof ignore>> {
-    const buildIgnorePath = options.ignoreFilesConfig?.build;
+    const buildIgnorePath = options.ignoreFile;
     if (!buildIgnorePath) {
       return null;
     }

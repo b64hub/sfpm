@@ -7,7 +7,6 @@ import type {PendingValidationDescriptor, ValidationLevel} from '../types/valida
 import {ArtifactRepository} from '../artifacts/artifact-repository.js';
 import {BuildEventBus, BuildEventSink} from '../events/build-event-bus.js';
 import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
-import {IgnoreFilesConfig} from '../types/config.js';
 import Logger from '../types/logger.js';
 import {BuildOptions, PackageType} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
@@ -71,7 +70,6 @@ export default class PackageBuilder {
   private options: BuildOptions;
   private provider: ProjectDefinitionProvider;
   private sink?: BuildEventSink;
-  // private ignoreFilesConfig?: IgnoreFilesConfig;
 
   constructor(
     provider: ProjectDefinitionProvider,
@@ -536,7 +534,7 @@ export default class PackageBuilder {
         sfpmPackage.name,
         this.provider,
         {
-          ignoreFilesConfig: this.ignoreFilesConfig,
+          ignoreFile: this.options.ignoreFile,
           versionNumber: sfpmPackage.version,
         },
         this.logger,
