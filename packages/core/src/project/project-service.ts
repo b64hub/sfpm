@@ -207,11 +207,6 @@ export default class ProjectService {
     };
   }
 
-  /** Resolve a single-package ProjectDefinition for staging and building. */
-  public resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
-    return this.definitionProvider.resolveForPackage(packageName, options);
-  }
-
   /**
    * Resolve the full install config for a package by merging layers:
    * 1. Per-package install config from PackageDefinition.packageOptions.install
@@ -226,6 +221,11 @@ export default class ProjectService {
       ...packageInstallConfig,
       ...runtimeOptions,
     };
+  }
+
+  /** Resolve a single-package ProjectDefinition for staging and building. */
+  public resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
+    return this.definitionProvider.resolveSingleProjectDefinition(packageName, options);
   }
 
   /**
