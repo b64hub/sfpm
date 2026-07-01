@@ -15,7 +15,7 @@ import {SourceHasher} from '../utils/source-hasher.js';
 import {AnalyzerRegistry, PackageAnalyzer} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
-  Builder, builderFactory, BuilderOptions, BuilderResult,
+  Builder, builderFactory, BuilderResult,
   BuildTaskContext, BuildTaskResult,
 } from './builders/builder-registry.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
@@ -246,7 +246,7 @@ export default class PackageBuilder {
     repo: ArtifactRepository,
   ): Promise<boolean> {
     const needsPackageVersionId = sfpmPackage.type === PackageType.Unlocked
-      && !this.options.sourceOnly
+      && !this.options.unlocked?.sourceOnly
       && (this.options.validation === 'org' || this.options.validation === 'full' || !this.options.validation);
 
     if (!needsPackageVersionId) return true;
@@ -313,7 +313,7 @@ export default class PackageBuilder {
    */
   private resolveBuildAs(sfpmPackage: SfpmPackage, modeConfig: ModeConfig): PackageType | undefined {
     if (sfpmPackage.type !== PackageType.Unlocked) return undefined;
-    if (this.options.sourceOnly) return PackageType.Source;
+    if (this.options.unlocked?.sourceOnly) return PackageType.Source;
     if (!modeConfig.orgValidation) return PackageType.Source;
     return undefined;
   }
@@ -327,8 +327,8 @@ export default class PackageBuilder {
 
     let username: string | undefined;
     // With --source-only, unlocked packages use the build org (not DevHub)
-    if (sfpmPackage.type === PackageType.Unlocked && !this.options.sourceOnly) {
-      username = this.options.devhubUsername;
+    if (sfpmPackage.type === PackageType.Unlocked && !this.options.unlocked?.sourceOnly) {
+      username = this.options.unlocked?.devhubUsername;
     } else {
       username = this.options.buildOrg;
     }
@@ -379,19 +379,7 @@ export default class PackageBuilder {
 
     const buildAs = this.resolveBuildAs(sfpmPackage, modeConfig);
 
-    const builderOptions: BuilderOptions = {
-      ...(modeConfig.dependencyAnalysis && this.options.dependencyAnalyzer && {
-        dependencyAnalysis: {
-          dependencyAnalyzer: this.options.dependencyAnalyzer,
-          warnOnly: modeConfig.dependencyAnalysis === 'warn',
-        },
-      }),
-      installationKey: this.options.installationKey,
-      validation: modeConfig.orgValidation,
-      waitTime: this.options.waitTime,
-    };
-
-    const builderInstance = builderFactory(sfpmPackage, builderOptions, this.logger, this.sink, buildAs as PackageType);
+    const builderInstance = builderFactory(sfpmPackage, this.options, this.logger, this.sink, buildAs as PackageType);
 
     // Connect to org if needed
     const targetOrg = await this.resolveTargetOrg(sfpmPackage, modeConfig);
@@ -464,7 +452,7 @@ export default class PackageBuilder {
       projectDir: this.provider.projectDir,
       sfpmPackage,
       stage: lifecycle.stage,
-      targetOrg: this.options.devhubUsername,
+      targetOrg: this.options.unlocked?.devhubUsername,
       timing,
     };
 

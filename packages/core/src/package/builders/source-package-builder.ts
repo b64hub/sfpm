@@ -7,13 +7,13 @@ import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
 import {FORCE_APP_DIR} from '../../types/artifact.js';
 import {BuildError} from '../../types/errors.js';
 import {Logger} from '../../types/logger.js';
-import {PackageType} from '../../types/package.js';
+import {BuildOptions, PackageType} from '../../types/package.js';
 import {
   PendingValidationDescriptor, type ValidationCheck,
 } from '../../types/validation.js'
 import SfpmPackage, {SfpmMetadataPackage, SfpmSourcePackage} from '../sfpm-package.js';
 import {
-  Builder, BuilderOptions, BuilderResult, BuildTaskRegistration, RegisterBuilder,
+  Builder, BuilderResult, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 import {dependencyAnalysisTask} from './tasks/dependency-analysis-task.js';
@@ -26,7 +26,7 @@ export default class SourcePackageBuilder implements Builder {
   public tasks: BuildTaskRegistration[] = [];
   private buildOrg?: Org;
   private logger?: Logger;
-  private options: BuilderOptions;
+  private options: BuildOptions;
   private sfpmPackage: SfpmMetadataPackage;
   private sink?: BuildEventSink;
   private workingDirectory: string;
@@ -34,7 +34,7 @@ export default class SourcePackageBuilder implements Builder {
   constructor(
     workingDirectory: string,
     sfpmPackage: SfpmPackage,
-    options: BuilderOptions,
+    options: BuildOptions,
     logger?: Logger,
     sink?: BuildEventSink,
   ) {
@@ -49,11 +49,11 @@ export default class SourcePackageBuilder implements Builder {
     this.sink = sink;
 
     // Pre-build: static dependency analysis when an analyzer is provided
-    if (options.dependencyAnalysis?.dependencyAnalyzer) {
+    if (options.dependencyAnalyzer) {
       this.tasks.push({
         factory: dependencyAnalysisTask({
-          analyzer: options.dependencyAnalysis.dependencyAnalyzer,
-          warnOnly: options.dependencyAnalysis.warnOnly,
+          analyzer: options.dependencyAnalyzer,
+          warnOnly: false,
         }),
         phase: 'pre',
       });
@@ -140,7 +140,7 @@ export default class SourcePackageBuilder implements Builder {
   private async validate(): Promise<PendingValidationDescriptor | undefined> {
     const targetOrg = this.buildOrg;
 
-    if (this.options.validation === false || !targetOrg) return undefined;
+    if (!this.options.validation || this.options.validation === 'none' || !targetOrg) return undefined;
 
     const testClasses = this.getTestClasses();
     if (this.sfpmPackage.hasApex && testClasses.length === 0) {

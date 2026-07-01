@@ -109,7 +109,7 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
    *
    * Prunes the full project to just the target package and marks it as default.
    */
-  resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
+  resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
     const {definition} = this.resolve();
     const pruned = structuredClone(definition);
 

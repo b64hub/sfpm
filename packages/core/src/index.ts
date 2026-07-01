@@ -48,7 +48,7 @@ export {
 } from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
 export {
-  type Builder, type BuilderConstructor, builderFactory, type BuilderOptions, BuilderRegistry,
+  type Builder, type BuilderConstructor, builderFactory, BuilderRegistry,
   type BuilderResult, type BuildTask, type BuildTaskContext,
   type BuildTaskEnrichments, type BuildTaskRegistration,
   type BuildTaskResult,
@@ -62,14 +62,13 @@ export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
 export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from './package/org-alias-resolver.js';
-export {type BuildOptions, PackageBuilder, type ValidationLevel} from './package/package-builder.js';
+export {PackageBuilder, type ValidationLevel} from './package/package-builder.js';
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
-export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
+export {type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService} from './package/package-service.js';
 export {
   isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';
-export {type PendingValidationDescriptor, type ValidationState} from './types/validation.js';
 export {
   type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
 } from './package/validation/validation-poller.js';
@@ -114,6 +113,7 @@ export * from './types/npm.js';
 export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
+export {type PendingValidationDescriptor, type ValidationState} from './types/validation.js';
 export * from './types/watcher.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';

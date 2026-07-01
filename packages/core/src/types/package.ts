@@ -48,16 +48,11 @@ export interface BuildOptions {
    */
   dependencyAnalyzer?: DependencyAnalyzer;
   /** DevHub username or alias for unlocked package builds */
-  devhubUsername?: string;
+
   /** Force build even if no source changes detected (skip hash check) */
   force?: boolean;
-  /** Installation key for unlocked packages */
-  installationKey?: string;
-  /**
-   * Unlocked packages are built as source instead of creating a package version.
-   * No DevHub required. Designed for PR validation against scratch orgs.
-   */
-  sourceOnly?: boolean;
+
+  unlocked?: UnlockedBuildOptions;
   /**
    * Validation level. Controls which quality gates run during the build.
    *
@@ -71,26 +66,39 @@ export interface BuildOptions {
   waitTime?: number;
 }
 
+export interface UnlockedBuildOptions {
+  definitionFile?: string;
+  devhubUsername?: string;
+  installationKey?: string;
+  /**
+   * Unlocked packages are built as source instead of creating a package version.
+   * No DevHub required. Designed for PR validation against scratch orgs.
+   */
+  sourceOnly?: boolean;
+}
+
 export interface InstallOptions {
   artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
-
   /** Force reinstall even if already installed with matching version/hash */
   force?: boolean;
-  /** Installation key for unlocked packages */
-  installationKey?: string;
   /**
    * Where to install from: 'local' (project source ./dist) or 'artifact' (installed node_modules).
    */
   origin?: PackageOrigin;
+  testLevel?: TestLevel;
+  unlocked?: UnlockedInstallOptions;
+  /** Update sfpm artifact records in org upon installation */
+  updateArtifact?: boolean;
+  waitTime?: number
+}
+
+export interface UnlockedInstallOptions {
+  /** Installation key for unlocked packages */
+  installationKey?: string;
   /**
    * Unlocked packages are deployed as source instead of installing a package version.
    */
   sourceOnly?: boolean;
-  testLevel?: TestLevel;
-  /** Update sfpm artifact records in org upon installation */
-  updateArtifact?: boolean;
-
-  waitTime?: number
 }
 
 export type MetadataFile = string | {

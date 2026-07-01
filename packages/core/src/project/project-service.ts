@@ -1,8 +1,7 @@
 import {SfProject} from '@salesforce/core';
-import path from 'node:path';
 
 import type {SfpmConfig} from '../types/config.js';
-import type {PackageType} from '../types/package.js';
+import type {BuildOptions, InstallOptions, PackageType} from '../types/package.js';
 import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import type {
   ProjectDefinitionProvider,
@@ -188,9 +187,45 @@ export default class ProjectService {
     return this.sfpmConfig;
   }
 
+  /**
+   * Resolve the full build config for a package by merging layers:
+   * 1. Global defaults from SfpmConfig (sourceApiVersion)
+   * 2. Per-package build config from PackageDefinition.packageOptions.build
+   * 3. Runtime overrides passed by the caller
+   */
+  public resolveBuildConfig(packageName: string, runtimeOptions?: BuildOptions): BuildOptions {
+    const pkg = this.definitionProvider.getPackageDefinition(packageName);
+    const packageBuildConfig = pkg.packageOptions?.build;
+
+    return {
+      // Layer 1: global defaults
+      ...(this.sfpmConfig.sourceApiVersion ? {apiVersion: this.sfpmConfig.sourceApiVersion} : {}),
+      // Layer 2: per-package config
+      ...packageBuildConfig,
+      // Layer 3: runtime overrides
+      ...runtimeOptions,
+    };
+  }
+
   /** Resolve a single-package ProjectDefinition for staging and building. */
   public resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
     return this.definitionProvider.resolveForPackage(packageName, options);
+  }
+
+  /**
+   * Resolve the full install config for a package by merging layers:
+   * 1. Per-package install config from PackageDefinition.packageOptions.install
+   * 2. Runtime overrides passed by the caller
+   */
+  public resolveInstallConfig(packageName: string, runtimeOptions?: InstallOptions): InstallOptions {
+    const pkg = this.definitionProvider.getPackageDefinition(packageName);
+    const packageInstallConfig = pkg.packageOptions?.install;
+
+    return {
+      ...(this.sfpmConfig.sourceApiVersion ? {apiVersion: this.sfpmConfig.sourceApiVersion} : {}),
+      ...packageInstallConfig,
+      ...runtimeOptions,
+    };
   }
 
   /**

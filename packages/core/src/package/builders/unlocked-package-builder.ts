@@ -8,11 +8,11 @@ import ProjectService from '../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
 import {BuildError} from '../../types/errors.js';
 import Logger from '../../types/logger.js';
-import {PackageType} from '../../types/package.js'
+import {BuildOptions, PackageType} from '../../types/package.js'
 import PackageService, {PackageVersionCreateReportProgress, PackageVersionCreateRequestResult} from '../package-service.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
-  Builder, BuilderOptions, BuilderResult, BuildTaskRegistration, RegisterBuilder,
+  Builder, BuilderResult, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 
@@ -22,12 +22,12 @@ export default class UnlockedPackageBuilder implements Builder {
   public tasks: BuildTaskRegistration[] = [];
   private devhub?: Org;
   private logger?: Logger;
-  private options: BuilderOptions;
+  private options: BuildOptions;
   private sfpmPackage: SfpmUnlockedPackage;
   private sink?: BuildEventSink;
   private workingDirectory: string;
 
-  constructor(workingDirectory: string, sfpmPackage: SfpmPackage, options: BuilderOptions, logger?: Logger, sink?: BuildEventSink) {
+  constructor(workingDirectory: string, sfpmPackage: SfpmPackage, options: BuildOptions, logger?: Logger, sink?: BuildEventSink) {
     if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
       throw new TypeError(`UnlockedPackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
@@ -96,7 +96,7 @@ export default class UnlockedPackageBuilder implements Builder {
     }
 
     // Set validation state on the domain model
-    const validated = this.options.validation !== false;
+    const validated = Boolean(this.options.validation) && this.options.validation !== 'none';
     const checks: Array<'dependencies' | 'deploy' | 'test'> = validated ? ['deploy', 'test', 'dependencies'] : [];
 
     if (validated) {
@@ -140,23 +140,15 @@ export default class UnlockedPackageBuilder implements Builder {
 
     const packageService = new PackageService(this.devhub!, this.logger);
 
-    const packageConfig = ProjectService.getInstance().resolveBuild
+    const buildOptions = (await ProjectService.getInstance()).resolveBuildConfig(this.sfpmPackage.packageName, this.options)
 
     this.sink?.createStart({
       packageId: this.sfpmPackage.packageId,
       versionNumber: this.sfpmPackage.version || '',
     });
 
-    const validate = this.options.validation !== false;
-    const definitionFile
-      = (packageConfig?.definitionFile
-        ? {definitionfile: path.join(this.workingDirectory, packageConfig.definitionFile)}
-        : {})
-    const tag = (this.sfpmPackage.tag
-      ? {tag: this.sfpmPackage.tag}
-      : {})
-
-    const waitTime = this.options.waitTime || 120;
+    const validate = Boolean(this.options.validation) && this.options.validation !== 'none';
+    const waitTime = buildOptions.waitTime || 120;
 
     this.logger?.debug(`PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, `
       + `version=${this.sfpmPackage.version}, validation=${validate}`);
@@ -175,11 +167,11 @@ export default class UnlockedPackageBuilder implements Builder {
           apiVersion: this.sfpmPackage.apiVersion,
           asyncvalidation: validate,
           codecoverage: validate,
-          definitionfile: definitionFile,
-          installationkey: this.options.installationKey,
-          installationkeybypass: this.options.installationKey ? undefined : true,
+          definitionfile: buildOptions.unlocked?.definitionFile,
+          installationkey: buildOptions.unlocked?.installationKey,
+          installationkeybypass: buildOptions.unlocked?.installationKey ? undefined : true,
           skipvalidation: !validate,
-          tag,
+          tag: this.sfpmPackage.tag,
           versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
           wait: waitTime,
         },

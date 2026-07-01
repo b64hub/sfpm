@@ -103,7 +103,7 @@ export interface ProjectDefinitionProvider {
    * The returned definition has exactly one package entry (with `default: true`),
    * and project-level settings.
    */
-  resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition;
+  resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition;
 
   /**
    * Update fields on a package's backing configuration.

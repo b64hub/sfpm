@@ -242,7 +242,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
    * Builds a single-package definition suitable for staging and building.
    * The returned definition is converted to sfdx-project.json format via the adapter.
    */
-  resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
+  resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
     const result = this.resolve();
     const {definition} = result;
 

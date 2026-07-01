@@ -3,8 +3,8 @@ import type {Org} from '@salesforce/core';
 import type {BuildEventSink} from '../../events/build-event-bus.js';
 
 import {DependencyAnalyzer} from '../../types/dependency-analysis.js';
-import {Logger} from '../../types/logger.js';
-import {PackageType} from '../../types/package.js'
+import Logger from '../../types/logger.js';
+import {BuildOptions, PackageType} from '../../types/package.js'
 import {PendingValidationDescriptor, ValidationState} from '../../types/validation.js';
 import SfpmPackage from '../sfpm-package.js';
 
@@ -124,26 +124,12 @@ export interface DependencyAnalysis {
 }
 
 /**
- * Options passed to package builders.
- * Derived from {@link BuildOptions} and {@link ModeConfig} by the PackageBuilder.
- */
-export interface BuilderOptions {
-  dependencyAnalysis?: DependencyAnalysis;
-  /** Installation key for unlocked packages */
-  installationKey?: string;
-  /** Validation mode for package builds */
-  validation?: boolean;
-  /** Timeout in minutes for package version creation */
-  waitTime?: number;
-}
-
-/**
  * Constructor signature for package builders
  */
 export type BuilderConstructor = new (
   workingDirectory: string,
   sfpmPackage: SfpmPackage,
-  options: BuilderOptions,
+  options: BuildOptions,
   logger?: Logger,
   sink?: BuildEventSink,
 ) => Builder;
@@ -191,7 +177,7 @@ export function RegisterBuilder(type: Omit<PackageType, 'managed'>) {
  */
 export function builderFactory(
   sfpmPackage: SfpmPackage,
-  options: BuilderOptions,
+  options: BuildOptions,
   logger?: Logger,
   sink?: BuildEventSink,
   buildAs?: PackageType,
