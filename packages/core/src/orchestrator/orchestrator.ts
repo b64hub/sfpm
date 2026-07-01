@@ -7,7 +7,7 @@ import {
 } from '../events/orchestration-event-bus.js';
 import {DependencyResolution, PackageNode, ProjectGraph} from '../project/project-graph.js';
 import {DependencyError} from '../types/errors.js';
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 
 // ============================================================================
 // Public types

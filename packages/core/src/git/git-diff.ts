@@ -3,7 +3,7 @@ import * as fs from 'fs-extra';
 
 import { LoggerLevel } from '@salesforce/core';
 import { SimpleGit, simpleGit } from 'simple-git';
-import { Logger } from '../types/logger.js';
+import Logger from '../types/logger.js';
 
 
 const SEP = /\/|\\/;

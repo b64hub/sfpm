@@ -3,7 +3,7 @@ import {Org} from '@salesforce/core';
 import type {InstallEventSink} from '../../events/install-event-bus.js';
 
 import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
-import {Logger} from '../../types/logger.js';
+import Logger from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {resolveOrgType} from '../../utils/org-utils.js';
 import PackageManager from '../package-manager.js';

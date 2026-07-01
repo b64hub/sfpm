@@ -2,7 +2,7 @@ import {MetadataComponent} from '@salesforce/source-deploy-retrieve';
 
 import type {SfpmMetadataPackage} from '../sfpm-package.js';
 
-import {Logger} from '../../types/logger.js';
+import Logger from '../../types/logger.js';
 import {PackageType, SfpmPackageContent} from '../../types/package.js';
 import {PackageAnalyzer, RegisterAnalyzer} from './analyzer-registry.js';
 

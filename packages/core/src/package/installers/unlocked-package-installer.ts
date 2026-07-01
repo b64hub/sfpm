@@ -1,10 +1,8 @@
 import {Org} from '@salesforce/core';
 
 import type {InstallEventSink} from '../../events/install-event-bus.js';
-import type {InstallOptions} from '../package-installer.js';
-
-import {Logger} from '../../types/logger.js';
-import {PackageType} from '../../types/package.js';
+import {type InstallOptions, PackageType} from '../../types/package.js';
+import Logger from '../../types/logger.js';
 import {resolveOrgType} from '../../utils/org-utils.js';
 import PackageManager from '../package-manager.js';
 import {SfpmUnlockedPackage} from '../sfpm-package.js';
@@ -83,7 +81,7 @@ export default class UnlockedPackageInstaller implements Installer {
 
     const packageService = PackageManager.getInstance(this.targetOrg!).getPackageService();
 
-    const installationKey = this.options?.versionInstall?.installationKeys?.[packageName];
+    const installationKey = this.options?.unlocked?.installationKey;
 
     const result = await packageService.installPackage(packageVersionId, {
       installationKey,

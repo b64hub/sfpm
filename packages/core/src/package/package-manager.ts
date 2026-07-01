@@ -1,7 +1,7 @@
 import {Org} from '@salesforce/core';
 
 import ArtifactService from '../artifacts/artifact-service.js';
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {InstalledArtifact, PackageType} from '../types/package.js';
 import {InstallCheckResult} from './installers/installer-registry.js';
 import {VersionInstallable} from './installers/types.js';

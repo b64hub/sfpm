@@ -3,7 +3,7 @@ import type {Org} from '@salesforce/core';
 import type SfpmPackage from '../sfpm-package.js';
 
 import {InstallEventSink, InstallOptions} from '../../index.js';
-import {Logger} from '../../types/logger.js';
+import Logger from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {ManagedPackageRef} from './types.js';
 

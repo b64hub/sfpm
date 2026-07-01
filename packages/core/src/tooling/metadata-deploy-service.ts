@@ -3,7 +3,7 @@ import type {
 } from '@salesforce/source-deploy-retrieve';
 import {type Connection, Org} from '@salesforce/core';
 
-import type {Logger} from '../types/logger.js';
+import type Logger from '../types/logger.js';
 
 /** Options for starting a metadata deployment. */
 export interface DeployOptions {

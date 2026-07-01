@@ -51,6 +51,7 @@ interface RunInstallerOptions {
 /**
  * Orchestrator for package installations
  */
+export {PackageInstaller};
 export default class PackageInstaller {
   private bus?: InstallEventBus;
   private logger: Logger | undefined;
@@ -324,7 +325,7 @@ export default class PackageInstaller {
    */
   private resolveInstallAs(sfpmPackage: SfpmPackage): PackageType | undefined {
     if (sfpmPackage.type !== PackageType.Unlocked) return undefined;
-    if (this.options.sourceOnly) return PackageType.Source;
+    if (this.options.unlocked?.sourceOnly) return PackageType.Source;
     if (!(sfpmPackage as SfpmUnlockedPackage).packageVersionId) return PackageType.Source;
     return undefined;
   }

@@ -5,7 +5,7 @@ import SfpmPackage from '../package/sfpm-package.js';
 import {
   ArtifactResolutionOptions, ResolvedArtifact, SfpmPackageSource,
 } from '../types/artifact.js';
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {InstalledArtifact} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
 import {soql} from '../utils/soql.js';

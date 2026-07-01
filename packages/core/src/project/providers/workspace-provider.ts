@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type {Logger} from '../../types/logger.js';
+import type Logger from '../../types/logger.js';
 import type {PackageType} from '../../types/package.js';
 import type {
   ProjectDefinitionProvider,

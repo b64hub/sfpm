@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 
 import {DIST_DIR} from '../types/artifact.js';
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {NpmPackageJson} from '../types/npm.js';
 import {SfpmPackageMetadataBase} from '../types/package.js';
 import {extractPackageVersionId, extractSourceHash, fromNpmPackageJson} from './npm-package-adapter.js';

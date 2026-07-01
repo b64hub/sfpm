@@ -10,11 +10,11 @@ import {
   PackageResult,
 } from '../events/orchestration-event-bus.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
-import PackageInstaller, {InstallOptions, InstallResult} from '../package/package-installer.js';
+import PackageInstaller, {InstallResult} from '../package/package-installer.js';
 import PackageManager from '../package/package-manager.js';
 import {ProjectGraph} from '../project/project-graph.js';
-import {Logger} from '../types/logger.js';
-import {InstallationSource} from '../types/package.js';
+import Logger from '../types/logger.js';
+import {type InstallOptions, PackageOrigin} from '../types/package.js';
 import {
   OrchestrationTask,
   Orchestrator,
@@ -152,7 +152,7 @@ export class InstallOrchestrator {
       targetOrg,
       provider,
       graph,
-      {...options, includeManagedPackages: true, source: InstallationSource.Artifact},
+      {...options, includeManagedPackages: true, origin: PackageOrigin.Artifact},
       logger,
     );
   }
@@ -172,7 +172,7 @@ export class InstallOrchestrator {
       targetOrg,
       provider,
       graph,
-      {...options, includeManagedPackages: false, source: InstallationSource.Local},
+      {...options, includeManagedPackages: false, origin: PackageOrigin.Local},
       logger,
     );
   }

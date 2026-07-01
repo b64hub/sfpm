@@ -6,7 +6,7 @@ import type {BuildEventSink} from '../../events/build-event-bus.js';
 import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
 import {FORCE_APP_DIR} from '../../types/artifact.js';
 import {BuildError} from '../../types/errors.js';
-import {Logger} from '../../types/logger.js';
+import Logger from '../../types/logger.js';
 import {BuildOptions, PackageType} from '../../types/package.js';
 import {
   PendingValidationDescriptor, type ValidationCheck,

@@ -317,7 +317,7 @@ export default class UnlockedPackageBuilder implements Builder {
     });
 
     const projectService = await ProjectService.getInstance(this.workingDirectory);
-    const prunedDefinition = projectService.resolveForPackage(this.sfpmPackage.packageName, {
+    const prunedDefinition = projectService.resolveSingleProjectDefinition(this.sfpmPackage.packageName, {
       isOrgDependent: true,
     });
 

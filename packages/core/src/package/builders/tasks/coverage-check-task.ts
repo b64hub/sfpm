@@ -1,6 +1,6 @@
 import {Org} from '@salesforce/core';
 
-import {Logger} from '../../../types/logger.js';
+import Logger from '../../../types/logger.js';
 import PackageService, {Package2Version} from '../../package-service.js';
 import {SfpmUnlockedPackage} from '../../sfpm-package.js';
 import {BuildTask, BuildTaskContext} from '../builder-registry.js';

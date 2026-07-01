@@ -2,7 +2,7 @@ import {Org} from '@salesforce/core';
 
 import type {InstallEventSink} from '../../events/install-event-bus.js';
 
-import {Logger} from '../../types/logger.js';
+import Logger from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import PackageManager from '../package-manager.js';
 import {

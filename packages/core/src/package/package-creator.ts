@@ -4,7 +4,7 @@ import EventEmitter from 'node:events';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {stripScope} from '../utils/scope-utils.js';
 import {Package2, PackageService} from './package-service.js';
 

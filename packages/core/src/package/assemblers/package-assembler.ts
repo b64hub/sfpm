@@ -4,7 +4,7 @@ import path from 'node:path';
 import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 
 import {DIST_DIR} from '../../types/artifact.js';
-import {Logger} from '../../types/logger.js';
+import Logger from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {DestructiveManifestStep} from './steps/destructive-manifest-step.js';
 import {ForceIgnoreStep} from './steps/force-ignore-step.js';

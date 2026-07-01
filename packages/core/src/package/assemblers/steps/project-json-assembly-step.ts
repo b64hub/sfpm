@@ -8,7 +8,7 @@ import type {ProjectDefinitionProvider} from '../../../project/providers/project
 import ProjectService from '../../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../../project/providers/sfdx-project-adapter.js';
 import {FORCE_APP_DIR} from '../../../types/artifact.js';
-import {Logger} from '../../../types/logger.js';
+import Logger from '../../../types/logger.js';
 import {PackageType} from '../../../types/package.js';
 import {PackageDefinition} from '../../../types/project.js';
 import {stripScope} from '../../../utils/scope-utils.js';
@@ -19,7 +19,7 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
  * @description Finalizes the assembly process by generating a single-package `sfdx-project.json`
  * specifically tailored for the current package.
  *
- * Delegates to `ProjectService.resolveForPackage()` which uses the appropriate
+ * Delegates to `ProjectService.resolveSingleProjectDefinition()` which uses the appropriate
  * ProjectDefinitionProvider:
  * - **Workspace mode**: builds from the package's own workspace package.json
  * - **Legacy mode**: prunes the full sfdx-project.json
@@ -39,7 +39,7 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
 
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     try {
-      const packageDefinition = this.provider.resolveForPackage(this.packageName);
+      const packageDefinition = this.provider.resolveSingleProjectDefinition(this.packageName);
 
       if (options.versionNumber) {
         packageDefinition.packages[0].version = toVersionFormat(options.versionNumber, 'salesforce');
@@ -116,7 +116,7 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
    * @returns path to the staged sfdx-project.json
    */
   private async writeProjectDefinition(
-    packageDefinition: ReturnType<ProjectDefinitionProvider['resolveForPackage']>,
+    packageDefinition: ReturnType<ProjectDefinitionProvider['resolveSingleProjectDefinition']>,
     pkg: PackageDefinition,
     stagingDir: string,
     output: AssemblyOutput,

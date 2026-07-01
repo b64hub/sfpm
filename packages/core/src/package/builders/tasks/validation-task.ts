@@ -2,7 +2,7 @@ import type {TestClassResult, ValidationResult, ValidationStrategy} from './vali
 
 import {BuildEventSink} from '../../../events/build-event-bus.js';
 import {BuildError} from '../../../types/errors.js';
-import {Logger} from '../../../types/logger.js';
+import Logger from '../../../types/logger.js';
 import {SfpmMetadataPackage} from '../../sfpm-package.js';
 import {BuildTask, BuildTaskContext, BuildTaskResult} from '../builder-registry.js';
 import {DeployAndTestStrategy} from './validation/deploy-and-test-strategy.js';

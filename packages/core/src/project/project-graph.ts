@@ -63,6 +63,7 @@ export class PackageNode {
   }
 }
 
+export {ProjectGraph};
 export default class ProjectGraph {
   private readonly nodes: Map<string, PackageNode> = new Map();
 

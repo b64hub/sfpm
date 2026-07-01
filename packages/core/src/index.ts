@@ -62,7 +62,7 @@ export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
 export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from './package/org-alias-resolver.js';
-export {PackageBuilder, type ValidationLevel} from './package/package-builder.js';
+export {PackageBuilder} from './package/package-builder.js';
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
 export {type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService} from './package/package-service.js';
@@ -113,7 +113,7 @@ export * from './types/npm.js';
 export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
-export {type PendingValidationDescriptor, type ValidationState} from './types/validation.js';
+export {type PendingValidationDescriptor, type ValidationLevel, type ValidationState} from './types/validation.js';
 export * from './types/watcher.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
