@@ -13,7 +13,6 @@ import Logger from '../types/logger.js';
 import {
   InstallOptions, PackageOrigin, PackageType,
 } from '../types/package.js';
-import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {installerFactory, InstallTaskContext, InstallTaskRegistration} from './installers/installer-registry.js';
 import UpdateArtifactTask from './installers/tasks/update-artifact.js';
 import {ManagedPackageRef} from './installers/types.js';
@@ -88,7 +87,7 @@ export default class PackageInstaller {
       throw new Error(`No package definition path for ${sfpmPackage.name}`);
     }
 
-    const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
+    const packageWorkspacePath = this.provider.getPackageDir(sfpmPackage.name);
     const buildOutput = PackageManager.getInstance(this.targetOrg).getArtifactService().getBuildOutput(packageWorkspacePath);
 
     if (!buildOutput) {
@@ -308,7 +307,7 @@ export default class PackageInstaller {
       throw new Error(`No package definition path for ${sfpmPackage.name}`);
     }
 
-    const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
+    const packageWorkspacePath = this.provider.getPackageDir(sfpmPackage.name);
 
     const resolution = await artifactService.resolveArtifact(
       packageWorkspacePath,

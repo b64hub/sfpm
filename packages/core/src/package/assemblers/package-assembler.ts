@@ -6,7 +6,6 @@ import type {ProjectDefinitionProvider} from '../../project/providers/project-de
 import {DIST_DIR} from '../../types/artifact.js';
 import {Logger} from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
-import {resolvePackageWorkspacePath} from '../../utils/workspace-path.js';
 import {DestructiveManifestStep} from './steps/destructive-manifest-step.js';
 import {ForceIgnoreStep} from './steps/force-ignore-step.js';
 import {MetadataDependenciesStep} from './steps/metadata-dependencies-step.js';
@@ -224,7 +223,7 @@ export default class PackageAssembler {
    */
   private initializeStagingArea(): string {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
-    const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, packageDefinition.path);
+    const packageWorkspacePath = this.provider.getPackageDir(this.packageName);
     return path.join(packageWorkspacePath, DIST_DIR);
   }
 }

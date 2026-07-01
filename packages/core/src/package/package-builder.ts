@@ -12,7 +12,6 @@ import Logger from '../types/logger.js';
 import {BuildOptions, PackageType} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
 import {SourceHasher} from '../utils/source-hasher.js';
-import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {AnalyzerRegistry, PackageAnalyzer} from './analyzers/analyzer-registry.js';
 import PackageAssembler from './assemblers/package-assembler.js';
 import {
@@ -285,7 +284,7 @@ export default class PackageBuilder {
 
     let packageWorkspacePath: string;
     try {
-      packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
+      packageWorkspacePath = this.provider.getPackageDir(sfpmPackage.name);
     } catch {
       this.logger?.info('Could not resolve package workspace path, proceeding with build');
       return undefined;

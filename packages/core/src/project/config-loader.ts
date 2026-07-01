@@ -4,7 +4,7 @@ import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {SfpmConfig} from '../types/config.js';
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 
 /**
  * Resolve this package's own entry point so jiti can alias `@b64hub/sfpm-core`

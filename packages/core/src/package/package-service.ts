@@ -33,7 +33,7 @@ import Package2VersionStatus = PackagingSObjects.Package2VersionStatus;
 // ---------------------------------------------------------------------------
 
 /** Re-export SDK type */
-export {PackageVersionCreateRequestResult} from '@salesforce/packaging';
+export {PackageVersionCreateReportProgress, PackageVersionCreateRequestResult} from '@salesforce/packaging';
 /** Re-export SDK type for backward compat */
 export type Package2 = PackagingSObjects.Package2;
 

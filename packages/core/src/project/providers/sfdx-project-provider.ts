@@ -45,6 +45,17 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
     this.projectDir = sfProject.getPath();
   }
 
+  /**
+   * Find the project root via the SDK's built-in sfdx-project.json resolution.
+   */
+  static findProjectRoot(startDir: string): string | undefined {
+    try {
+      return SfProject.resolveProjectPathSync(startDir);
+    } catch {
+      return undefined;
+    }
+  }
+
   getAllPackageDefinitions(): PackageDefinition[] {
     return getAllPackageDefinitions(this.resolve().definition);
   }
@@ -65,6 +76,11 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
 
   getPackageDefinitionByPath(packagePath: string): PackageDefinition {
     return getPackageDefinitionByPath(this.resolve().definition, packagePath);
+  }
+
+  getPackageDir(packageName: string): string {
+    const pkg = this.getPackageDefinition(packageName);
+    return path.resolve(this.projectDir, pkg.path);
   }
 
   getPackageType(packageName: string): PackageType {
