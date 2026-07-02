@@ -1,9 +1,10 @@
 import {
-  InstallationSource, InstallEventBus, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger,
+  InstallEventBus, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger,
+  PackageOrigin,
   type ProjectDefinitionProvider, type ProjectGraph, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
-import {ConfigAggregator} from '@salesforce/core'
+import {ConfigAggregator, Org} from '@salesforce/core'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
@@ -104,14 +105,16 @@ export default class Deploy extends SfpmCommand {
   protected async executeOrchestrated(ctx: DeployContext): Promise<void> {
     const {flags, logger, mode, projectConfig, projectGraph, resolvedPackages} = ctx
 
+    const targetOrg = await Org.create({aliasOrUsername: flags['target-org']})
+
     const orchestrator = InstallOrchestrator.forSource(
+      targetOrg,
       projectConfig,
       projectGraph,
       {
-        deployment: flags['test-level'] ? {testLevel: flags['test-level'] as TestLevel} : undefined,
         force: flags.force,
         includeDependencies: !flags['no-dependencies'],
-        targetOrg: flags['target-org'],
+        testLevel: flags['test-level'] as TestLevel | undefined,
       },
       logger,
     );
@@ -184,14 +187,15 @@ export default class Deploy extends SfpmCommand {
     const {flags, logger, mode, projectConfig, resolvedPackages} = ctx
 
     const installOptions = {
-      deployment: flags['test-level'] ? {testLevel: flags['test-level'] as TestLevel} : undefined,
       force: flags.force,
-      source: InstallationSource.Local,
-      targetOrg: flags['target-org'],
+      origin: PackageOrigin.Local,
+      testLevel: flags['test-level'] as TestLevel | undefined,
     }
 
+    const deployTargetOrg = await Org.create({aliasOrUsername: flags['target-org']})
     const installBus = new InstallEventBus()
     const task = new InstallOrchestrationTask(
+      deployTargetOrg,
       projectConfig,
       installOptions,
       logger,
@@ -202,8 +206,7 @@ export default class Deploy extends SfpmCommand {
     renderer.attachTo(installBus)
 
     try {
-      const context = await task.setup()
-      const result = await task.processSinglePackage(resolvedPackages[0], 0, context)
+      const result = await task.processSinglePackage(resolvedPackages[0], 0)
 
       if (!result.success) {
         this.error(`Deploy failed for: ${resolvedPackages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 2})

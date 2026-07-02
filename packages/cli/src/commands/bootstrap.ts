@@ -149,7 +149,7 @@ export default class Bootstrap extends SfpmCommand {
         await this.ensurePackageContainers(org, {
           ctx, packages: selectedPackages, provider, tmpDir,
         })
-        projectService.syncSfdxProject()
+        // ponytail: syncSfdxProject now handled by WorkspaceProvider.resolve()
 
         // ── 3. Build packages that need it ─────────────────────────
         const buildNames = needsBuild.map(s => s.name)
@@ -234,10 +234,9 @@ export default class Bootstrap extends SfpmCommand {
       projectService.getDefinitionProvider(),
       projectService.getProjectGraph(),
       {
-        devhubUsername: ctx.targetOrg, force, includeDependencies: true,
+        force, includeDependencies: true, unlocked: {devhubUsername: ctx.targetOrg},
       },
       ctx.logger,
-      projectService.getDefinitionProvider().projectDir,
     )
 
     const buildRenderer = new BuildProgressRenderer({
@@ -373,13 +372,15 @@ export default class Bootstrap extends SfpmCommand {
 
     const sfpmConfig = projectService.getSfpmConfig()
 
+    const targetOrg = await Org.create({aliasOrUsername: ctx.targetOrg})
+
     const installOrchestrator = new InstallOrchestrator(
+      targetOrg,
       projectService.getDefinitionProvider(),
       projectService.getProjectGraph(),
       {
         force: flags.force,
         includeDependencies: true,
-        targetOrg: ctx.targetOrg,
       },
       ctx.logger,
     )

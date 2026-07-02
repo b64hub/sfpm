@@ -1,7 +1,8 @@
 import {
-  InstallationMode, InstallationSource, InstallOrchestrator, type TestLevel,
+  InstallOrchestrator, PackageOrigin, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {Flags} from '@oclif/core'
+import {Org} from '@salesforce/core'
 
 import Deploy from './index.js'
 
@@ -9,7 +10,6 @@ export default class DeployArtifact extends Deploy {
   static override description = 'deploy one or more packages from built artifacts using source-deploy'
   static override flags = {
     ...Deploy.flags,
-    'installation-key': Flags.string({char: 'k', description: 'installation key for unlocked packages'}),
   }
 
   public override async execute(): Promise<void> {
@@ -23,16 +23,17 @@ export default class DeployArtifact extends Deploy {
 
     const ctx = await this.setupDeployContext(packages, flags)
 
+    const targetOrg = await Org.create({aliasOrUsername: flags['target-org']!})
+
     const orchestrator = new InstallOrchestrator(
+      targetOrg,
       ctx.projectConfig,
       ctx.projectGraph,
       {
         force: flags.force,
         includeDependencies: !flags['no-dependencies'],
-        mode: InstallationMode.SourceDeploy,
-        source: InstallationSource.Artifact,
-        targetOrg: flags['target-org']!,
-        versionInstall: flags['installation-key'] ? {installationKeys: {'*': flags['installation-key']}} : undefined,
+        origin: PackageOrigin.Artifact,
+        unlocked: {sourceOnly: true},
       },
       ctx.logger,
     );

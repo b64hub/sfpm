@@ -3,6 +3,7 @@ import type {
   HooksCompleteEvent,
   HooksStartEvent,
   InstallEventBus,
+  InstallResult,
   InstallStartEvent,
   OrchestrationCompleteEvent,
   OrchestrationEventBus,
@@ -91,7 +92,7 @@ export class InstallProgressRenderer {
   /**
    * Attach renderer to typed event buses.
    */
-  public attachTo(installBus: InstallEventBus, orchestrationBus?: OrchestrationEventBus): void {
+  public attachTo(installBus: InstallEventBus, orchestrationBus?: OrchestrationEventBus<InstallResult>): void {
     for (const [event, config] of Object.entries(this.eventConfigs)) {
       installBus.on(event as any, (data: any) => {
         this.logEvent(event, data);
@@ -260,7 +261,7 @@ export class InstallProgressRenderer {
   // Orchestration Events
   // ========================================================================
 
-  private handleOrchestrationComplete(event: OrchestrationCompleteEvent): void {
+  private handleOrchestrationComplete(event: OrchestrationCompleteEvent<InstallResult>): void {
     this.logEvent('orchestration:complete', event);
 
     const succeeded = event.results.filter(r => r.success && !r.skipped).length;

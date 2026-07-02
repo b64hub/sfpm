@@ -3,6 +3,7 @@ import {
 } from '@b64hub/sfpm-core'
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {Args, Flags} from '@oclif/core'
+import {Org} from '@salesforce/core'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
@@ -99,7 +100,10 @@ export default class Install extends SfpmCommand {
       targetOrg: flags['target-org'],
     });
 
+    const targetOrg = await Org.create({aliasOrUsername: flags['target-org']})
+
     const orchestrator = InstallOrchestrator.forArtifact(
+      targetOrg,
       projectConfig,
       projectGraph,
       {...installOptions, includeDependencies: !flags['no-dependencies']},
