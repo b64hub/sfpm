@@ -172,7 +172,9 @@ export class InstallOrchestrator {
       targetOrg,
       provider,
       graph,
-      {...options, includeManagedPackages: false, origin: PackageOrigin.Local},
+      {
+        ...options, includeManagedPackages: false, origin: PackageOrigin.Local, unlocked: {sourceOnly: true},
+      },
       logger,
     );
   }
