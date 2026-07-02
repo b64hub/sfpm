@@ -398,7 +398,7 @@ export class BuildProgressRenderer {
       title += chalk.dim('\n  Dependencies auto-included');
     }
 
-    this.display.start(title, event.packageNames);
+    this.display.start(title, event.packageNames, event.levels);
   }
 
   private handleStageComplete(event: StageCompleteEvent): void {

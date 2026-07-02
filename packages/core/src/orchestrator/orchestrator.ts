@@ -245,6 +245,7 @@ export class Orchestrator<TResult> {
   private emitOrchestrationStart(levels: PackageNode[][], includeDependencies: boolean): void {
     this.bus.start({
       includeDependencies,
+      levels: levels.map(l => l.map(n => n.name)),
       packageNames: levels.flat().map(n => n.name),
       totalLevels: levels.length,
       totalPackages: levels.reduce((sum, l) => sum + l.length, 0),

@@ -1,5 +1,3 @@
-import type {OrchestrationLevelStartEvent} from '@b64hub/sfpm-core';
-
 import chalk from 'chalk';
 import {Listr} from 'listr2';
 
@@ -45,10 +43,14 @@ function createHookSlot(): HookSlot {
 // ============================================================================
 
 /**
- * Manages a flat per-package Listr layout for build/install orchestration.
+ * Manages a level-grouped Listr layout for build/install orchestration.
  *
- * Each package gets four pre-allocated **sequential** sibling sub-tasks:
+ * The root Listr is **sequential** (one level at a time). Each level
+ * contains a **concurrent** sub-Listr with one task per package.
+ * Tasks in future levels stay in listr2's native `WAITING` state
+ * (no spinner) until the previous level completes.
  *
+ * Per-package layout:
  * ```
  * ├── @scope/name
  * │   ├── ✔ pre-build hooks (2) (528ms)       or → [SKIPPED]
@@ -56,15 +58,11 @@ function createHookSlot(): HookSlot {
  * │   ├── ✔ post-build hooks (1) (320ms)       or → [SKIPPED]
  * │   └── ◼ validation queued                  optional
  * ```
- *
- * Hook slots that don't fire are displayed as skipped — they are part
- * of the framework and safe to show.  Build phases (staging, connecting,
- * creating version, …) update the build task title in place.
  */
 export class OrchestrationListrManager {
   private buildSubtasks = new Map<string, any>();
   private hookSlots = new Map<string, HookSlot>();
-  private levelGates = new Map<string, Deferred>();
+  private levelGates = new Map<number, Deferred>();
   private packageDeferreds = new Map<string, Deferred>();
   private packageTasks = new Map<string, any>();
   private rootListr?: Listr;
@@ -108,10 +106,15 @@ export class OrchestrationListrManager {
     this.validationQueued.add(packageName);
   }
 
-  public onLevelStart(event: OrchestrationLevelStartEvent): void {
-    for (const name of event.packages) {
-      this.levelGates.get(name)?.resolve();
+  public onLevelStart(level: number, packages: string[]): void {
+    // Initialize per-package state for this level's packages
+    for (const name of packages) {
+      this.packageDeferreds.set(name, createDeferred());
+      this.hookSlots.set(`${name}:pre`, createHookSlot());
+      this.hookSlots.set(`${name}:post`, createHookSlot());
     }
+
+    this.levelGates.get(level)?.resolve();
   }
 
   public rejectPackage(packageName: string, errorMessage: string): void {
@@ -136,67 +139,37 @@ export class OrchestrationListrManager {
     slot.deferred.resolve();
   }
 
-  public start(packageNames: string[]): void {
-    for (const name of packageNames) {
-      this.packageDeferreds.set(name, createDeferred());
-      this.levelGates.set(name, createDeferred());
-      this.hookSlots.set(`${name}:pre`, createHookSlot());
-      this.hookSlots.set(`${name}:post`, createHookSlot());
+  /**
+   * Build and run the Listr tree.
+   *
+   * @param levels - ordered array of levels, each containing its package names.
+   *   Derived from the orchestration plan so the full tree is known upfront.
+   */
+  public start(levels: string[][]): void {
+    // Pre-create a gate for every level so onLevelStart can resolve them.
+    for (let i = 0; i < levels.length; i++) {
+      this.levelGates.set(i, createDeferred());
     }
 
     this.rootListr = new Listr(
-      packageNames.map(name => {
-        const preSlot = this.hookSlots.get(`${name}:pre`)!;
-        const postSlot = this.hookSlots.get(`${name}:post`)!;
+      levels.map((packageNames, levelIndex) => ({
+        exitOnError: false,
+        task: async (_ctx: any, levelTask: any): Promise<Listr> => {
+          // Wait for the orchestrator to signal this level is ready
+          await this.levelGates.get(levelIndex)!.promise;
 
-        return {
-          exitOnError: false,
-          task: async (_ctx: any, parentTask: any): Promise<Listr> => {
-            this.packageTasks.set(name, parentTask);
-            await this.levelGates.get(name)!.promise;
-            parentTask.title = chalk.cyan(name);
-
-            return parentTask.newListr(
-              [
-                {
-                  async task(_: any, t: any) {
-                    preSlot.task = t;
-                    await preSlot.deferred.promise;
-                    if (preSlot.skipped) t.skip(chalk.dim('pre-hooks - skipped'));
-                  },
-                  title: chalk.dim('pre-hooks'),
-                },
-                {
-                  task: async (_: any, buildTask: any) => {
-                    this.buildSubtasks.set(name, buildTask);
-                    await this.packageDeferreds.get(name)!.promise;
-                  },
-                  title: 'building...',
-                },
-                {
-                  async task(_: any, t: any) {
-                    postSlot.task = t;
-                    await postSlot.deferred.promise;
-                    if (postSlot.skipped) t.skip(chalk.dim('post-hooks - skipped'));
-                  },
-                  title: chalk.dim('post-hooks'),
-                },
-                {
-                  enabled: () => this.validationQueued.has(name),
-                  task() {/* static marker */},
-                  title: chalk.dim('validation queued'),
-                },
-              ],
-              {concurrent: false, exitOnError: false},
-            );
-          },
-          title: chalk.dim(name),
-        };
-      }),
+          return levelTask.newListr(
+            packageNames.map(name => this.createPackageTask(name)),
+            {concurrent: true, exitOnError: false},
+          );
+        },
+        title: chalk.dim(`level ${levelIndex} — ${packageNames.length} ${packageNames.length === 1 ? 'package' : 'packages'}`),
+      })),
       {
-        concurrent: true,
+        concurrent: false,
         exitOnError: false,
         rendererOptions: {
+          clearOutput: true,
           collapseErrors: false,
           collapseSkips: true,
           collapseSubtasks: true,
@@ -229,5 +202,57 @@ export class OrchestrationListrManager {
   public updatePackageTitle(packageName: string, title: string): void {
     const task = this.packageTasks.get(packageName);
     if (task) task.title = title;
+  }
+
+  // ==========================================================================
+  // Internal
+  // ==========================================================================
+
+  private createPackageTask(name: string) {
+    return {
+      exitOnError: false,
+      task: async (_ctx: any, parentTask: any): Promise<Listr> => {
+        this.packageTasks.set(name, parentTask);
+        parentTask.title = chalk.cyan(name);
+
+        const preSlot = this.hookSlots.get(`${name}:pre`)!;
+        const postSlot = this.hookSlots.get(`${name}:post`)!;
+
+        return parentTask.newListr(
+          [
+            {
+              async task(_: any, t: any) {
+                preSlot.task = t;
+                await preSlot.deferred.promise;
+                if (preSlot.skipped) t.skip(chalk.dim('pre-hooks - skipped'));
+              },
+              title: chalk.dim('pre-hooks'),
+            },
+            {
+              task: async (_: any, buildTask: any) => {
+                this.buildSubtasks.set(name, buildTask);
+                await this.packageDeferreds.get(name)!.promise;
+              },
+              title: 'building...',
+            },
+            {
+              async task(_: any, t: any) {
+                postSlot.task = t;
+                await postSlot.deferred.promise;
+                if (postSlot.skipped) t.skip(chalk.dim('post-hooks - skipped'));
+              },
+              title: chalk.dim('post-hooks'),
+            },
+            {
+              enabled: () => this.validationQueued.has(name),
+              task() {/* static marker */},
+              title: chalk.dim('validation queued'),
+            },
+          ],
+          {concurrent: false, exitOnError: false},
+        );
+      },
+      title: chalk.dim(name),
+    };
   }
 }

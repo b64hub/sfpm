@@ -301,7 +301,7 @@ export class InstallProgressRenderer {
       title += chalk.dim('\n  Dependencies auto-included');
     }
 
-    this.display.start(title, event.packageNames);
+    this.display.start(title, event.packageNames, event.levels);
   }
 
   // ========================================================================

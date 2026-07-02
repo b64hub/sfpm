@@ -64,7 +64,7 @@ export interface DisplayStrategy {
   // ===========================================================================
 
   /** Called when orchestration begins. */
-  start(title: string, packages: string[]): void;
+  start(title: string, packages: string[], levels?: string[][]): void;
   subtaskComplete(packageName: string, phase: string, detail?: string): void;
   subtaskSkip(packageName: string, phase: string): void;
   subtaskStart(packageName: string, phase: string): void;

@@ -44,6 +44,7 @@ export interface OrchestrationResult<TResult> {
 
 export interface OrchestrationStartPayload {
   includeDependencies: boolean;
+  levels: string[][];
   packageNames: string[];
   totalLevels: number;
   totalPackages: number;
