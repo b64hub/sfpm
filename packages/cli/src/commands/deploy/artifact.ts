@@ -22,8 +22,6 @@ export default class DeployArtifact extends Deploy {
       {
         force: flags.force,
         includeDependencies: !flags['no-dependencies'],
-        origin: PackageOrigin.Artifact,
-        unlocked: {sourceOnly: true},
       },
       logger,
     );
