@@ -11,7 +11,6 @@ import {
 } from '../events/orchestration-event-bus.js';
 import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import PackageInstaller, {InstallResult} from '../package/package-installer.js';
-import PackageManager from '../package/package-manager.js';
 import {ProjectGraph} from '../project/project-graph.js';
 import Logger from '../types/logger.js';
 import {type InstallOptions, PackageOrigin} from '../types/package.js';

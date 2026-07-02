@@ -1,8 +1,9 @@
 import {Org} from '@salesforce/core';
 
 import type {InstallEventSink} from '../../events/install-event-bus.js';
-import {type InstallOptions, PackageType} from '../../types/package.js';
+
 import Logger from '../../types/logger.js';
+import {type InstallOptions, PackageType} from '../../types/package.js';
 import {resolveOrgType} from '../../utils/org-utils.js';
 import PackageManager from '../package-manager.js';
 import {SfpmUnlockedPackage} from '../sfpm-package.js';
@@ -28,7 +29,6 @@ export default class UnlockedPackageInstaller implements Installer {
   private targetOrg?: Org;
 
   constructor(
-    _workingDirectory: string,
     sfpmPackage: SfpmUnlockedPackage,
     options?: InstallOptions,
     logger?: Logger,

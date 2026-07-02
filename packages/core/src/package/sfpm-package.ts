@@ -8,7 +8,7 @@ import path from 'node:path';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type Logger from '../types/logger.js';
 
-import {FORCE_APP_DIR} from '../types/artifact.js';
+import {DIST_DIR, FORCE_APP_DIR} from '../types/artifact.js';
 import {
   MetadataFile,
   PackageType,
@@ -97,6 +97,16 @@ export default abstract class SfpmPackage {
     return joinPackageName(this.packageName, this.scope);
   }
 
+  get packageBuildDirectory(): string | undefined {
+    if (this.packageDirectory) return path.join(this.packageDirectory, DIST_DIR);
+    return undefined;
+  }
+
+  get packageBuiltSourceDirectory(): string | undefined {
+    if (this.packageBuildDirectory) return path.join(this.packageBuildDirectory, FORCE_APP_DIR);
+    return undefined;
+  }
+
   get packageDefinition(): PackageDefinition | undefined {
     return this._packageDefinition;
   }
@@ -114,13 +124,11 @@ export default abstract class SfpmPackage {
   }
 
   get packageDirectory(): string | undefined {
-    if (!this.packageDefinition?.path || !this.workingDirectory) {
+    if (this.packageDefinition && !this.packageDefinition.path && !this.projectDirectory) {
       return undefined;
     }
 
-    // In a staging/artifact context the source is always under ARTIFACT_SOURCE_DIR
-    // regardless of the original project path.
-    return path.join(this.workingDirectory, FORCE_APP_DIR);
+    return path.join(this.projectDirectory, this.packageDefinition!.path);
   }
 
   get packageName(): string {
@@ -721,7 +729,7 @@ export class PackageFactory {
       throw new Error(`Package ${packageName} not found in project definition`);
     }
 
-    const packageType = (packageDefinition.type?.toLowerCase() || 'unlocked') as PackageType;
+    const packageType = (packageDefinition.type?.toLowerCase() || 'source') as PackageType;
     const projectDirectory = this.provider.projectDir;
 
     const sfpmPackage = this.createPackageInstance(packageType, packageName, projectDirectory);

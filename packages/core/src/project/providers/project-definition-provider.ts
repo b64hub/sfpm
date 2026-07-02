@@ -75,8 +75,6 @@ export interface ProjectDefinitionProvider {
 
   /**
    * Resolve the absolute workspace/package directory for a package.
-   * In workspace mode: the npm package root (where package.json lives).
-   * In sfdx mode: the project root (all packages share it).
    */
   getPackageDir(packageName: string): string;
 

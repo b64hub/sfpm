@@ -24,7 +24,7 @@ export default class ManagedPackageInstaller implements Installer {
   private org?: Org;
   private readonly sink?: InstallEventSink;
 
-  constructor(_workingDirectory: string, managedPackage: ManagedPackageRef, _options?: unknown, logger?: Logger, sink?: InstallEventSink) {
+  constructor(managedPackage: ManagedPackageRef, _options?: unknown, logger?: Logger, sink?: InstallEventSink) {
     this.installable = managedPackage;
     this.logger = logger;
     this.sink = sink;

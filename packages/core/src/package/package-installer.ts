@@ -83,23 +83,17 @@ export default class PackageInstaller {
    */
   public async deploySource(sfpmPackage: SfpmPackage): Promise<InstallResult> {
     // Resolve build output from the package workspace
-    const sourcePath = sfpmPackage.packageDirectory;
-    if (!sourcePath) {
+    const packageDir = sfpmPackage.packageDirectory;
+    if (!packageDir) {
       throw new Error(`No package definition path for ${sfpmPackage.name}`);
     }
 
-    const packageWorkspacePath = this.provider.getPackageDir(sfpmPackage.name);
-    const buildOutput = PackageManager.getInstance(this.targetOrg).getArtifactService().getBuildOutput(packageWorkspacePath);
-
-    if (!buildOutput) {
+    const buildDir = PackageManager.getInstance(this.targetOrg).getArtifactService().getBuildOutput(packageDir);
+    if (!buildDir) {
       throw new Error(`No build found for ${sfpmPackage.name}. Run 'sfpm build' before deploying.`);
     }
 
-    sfpmPackage.workingDirectory = buildOutput;
-
-    // Handle org-aliased packages: resolve the correct source directory
     await this.resolveOrgAliasForDeploy(sfpmPackage);
-
     this.logger?.info(`Deploying ${sfpmPackage.name} from build output`);
 
     return this.runInstaller(sfpmPackage, {
@@ -202,7 +196,7 @@ export default class PackageInstaller {
     const {packageName} = managedRef;
     const sink = this.bus?.forPackage(packageName);
 
-    const installer = installerFactory(this.provider.projectDir, managedRef, this.options, this.logger, sink);
+    const installer = installerFactory(managedRef, this.options, this.logger, sink);
     await installer.connect(this.targetOrg);
 
     // Check if already installed (unless forced)
@@ -378,7 +372,7 @@ export default class PackageInstaller {
   private async runInstaller(sfpmPackage: SfpmPackage, options: RunInstallerOptions): Promise<InstallResult> {
     const sink = this.bus?.forPackage(sfpmPackage.name);
 
-    const installer = installerFactory(this.provider.projectDir, sfpmPackage, this.options, this.logger, sink, options.installAs);
+    const installer = installerFactory(sfpmPackage, this.options, this.logger, sink, options.installAs);
     await installer.connect(this.targetOrg);
 
     // Check if already installed
