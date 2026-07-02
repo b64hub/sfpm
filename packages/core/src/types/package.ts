@@ -1,6 +1,7 @@
+import {Org} from '@salesforce/core';
+
 import type {ArtifactResolutionOptions, SfpmPackageSource} from './artifact.js';
 
-import {DependencyAnalyzer} from './dependency-analysis.js';
 import {ValidationLevel} from './validation.js';
 
 /**
@@ -30,20 +31,18 @@ export const enum PackageOrigin {
   Local = 'local',
 }
 
+export interface BuildOrg {
+  /** Scratch/sandbox org for validation (deploy + test). Optional for assemble-only builds. */
+  buildOrg?: Org;
+  /** DevHub for package version creation. Only needed for unlocked builds. */
+  devhub?: Org;
+}
+
 export interface BuildOptions {
   /** Build number for version generation */
   buildNumber?: string;
-  /** Target org for source package validation (deploy + test) */
-  buildOrg?: string;
-  /**
-   * Pluggable dependency analyzer for cross-package reference validation.
-   * Must be initialized before passing to the builder.
-   * When provided and `validation` includes analysis, violations are reported.
-   */
-  dependencyAnalyzer?: DependencyAnalyzer;
   /** Force build even if no source changes detected (skip hash check) */
   force?: boolean;
-  /** DevHub username or alias for unlocked package builds */
 
   unlocked?: UnlockedBuildOptions;
   /**
@@ -60,8 +59,8 @@ export interface BuildOptions {
 }
 
 export interface UnlockedBuildOptions {
+  /** Scratch org definition file for package version creation */
   definitionFile?: string;
-  devhubUsername?: string;
   installationKey?: string;
   /**
    * Unlocked packages are built as source instead of creating a package version.

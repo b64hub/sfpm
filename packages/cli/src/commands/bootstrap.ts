@@ -230,11 +230,14 @@ export default class Bootstrap extends SfpmCommand {
       this.log(chalk.bold('\nBuilding packages...\n'))
     }
 
+    const devhubOrg = await Org.create({aliasOrUsername: ctx.targetOrg})
+
     const buildOrchestrator = new BuildOrchestrator(
       projectService.getDefinitionProvider(),
       projectService.getProjectGraph(),
+      {devhub: devhubOrg},
       {
-        force, includeDependencies: true, unlocked: {devhubUsername: ctx.targetOrg},
+        force, includeDependencies: true,
       },
       ctx.logger,
     )

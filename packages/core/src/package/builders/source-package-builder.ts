@@ -16,7 +16,6 @@ import {
   Builder, BuilderResult, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
-import {dependencyAnalysisTask} from './tasks/dependency-analysis-task.js';
 
 const VALIDATION_TEST_LEVEL = 'RunSpecifiedTests';
 
@@ -47,17 +46,6 @@ export default class SourcePackageBuilder implements Builder {
     this.options = options;
     this.logger = logger;
     this.sink = sink;
-
-    // Pre-build: static dependency analysis when an analyzer is provided
-    if (options.dependencyAnalyzer) {
-      this.tasks.push({
-        factory: dependencyAnalysisTask({
-          analyzer: options.dependencyAnalyzer,
-          warnOnly: false,
-        }),
-        phase: 'pre',
-      });
-    }
 
     // Post-build: assemble artifact metadata (package.json, manifest)
     this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});

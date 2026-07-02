@@ -52,7 +52,7 @@ export {
   type BuilderResult, type BuildTask, type BuildTaskContext,
   type BuildTaskEnrichments, type BuildTaskRegistration,
   type BuildTaskResult,
-  type DependencyAnalysis, RegisterBuilder,
+  RegisterBuilder,
 } from './package/builders/builder-registry.js';
 export {assembleArtifactTask, default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
 export {

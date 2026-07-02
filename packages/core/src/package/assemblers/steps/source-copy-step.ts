@@ -1,5 +1,4 @@
 import fs from 'fs-extra';
-import ignore from 'ignore';
 import {randomUUID} from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -46,13 +45,9 @@ export class SourceCopyStep implements AssemblyStep {
     const sourceDir = path.join(this.provider.projectDir, packageDefinition.path);
     const destinationDir = path.join(output.stagingDirectory, FORCE_APP_DIR);
 
-    const ig = await this.loadNpmIgnore(sourceDir);
+    const ig = null; // ponytail: build-time ignore via .sfpmignore, add when needed
 
-    if (ig) {
-      this.logger?.debug(`[SourceCopyStep] Copying from ${sourceDir} to ${destinationDir} (with build ignore filter)`);
-    } else {
-      this.logger?.debug(`[SourceCopyStep] Copying from ${sourceDir} to ${destinationDir}`);
-    }
+    this.logger?.debug(`[SourceCopyStep] Copying from ${sourceDir} to ${destinationDir}`);
 
     // fs.copy throws if destinationDir is inside sourceDir. Always copy to
     // os temp first, then move into place. This is safe for all layouts.
@@ -80,23 +75,8 @@ export class SourceCopyStep implements AssemblyStep {
             return false;
           }
 
-          if (!ig) {
-            return true;
-          }
-
-          // The `ignore` library requires a trailing slash for directory-only
-          // patterns (e.g. "testClasses/") to match the directory entry itself.
-          // Without this, fs.copy would create the empty directory before
-          // filtering its children.
-          const isDir = fs.statSync(src).isDirectory();
-          const testPath = isDir ? `${relativePath}/` : relativePath;
-          const ignored = ig.ignores(testPath);
-
-          if (ignored) {
-            this.logger?.debug(`[SourceCopyStep] Excluded by build ignore: ${relativePath}`);
-          }
-
-          return !ignored;
+          // ponytail: build-time ignore filtering goes here when .sfpmignore is added
+          return true;
         },
       });
 
@@ -109,21 +89,7 @@ export class SourceCopyStep implements AssemblyStep {
     }
   }
 
-  /**
-   * Load .npmignore from the package directory if it exists.
-   * Returns `null` when no .npmignore is present.
-   */
-  private async loadNpmIgnore(sourceDir: string): Promise<null | ReturnType<typeof ignore>> {
-    // Walk up from source dir to find .npmignore (same as npm convention)
-    const packageDir = this.provider.getPackageDir(this.packageName);
-    const npmIgnorePath = path.join(packageDir, '.npmignore');
-
-    if (!await fs.pathExists(npmIgnorePath)) {
-      return null;
-    }
-
-    const content = await fs.readFile(npmIgnorePath, 'utf8');
-    this.logger?.debug(`[SourceCopyStep] Loaded .npmignore from ${npmIgnorePath}`);
-    return ignore().add(content);
-  }
+  // ponytail: build-time ignore removed (.npmignore was wrong tool)
+  // When needed, add .sfpmignore support here. For LWC TypeScript,
+  // tsc handles compilation; this step would run after tsc output.
 }

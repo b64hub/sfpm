@@ -29,7 +29,7 @@ export interface OrgAliasConfig {
 export interface PackageOptions {
   [key: string]: any;
   /** Whether this is the default package directory. */
-  build?: Omit<BuildOptions, 'buildNumber' | 'buildOrg' | 'dependencyAnalyzer' | 'devhubUsername'>;
+  build?: Omit<BuildOptions, 'buildNumber' | 'buildOrg'>;
   /**
    * Per-package hook configuration.
    *

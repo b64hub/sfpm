@@ -1,6 +1,7 @@
 import {Org} from '@salesforce/core';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+import type {DependencyAnalyzer} from '../types/dependency-analysis.js';
 import type {HookContext, HookTiming} from '../types/lifecycle.js';
 import type {PendingValidationDescriptor, ValidationLevel} from '../types/validation.js';
 
@@ -8,7 +9,7 @@ import {ArtifactRepository} from '../artifacts/artifact-repository.js';
 import {BuildEventBus, BuildEventSink} from '../events/build-event-bus.js';
 import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
 import Logger from '../types/logger.js';
-import {BuildOptions, PackageType} from '../types/package.js';
+import {BuildOptions, type BuildOrg, PackageType} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {AnalyzerRegistry, PackageAnalyzer} from './analyzers/analyzer-registry.js';
@@ -65,7 +66,9 @@ function resolveModeConfig(validation?: ValidationLevel): ModeConfig {
  */
 export {PackageBuilder};
 export default class PackageBuilder {
+  private buildOrg?: BuildOrg;
   private bus?: BuildEventBus;
+  private dependencyAnalyzer?: DependencyAnalyzer;
   private logger?: Logger;
   private options: BuildOptions;
   private provider: ProjectDefinitionProvider;
@@ -73,11 +76,15 @@ export default class PackageBuilder {
 
   constructor(
     provider: ProjectDefinitionProvider,
+    buildOrg?: BuildOrg,
     options?: BuildOptions,
     logger?: Logger,
+    dependencyAnalyzer?: DependencyAnalyzer,
     bus?: BuildEventBus,
   ) {
+    this.buildOrg = buildOrg;
     this.bus = bus;
+    this.dependencyAnalyzer = dependencyAnalyzer;
     this.logger = logger;
     this.options = options || {};
     this.provider = provider;
@@ -321,20 +328,15 @@ export default class PackageBuilder {
    * Resolve the target org for the builder based on package type.
    * Returns undefined when org validation is disabled.
    */
-  private async resolveTargetOrg(sfpmPackage: SfpmPackage, modeConfig: ModeConfig): Promise<Org | undefined> {
+  private resolveTargetOrg(sfpmPackage: SfpmPackage, modeConfig: ModeConfig): Org | undefined {
     if (!modeConfig.orgValidation) return undefined;
 
-    let username: string | undefined;
-    // With --source-only, unlocked packages use the build org (not DevHub)
+    // Unlocked packages use the DevHub (unless sourceOnly, which uses buildOrg)
     if (sfpmPackage.type === PackageType.Unlocked && !this.options.unlocked?.sourceOnly) {
-      username = this.options.unlocked?.devhubUsername;
-    } else {
-      username = this.options.buildOrg;
+      return this.buildOrg?.devhub;
     }
 
-    if (!username) return undefined;
-
-    return Org.create({aliasOrUsername: username});
+    return this.buildOrg?.buildOrg;
   }
 
   /**
@@ -381,7 +383,7 @@ export default class PackageBuilder {
     const builderInstance = builderFactory(sfpmPackage, this.options, this.logger, this.sink, buildAs as PackageType);
 
     // Connect to org if needed
-    const targetOrg = await this.resolveTargetOrg(sfpmPackage, modeConfig);
+    const targetOrg = this.resolveTargetOrg(sfpmPackage, modeConfig);
     if (targetOrg) {
       await builderInstance.connect(targetOrg);
     }
@@ -451,7 +453,7 @@ export default class PackageBuilder {
       projectDir: this.provider.projectDir,
       sfpmPackage,
       stage: lifecycle.stage,
-      targetOrg: this.options.unlocked?.devhubUsername,
+      targetOrg: this.buildOrg?.devhub?.getUsername() ?? this.buildOrg?.buildOrg?.getUsername(),
       timing,
     };
 

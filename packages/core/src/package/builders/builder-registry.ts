@@ -2,7 +2,6 @@ import type {Org} from '@salesforce/core';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
 
-import {DependencyAnalyzer} from '../../types/dependency-analysis.js';
 import Logger from '../../types/logger.js';
 import {BuildOptions, PackageType} from '../../types/package.js'
 import {PendingValidationDescriptor, ValidationState} from '../../types/validation.js';
@@ -116,11 +115,6 @@ export interface Builder {
    * Registered by the builder in its constructor based on options.
    */
   readonly tasks: BuildTaskRegistration[];
-}
-
-export interface DependencyAnalysis {
-  dependencyAnalyzer?: DependencyAnalyzer;
-  warnOnly?: boolean;
 }
 
 /**
