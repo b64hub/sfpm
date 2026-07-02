@@ -18,6 +18,7 @@ import {
   Builder, builderFactory, BuilderResult,
   BuildTaskContext, BuildTaskResult,
 } from './builders/builder-registry.js';
+import {dependencyAnalysisTask} from './builders/tasks/dependency-analysis-task.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
 
 /**
@@ -381,6 +382,17 @@ export default class PackageBuilder {
     const buildAs = this.resolveBuildAs(sfpmPackage, modeConfig);
 
     const builderInstance = builderFactory(sfpmPackage, this.options, this.logger, this.sink, buildAs as PackageType);
+
+    // Register dependency analysis as a pre-build task when analyzer is provided
+    if (this.dependencyAnalyzer && modeConfig.dependencyAnalysis) {
+      builderInstance.tasks.push({
+        factory: dependencyAnalysisTask({
+          analyzer: this.dependencyAnalyzer,
+          warnOnly: modeConfig.dependencyAnalysis === 'warn',
+        }),
+        phase: 'pre',
+      });
+    }
 
     // Connect to org if needed
     const targetOrg = this.resolveTargetOrg(sfpmPackage, modeConfig);
