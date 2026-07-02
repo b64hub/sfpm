@@ -15,7 +15,7 @@ export default class DeployArtifact extends Deploy {
   protected override async createOrchestrator(targetOrg: Org, resolvedFlags: ResolvedDeployFlags): Promise<{orchestrator: InstallOrchestrator; renderer: InstallProgressRenderer}> {
     const {flags, logger, mode, projectConfig, projectGraph} = resolvedFlags
 
-    const orchestrator = new InstallOrchestrator(
+    const orchestrator = InstallOrchestrator.forArtifact(
       targetOrg,
       projectConfig,
       projectGraph,
