@@ -46,7 +46,7 @@ export class SourceCopyStep implements AssemblyStep {
     const sourceDir = path.join(this.provider.projectDir, packageDefinition.path);
     const destinationDir = path.join(output.stagingDirectory, FORCE_APP_DIR);
 
-    const ig = await this.loadBuildIgnore(options);
+    const ig = await this.loadNpmIgnore(sourceDir);
 
     if (ig) {
       this.logger?.debug(`[SourceCopyStep] Copying from ${sourceDir} to ${destinationDir} (with build ignore filter)`);
@@ -110,24 +110,20 @@ export class SourceCopyStep implements AssemblyStep {
   }
 
   /**
-   * Load and parse the build-stage ignore file, if configured.
-   * Returns `null` when no build ignore file is configured or the file does not exist.
+   * Load .npmignore from the package directory if it exists.
+   * Returns `null` when no .npmignore is present.
    */
-  private async loadBuildIgnore(options: AssemblyOptions): Promise<null | ReturnType<typeof ignore>> {
-    const buildIgnorePath = options.ignoreFile;
-    if (!buildIgnorePath) {
+  private async loadNpmIgnore(sourceDir: string): Promise<null | ReturnType<typeof ignore>> {
+    // Walk up from source dir to find .npmignore (same as npm convention)
+    const packageDir = this.provider.getPackageDir(this.packageName);
+    const npmIgnorePath = path.join(packageDir, '.npmignore');
+
+    if (!await fs.pathExists(npmIgnorePath)) {
       return null;
     }
 
-    const resolvedPath = path.resolve(this.provider.projectDir, buildIgnorePath);
-
-    if (!await fs.pathExists(resolvedPath)) {
-      this.logger?.warn(`[SourceCopyStep] Build ignore file not found: ${resolvedPath}`);
-      return null;
-    }
-
-    const content = await fs.readFile(resolvedPath, 'utf8');
-    this.logger?.debug(`[SourceCopyStep] Loaded build ignore from ${resolvedPath}`);
+    const content = await fs.readFile(npmIgnorePath, 'utf8');
+    this.logger?.debug(`[SourceCopyStep] Loaded .npmignore from ${npmIgnorePath}`);
     return ignore().add(content);
   }
 }

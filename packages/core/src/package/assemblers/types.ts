@@ -1,6 +1,5 @@
 export interface AssemblyOptions {
   destructiveManifestPath?: string;
-  ignoreFile?: string;
   orgDefinitionPath?: string;
   replacementForceignorePath?: string;
   versionNumber?: string;

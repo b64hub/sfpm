@@ -534,7 +534,6 @@ export default class PackageBuilder {
         sfpmPackage.name,
         this.provider,
         {
-          ignoreFile: this.options.ignoreFile,
           versionNumber: sfpmPackage.version,
         },
         this.logger,

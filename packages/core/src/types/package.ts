@@ -45,9 +45,6 @@ export interface BuildOptions {
   force?: boolean;
   /** DevHub username or alias for unlocked package builds */
 
-  /** Path to a .forceignore file for controlling which files are included in the build output */
-  ignoreFile?: string;
-
   unlocked?: UnlockedBuildOptions;
   /**
    * Validation level. Controls which quality gates run during the build.
@@ -77,8 +74,6 @@ export interface InstallOptions {
   artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
   /** Force reinstall even if already installed with matching version/hash */
   force?: boolean;
-  /** Path to a .forceignore file for controlling which files are deployed */
-  ignoreFile?: string;
   /**
    * Where to install from: 'local' (project source ./dist) or 'artifact' (installed node_modules).
    */

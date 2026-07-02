@@ -5,17 +5,6 @@ import {LifecycleHooks} from './lifecycle.js';
 // ============================================================================
 
 /**
- * Stage-specific .forceignore file mappings.
- * @deprecated Use `BuildOptions.ignoreFile` and `InstallOptions.ignoreFile` instead.
- */
-export interface IgnoreFilesConfig {
-  build?: string;
-  prepare?: string;
-  quickbuild?: string;
-  validate?: string;
-}
-
-/**
  * SFPM tooling configuration loaded from `sfpm.config.ts` (or `.js` / `.mjs`).
  *
  * This is the central configuration file for SFPM tooling concerns:
@@ -57,11 +46,6 @@ export interface SfpmConfig {
    * cross-cutting behavior like profile cleaning, data loading, etc.
    */
   hooks?: LifecycleHooks[];
-
-  /**
-   * @deprecated Use `BuildOptions.ignoreFile` and `InstallOptions.ignoreFile` instead.
-   */
-  ignoreFiles?: IgnoreFilesConfig;
 
   /**
    * Salesforce namespace prefix for the project.
