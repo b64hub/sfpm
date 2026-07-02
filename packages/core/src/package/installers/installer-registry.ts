@@ -3,7 +3,7 @@ import type {Org} from '@salesforce/core';
 import type SfpmPackage from '../sfpm-package.js';
 
 import {InstallEventSink, InstallOptions} from '../../index.js';
-import {Logger} from '../../types/logger.js';
+import Logger from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {ManagedPackageRef} from './types.js';
 
@@ -58,7 +58,6 @@ export interface Installer {
  * type and validates at runtime.
  */
 export type InstallerConstructor = new (
-  workingDirectory: string,
   installable: ManagedPackageRef | SfpmPackage,
   options?: InstallOptions,
   logger?: Logger,
@@ -150,7 +149,6 @@ export function RegisterInstaller(type: Omit<PackageType, 'diff'>) {
  * Factory function to create an installer instance for a given package, based on its type.
  * The installer is selected from the {@link InstallerRegistry} using the package type.
  *
- * @param workingDirectory The working directory for the installer
  * @param sfpmPackage The package to be installed
  * @param options Installation options
  * @param logger The logger instance
@@ -161,7 +159,6 @@ export function RegisterInstaller(type: Omit<PackageType, 'diff'>) {
  * @returns An instance of the appropriate installer
  */
 export function installerFactory(
-  workingDirectory: string,
   sfpmPackage: ManagedPackageRef | SfpmPackage,
   options?: InstallOptions,
   logger?: Logger,
@@ -182,6 +179,6 @@ export function installerFactory(
     throw new Error(`No installer registered for package type: ${packageType}`);
   }
 
-  return new InstallerConstructor(workingDirectory, sfpmPackage, options, logger, sink);
+  return new InstallerConstructor(sfpmPackage, options, logger, sink);
 }
 

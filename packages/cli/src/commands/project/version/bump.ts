@@ -1,6 +1,6 @@
 import {
   AllPackagesStrategy, GitDiffStrategy, GitService, OrgDiffStrategy, type OrgPackageVersionFetcher, PackageService,
-  ProjectService, SfpmCore, SinglePackageStrategy, type UpdateStrategy, type VersionBumpType,
+  ProjectService, SinglePackageStrategy, type UpdateStrategy, type VersionBumpType,
   type VersionManager, type VersionUpdateResult,
 } from '@b64hub/sfpm-core';
 import {Flags} from '@oclif/core'
@@ -86,14 +86,10 @@ export default class ProjectVersionBump extends SfpmCommand {
         ? flags.projectfile.slice(0, Math.max(0, flags.projectfile.lastIndexOf('/')))
         : process.cwd();
 
-    // 1. Initialize Core
-    const core = await SfpmCore.create({
-      apiKey: 'unused',
-      projectPath,
-      verbose: false,
-    });
+    // 1. Initialize ProjectService
+    const projectService = await ProjectService.create(projectPath);
 
-    const versionManager = core.project.createVersionManager();
+    const versionManager = projectService.createVersionManager();
     const spinner = ora('Initialized.').start();
 
     // 2. Setup Events
@@ -119,7 +115,7 @@ export default class ProjectVersionBump extends SfpmCommand {
       }
 
       this.outputResult(result);
-      await this.save(core.project, versionManager, flags.dryrun);
+      await this.save(projectService, versionManager, flags.dryrun);
     } catch (error: unknown) {
       spinner.fail(chalk.red('Operation failed.'));
       this.error(error instanceof Error ? error.message : String(error));
@@ -146,13 +142,15 @@ export default class ProjectVersionBump extends SfpmCommand {
     if (flags.targetorg) {
       const org = await Org.create({aliasOrUsername: flags.targetorg});
       const packageService = new PackageService(org);
-      await packageService.preloadInstalled2GPPackages();
+      await packageService.preloadInstalledPackages();
 
       const fetcher: OrgPackageVersionFetcher = {
         async getInstalledVersion(packageName: string): Promise<null | string> {
-          const installed = await packageService.getAllInstalled2GPPackages();
-          const match = installed.find(pkg => pkg.name === packageName);
-          return match?.versionNumber ?? null;
+          const installed = await packageService.listInstalledPackages();
+          const match = installed.find(pkg => pkg.SubscriberPackage?.Name === packageName);
+          if (!match?.SubscriberPackageVersion) return null;
+          const spv = match.SubscriberPackageVersion;
+          return `${spv.MajorVersion}.${spv.MinorVersion}.${spv.PatchVersion}.${spv.BuildNumber}`;
         },
       };
 

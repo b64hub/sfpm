@@ -1,5 +1,5 @@
 import Git from '../../../git/git.js';
-import {Logger} from '../../../types/logger.js';
+import Logger from '../../../types/logger.js';
 import {toVersionFormat} from '../../../utils/version-utils.js';
 import SfpmPackage from '../../sfpm-package.js';
 import {BuildTask, BuildTaskContext, BuildTaskResult} from '../builder-registry.js';

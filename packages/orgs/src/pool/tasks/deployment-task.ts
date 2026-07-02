@@ -1,10 +1,10 @@
 import {
-  InstallationMode,
   InstallOrchestrator,
   type Logger,
   ProjectService,
   type TestLevel,
 } from '@b64hub/sfpm-core';
+import {Org} from '@salesforce/core';
 
 import type {PoolOrg} from '../../org/pool-org.js';
 import type {PoolOrgTask, PoolOrgTaskResult} from '../types.js';
@@ -53,6 +53,8 @@ export class DeploymentTask implements PoolOrgTask {
       return {error: 'Org has no username', success: false};
     }
 
+    const targetOrg = await Org.create({aliasOrUsername: username});
+
     const projectService = await ProjectService.getInstance(this.options.workingDirectory);
     const provider = projectService.getDefinitionProvider();
     const graph = projectService.getProjectGraph();
@@ -66,11 +68,10 @@ export class DeploymentTask implements PoolOrgTask {
 
     logger.info(`Deploying ${packages.length} package(s) to ${username}`);
 
-    const orchestrator = InstallOrchestrator.forArtifact(provider, graph, {
-      deployment: {testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel},
+    const orchestrator = InstallOrchestrator.forArtifact(targetOrg, provider, graph, {
       force: true,
-      mode: InstallationMode.SourceDeploy,
-      targetOrg: username,
+      testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel,
+      unlocked: {sourceOnly: true},
     }, logger);
 
     const result = await orchestrator.installAll(packages);

@@ -1,14 +1,14 @@
-import {PackageManifestObject} from '@salesforce/source-deploy-retrieve';
+import {Org} from '@salesforce/core';
 
-import type {SfpmPackageSource} from './artifact.js';
+import type {ArtifactResolutionOptions, SfpmPackageSource} from './artifact.js';
 
-import {PackageInstallConfig} from './project.js';
+import {ValidationLevel} from './validation.js';
 
 /**
  * Salesforce test levels for metadata API deployments.
  *
  * Mirrors the `testLevel` values accepted by the Salesforce Metadata API
- * and `@salesforce/source-deploy-retrieve`.
+ * and `@salesforce/source-deploy-retrieve`
  */
 export type TestLevel = 'NoTestRun' | 'RunAllTestsInOrg' | 'RunLocalTests' | 'RunRelevantTests' | 'RunSpecifiedTests';
 
@@ -23,23 +23,74 @@ export type VersionFormat = 'salesforce' | 'semver';
 
 /**
  * Where the package code comes from for installation.
- * - `local`: Install directly from project source directory
- * - `artifact`: Install from built artifact (local or fetched from npm - resolver abstracts this)
+ * - `local`: Install from built ./dist
+ * - `artifact`: Install from node_modules
  */
-export enum InstallationSource {
+export const enum PackageOrigin {
   Artifact = 'artifact',
   Local = 'local',
 }
 
-/**
- * How an unlocked package will be installed.
- * Source packages always use source-deploy; this enum only applies to unlocked packages.
- * - `source-deploy`: Deploy source via metadata API
- * - `version-install`: Install package version using packageVersionId
- */
-export enum InstallationMode {
-  SourceDeploy = 'source-deploy',
-  VersionInstall = 'version-install',
+export interface BuildOrg {
+  /** Scratch/sandbox org for validation (deploy + test). Optional for assemble-only builds. */
+  buildOrg?: Org;
+  /** DevHub for package version creation. Only needed for unlocked builds. */
+  devhub?: Org;
+}
+
+export interface BuildOptions {
+  /** Build number for version generation */
+  buildNumber?: string;
+  /** Force build even if no source changes detected (skip hash check) */
+  force?: boolean;
+
+  unlocked?: UnlockedBuildOptions;
+  /**
+   * Validation level. Controls which quality gates run during the build.
+   *
+   * - `full`  — static analysis + org validation (default)
+   * - `org`   — org validation only (skip static analysis)
+   * - `local` — static analysis only (no org connection)
+   * - `none`  — assemble only
+   */
+  validation?: ValidationLevel;
+  /** Timeout in minutes for package version creation (default: 120) */
+  waitTime?: number;
+}
+
+export interface UnlockedBuildOptions {
+  /** Scratch org definition file for package version creation */
+  definitionFile?: string;
+  installationKey?: string;
+  /**
+   * Unlocked packages are built as source instead of creating a package version.
+   * No DevHub required. Designed for PR validation against scratch orgs.
+   */
+  sourceOnly?: boolean;
+}
+
+export interface InstallOptions {
+  artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
+  /** Force reinstall even if already installed with matching version/hash */
+  force?: boolean;
+  /**
+   * Where to install from: 'local' (project source ./dist) or 'artifact' (installed node_modules).
+   */
+  origin?: PackageOrigin;
+  testLevel?: TestLevel;
+  unlocked?: UnlockedInstallOptions;
+  /** Update sfpm artifact records in org upon installation */
+  updateArtifact?: boolean;
+  waitTime?: number
+}
+
+export interface UnlockedInstallOptions {
+  /** Installation key for unlocked packages */
+  installationKey?: string;
+  /**
+   * Unlocked packages are deployed as source instead of installing a package version.
+   */
+  sourceOnly?: boolean;
 }
 
 export type MetadataFile = string | {
@@ -94,18 +145,6 @@ export interface SfpmPackageContent {
   testCoverage?: number;
 }
 
-export interface SfpmPackageOrchestration {
-  build?: PerPackageBuildConfig;
-  creationDetails?: {duration?: number; timestamp?: number};
-  install?: PackageInstallConfig;
-  installation?: {
-    installationTime?: number;
-    subDirectory?: string;
-    targetOrg: string;
-    timestamp?: number
-  }[];
-}
-
 /**
  * Per-package build configuration from project config (package.json / sfdx-project.json).
  * These are static settings that travel with the package definition, not runtime build params.
@@ -117,82 +156,6 @@ export interface PerPackageBuildConfig {
   installationKey?: string;
   /** Post-install Apex script class name */
   postInstallScript?: string;
-}
-
-// ============================================================================
-// Validation State (build outcome, travels with the artifact)
-// ============================================================================
-
-/** Individual validation check that was performed during the build. */
-export type ValidationCheck = 'dependencies' | 'deploy' | 'test';
-
-/**
- * Serializable descriptor for a pending (in-flight) validation operation.
- * Written to artifact metadata so cross-process consumers (watcher workflows,
- * subsequent CI steps) can pick up and resolve the validation without the
- * original process being alive.
- */
-export interface PendingValidationDescriptor {
-  /** The SF operation identifier (deployId for source, PackageVersionCreateRequestId for unlocked) */
-  operationId: string;
-  /** Which SF API operation to poll for resolution */
-  operationType: 'deploy' | 'package-version-request';
-  /** Package this validation belongs to */
-  packageName: string;
-  /** ISO timestamp when the operation was initiated */
-  startedAt: string;
-  /** The org against which the operation was submitted */
-  targetOrg: string;
-}
-
-/**
- * Discriminated union describing what validation was performed and its outcome.
- * Set by builders after build/validation completes.
- * Serialized into artifact metadata so downstream processes
- * (install, release) can make decisions based on validation status.
- *
- * Discriminant: `status`
- * - `'pending'` — validation initiated but result not yet known (async build)
- * - `'passed'`  — all validation checks succeeded
- * - `'failed'`  — one or more validation checks failed
- */
-export type ValidationState
-  = | ValidationStateFailed
-    | ValidationStatePassed
-    | ValidationStatePending;
-
-export interface ValidationStatePending {
-  /** Which validation checks were submitted */
-  checks: ValidationCheck[];
-  /** Descriptor for the in-flight operation (serializable for cross-process pickup) */
-  pending: PendingValidationDescriptor;
-  status: 'pending';
-}
-
-export interface ValidationStatePassed {
-  /** Which validation checks were performed */
-  checks: ValidationCheck[];
-  /** Number of components successfully deployed */
-  componentsDeployed?: number;
-  /** Total number of components in the deployment */
-  componentsTotal?: number;
-  status: 'passed';
-  /** Test coverage percentage (0–100), if measured */
-  testCoverage?: number;
-}
-
-export interface ValidationStateFailed {
-  /** Which validation checks were attempted */
-  checks: ValidationCheck[];
-  /** Number of components successfully deployed */
-  componentsDeployed?: number;
-  /** Total number of components in the deployment */
-  componentsTotal?: number;
-  /** Human-readable error description */
-  error?: string;
-  status: 'failed';
-  /** Test coverage percentage (0–100), if measured */
-  testCoverage?: number;
 }
 
 // ============================================================================
@@ -227,7 +190,6 @@ export interface SfpmDataPackageContent {
 export interface SfpmPackageMetadataBase {
   [key: string]: any;
   apiVersion?: string;
-  orchestration: SfpmPackageOrchestration;
   // package name without npm scope. This is used for user-facing messages and Salesforce operations, but should not be used as a unique identifier since it is not guaranteed to be unique across scopes.
   packageName: string;
   packageType: Omit<PackageType, 'managed'>;

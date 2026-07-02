@@ -1,6 +1,6 @@
 import type SfpmPackage from '../sfpm-package.js';
 
-import {Logger} from '../../types/logger.js';
+import Logger from '../../types/logger.js';
 import {SfpmPackageContent} from '../../types/package.js';
 
 /**

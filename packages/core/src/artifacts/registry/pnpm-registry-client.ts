@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import {execSync} from 'node:child_process';
 import path from 'node:path';
 
-import {Logger} from '../../types/logger.js';
+import Logger from '../../types/logger.js';
 import {
   DownloadResult,
   RegistryClient,

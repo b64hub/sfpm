@@ -1,19 +1,52 @@
 import {SfProject} from '@salesforce/core';
-import path from 'node:path';
 
+import type {SfpmConfig} from '../types/config.js';
+import type {BuildOptions, InstallOptions, PackageType} from '../types/package.js';
+import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import type {
   ProjectDefinitionProvider,
   ResolveForPackageOptions,
 } from './providers/project-definition-provider.js';
 
-import {SfpmConfig} from '../types/config.js';
-import {PackageType} from '../types/package.js';
-import {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import {loadSfpmConfig} from './config-loader.js';
-import {ProjectGraph} from './project-graph.js';
+import ProjectGraph from './project-graph.js';
 import {SfdxProjectProvider} from './providers/sfdx-project-provider.js';
 import {WorkspaceProvider} from './providers/workspace-provider.js';
 import {VersionManager} from './version-manager.js';
+
+// ---------------------------------------------------------------------------
+// Provider detection — internal, keeps ProjectService instance agnostic
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the project root by trying each provider's root detection in priority order.
+ * Workspace takes precedence over sfdx-project.json (workspace projects also have one).
+ */
+function findProjectRoot(startDir: string): string | undefined {
+  return WorkspaceProvider.findProjectRoot(startDir)
+    ?? SfdxProjectProvider.findProjectRoot(startDir);
+}
+
+/**
+ * Detect and instantiate the appropriate provider for a project directory.
+ */
+async function detectProvider(projectDir: string, sfpmConfig: SfpmConfig): Promise<ProjectDefinitionProvider> {
+  if (WorkspaceProvider.hasWorkspace(projectDir)) {
+    return new WorkspaceProvider({
+      projectDir,
+      sfdcLoginUrl: sfpmConfig.sfdcLoginUrl,
+      sourceApiVersion: sfpmConfig.sourceApiVersion,
+      sourceBehaviorOptions: sfpmConfig.sourceBehaviorOptions,
+    });
+  }
+
+  const sfProject = await SfProject.resolve(projectDir);
+  return new SfdxProjectProvider(sfProject);
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
 
 export default class ProjectService {
   private static instance: ProjectService | undefined;
@@ -40,29 +73,15 @@ export default class ProjectService {
    */
   public static async create(projectPath?: string, provider?: ProjectDefinitionProvider): Promise<ProjectService> {
     const resolvedPath = projectPath ?? process.cwd();
-
-    const projectRoot = ProjectService.findWorkspaceRoot(resolvedPath) ?? resolvedPath;
+    const projectRoot = findProjectRoot(resolvedPath) ?? resolvedPath;
     const sfpmConfig = await loadSfpmConfig(projectRoot);
 
-    const definitionProvider = provider ?? await ProjectService.detectProvider(projectRoot, sfpmConfig);
-    const {definition} = definitionProvider.resolve();
-    const graph = new ProjectGraph(definitionProvider);
+    const definitionProvider = provider ?? await detectProvider(projectRoot, sfpmConfig);
+    definitionProvider.resolve();
 
-    if (definitionProvider instanceof WorkspaceProvider) {
-      WorkspaceProvider.ensureSfdxProject(projectRoot, definition);
-    }
+    const graph = ProjectGraph.buildGraph(definitionProvider.getProjectDefinition());
 
     return new ProjectService(graph, sfpmConfig, definitionProvider);
-  }
-
-  /**
-   * Creates a ProjectService instance from an existing SfProject.
-   */
-  public static createFromProject(project: SfProject, sfpmConfig: SfpmConfig = {}): ProjectService {
-    const provider = new SfdxProjectProvider(project);
-    const graph = new ProjectGraph(provider);
-
-    return new ProjectService(graph, sfpmConfig, provider);
   }
 
   /**
@@ -76,14 +95,14 @@ export default class ProjectService {
     return ProjectService.instance;
   }
 
-  // =========================================================================
-  // Static convenience helpers
-  // =========================================================================
-
   public static async getPackageDefinition(packageName: string, workingDirectory?: string): Promise<PackageDefinition> {
     const service = await ProjectService.getInstance(workingDirectory);
     return service.getPackageDefinition(packageName);
   }
+
+  // =========================================================================
+  // Static convenience helpers
+  // =========================================================================
 
   public static async getPackageDependencies(packageName: string, workingDirectory?: string): Promise<PackageDefinition[]> {
     const service = await ProjectService.getInstance(workingDirectory);
@@ -103,41 +122,6 @@ export default class ProjectService {
   /** Resets the singleton instance (useful for testing). */
   public static resetInstance(): void {
     ProjectService.instance = undefined;
-  }
-
-  private static async detectProvider(projectDir: string, sfpmConfig: SfpmConfig): Promise<ProjectDefinitionProvider> {
-    if (WorkspaceProvider.hasWorkspace(projectDir)) {
-      return new WorkspaceProvider({
-        projectDir,
-        sfdcLoginUrl: sfpmConfig.sfdcLoginUrl,
-        sourceApiVersion: sfpmConfig.sourceApiVersion,
-        sourceBehaviorOptions: sfpmConfig.sourceBehaviorOptions,
-      });
-    }
-
-    const sfProject = await SfProject.resolve(projectDir);
-    return new SfdxProjectProvider(sfProject);
-  }
-
-  /**
-   * Walk up the directory tree from `startDir` to find the nearest workspace root
-   * (a directory containing pnpm-workspace.yaml or a package.json with "workspaces").
-   * Returns the workspace root path, or undefined if none is found.
-   * TODO: move this responsibility to the provider
-   */
-  private static findWorkspaceRoot(startDir: string): string | undefined {
-    let dir = path.resolve(startDir);
-    const {root} = path.parse(dir);
-
-    while (dir !== root) {
-      if (WorkspaceProvider.hasWorkspace(dir)) {
-        return dir;
-      }
-
-      dir = path.dirname(dir);
-    }
-
-    return undefined;
   }
 
   // =========================================================================
@@ -179,10 +163,6 @@ export default class ProjectService {
     return this.definitionProvider.getPackageDefinition(packageName);
   }
 
-  // =========================================================================
-  // Dependency queries (delegates to provider)
-  // =========================================================================
-
   public getPackageDefinitionByPath(packagePath: string): PackageDefinition {
     return this.definitionProvider.getPackageDefinitionByPath(packagePath);
   }
@@ -207,42 +187,54 @@ export default class ProjectService {
     return this.sfpmConfig;
   }
 
+  /**
+   * Resolve the full build config for a package by merging layers:
+   * 1. Global defaults from SfpmConfig (sourceApiVersion)
+   * 2. Per-package build config from PackageDefinition.packageOptions.build
+   * 3. Runtime overrides passed by the caller
+   */
+  public resolveBuildConfig(packageName: string, runtimeOptions?: BuildOptions): BuildOptions {
+    const pkg = this.definitionProvider.getPackageDefinition(packageName);
+    const packageBuildConfig = pkg.packageOptions?.build;
+
+    return {
+      // Layer 1: global defaults
+      ...(this.sfpmConfig.sourceApiVersion ? {apiVersion: this.sfpmConfig.sourceApiVersion} : {}),
+      // Layer 2: per-package config
+      ...packageBuildConfig,
+      // Layer 3: runtime overrides
+      ...runtimeOptions,
+    };
+  }
+
+  /**
+   * Resolve the full install config for a package by merging layers:
+   * 1. Per-package install config from PackageDefinition.packageOptions.install
+   * 2. Runtime overrides passed by the caller
+   */
+  public resolveInstallConfig(packageName: string, runtimeOptions?: InstallOptions): InstallOptions {
+    const pkg = this.definitionProvider.getPackageDefinition(packageName);
+    const packageInstallConfig = pkg.packageOptions?.install;
+
+    return {
+      ...(this.sfpmConfig.sourceApiVersion ? {apiVersion: this.sfpmConfig.sourceApiVersion} : {}),
+      ...packageInstallConfig,
+      ...runtimeOptions,
+    };
+  }
+
   /** Resolve a single-package ProjectDefinition for staging and building. */
-  public resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
-    return this.definitionProvider.resolveForPackage(packageName, options);
+  public resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
+    return this.definitionProvider.resolveSingleProjectDefinition(packageName, options);
   }
 
   /**
    * Persists an updated ProjectDefinition via the active provider.
-   *
-   * Delegates per-package updates through the provider's `updatePackageConfig()`,
-   * ensuring the correct backing store is written (workspace package.json files
-   * in workspace mode, sfdx-project.json in legacy mode).
-   *
-   * After updating all packages, regenerates the synthetic sfdx-project.json
-   * in workspace mode so that @salesforce/core stays in sync.
    */
   public async saveProjectDefinition(definition: ProjectDefinition): Promise<void> {
     for (const pkg of definition.packages) {
+      // eslint-disable-next-line no-await-in-loop -- file writes sequentially to avoid locks
       await this.definitionProvider.updatePackageConfig(pkg.name, pkg);
-    }
-
-    this.syncSfdxProject();
-  }
-
-  /**
-   * Regenerate the synthetic sfdx-project.json from the current provider state.
-   *
-   * In workspace mode, sfdx-project.json is derived from workspace package.json
-   * files. Call this after updating packageIds or other fields via the provider
-   * to keep @salesforce/core's SfProject in sync.
-   *
-   * No-op in legacy (sfdx-project.json) mode since the provider writes directly.
-   */
-  public syncSfdxProject(): void {
-    if (this.definitionProvider instanceof WorkspaceProvider) {
-      const {definition: resolved} = this.definitionProvider.resolve();
-      WorkspaceProvider.ensureSfdxProject(this.definitionProvider.projectDir, resolved);
     }
   }
 }

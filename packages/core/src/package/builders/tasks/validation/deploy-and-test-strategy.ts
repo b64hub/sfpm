@@ -3,7 +3,7 @@ import type {DeploySetOptions, MetadataApiDeploy, MetadataApiDeployStatus} from 
 import {Org} from '@salesforce/core';
 import path from 'node:path';
 
-import type {Logger} from '../../../../types/logger.js';
+import type Logger from '../../../../types/logger.js';
 import type {SfpmMetadataPackage} from '../../../sfpm-package.js';
 import type {
   ComponentError,

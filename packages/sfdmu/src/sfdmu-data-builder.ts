@@ -66,7 +66,9 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
    */
   public async exec(): Promise<BuilderResult> {
     await this.validate();
-    return {};
+    return {
+      packageType: PackageType.Data,
+    };
   }
 
   /**

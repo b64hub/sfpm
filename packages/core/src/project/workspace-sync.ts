@@ -15,7 +15,7 @@
 
 import path from 'node:path';
 
-import type {Logger} from '../types/logger.js';
+import type Logger from '../types/logger.js';
 import type {
   WorkspaceSyncPackage,
   WorkspaceSyncResult,

@@ -4,7 +4,7 @@ import * as semver from 'semver';
 
 import {ArtifactResolutionOptions, ResolvedArtifact} from '../types/artifact.js';
 import {ArtifactError} from '../types/errors.js';
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {NpmPackageJson} from '../types/npm.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {ArtifactRepository} from './artifact-repository.js';

@@ -1,6 +1,4 @@
-import {Lifecycle, Org, SfProject} from '@salesforce/core';
-import {Duration} from '@salesforce/kit';
-import {PackageVersion, PackageVersionCreateRequestResult} from '@salesforce/packaging';
+import {Org} from '@salesforce/core';
 import fs from 'fs-extra';
 import path from 'node:path';
 
@@ -9,11 +7,12 @@ import type {BuildEventSink} from '../../events/build-event-bus.js';
 import ProjectService from '../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
 import {BuildError} from '../../types/errors.js';
-import {Logger} from '../../types/logger.js';
-import {PackageType, PendingValidationDescriptor, PerPackageBuildConfig} from '../../types/package.js';
+import Logger from '../../types/logger.js';
+import {BuildOptions, PackageType} from '../../types/package.js'
+import PackageService, {PackageVersionCreateReportProgress, PackageVersionCreateRequestResult} from '../package-service.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
-  Builder, BuilderOptions, BuilderResult, BuildTaskRegistration, RegisterBuilder,
+  Builder, BuilderResult, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 
@@ -21,14 +20,14 @@ import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
 @RegisterBuilder(PackageType.Unlocked)
 export default class UnlockedPackageBuilder implements Builder {
   public tasks: BuildTaskRegistration[] = [];
-  private devhubOrg?: Org;
+  private devhub?: Org;
   private logger?: Logger;
-  private options: BuilderOptions;
+  private options: BuildOptions;
   private sfpmPackage: SfpmUnlockedPackage;
   private sink?: BuildEventSink;
   private workingDirectory: string;
 
-  constructor(workingDirectory: string, sfpmPackage: SfpmPackage, options: BuilderOptions, logger?: Logger, sink?: BuildEventSink) {
+  constructor(workingDirectory: string, sfpmPackage: SfpmPackage, options: BuildOptions, logger?: Logger, sink?: BuildEventSink) {
     if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
       throw new TypeError(`UnlockedPackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
@@ -44,18 +43,18 @@ export default class UnlockedPackageBuilder implements Builder {
     ];
   }
 
-  public async connect(targetOrg: Org): Promise<void> {
-    this.devhubOrg = targetOrg;
-
-    if (!this.devhubOrg.isDevHubOrg()) {
+  public async connect(buildOrg: Org | undefined): Promise<void> {
+    if (!buildOrg || !buildOrg.isDevHubOrg()) {
       throw new BuildError(this.sfpmPackage.packageName, 'Must connect to a dev hub org', {
         buildStep: 'connect',
       });
     }
+
+    this.devhub = buildOrg;
   }
 
   public async exec(): Promise<BuilderResult> {
-    if (!this.devhubOrg) {
+    if (!this.devhub) {
       throw new Error('Must run connect() before exec()');
     }
 
@@ -70,6 +69,7 @@ export default class UnlockedPackageBuilder implements Builder {
     // Return build results — no more side-effect mutations
     const {validationState} = this.sfpmPackage;
     return {
+      packageType: PackageType.Unlocked,
       packageVersionId: this.sfpmPackage.packageVersionId,
       pendingValidation: validationState?.status === 'pending' ? validationState.pending : undefined,
       validationState,
@@ -83,8 +83,12 @@ export default class UnlockedPackageBuilder implements Builder {
    *
    * Used both in the happy path and the verify-after-failure recovery.
    */
-  private applyCreateResult(result: PackageVersionCreateRequestResult): void {
-    this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId ?? undefined;
+  private applyCreateResult(result: PackageVersionCreateRequestResult | undefined): void {
+    if (!result) return;
+
+    if (result.SubscriberPackageVersionId) {
+      this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
+    }
 
     if (result.VersionNumber) {
       this.sfpmPackage.version = result.VersionNumber;
@@ -92,7 +96,7 @@ export default class UnlockedPackageBuilder implements Builder {
     }
 
     // Set validation state on the domain model
-    const validated = this.options.validation !== false;
+    const validated = Boolean(this.options.validation) && this.options.validation !== 'none';
     const checks: Array<'dependencies' | 'deploy' | 'test'> = validated ? ['deploy', 'test', 'dependencies'] : [];
 
     if (validated) {
@@ -103,7 +107,7 @@ export default class UnlockedPackageBuilder implements Builder {
           operationType: 'package-version-request',
           packageName: this.sfpmPackage.packageName,
           startedAt: new Date().toISOString(),
-          targetOrg: this.devhubOrg?.getUsername() ?? 'unknown',
+          targetOrg: this.devhub?.getUsername() ?? 'unknown',
         },
         status: 'pending',
       };
@@ -134,78 +138,50 @@ export default class UnlockedPackageBuilder implements Builder {
   private async buildPackage(): Promise<void> {
     await this.rewriteMetadataPathsForCwd();
 
-    const sfProject = await SfProject.resolve(this.workingDirectory);
-    const waitTime = Duration.minutes(this.options.waitTime || 120);
-    const pollingFrequency = Duration.seconds(30);
+    const packageService = new PackageService(this.devhub!, this.logger);
+
+    const buildOptions = (await ProjectService.getInstance()).resolveBuildConfig(this.sfpmPackage.packageName, this.options)
 
     this.sink?.createStart({
       packageId: this.sfpmPackage.packageId,
       versionNumber: this.sfpmPackage.version || '',
     });
 
-    const tracker = {lastRequestId: undefined as string | undefined, lastStatus: undefined as string | undefined};
-    const lifecycle = Lifecycle.getInstance();
-    lifecycle.on('packageVersionCreate:progress', async (data: PackageVersionCreateRequestResult) => {
-      this.handleCreateProgress(data, tracker, pollingFrequency);
-    });
-
-    try {
-      const result = await this.createPackageVersion(sfProject, waitTime, pollingFrequency);
-      this.applyCreateResult(result);
-    } catch (error: any) {
-      await this.handleCreateFailure(error, tracker, waitTime);
-    } finally {
-      lifecycle.removeAllListeners('packageVersionCreate:progress');
-    }
-  }
-
-  /**
-   * Assemble PackageVersion.create options and invoke the Salesforce API.
-   * Reads SF API parameters from BuilderOptions.
-   */
-  private async createPackageVersion(
-    sfProject: SfProject,
-    waitTime: Duration,
-    pollingFrequency: Duration,
-  ): Promise<PackageVersionCreateRequestResult> {
-    // Per-package config for definition file and post-install script
-    const packageConfig = this.sfpmPackage.packageDefinition?.packageOptions?.build as PerPackageBuildConfig | undefined;
-
-    const validate = this.options.validation !== false;
-    const packageVersionCreateOptions: Record<string, unknown> = {
-      asyncvalidation: validate,
-      codecoverage: validate,
-      connection: this.devhubOrg!.getConnection(),
-      installationkey: this.options.installationKey,
-      installationkeybypass: this.options.installationKey ? undefined : true,
-      packageId: this.sfpmPackage.packageId,
-      project: sfProject,
-      skipvalidation: !validate,
-      versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
-      ...(packageConfig?.definitionFile
-        ? {definitionfile: path.join(this.workingDirectory, packageConfig.definitionFile)}
-        : {}),
-      ...(this.sfpmPackage.tag
-        ? {tag: this.sfpmPackage.tag}
-        : {}),
-    };
+    const validate = Boolean(this.options.validation) && this.options.validation !== 'none';
+    const waitTime = buildOptions.waitTime || 120;
 
     this.logger?.debug(`PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, `
-      + `version=${this.sfpmPackage.version}, validation=${validate}, `
-      + `definitionfile=${packageConfig?.definitionFile ?? '(not set)'}`);
+      + `version=${this.sfpmPackage.version}, validation=${validate}`);
 
-    const result = await PackageVersion.create(
-      packageVersionCreateOptions as any,
-      {frequency: pollingFrequency, timeout: waitTime},
-    );
-
-    this.logger?.debug(`Package Result: Status=${result.Status}, VersionId=${result.SubscriberPackageVersionId}, Version=${result.VersionNumber}`);
-
-    if (!result.SubscriberPackageVersionId) {
-      throw new Error(`Package creation failed or timed out.\n${result.Error?.join('\n')}`);
+    const tracker: {lastRequestId?: string; lastStatus?: string} = {
+      lastRequestId: undefined,
+      lastStatus: undefined,
     }
 
-    return result;
+    let result: PackageVersionCreateRequestResult | undefined;
+
+    try {
+      result = await packageService.createPackageVersion(
+        this.sfpmPackage.packageId,
+        {
+          apiVersion: this.sfpmPackage.apiVersion,
+          asyncvalidation: validate,
+          codecoverage: validate,
+          definitionfile: buildOptions.unlocked?.definitionFile,
+          installationkey: buildOptions.unlocked?.installationKey,
+          installationkeybypass: buildOptions.unlocked?.installationKey ? undefined : true,
+          skipvalidation: !validate,
+          tag: this.sfpmPackage.tag,
+          versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
+          wait: waitTime,
+        },
+        progress => this.handleProgress(progress, tracker),
+      )
+    } catch (error) {
+      await this.handleFailure(packageService, error, tracker, waitTime);
+    }
+
+    this.applyCreateResult(result);
   }
 
   /**
@@ -215,22 +191,18 @@ export default class UnlockedPackageBuilder implements Builder {
    * Returns normally only when server-side creation succeeded despite the client error.
    * Throws in all other cases.
    */
-  private async handleCreateFailure(
+  private async handleFailure(
+    packageService: PackageService,
     error: any,
     tracker: {lastRequestId?: string; lastStatus?: string},
-    waitTime: Duration,
+    waitTime: number,
   ): Promise<void> {
     const {lastRequestId, lastStatus} = tracker;
 
-    // If we have a request ID, check whether SF actually completed the work
-    // despite the client-side failure (connection drop, timeout, etc.)
     if (lastRequestId) {
       try {
         this.logger?.debug(`Create failed for ${this.sfpmPackage.packageName}, verifying server-side status (request ${lastRequestId})...`);
-        const status = await PackageVersion.getCreateStatus(
-          lastRequestId,
-          this.devhubOrg!.getConnection(),
-        );
+        const status = await packageService.getVersionCreateStatus(lastRequestId);
 
         if (status.Status === 'Success' && status.SubscriberPackageVersionId) {
           this.logger?.info('Package version creation succeeded server-side despite client error');
@@ -256,7 +228,7 @@ export default class UnlockedPackageBuilder implements Builder {
           `  Last Status: ${status.Status}`,
           '',
           'Check status with:',
-          `  sf package version create report -i ${lastRequestId} -v ${this.devhubOrg!.getUsername()}`,
+          `  sf package version create report -i ${lastRequestId} -v ${this.devhub!.getUsername()}`,
         ].join('\n');
 
         this.logger?.error(timeoutMsg);
@@ -283,14 +255,14 @@ export default class UnlockedPackageBuilder implements Builder {
 
     if (isTimeout && lastRequestId) {
       const timeoutMsg = [
-        `Package version creation for ${this.sfpmPackage.packageName} timed out after ${waitTime.minutes} minutes.`,
+        `Package version creation for ${this.sfpmPackage.packageName} timed out after ${waitTime} minutes.`,
         'The request is still in progress on the server.',
         '',
         `  Request ID: ${lastRequestId}`,
         `  Last Status: ${lastStatus ?? 'Unknown'}`,
         '',
         'Check status with:',
-        `  sf package version create report -i ${lastRequestId} -v ${this.devhubOrg!.getUsername()}`,
+        `  sf package version create report -i ${lastRequestId} -v ${this.devhub!.getUsername()}`,
       ].join('\n');
 
       this.logger?.error(timeoutMsg);
@@ -311,10 +283,9 @@ export default class UnlockedPackageBuilder implements Builder {
    * Handle a lifecycle progress event during package version creation.
    * Tracks the request ID and status, and emits progress events.
    */
-  private handleCreateProgress(
-    data: PackageVersionCreateRequestResult,
+  private handleProgress(
+    data: PackageVersionCreateReportProgress,
     tracker: {lastRequestId?: string; lastStatus?: string},
-    pollingFrequency: Duration,
   ): void {
     if (data.Id) tracker.lastRequestId = data.Id;
     tracker.lastStatus = data.Status;
@@ -325,7 +296,7 @@ export default class UnlockedPackageBuilder implements Builder {
     });
 
     if (this.logger) {
-      this.logger.info(`Status: ${data.Status}, Next Status check in ${pollingFrequency.seconds} seconds`);
+      this.logger.info(`Status: ${data.Status}`);
       if (data.Error?.length) {
         this.logger.error(`Creation errors: ${data.Error.join('\n')}`);
       }
@@ -334,6 +305,7 @@ export default class UnlockedPackageBuilder implements Builder {
 
   /**
    * @description: cleanup sfpm constructs in working directory
+   * TODO: move file write responsibility to ProjectService
    */
   private async pruneOrgDependentPackage(): Promise<void> {
     if (!this.sfpmPackage.isOrgDependent) {
@@ -345,7 +317,7 @@ export default class UnlockedPackageBuilder implements Builder {
     });
 
     const projectService = await ProjectService.getInstance(this.workingDirectory);
-    const prunedDefinition = projectService.resolveForPackage(this.sfpmPackage.packageName, {
+    const prunedDefinition = projectService.resolveSingleProjectDefinition(this.sfpmPackage.packageName, {
       isOrgDependent: true,
     });
 

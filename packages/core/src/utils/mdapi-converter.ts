@@ -1,6 +1,6 @@
 import { ComponentSet, MetadataConverter, ConvertResult } from '@salesforce/source-deploy-retrieve';
 import fs from 'fs-extra';
-import { Logger } from '../types/logger.js';
+import Logger from '../types/logger.js';
 
 export default class MDAPIConverter {
     public constructor(

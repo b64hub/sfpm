@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type {Logger} from '../types/logger.js';
+import type Logger from '../types/logger.js';
 import type {PackageDefinition, ProjectDefinition} from '../types/project.js';
 import type {WorkspacePackageJson} from './providers/types/workspace.js';
 

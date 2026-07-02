@@ -1,4 +1,4 @@
-import {Logger} from '../../../../types/logger.js';
+import Logger from '../../../../types/logger.js';
 import {SfpmMetadataPackage} from '../../../sfpm-package.js';
 
 /** A component that failed during deployment. */

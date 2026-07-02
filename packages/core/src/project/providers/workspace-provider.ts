@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type {Logger} from '../../types/logger.js';
+import type Logger from '../../types/logger.js';
 import type {PackageType} from '../../types/package.js';
 import type {
   ProjectDefinitionProvider,
@@ -85,6 +85,25 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
   }
 
   /**
+   * Walk up from `startDir` to find the workspace root
+   * (pnpm-workspace.yaml or package.json with "workspaces" field).
+   */
+  static findProjectRoot(startDir: string): string | undefined {
+    let dir = path.resolve(startDir);
+    const {root} = path.parse(dir);
+
+    while (dir !== root) {
+      if (WorkspaceProvider.hasWorkspace(dir)) {
+        return dir;
+      }
+
+      dir = path.dirname(dir);
+    }
+
+    return undefined;
+  }
+
+  /**
    * Detect whether this project has a workspace configuration
    * (pnpm-workspace.yaml or package.json workspaces field).
    */
@@ -127,6 +146,30 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
 
   getPackageDefinitionByPath(packagePath: string): PackageDefinition {
     return getPackageDefinitionByPath(this.resolve().definition, packagePath);
+  }
+
+  getPackageDir(packageName: string): string {
+    const pkg = this.getPackageDefinition(packageName);
+    const parts = pkg.path.split('/');
+
+    // Walk up from source path to find the nearest package.json with sfpm config
+    for (let i = parts.length; i > 0; i--) {
+      const candidateDir = path.join(this.projectDir, ...parts.slice(0, i));
+      const candidatePkg = path.join(candidateDir, 'package.json');
+
+      try {
+        if (fs.existsSync(candidatePkg)) {
+          const pkgJson = JSON.parse(fs.readFileSync(candidatePkg, 'utf8'));
+          if (pkgJson.sfpm?.packageType) {
+            return candidateDir;
+          }
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    throw new Error(`No workspace package.json with sfpm config found for "${packageName}"`);
   }
 
   getPackageType(packageName: string): PackageType {
@@ -186,6 +229,9 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     // 6. Validate against schema
     const validated = this.validate(projectDefinition, warnings);
 
+    // Keep sfdx-project.json in sync so @salesforce/core can load it
+    WorkspaceProvider.ensureSfdxProject(this.projectDir, validated);
+
     this.cachedResult = {definition: validated, packages: sfpmPackages, warnings};
     return this.cachedResult;
   }
@@ -196,7 +242,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
    * Builds a single-package definition suitable for staging and building.
    * The returned definition is converted to sfdx-project.json format via the adapter.
    */
-  resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
+  resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
     const result = this.resolve();
     const {definition} = result;
 

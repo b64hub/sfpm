@@ -1,6 +1,6 @@
 import { simpleGit, SimpleGit } from 'simple-git';
 
-import { Logger } from '../types/logger.js';
+import Logger from '../types/logger.js';
 
 export default class Git {
     private _git: SimpleGit;

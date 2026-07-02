@@ -4,7 +4,7 @@ import EventEmitter from 'node:events';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {stripScope} from '../utils/scope-utils.js';
 import {Package2, PackageService} from './package-service.js';
 
@@ -151,7 +151,7 @@ export class PackageCreator extends EventEmitter<PackageCreatorEvents> {
     this.emit('package:query:start', {names: sfNames});
 
     const service = new PackageService(this.org, this.logger);
-    const allPackages = await service.listAllPackages();
+    const allPackages = await service.listPackages();
 
     const nameSet = new Set(sfNames);
     const result = new Map<string, Package2>();

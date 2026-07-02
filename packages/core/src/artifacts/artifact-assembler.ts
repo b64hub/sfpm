@@ -8,7 +8,7 @@ import {GitService} from '../git/git-service.js';
 import Git from '../git/git.js';
 import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage} from '../package/sfpm-package.js';
 import {ArtifactError} from '../types/errors.js';
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {DirectoryHasher} from '../utils/directory-hasher.js';
 import {SourceHasher} from '../utils/source-hasher.js';
 import {toVersionFormat} from '../utils/version-utils.js';

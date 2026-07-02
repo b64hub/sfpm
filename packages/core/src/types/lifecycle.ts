@@ -1,5 +1,5 @@
 import type SfpmPackage from '../package/sfpm-package.js';
-import type {Logger} from './logger.js';
+import type Logger from './logger.js';
 
 // ============================================================================
 // Hook Context

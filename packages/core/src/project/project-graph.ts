@@ -1,5 +1,3 @@
-import type {ProjectDefinitionProvider} from './providers/project-definition-provider.js';
-
 import {PackageType} from '../types/package.js';
 import {
   PackageDefinition,
@@ -65,11 +63,19 @@ export class PackageNode {
   }
 }
 
-export class ProjectGraph {
+export {ProjectGraph};
+export default class ProjectGraph {
   private readonly nodes: Map<string, PackageNode> = new Map();
 
-  constructor(provider: ProjectDefinitionProvider) {
-    this.buildGraph(provider.getProjectDefinition());
+  private constructor() {}
+
+  public static buildGraph(projectDefinition: ProjectDefinition): ProjectGraph {
+    const graph = new ProjectGraph();
+    const packages = graph.createLocalNodes(projectDefinition);
+    graph.createManagedNodes(packages, projectDefinition);
+    graph.wireDependencyEdges();
+
+    return graph;
   }
 
   /**
@@ -292,12 +298,6 @@ export class ProjectGraph {
       circularDependencies,
       levels,
     };
-  }
-
-  private buildGraph(projectDefinition: ProjectDefinition): void {
-    const packages = this.createLocalNodes(projectDefinition);
-    this.createManagedNodes(packages, projectDefinition);
-    this.wireDependencyEdges();
   }
 
   /**

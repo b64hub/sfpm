@@ -42,6 +42,19 @@ export class InteractiveDisplay implements DisplayStrategy {
 
     this.logger.log('');
 
+    // Render final package list (clearOutput: true erases the dynamic listr output)
+    for (const pkg of summary.packages) {
+      if (pkg.skipped) {
+        this.logger.log(`  ${sym.skip} ${chalk.cyan(pkg.name)} ${chalk.dim(`— ${pkg.error || 'skipped'}`)}`);
+      } else if (pkg.success) {
+        this.logger.log(`  ${sym.success} ${chalk.cyan(pkg.name)}${pkg.duration ? ` ${chalk.gray(`(${pkg.duration})`)}` : ''}`);
+      } else {
+        this.logger.log(`  ${sym.fail} ${chalk.cyan(pkg.name)}${pkg.error ? ` ${chalk.red(`— ${pkg.error}`)}` : ''}`);
+      }
+    }
+
+    this.logger.log('');
+
     const entries: Record<string, string> = {
       Succeeded: String(summary.succeeded),
       'Total Packages': String(summary.packages.length),
@@ -68,8 +81,8 @@ export class InteractiveDisplay implements DisplayStrategy {
     this.logger.log(chalk.dim(`  ${message}`));
   }
 
-  levelStart(_level: number, packages: string[]): void {
-    this.listr.onLevelStart({packages} as any);
+  levelStart(level: number, packages: string[]): void {
+    this.listr.onLevelStart(level, packages);
   }
 
   // ===========================================================================
@@ -105,10 +118,11 @@ export class InteractiveDisplay implements DisplayStrategy {
   // Subtask-Level
   // ===========================================================================
 
-  start(title: string, packages: string[]): void {
+  start(title: string, _packages: string[], levels?: string[][]): void {
     this.logger.log(chalk.bold(`\n${title}`));
     this.logger.log('');
-    this.listr.start(packages);
+    // Fall back to a single level if the orchestrator didn't provide levels
+    this.listr.start(levels ?? [_packages]);
   }
 
   subtaskComplete(packageName: string, phase: string, detail?: string): void {

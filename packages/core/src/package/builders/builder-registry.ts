@@ -2,9 +2,9 @@ import type {Org} from '@salesforce/core';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
 
-import {DependencyAnalyzer} from '../../types/dependency-analysis.js';
-import {Logger} from '../../types/logger.js';
-import {PackageType, PendingValidationDescriptor, ValidationState} from '../../types/package.js';
+import Logger from '../../types/logger.js';
+import {BuildOptions, PackageType} from '../../types/package.js'
+import {PendingValidationDescriptor, ValidationState} from '../../types/validation.js';
 import SfpmPackage from '../sfpm-package.js';
 
 // ============================================================================
@@ -81,6 +81,11 @@ export interface BuildTaskRegistration {
  * should not mutate sfpmPackage directly.
  */
 export interface BuilderResult {
+  /**
+   * Effective package type as built — may differ from the project definition
+   *  (e.g., unlocked built as source via --source-only)
+   */
+  packageType?: PackageType;
   /** Package version ID (04t) — set by unlocked package builds */
   packageVersionId?: string;
   /** Pending validation descriptor when validation was initiated asynchronously */
@@ -99,7 +104,7 @@ export interface Builder {
    * Connect to the target org (DevHub for unlocked, build org for source).
    * Optional — not all builds require an org connection.
    */
-  connect(targetOrg: Org): Promise<void>;
+  connect(buildOrg: Org | undefined): Promise<void>;
   /**
    * Execute the build and return results.
    * Includes validation when applicable — no separate validate() call needed.
@@ -112,32 +117,13 @@ export interface Builder {
   readonly tasks: BuildTaskRegistration[];
 }
 
-export interface DependencyAnalysis {
-  dependencyAnalyzer?: DependencyAnalyzer;
-  warnOnly?: boolean;
-}
-
-/**
- * Options passed to package builders.
- * Derived from {@link BuildOptions} and {@link ModeConfig} by the PackageBuilder.
- */
-export interface BuilderOptions {
-  dependencyAnalysis?: DependencyAnalysis;
-  /** Installation key for unlocked packages */
-  installationKey?: string;
-  /** Validation mode for package builds */
-  validation?: boolean;
-  /** Timeout in minutes for package version creation */
-  waitTime?: number;
-}
-
 /**
  * Constructor signature for package builders
  */
 export type BuilderConstructor = new (
   workingDirectory: string,
   sfpmPackage: SfpmPackage,
-  options: BuilderOptions,
+  options: BuildOptions,
   logger?: Logger,
   sink?: BuildEventSink,
 ) => Builder;
@@ -185,7 +171,7 @@ export function RegisterBuilder(type: Omit<PackageType, 'managed'>) {
  */
 export function builderFactory(
   sfpmPackage: SfpmPackage,
-  options: BuilderOptions,
+  options: BuildOptions,
   logger?: Logger,
   sink?: BuildEventSink,
   buildAs?: PackageType,

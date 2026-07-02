@@ -4,16 +4,18 @@ import path from 'node:path';
 import type {BuildEventSink} from '../../events/build-event-bus.js';
 
 import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
-import {ARTIFACT_SOURCE_DIR} from '../../types/artifact.js';
+import {FORCE_APP_DIR} from '../../types/artifact.js';
 import {BuildError} from '../../types/errors.js';
-import {Logger} from '../../types/logger.js';
-import {PackageType, PendingValidationDescriptor, type ValidationCheck} from '../../types/package.js';
+import Logger from '../../types/logger.js';
+import {BuildOptions, PackageType} from '../../types/package.js';
+import {
+  PendingValidationDescriptor, type ValidationCheck,
+} from '../../types/validation.js'
 import SfpmPackage, {SfpmMetadataPackage, SfpmSourcePackage} from '../sfpm-package.js';
 import {
-  Builder, BuilderOptions, BuilderResult, BuildTaskRegistration, RegisterBuilder,
+  Builder, BuilderResult, BuildTaskRegistration, RegisterBuilder,
 } from './builder-registry.js';
 import {assembleArtifactTask} from './tasks/assemble-artifact-task.js';
-import {dependencyAnalysisTask} from './tasks/dependency-analysis-task.js';
 
 const VALIDATION_TEST_LEVEL = 'RunSpecifiedTests';
 
@@ -23,7 +25,7 @@ export default class SourcePackageBuilder implements Builder {
   public tasks: BuildTaskRegistration[] = [];
   private buildOrg?: Org;
   private logger?: Logger;
-  private options: BuilderOptions;
+  private options: BuildOptions;
   private sfpmPackage: SfpmMetadataPackage;
   private sink?: BuildEventSink;
   private workingDirectory: string;
@@ -31,7 +33,7 @@ export default class SourcePackageBuilder implements Builder {
   constructor(
     workingDirectory: string,
     sfpmPackage: SfpmPackage,
-    options: BuilderOptions,
+    options: BuildOptions,
     logger?: Logger,
     sink?: BuildEventSink,
   ) {
@@ -45,23 +47,12 @@ export default class SourcePackageBuilder implements Builder {
     this.logger = logger;
     this.sink = sink;
 
-    // Pre-build: static dependency analysis when an analyzer is provided
-    if (options.dependencyAnalysis?.dependencyAnalyzer) {
-      this.tasks.push({
-        factory: dependencyAnalysisTask({
-          analyzer: options.dependencyAnalysis.dependencyAnalyzer,
-          warnOnly: options.dependencyAnalysis.warnOnly,
-        }),
-        phase: 'pre',
-      });
-    }
-
     // Post-build: assemble artifact metadata (package.json, manifest)
     this.tasks.push({factory: assembleArtifactTask(), phase: 'post'});
   }
 
-  public async connect(targetOrg: Org): Promise<void> {
-    this.buildOrg = targetOrg;
+  public async connect(buildOrg: Org | undefined): Promise<void> {
+    this.buildOrg = buildOrg;
   }
 
   public async exec(): Promise<BuilderResult> {
@@ -82,8 +73,35 @@ export default class SourcePackageBuilder implements Builder {
     // Validate if enabled and an org is available
     const pendingValidation = await this.validate();
 
+    // Build validation state based on what was done
+    const validationState = this.buildValidationState(pendingValidation);
+
     return {
+      packageType: PackageType.Source,
       pendingValidation,
+      validationState,
+    };
+  }
+
+  /**
+   * Construct validation state from the build outcome.
+   *
+   * - If validation ran (pendingValidation returned), status is 'pending' with
+   *   a deploy check queued.
+   * - If validation was skipped (no org, disabled, or no Apex), no state is set.
+   */
+  private buildValidationState(pendingValidation: PendingValidationDescriptor | undefined) {
+    if (!pendingValidation) return;
+
+    const checks: ValidationCheck[] = ['deploy'];
+    if (this.sfpmPackage.hasApex) {
+      checks.push('test');
+    }
+
+    return {
+      checks,
+      pending: pendingValidation,
+      status: 'pending' as const,
     };
   }
 
@@ -103,12 +121,14 @@ export default class SourcePackageBuilder implements Builder {
    * Skipped (returns undefined) when:
    * - Validation is disabled (`options.validation === false`)
    * - No build org is available
-   * - Package has no Apex (nothing to validate)
+   *
+   * When the package has no Apex, deploys with NoTestRun (deploy-only validation).
+   * When the package has Apex, deploys with RunSpecifiedTests.
    */
   private async validate(): Promise<PendingValidationDescriptor | undefined> {
     const targetOrg = this.buildOrg;
 
-    if (this.options.validation === false || !targetOrg) return undefined;
+    if (!this.options.validation || this.options.validation === 'none' || !targetOrg) return undefined;
 
     const testClasses = this.getTestClasses();
     if (this.sfpmPackage.hasApex && testClasses.length === 0) {
@@ -117,22 +137,28 @@ export default class SourcePackageBuilder implements Builder {
       });
     }
 
-    this.logger?.info(`Validating '${this.sfpmPackage.packageName}' against ${targetOrg.getUsername()} [deploy+test]`);
-    this.logger?.info(`Running ${testClasses.length} test class(es): ${testClasses.join(', ')}`);
+    // No Apex → deploy-only validation (no tests to run)
+    const testLevel = testClasses.length > 0 ? VALIDATION_TEST_LEVEL : 'NoTestRun';
+
+    this.logger?.info(`Validating '${this.sfpmPackage.packageName}' against ${targetOrg.getUsername()} [${testLevel}]`);
+    if (testClasses.length > 0) {
+      this.logger?.info(`Running ${testClasses.length} test class(es): ${testClasses.join(', ')}`);
+    }
 
     this.sink?.taskValidateStart({
       testCount: testClasses.length,
-      testLevel: VALIDATION_TEST_LEVEL,
+      testLevel,
     });
 
-    const deployService = new MetadataDeployService(this.logger);
+    const deployService = new MetadataDeployService(targetOrg, this.logger);
 
     // Deploy metadata with specified tests — use the artifact's metadata path
-    const metadataPath = path.join(this.workingDirectory, ARTIFACT_SOURCE_DIR);
+    const metadataPath = path.join(this.workingDirectory, FORCE_APP_DIR);
+
     const componentSet = this.sfpmPackage.getComponentSet(metadataPath);
-    const deployId = await deployService.deploy(componentSet, targetOrg.getConnection(), {
-      testClasses,
-      testLevel: VALIDATION_TEST_LEVEL,
+    const deployId = await deployService.deploy(componentSet, {
+      testClasses: testClasses.length > 0 ? testClasses : undefined,
+      testLevel,
     });
 
     // Return pending descriptor — the orchestrator decides whether to await resolution

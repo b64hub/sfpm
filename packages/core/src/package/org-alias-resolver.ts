@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {OrgAliasConfig, OrgAliasMode} from '../types/project.js';
 
 export const ORG_ALIAS_DEFAULT_DIR = 'default';

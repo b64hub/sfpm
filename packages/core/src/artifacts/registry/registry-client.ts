@@ -1,4 +1,4 @@
-import { Logger } from '../../types/logger.js';
+import Logger from '../../types/logger.js';
 
 /**
  * Package metadata returned from a registry

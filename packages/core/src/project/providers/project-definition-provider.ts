@@ -73,6 +73,11 @@ export interface ProjectDefinitionProvider {
   /** Lookup a package definition by its path. Throws if not found. */
   getPackageDefinitionByPath(packagePath: string): PackageDefinition;
 
+  /**
+   * Resolve the absolute workspace/package directory for a package.
+   */
+  getPackageDir(packageName: string): string;
+
   /** The resolved package type (defaults to Unlocked when unspecified). */
   getPackageType(packageName: string): PackageType;
 
@@ -96,7 +101,7 @@ export interface ProjectDefinitionProvider {
    * The returned definition has exactly one package entry (with `default: true`),
    * and project-level settings.
    */
-  resolveForPackage(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition;
+  resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition;
 
   /**
    * Update fields on a package's backing configuration.

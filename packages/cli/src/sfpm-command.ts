@@ -30,12 +30,15 @@ export interface JsonEnvelope<T = unknown> {
  *   3. CI=true / TERM=dumb / !isTTY → plain (auto-detect)
  *   4. Otherwise → interactive
  */
-function resolveOutputMode(flags: {json?: boolean; plain?: boolean; turbo?: boolean}): OutputMode {
+function resolveOutputMode(flags: {json?: boolean; 'log-level'?: string; plain?: boolean; turbo?: boolean}): OutputMode {
   if (flags.json) return 'json';
   if (flags.plain || flags.turbo) return 'plain';
   if (process.env.CI === 'true') return 'plain';
   if (process.env.TERM === 'dumb') return 'plain';
   if (!process.stdout.isTTY) return 'plain';
+  // Any log level below error writes to stderr — interactive spinners and
+  // cursor movement make that output unreadable, so fall back to plain.
+  if (flags['log-level'] && flags['log-level'] !== 'error') return 'plain';
   return 'interactive';
 }
 
@@ -49,7 +52,7 @@ export default abstract class SfpmCommand extends Command {
       exclusive: ['plain'],
     }),
     'log-level': Flags.string({
-      default: 'warn',
+      default: 'error',
       description: 'diagnostic log level',
       env: 'SFPM_LOG_LEVEL',
       options: [...LOG_LEVELS],

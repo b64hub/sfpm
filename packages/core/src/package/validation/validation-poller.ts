@@ -2,7 +2,7 @@ import type {Connection} from '@salesforce/core';
 
 import {PackageVersion} from '@salesforce/packaging';
 
-import type {Logger} from '../../types/logger.js';
+import type Logger from '../../types/logger.js';
 
 // ============================================================================
 // Types

@@ -6,7 +6,7 @@ import type {
 import {TestLevel, TestService} from '@salesforce/apex-node';
 import {Org} from '@salesforce/core';
 
-import type {Logger} from '../types/logger.js';
+import type Logger from '../types/logger.js';
 
 // ============================================================================
 // Types

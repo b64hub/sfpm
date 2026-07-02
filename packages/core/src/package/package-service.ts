@@ -1,32 +1,43 @@
-import {Org} from '@salesforce/core';
-import {PackageVersion} from '@salesforce/packaging';
-import semver from 'semver';
+import {
+  Connection, Lifecycle, Org, SfProject,
+} from '@salesforce/core';
+import {Duration, env} from '@salesforce/kit';
+import {
+  INSTALL_URL_BASE,
+  InstalledPackages,
+  Package,
+  PackageCreateOptions,
+  PackageEvents,
+  PackageInstallCreateRequest,
+  PackageInstallOptions,
+  PackageSaveResult,
+  PackageVersion,
+  PackageVersionCreateReportProgress,
+  PackageVersionCreateRequestResult,
+  PackageVersionEvents,
+  PackageVersionListOptions,
+  PackageVersionListResult,
+  PackageVersionReportResult,
+  PackageVersionUpdateOptions,
+  PackagingSObjects,
+  SubscriberPackageVersion,
+} from '@salesforce/packaging';
 
-import {Logger} from '../types/logger.js';
-import {PackageType} from '../types/package.js';
+import Logger from '../types/logger.js';
 import {soql} from '../utils/soql.js';
-import {formatVersion} from '../utils/version-utils.js';
 
-export interface Package2 {
-  ContainerOptions: string;
-  Description: string;
-  Id: string;
-  IsOrgDependent: boolean | string;
-  Name: string;
-  NamespacePrefix: string;
-}
+import Package2VersionStatus = PackagingSObjects.Package2VersionStatus;
 
-export interface SubscriberPackage {
-  isOrgDependent?: boolean;
-  key?: string;
-  name: string;
-  namespacePrefix?: string;
-  package2Id?: string;
-  subscriberPackageVersionId?: string;
-  type?: Extract<PackageType, 'Managed' | 'Unlocked'>;
-  versionNumber?: string;
-}
+// ---------------------------------------------------------------------------
+// Types — SDK re-exports + thin types for raw SOQL results
+// ---------------------------------------------------------------------------
 
+/** Re-export SDK type */
+export {PackageVersionCreateReportProgress, PackageVersionCreateRequestResult} from '@salesforce/packaging';
+/** Re-export SDK type for backward compat */
+export type Package2 = PackagingSObjects.Package2;
+
+/** Shape returned by direct Package2Version tooling SOQL queries */
 export interface Package2Version {
   Branch: string;
   BuildNumber: number;
@@ -42,30 +53,23 @@ export interface Package2Version {
   SubscriberPackageVersionId: string;
 }
 
-export class PackageService {
-  private static readonly INSTALLED_PACKAGE_FIELDS = [
-    'SubscriberPackageId',
-    'SubscriberPackage.Name',
-    'SubscriberPackage.NamespacePrefix',
-    'SubscriberPackageVersion.Id',
-    'SubscriberPackageVersion.Name',
-    'SubscriberPackageVersion.MajorVersion',
-    'SubscriberPackageVersion.MinorVersion',
-    'SubscriberPackageVersion.PatchVersion',
-    'SubscriberPackageVersion.BuildNumber',
-    'SubscriberPackageVersion.Package2ContainerOptions',
-    'SubscriberPackageVersion.IsOrgDependent',
-  ];
-  /** Singleton instance for shared cache across operations */
-  private static instance?: PackageService;
-  private static readonly PACKAGE2_FIELDS = [
-    'Id',
-    'Name',
-    'Description',
-    'NamespacePrefix',
-    'ContainerOptions',
-    'IsOrgDependent',
-  ];
+// Maps command-level values to PackageInstallRequest wire values (same as CLI)
+const SECURITY_TYPE_MAP: Record<string, PackageInstallCreateRequest['SecurityType']> = {
+  AdminsOnly: 'none' as PackageInstallCreateRequest['SecurityType'],
+  AllUsers: 'full' as PackageInstallCreateRequest['SecurityType'],
+};
+const UPGRADE_TYPE_MAP: Record<string, PackageInstallCreateRequest['UpgradeType']> = {
+  Delete: 'delete-only' as PackageInstallCreateRequest['UpgradeType'],
+  DeprecateOnly: 'deprecate-only' as PackageInstallCreateRequest['UpgradeType'],
+  Mixed: 'mixed-mode' as PackageInstallCreateRequest['UpgradeType'],
+};
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
+export {PackageService};
+export default class PackageService {
   private static readonly PACKAGE2_VERSION_FIELDS = [
     'SubscriberPackageVersionId',
     'Package2Id',
@@ -80,162 +84,226 @@ export class PackageService {
     'HasPassedCodeCoverageCheck',
     'Branch',
   ];
-  /** Cached list of all installed 2GP packages. Populated by preload or first getAllInstalled2GPPackages() call with caching. */
-  private installed2GPCache: null | SubscriberPackage[] = null;
+  /** Cached installed packages. Populated by {@link preloadInstalledPackages}. */
+  private installedCache?: InstalledPackages[];
   private logger?: Logger;
-  private org?: Org;
+  private targetOrg: Org;
 
-  constructor(org?: Org, logger?: Logger) {
-    if (org) this.org = org;
-    if (logger) this.logger = logger;
-  }
-
-  /**
-   * Get the singleton instance of PackageService.
-   * Use this to share cached subscriber package data across multiple operations.
-   *
-   * @example
-   * ```typescript
-   * const service = PackageService.getInstance()
-   *   .setOrg(org)
-   *   .setLogger(logger);
-   * ```
-   */
-  public static getInstance(): PackageService {
-    if (!PackageService.instance) {
-      PackageService.instance = new PackageService();
-    }
-
-    return PackageService.instance;
-  }
-
-  /**
-   * Reset the singleton instance (primarily for testing).
-   */
-  public static resetInstance(): void {
-    PackageService.instance = undefined;
+  constructor(targetOrg: Org, logger?: Logger) {
+    this.targetOrg = targetOrg;
+    this.logger = logger;
+    this.clearCache();
   }
 
   /**
    * Clear the installed packages cache.
-   * Subsequent calls will query the org directly until preloadInstalled2GPPackages() is called again.
    */
   public clearCache(): void {
-    this.installed2GPCache = null;
+    this.installedCache = undefined;
   }
 
-  /**
-   * Retrieves all 2GP packages installed in the org
-   */
-  public async getAllInstalled2GPPackages(): Promise<SubscriberPackage[]> {
-    if (this.installed2GPCache) {
-      return this.installed2GPCache;
-    }
+  // -----------------------------------------------------------------------
+  // Package — Update
+  // -----------------------------------------------------------------------
 
-    return this.queryInstalledSubscriberPackages();
+  /**
+   * Create a new 2GP package in the DevHub.
+   *
+   * @param name        - Package name — required
+   * @param packageType - 'Managed' or 'Unlocked' — required
+   * @param path        - Path to the package directory — required
+   * @param options     - Additional creation options
+   */
+  public async createPackage(
+    name: string,
+    packageType: 'Managed' | 'Unlocked',
+    path: string,
+    options?: {
+      description?: string;
+      errorNotificationUsername?: string;
+      noNamespace?: boolean;
+      orgDependent?: boolean;
+      projectPath?: string;
+    },
+  ): Promise<{Id: string}> {
+    const connection = await this.requireDevhubConnection();
+    const project = await SfProject.resolve(options?.projectPath);
+
+    const createOptions: PackageCreateOptions = {
+      description: options?.description ?? '',
+      errorNotificationUsername: options?.errorNotificationUsername as string,
+      name,
+      noNamespace: options?.noNamespace ?? false,
+      orgDependent: options?.orgDependent ?? false,
+      packageType,
+      path,
+    };
+
+    const result = await Package.create(connection, project, createOptions);
+    this.logger?.info(`Package created: ${result.Id}`);
+    return result;
   }
 
-  /**
-   * Retrieves all managed packages (1GP) in the org
-   * Note: Managed packages are 1GP, not 2GP — they are separate concepts.
-   * When the cache is populated, returns the namespace-filtered subset.
-   */
-  public async getAllInstalledManagedPackages(): Promise<SubscriberPackage[]> {
-    if (this.installed2GPCache) {
-      return this.installed2GPCache.filter(pkg => pkg.namespacePrefix !== null && pkg.namespacePrefix !== '');
-    }
-
-    return this.queryInstalledSubscriberPackages('WHERE SubscriberPackage.NamespacePrefix != null');
-  }
+  // -----------------------------------------------------------------------
+  // Package — Delete
+  // -----------------------------------------------------------------------
 
   /**
-   * Fetch Package2 versions by Package2 Id
-   * Sorts by semantic version, in descending order
-   * @param package2Id
-   * @param versionNumber
-   * @param isValidatedPackages
-   * @returns
+   * Create a new package version.
+   *
+   * Wraps `PackageVersion.create()` from the SDK.
+   *
+   * @param packageId  - Package ID (0Ho) or alias — required
+   * @param options    - Version creation options (all optional, see SDK PackageVersionCreateOptions)
+   * @param onProgress - Called with progress updates during polling
    */
-  async getPackage2VersionById(
-    package2Id: string,
-    versionNumber?: string,
-    isValidatedPackages?: boolean,
-    isReleased?: boolean,
-  ): Promise<Package2Version[]> {
-    if (!(await this.getOrg().determineIfDevHubOrg())) {
-      throw new Error('Package2Version Information can only be fetched from a DevHub');
-    }
+  public async createPackageVersion(
+    packageId: string,
+    options?: {
+      apiVersion?: string;
+      asyncvalidation?: boolean;
+      branch?: string;
+      codecoverage?: boolean;
+      definitionfile?: string;
+      installationkey?: string;
+      installationkeybypass?: boolean;
+      path?: string;
+      postinstallscript?: string;
+      postinstallurl?: string;
+      /** Path to the project directory to resolve sfdx-project.json from (e.g. a dist/ build dir) */
+      projectPath?: string;
+      releasenotesurl?: string;
+      skipancestorcheck?: boolean;
+      skipvalidation?: boolean;
+      tag?: string;
+      uninstallscript?: string;
+      versiondescription?: string;
+      versionname?: string;
+      versionnumber?: string;
+      wait?: number;
+    },
+    onProgress?: (progress: PackageVersionCreateReportProgress) => void,
+  ): Promise<PackageVersionCreateRequestResult> {
+    const connection = await this.requireDevhubConnection(options?.apiVersion);
+    const waitDuration = Duration.minutes(options?.wait ?? 0);
+    const frequency = options?.wait && options?.skipvalidation ? Duration.seconds(5) : Duration.seconds(30);
 
-    const whereClauses = [
-      `Package2Id = '${package2Id}'`,
-      'IsDeprecated = false',
-    ];
-
-    if (versionNumber) {
-      if (!/^\d+(\.\d+){0,3}$/.test(versionNumber)) {
-        throw new Error(`Invalid version number: ${versionNumber}`);
-      }
-
-      const [major, minor, patch, build] = versionNumber.split('.');
-      if (major) {
-        whereClauses.push(`MajorVersion = ${major}`);
-      }
-
-      if (minor) {
-        whereClauses.push(`MinorVersion = ${minor}`);
-      }
-
-      if (patch) {
-        whereClauses.push(`PatchVersion = ${patch}`);
-      }
-
-      if (build && !Number.isNaN(Number(build))) {
-        whereClauses.push(`BuildNumber = ${build}`);
-      }
-    }
-
-    if (isValidatedPackages) {
-      whereClauses.push('ValidationSkipped = false');
-    }
-
-    if (isReleased) {
-      whereClauses.push('IsReleased = true');
-    }
-
-    const query = soql`
-            SELECT ${PackageService.PACKAGE2_VERSION_FIELDS.join(', ')}
-            FROM Package2Version
-            WHERE ${whereClauses.join(' AND ')}
-        `.trim();
+    const removeProgress = this.onLifecycle<PackageVersionCreateReportProgress>(
+      PackageVersionEvents.create.progress,
+      data => onProgress?.(data),
+    );
+    const removePreserve = this.onLifecycle<{location: string; message: string}>(
+      PackageVersionEvents.create['preserve-files'],
+      data => this.logger?.debug(`Preserved files at: ${data.location}`),
+    );
 
     try {
-      const records = await this.query<Package2Version>(query, true);
+      env.setBoolean('SF_APPLY_REPLACEMENTS_ON_CONVERT', true);
+      const project = await SfProject.resolve(options?.projectPath);
 
-      if (records.length > 1) {
-        return records.sort((a, b) => {
-          const v1 = formatVersion(a.MajorVersion, a.MinorVersion, a.PatchVersion, a.BuildNumber, 'semver');
-          const v2 = formatVersion(b.MajorVersion, b.MinorVersion, b.PatchVersion, b.BuildNumber, 'semver');
-          return semver.rcompare(v1, v2);
-        });
+      const result = await PackageVersion.create(
+        {
+          asyncvalidation: options?.asyncvalidation,
+          branch: options?.branch,
+          codecoverage: options?.codecoverage,
+          connection,
+          definitionfile: options?.definitionfile,
+          installationkey: options?.installationkey,
+          installationkeybypass: options?.installationkeybypass,
+          packageId,
+          path: options?.path,
+          postinstallscript: options?.postinstallscript,
+          postinstallurl: options?.postinstallurl,
+          project,
+          releasenotesurl: options?.releasenotesurl,
+          skipancestorcheck: options?.skipancestorcheck,
+          skipvalidation: options?.skipvalidation,
+          tag: options?.tag,
+          uninstallscript: options?.uninstallscript,
+          versiondescription: options?.versiondescription,
+          versionname: options?.versionname,
+          versionnumber: options?.versionnumber,
+        },
+        {frequency, timeout: waitDuration},
+      );
+
+      if (result.Status === Package2VersionStatus.error) {
+        const errors = result.Error?.map((e: string, i: number) => `(${i + 1}) ${e}`).join('; ') ?? 'Unknown error';
+        throw new Error(`Package version creation failed: ${errors}`);
       }
 
-      return records;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger?.error(`Unable to fetch package versions for package id: ${package2Id}. Error: ${message}`);
-      throw error;
+      if (result.Status === Package2VersionStatus.success) {
+        this.logger?.info(`Package version created: ${result.SubscriberPackageVersionId} `
+          + `(${INSTALL_URL_BASE.href}${result.SubscriberPackageVersionId})`);
+      }
+
+      return result;
+    } finally {
+      removeProgress();
+      removePreserve();
     }
   }
 
-  async getPackageVersionBySubscriberId(subscriberPackageVersionId: string): Promise<Package2Version> {
+  // -----------------------------------------------------------------------
+  // Package Version — Create
+  // -----------------------------------------------------------------------
+
+  /**
+   * Delete (or undelete) a package.
+   *
+   * @param packageId - Package ID (0Ho) or alias — required
+   * @param options   - Set `undelete: true` to restore a soft-deleted package
+   */
+  public async deletePackage(
+    packageId: string,
+    options?: {projectPath?: string; undelete?: boolean},
+  ): Promise<PackageSaveResult> {
+    const connection = await this.requireDevhubConnection();
+    const project = await this.maybeResolveProject(options?.projectPath);
+
+    const pkg = new Package({connection, packageAliasOrId: packageId, project});
+    return options?.undelete ? pkg.undelete() : pkg.delete();
+  }
+
+  // -----------------------------------------------------------------------
+  // Package — Install
+  // -----------------------------------------------------------------------
+
+  /**
+   * Delete (or undelete) a package version.
+   *
+   * @param idOrAlias - Package version ID (04t/05i) or alias — required
+   * @param options   - Set `undelete: true` to restore a soft-deleted version
+   */
+  public async deletePackageVersion(
+    idOrAlias: string,
+    options?: {projectPath?: string; undelete?: boolean},
+  ): Promise<PackageSaveResult> {
+    const connection = await this.requireDevhubConnection();
+    const project = await this.maybeResolveProject(options?.projectPath);
+
+    const pv = new PackageVersion({connection, idOrAlias, project});
+    return options?.undelete ? pv.undelete() : pv.delete();
+  }
+
+  // -----------------------------------------------------------------------
+  // Package — Uninstall
+  // -----------------------------------------------------------------------
+
+  /**
+   * Fetch a Package2Version record by its subscriber ID (04t).
+   *
+   * Uses a direct tooling SOQL query — the SDK doesn't expose a lookup-by-04t method.
+   */
+  public async getPackageVersionBySubscriberId(subscriberPackageVersionId: string): Promise<Package2Version> {
     const query = soql`
-            SELECT ${PackageService.PACKAGE2_VERSION_FIELDS.join(', ')}
-            FROM Package2Version
-            WHERE SubscriberPackageVersionId = '${subscriberPackageVersionId}'
-        `.trim();
+      SELECT ${PackageService.PACKAGE2_VERSION_FIELDS.join(', ')}
+      FROM Package2Version
+      WHERE SubscriberPackageVersionId = '${subscriberPackageVersionId}'
+    `.trim();
 
     try {
-      const records = await this.query<Package2Version>(query, true);
+      const records = await this.toolingQuery<Package2Version>(this.requireTargetOrgConnection(), query);
       return records[0];
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -244,22 +312,120 @@ export class PackageService {
     }
   }
 
+  // -----------------------------------------------------------------------
+  // Package Version — Update
+  // -----------------------------------------------------------------------
+
+  /**
+   * Check the status of a package version create request.
+   *
+   * @param requestId - The package version create request ID (08c) — required
+   */
+  public async getVersionCreateStatus(requestId: string): Promise<PackageVersionCreateRequestResult> {
+    const connection = await this.requireDevhubConnection();
+    return PackageVersion.getCreateStatus(requestId, connection);
+  }
+
+  // -----------------------------------------------------------------------
+  // Package Version — Delete
+  // -----------------------------------------------------------------------
+
+  /**
+   * Install a package version into the target org.
+   *
+   * @param packageVersionId - Subscriber package version ID (04t) or alias — required
+   * @param options          - Install options
+   * @param onProgress       - Called with install status updates during polling
+   */
+  public async installPackage(
+    packageVersionId: string,
+    options?: {
+      apexCompile?: 'all' | 'package';
+      installationKey?: string;
+      publishWait?: number;
+      securityType?: 'AdminsOnly' | 'AllUsers';
+      upgradeType?: 'Delete' | 'DeprecateOnly' | 'Mixed';
+      wait?: number;
+    },
+    onProgress?: (status: PackagingSObjects.PackageInstallRequest) => void,
+  ): Promise<PackagingSObjects.PackageInstallRequest> {
+    const connection = this.requireTargetOrgConnection();
+
+    const subscriberPackageVersion = new SubscriberPackageVersion({
+      aliasOrId: packageVersionId,
+      connection,
+      password: options?.installationKey,
+    });
+
+    // --- Publish wait ---
+    const removeSubscriberStatus = options?.publishWait
+      ? this.onLifecycle<PackagingSObjects.InstallValidationStatus>(
+        PackageEvents.install['subscriber-status'],
+        status => this.logger?.debug(`Publish status: ${status}`),
+      )
+      : undefined;
+
+    if (options?.publishWait) {
+      await subscriberPackageVersion.waitForPublish({
+        installationKey: options.installationKey,
+        publishFrequency: Duration.seconds(10),
+        publishTimeout: Duration.minutes(options.publishWait),
+      });
+    }
+
+    removeSubscriberStatus?.();
+
+    // --- Build install request ---
+    const request: PackageInstallCreateRequest = {
+      ApexCompileType: options?.apexCompile ?? 'all',
+      Password: options?.installationKey,
+      SecurityType: SECURITY_TYPE_MAP[options?.securityType ?? 'AdminsOnly'],
+      SubscriberPackageVersionKey: await subscriberPackageVersion.getId(),
+      UpgradeType: UPGRADE_TYPE_MAP[options?.upgradeType ?? 'Mixed'],
+    };
+
+    // --- Install with optional polling ---
+    const removeWarning = this.onLifecycle<string>(
+      PackageEvents.install.warning,
+      msg => this.logger?.warn(msg),
+    );
+    const removeStatus = onProgress
+      ? this.onLifecycle<PackagingSObjects.PackageInstallRequest>(
+        PackageEvents.install.status,
+        req => onProgress(req),
+      )
+      : undefined;
+
+    try {
+      let installOptions: PackageInstallOptions | undefined;
+      if (options?.wait) {
+        installOptions = {
+          pollingFrequency: Duration.seconds(2),
+          pollingTimeout: Duration.minutes(options.wait),
+        };
+      }
+
+      return await subscriberPackageVersion.install(request, installOptions);
+    } finally {
+      removeWarning();
+      removeStatus?.();
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Package Version — Report
+  // -----------------------------------------------------------------------
+
   /**
    * Check whether a specific subscriber package version (04t ID) is already installed.
    *
-   * Uses the cache when available, otherwise performs a targeted SOQL query
-   * against InstalledSubscriberPackage filtered by SubscriberPackageVersion.Id.
-   *
-   * @param subscriberPackageVersionId - The 04t subscriber package version ID
-   * @returns True if the exact version is installed in the org
+   * Uses the cache when available, otherwise queries the org directly.
    */
   public async isSubscriberVersionInstalled(subscriberPackageVersionId: string): Promise<boolean> {
-    // Check cache first if available
-    if (this.installed2GPCache) {
-      return this.installed2GPCache.some(pkg => pkg.subscriberPackageVersionId === subscriberPackageVersionId);
+    if (this.installedCache) {
+      return this.installedCache.some(pkg => pkg.SubscriberPackageVersionId === subscriberPackageVersionId);
     }
 
-    // Targeted query for the specific version
     try {
       const query = soql`
         SELECT Id
@@ -268,7 +434,7 @@ export class PackageService {
         LIMIT 1
       `.trim();
 
-      const records = await this.query<any>(query, true);
+      const records = await this.toolingQuery<{Id: string}>(this.requireTargetOrgConnection(), query);
       return records.length > 0;
     } catch {
       this.logger?.warn(`Unable to check if subscriber version ${subscriberPackageVersionId} is installed`);
@@ -276,71 +442,87 @@ export class PackageService {
     }
   }
 
+  // -----------------------------------------------------------------------
+  // Package Version — Create Status
+  // -----------------------------------------------------------------------
+
   /**
-   * List all packages created in DevHub
-   * @throws Error if org is not a DevHub
+   * List all packages installed in the target org.
+   *
+   * Wraps `SubscriberPackageVersion.installedList()` from the SDK.
+   * Uses the cache when populated via {@link preloadInstalledPackages}.
    */
-  public async listAllPackages(): Promise<Package2[]> {
-    try {
-      if (!await this.getOrg().determineIfDevHubOrg()) {
-        throw new Error('Package Type Information can only be fetched from a DevHub');
-      }
-
-      const packageQuery = soql`
-                SELECT ${PackageService.PACKAGE2_FIELDS.join(', ')}
-                FROM Package2
-                WHERE IsDeprecated != true
-                ORDER BY NamespacePrefix, Name
-            `.trim();
-
-      const records = await this.query<Package2>(packageQuery, true);
-
-      // Transform IsOrgDependent to human-readable format
-      for (const record of records) {
-        record.IsOrgDependent
-          = record.ContainerOptions === 'Managed' ? 'N/A' : record.IsOrgDependent === true ? 'Yes' : 'No';
-      }
-
-      return records;
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('DevHub')) {
-        throw error;
-      }
-
-      this.logger?.warn('Unable to list packages from DevHub');
-      return [];
+  public async listInstalledPackages(): Promise<InstalledPackages[]> {
+    if (this.installedCache) {
+      return this.installedCache;
     }
+
+    const connection = this.requireTargetOrgConnection();
+    return SubscriberPackageVersion.installedList(connection);
+  }
+
+  // -----------------------------------------------------------------------
+  // Listing — DevHub
+  // -----------------------------------------------------------------------
+
+  /**
+   * List all 2GP packages in the DevHub.
+   *
+   * Wraps `Package.list()` from the SDK.
+   */
+  public async listPackages(): Promise<PackagingSObjects.Package2[]> {
+    const connection = await this.requireDevhubConnection();
+    return Package.list(connection);
   }
 
   /**
-   * Preload all installed 2GP subscriber packages into an in-memory cache.
-   * Call this once before performing multiple package operations to avoid
-   * redundant SOQL queries. getAllInstalled2GPPackages() and
-   * getAllInstalledManagedPackages() will use cached data when available.
+   * List package versions in the DevHub, with optional filters.
+   *
+   * Wraps `Package.listVersions()` from the SDK.
+   * See {@link PackageVersionListOptions} for filter/sort options.
+   *
+   * @param options - Filter and display options
    */
-  public async preloadInstalled2GPPackages(): Promise<void> {
-    this.installed2GPCache = await this.queryInstalledSubscriberPackages();
-    this.logger?.debug(`Preloaded ${this.installed2GPCache.length} installed 2GP package(s) into cache`);
+  public async listPackageVersions(options?: PackageVersionListOptions & {projectPath?: string}): Promise<PackageVersionListResult[]> {
+    const connection = await this.requireDevhubConnection();
+
+    // ponytail: project is optional in the SDK — resolve when available, skip when not
+    let project: SfProject | undefined;
+    try {
+      project = await SfProject.resolve(options?.projectPath);
+    } catch {
+      // not in a project directory — list without project context
+    }
+
+    return Package.listVersions(connection, project, options);
+  }
+
+  // -----------------------------------------------------------------------
+  // Listing — Target Org
+  // -----------------------------------------------------------------------
+
+  /**
+   * Preload all installed packages into an in-memory cache.
+   * Subsequent calls to {@link listInstalledPackages} and {@link isSubscriberVersionInstalled}
+   * use the cache instead of querying the org.
+   */
+  public async preloadInstalledPackages(): Promise<void> {
+    const connection = this.requireTargetOrgConnection();
+    this.installedCache = await SubscriberPackageVersion.installedList(connection);
+    this.logger?.debug(`Preloaded ${this.installedCache.length} installed package(s) into cache`);
   }
 
   /**
    * Promote a package version to released state.
    *
-   * Uses the `@salesforce/packaging` SDK to set `IsReleased = true` on the
-   * `Package2Version` record. Accepts a subscriber package version ID (04t)
-   * or package version ID (05i).
-   *
-   * If the promote request fails (e.g. connection drop), verifies the
-   * server-side state before propagating the error — the update may have
-   * succeeded despite the client-side failure.
-   *
-   * @param idOrAlias - A 04t subscriber version ID, 05i package version ID, or alias
+   * Accepts a subscriber package version ID (04t), package version ID (05i), or alias.
+   * Idempotent — returns immediately if already released.
+   * On transient failure, verifies server-side state before propagating.
    */
   public async promoteVersion(idOrAlias: string): Promise<void> {
-    const connection = this.getOrg().getConnection();
+    const connection = await this.requireDevhubConnection();
     const pv = new PackageVersion({connection, idOrAlias});
 
-    // Check if already promoted (idempotent entry point)
     const versionData = await pv.getData();
     if (versionData.IsReleased) {
       this.logger?.debug(`Package version ${idOrAlias} is already released — skipping promote`);
@@ -353,8 +535,6 @@ export class PackageService {
         throw new Error(`Failed to promote package version ${idOrAlias}: ${JSON.stringify(result.errors)}`);
       }
     } catch (error) {
-      // Connection may have dropped after SF processed the update.
-      // Re-query to check if the promote actually succeeded server-side.
       this.logger?.debug(`Promote call failed for ${idOrAlias}, verifying server-side state...`);
       const refreshed = await pv.getData(true);
       if (refreshed.IsReleased) {
@@ -366,86 +546,201 @@ export class PackageService {
     }
   }
 
+  // -----------------------------------------------------------------------
+  // Version — Lookup
+  // -----------------------------------------------------------------------
+
   /**
-   * Set the logger for this instance. Chainable.
+   * Get a detailed report for a package version.
+   *
+   * @param idOrAlias - Package version ID (04t/05i) or alias — required
+   * @param options   - Set `verbose: true` for extended details (slower)
    */
+  public async reportPackageVersion(
+    idOrAlias: string,
+    options?: {projectPath?: string; verbose?: boolean},
+  ): Promise<PackageVersionReportResult> {
+    const connection = await this.requireDevhubConnection();
+    const project = await this.maybeResolveProject(options?.projectPath);
+
+    const pv = new PackageVersion({connection, idOrAlias, project});
+    return pv.report(options?.verbose);
+  }
+
+  // -----------------------------------------------------------------------
+  // Version — Promote
+  // -----------------------------------------------------------------------
+
+  /** Set the logger for this instance. Chainable. */
   public setLogger(logger: Logger): this {
     this.logger = logger;
     return this;
   }
 
-  /**
-   * Set the org connection for this instance. Chainable.
-   */
-  public setOrg(org: Org): this {
-    this.org = org;
-    return this;
-  }
+  // -----------------------------------------------------------------------
+  // Cache
+  // -----------------------------------------------------------------------
 
   /**
-   * Private helper to get the org, throwing if not set.
+   * Uninstall a package from the target org.
+   *
+   * @param packageVersionId - Subscriber package version ID (04t) or alias — required
+   * @param options          - Uninstall options
+   * @param onProgress       - Called with uninstall status updates during polling
    */
-  private getOrg(): Org {
-    if (!this.org) {
-      throw new Error('Org connection required for PackageService');
-    }
+  public async uninstallPackage(
+    packageVersionId: string,
+    options?: {
+      wait?: number;
+    },
+    onProgress?: (status: PackagingSObjects.SubscriberPackageVersionUninstallRequest) => void,
+  ): Promise<PackagingSObjects.SubscriberPackageVersionUninstallRequest> {
+    const connection = this.requireTargetOrgConnection();
 
-    return this.org;
-  }
+    const subscriberPackageVersion = new SubscriberPackageVersion({
+      aliasOrId: packageVersionId,
+      connection,
+      password: undefined,
+    });
 
-  /**
-   * Private query helper method for package queries
-   */
-  private async query<T>(query: string, isTooling: boolean): Promise<T[]> {
-    const conn = this.getOrg().getConnection();
-    const records = isTooling ? (await conn.tooling.query(query)).records : (await conn.query(query)).records;
-    return records as T[];
-  }
+    const removeUninstallListener = onProgress
+      ? this.onLifecycle<PackagingSObjects.SubscriberPackageVersionUninstallRequest>(
+        PackageEvents.uninstall,
+        data => onProgress(data),
+      )
+      : undefined;
 
-  /**
-   * Private helper to query InstalledSubscriberPackage
-   * @param whereClause - Optional WHERE clause to filter results
-   */
-  private async queryInstalledSubscriberPackages(whereClause?: string): Promise<SubscriberPackage[]> {
     try {
-      const query = soql`
-                SELECT ${PackageService.INSTALLED_PACKAGE_FIELDS.join(', ')}
-                FROM InstalledSubscriberPackage
-                ${whereClause || ''}
-                ORDER BY SubscriberPackage.Name
-            `.trim();
+      const result = await subscriberPackageVersion.uninstall(
+        Duration.seconds(30),
+        Duration.minutes(options?.wait ?? 0),
+      );
 
-      const records = await this.query<any>(query, true);
-      const packages: SubscriberPackage[] = [];
-
-      for (const record of records) {
-        const packageVersionNumber = formatVersion(
-          record.SubscriberPackageVersion.MajorVersion,
-          record.SubscriberPackageVersion.MinorVersion,
-          record.SubscriberPackageVersion.PatchVersion,
-          record.SubscriberPackageVersion.BuildNumber,
-        );
-
-        const packageDetails: SubscriberPackage = {
-          isOrgDependent: record.SubscriberPackageVersion.IsOrgDependent,
-          name: record.SubscriberPackage.Name,
-          namespacePrefix: record.SubscriberPackage.NamespacePrefix,
-          package2Id: record.SubscriberPackageId,
-          subscriberPackageVersionId: record.SubscriberPackageVersion.Id,
-          type: record.SubscriberPackageVersion.Package2ContainerOptions as Extract<PackageType, 'Managed' | 'Unlocked'>,
-          versionNumber: packageVersionNumber,
-        };
-
-        packages.push(packageDetails);
+      if (result.Status === 'Error') {
+        throw new Error(`Package uninstall failed for ${packageVersionId}: ${result.Id}`);
       }
 
-      return packages;
-    } catch {
-      this.logger?.warn('Unable to fetch installed subscriber packages from org');
-      return [];
+      if (result.Status === 'Success') {
+        this.logger?.info(`Package ${result.SubscriberPackageVersionId} uninstalled successfully`);
+      }
+
+      return result;
+    } finally {
+      removeUninstallListener?.();
     }
   }
+
+  /**
+   * Update a package's metadata (name, description, error notification, etc.).
+   *
+   * @param packageId - Package ID (0Ho) or alias — required
+   * @param options   - Fields to update (at least one required)
+   */
+  public async updatePackage(
+    packageId: string,
+    options: {
+      appAnalyticsEnabled?: boolean;
+      description?: string;
+      errorNotificationUsername?: string;
+      name?: string;
+      projectPath?: string;
+      recommendedVersionId?: string;
+      skipAncestorCheck?: boolean;
+    },
+  ): Promise<PackageSaveResult> {
+    const connection = await this.requireDevhubConnection();
+    const project = await this.maybeResolveProject(options.projectPath);
+
+    const pkg = new Package({connection, packageAliasOrId: packageId, project});
+    return pkg.update(
+      {
+        AppAnalyticsEnabled: options.appAnalyticsEnabled,
+        Description: options.description,
+        Id: pkg.getId(),
+        Name: options.name,
+        PackageErrorUsername: options.errorNotificationUsername,
+        RecommendedVersionId: options.recommendedVersionId,
+      },
+      options.skipAncestorCheck,
+    );
+  }
+
+  // -----------------------------------------------------------------------
+  // Configuration
+  // -----------------------------------------------------------------------
+
+  /**
+   * Update a package version's metadata.
+   *
+   * @param idOrAlias - Package version ID (04t/05i) or alias — required
+   * @param options   - Fields to update
+   */
+  public async updatePackageVersion(
+    idOrAlias: string,
+    options: {
+      branch?: string;
+      installKey?: string;
+      projectPath?: string;
+      tag?: string;
+      versionDescription?: string;
+      versionName?: string;
+    },
+  ): Promise<PackageSaveResult> {
+    const connection = await this.requireDevhubConnection();
+    const project = await this.maybeResolveProject(options.projectPath);
+
+    const pv = new PackageVersion({connection, idOrAlias, project});
+    return pv.update({
+      Branch: options.branch,
+      InstallKey: options.installKey,
+      Tag: options.tag,
+      VersionDescription: options.versionDescription,
+      VersionName: options.versionName,
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Private helpers
+  // -----------------------------------------------------------------------
+
+  /** Resolve SfProject when available, return undefined when not in a project directory. */
+  private async maybeResolveProject(path?: string): Promise<SfProject | undefined> {
+    try {
+      return await SfProject.resolve(path);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Register a Lifecycle event listener and return a removal function.
+   */
+  private onLifecycle<T>(event: string, handler: (data: T) => void): () => void {
+    const wrapped = async (data: T): Promise<void> => {
+      handler(data);
+    };
+
+    Lifecycle.getInstance().on(event, wrapped);
+    return () => Lifecycle.getInstance().removeAllListeners(event);
+  }
+
+  private async requireDevhubConnection(apiVersion?: string): Promise<Connection> {
+    if (!this.targetOrg || !this.targetOrg.determineIfDevHubOrg()) {
+      throw new Error('Connected org must be a devhub to use this method');
+    }
+
+    return this.targetOrg.getConnection(apiVersion);
+  }
+
+  private requireTargetOrgConnection(): Connection {
+    if (!this.targetOrg) {
+      throw new Error('Target org must be connected');
+    }
+
+    return this.targetOrg.getConnection();
+  }
+
+  private async toolingQuery<T>(connection: Connection, query: string): Promise<T[]> {
+    return (await connection.tooling.query(query)).records as T[];
+  }
 }
-
-export default PackageService;
-

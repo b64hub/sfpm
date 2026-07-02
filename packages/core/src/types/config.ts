@@ -5,22 +5,6 @@ import {LifecycleHooks} from './lifecycle.js';
 // ============================================================================
 
 /**
- * Stage-specific .forceignore file mappings.
- * Each stage can have a custom ignore file for fine-grained control
- * over which metadata is included during that lifecycle phase.
- */
-export interface IgnoreFilesConfig {
-  /** Ignore file for production builds */
-  build?: string;
-  /** Ignore file for prepare/staging phase */
-  prepare?: string;
-  /** Ignore file for quick builds (no validation) */
-  quickbuild?: string;
-  /** Ignore file for validation builds */
-  validate?: string;
-}
-
-/**
  * SFPM tooling configuration loaded from `sfpm.config.ts` (or `.js` / `.mjs`).
  *
  * This is the central configuration file for SFPM tooling concerns:
@@ -62,20 +46,6 @@ export interface SfpmConfig {
    * cross-cutting behavior like profile cleaning, data loading, etc.
    */
   hooks?: LifecycleHooks[];
-
-  /**
-   * Stage-specific .forceignore files.
-   * Configure different ignore patterns for different lifecycle stages.
-   *
-   * @example
-   * ```typescript
-   * ignoreFiles: {
-   *   build: '.forceignore.build',
-   *   validate: '.forceignore.validate',
-   * }
-   * ```
-   */
-  ignoreFiles?: IgnoreFilesConfig;
 
   /**
    * Salesforce namespace prefix for the project.

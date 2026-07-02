@@ -1,13 +1,12 @@
 import fs from 'fs-extra';
-import ignore from 'ignore';
 import {randomUUID} from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
-import {ARTIFACT_SOURCE_DIR} from '../../../types/artifact.js';
-import {Logger} from '../../../types/logger.js';
+import {FORCE_APP_DIR} from '../../../types/artifact.js';
+import Logger from '../../../types/logger.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 
 /**
@@ -44,15 +43,11 @@ export class SourceCopyStep implements AssemblyStep {
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
     const sourceDir = path.join(this.provider.projectDir, packageDefinition.path);
-    const destinationDir = path.join(output.stagingDirectory, ARTIFACT_SOURCE_DIR);
+    const destinationDir = path.join(output.stagingDirectory, FORCE_APP_DIR);
 
-    const ig = await this.loadBuildIgnore(options);
+    const ig = null; // ponytail: build-time ignore via .sfpmignore, add when needed
 
-    if (ig) {
-      this.logger?.debug(`[SourceCopyStep] Copying from ${sourceDir} to ${destinationDir} (with build ignore filter)`);
-    } else {
-      this.logger?.debug(`[SourceCopyStep] Copying from ${sourceDir} to ${destinationDir}`);
-    }
+    this.logger?.debug(`[SourceCopyStep] Copying from ${sourceDir} to ${destinationDir}`);
 
     // fs.copy throws if destinationDir is inside sourceDir. Always copy to
     // os temp first, then move into place. This is safe for all layouts.
@@ -80,23 +75,8 @@ export class SourceCopyStep implements AssemblyStep {
             return false;
           }
 
-          if (!ig) {
-            return true;
-          }
-
-          // The `ignore` library requires a trailing slash for directory-only
-          // patterns (e.g. "testClasses/") to match the directory entry itself.
-          // Without this, fs.copy would create the empty directory before
-          // filtering its children.
-          const isDir = fs.statSync(src).isDirectory();
-          const testPath = isDir ? `${relativePath}/` : relativePath;
-          const ignored = ig.ignores(testPath);
-
-          if (ignored) {
-            this.logger?.debug(`[SourceCopyStep] Excluded by build ignore: ${relativePath}`);
-          }
-
-          return !ignored;
+          // ponytail: build-time ignore filtering goes here when .sfpmignore is added
+          return true;
         },
       });
 
@@ -109,25 +89,7 @@ export class SourceCopyStep implements AssemblyStep {
     }
   }
 
-  /**
-   * Load and parse the build-stage ignore file, if configured.
-   * Returns `null` when no build ignore file is configured or the file does not exist.
-   */
-  private async loadBuildIgnore(options: AssemblyOptions): Promise<null | ReturnType<typeof ignore>> {
-    const buildIgnorePath = options.ignoreFilesConfig?.build;
-    if (!buildIgnorePath) {
-      return null;
-    }
-
-    const resolvedPath = path.resolve(this.provider.projectDir, buildIgnorePath);
-
-    if (!await fs.pathExists(resolvedPath)) {
-      this.logger?.warn(`[SourceCopyStep] Build ignore file not found: ${resolvedPath}`);
-      return null;
-    }
-
-    const content = await fs.readFile(resolvedPath, 'utf8');
-    this.logger?.debug(`[SourceCopyStep] Loaded build ignore from ${resolvedPath}`);
-    return ignore().add(content);
-  }
+  // ponytail: build-time ignore removed (.npmignore was wrong tool)
+  // When needed, add .sfpmignore support here. For LWC TypeScript,
+  // tsc handles compilation; this step would run after tsc output.
 }

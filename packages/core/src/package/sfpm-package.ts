@@ -6,20 +6,18 @@ import {
 import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
-import type {Logger} from '../types/logger.js';
+import type Logger from '../types/logger.js';
 
-import {ARTIFACT_SOURCE_DIR} from '../types/artifact.js';
+import {DIST_DIR, FORCE_APP_DIR} from '../types/artifact.js';
 import {
   MetadataFile,
   PackageType,
   SfpmPackageContent,
-  SfpmPackageOrchestration,
-  SfpmUnlockedPackageMetadata,
-  type TestLevel,
-  type ValidationState,
+  TestLevel,
   VersionFormat,
 } from '../types/package.js';
-import {OrgAliasConfig, PackageDefinition, ProjectDefinition} from '../types/project.js';
+import {OrgAliasConfig, PackageDefinition} from '../types/project.js';
+import {type ValidationState} from '../types/validation.js';
 import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
@@ -27,6 +25,7 @@ import {
   type DataDeployable,
   ManagedPackageRef,
   type SourceDeployable,
+  type VersionInstallable,
 } from './installers/types.js';
 import {ORG_ALIAS_DEFAULT_DIR, OrgAliasResolution, OrgAliasResolver} from './org-alias-resolver.js';
 
@@ -62,9 +61,6 @@ const PROFILE_SUPPORTED_METADATA_TYPES = new Set([
 
 export default abstract class SfpmPackage {
   protected _packageDefinition?: PackageDefinition;
-  public orchestration: SfpmPackageOrchestration;
-  public orgDefinitionPath?: string = path.join('config', 'project-scratch-def.json');
-  public projectDefinition?: ProjectDefinition;
   public projectDirectory: string;
   public readonly scope: string | undefined;
   public sourceHash?: string;
@@ -78,13 +74,11 @@ export default abstract class SfpmPackage {
     this.projectDirectory = projectDirectory;
     this._packageName = stripScope(packageName);
     this.scope = extractScope(packageName);
-    this.orchestration = {} as SfpmPackageOrchestration;
   }
 
   get apiVersion(): string {
     return (
       this._apiVersion
-      || this.projectDefinition?.sourceApiVersion
       || process.env.SFPM_API_VERSION
       || DEFAULT_API_VERSION
     );
@@ -101,6 +95,16 @@ export default abstract class SfpmPackage {
   /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package") */
   get name(): string {
     return joinPackageName(this.packageName, this.scope);
+  }
+
+  get packageBuildDirectory(): string | undefined {
+    if (this.packageDirectory) return path.join(this.packageDirectory, DIST_DIR);
+    return undefined;
+  }
+
+  get packageBuiltSourceDirectory(): string | undefined {
+    if (this.packageBuildDirectory) return path.join(this.packageBuildDirectory, FORCE_APP_DIR);
+    return undefined;
   }
 
   get packageDefinition(): PackageDefinition | undefined {
@@ -120,13 +124,11 @@ export default abstract class SfpmPackage {
   }
 
   get packageDirectory(): string | undefined {
-    if (!this.packageDefinition?.path || !this.workingDirectory) {
+    if (this.packageDefinition && !this.packageDefinition.path && !this.projectDirectory) {
       return undefined;
     }
 
-    // In a staging/artifact context the source is always under ARTIFACT_SOURCE_DIR
-    // regardless of the original project path.
-    return path.join(this.workingDirectory, ARTIFACT_SOURCE_DIR);
+    return path.join(this.projectDirectory, this.packageDefinition!.path);
   }
 
   get packageName(): string {
@@ -215,6 +217,7 @@ export default abstract class SfpmPackage {
 export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceDeployable {
   protected _componentSet?: ComponentSet;
   protected _content: SfpmPackageContent;
+  public testLevel?: TestLevel;
   private _analyzed = false;
   private _customFields?: SourceComponent[];
   private _validationState?: ValidationState;
@@ -355,18 +358,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     this._content.testCoverage = coverage;
   }
 
-  get testLevel(): TestLevel | undefined {
-    return this.orchestration?.install?.testLevel;
-  }
-
-  set testLevel(level: TestLevel) {
-    if (!this.orchestration.install) {
-      this.orchestration.install = {};
-    }
-
-    this.orchestration.install.testLevel = level;
-  }
-
   get testSuites(): string[] {
     return this.getComponentSet()
     .getSourceComponents()
@@ -457,14 +448,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
       ...this._content,
       metadataCount: components.toArray().length,
       testCoverage: this.testCoverage,
-    };
-  }
-
-  /** Resolves orchestration metadata from the package definition. */
-  public resolveOrchestrationMetadata(): Partial<SfpmPackageOrchestration> {
-    return {
-      build: this.packageDefinition?.packageOptions?.build as any,
-      install: this.packageDefinition?.packageOptions?.deploy,
     };
   }
 
@@ -609,7 +592,7 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
   }
 }
 
-export class SfpmUnlockedPackage extends SfpmMetadataPackage {
+export class SfpmUnlockedPackage extends SfpmMetadataPackage implements VersionInstallable {
   /** SF packaging tag (label for the package version, set at build time) */
   public tag?: string;
   private _isOrgDependent = false;
@@ -637,11 +620,11 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage {
     this._packageId = val;
   }
 
-  get packageVersionId(): string | undefined {
-    return this._packageVersionId;
+  get packageVersionId(): string {
+    return this._packageVersionId!;
   }
 
-  set packageVersionId(val: string | undefined) {
+  set packageVersionId(val: string) {
     this._packageVersionId = val;
   }
 
@@ -746,13 +729,12 @@ export class PackageFactory {
       throw new Error(`Package ${packageName} not found in project definition`);
     }
 
-    const packageType = (packageDefinition.type?.toLowerCase() || 'unlocked') as PackageType;
+    const packageType = (packageDefinition.type?.toLowerCase() || 'source') as PackageType;
     const projectDirectory = this.provider.projectDir;
 
     const sfpmPackage = this.createPackageInstance(packageType, packageName, projectDirectory);
     sfpmPackage.type = packageType;
 
-    sfpmPackage.projectDefinition = this.provider.getProjectDefinition();
     sfpmPackage.packageDefinition = packageDefinition;
     sfpmPackage.version = packageDefinition.version;
 

@@ -7,7 +7,7 @@ import {
 } from '../events/orchestration-event-bus.js';
 import {DependencyResolution, PackageNode, ProjectGraph} from '../project/project-graph.js';
 import {DependencyError} from '../types/errors.js';
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 
 // ============================================================================
 // Public types
@@ -33,7 +33,7 @@ export interface OrchestratorOptions {
  * @typeParam TContext — Shared context type returned by `setup()` and threaded
  *   to each `processSinglePackage()` call.
  */
-export interface OrchestrationTask<TContext = void> {
+export interface OrchestrationTask<TResult> {
   /**
    * Process a single package. Must return a {@link PackageResult}.
    *
@@ -44,14 +44,7 @@ export interface OrchestrationTask<TContext = void> {
   processSinglePackage(
     packageName: string,
     level: number,
-    context: TContext,
-  ): Promise<PackageResult>;
-
-  /**
-   * One-time initialisation before level processing begins.
-   * The returned context is shared across all `processSinglePackage` calls.
-   */
-  setup(): Promise<TContext>;
+  ): Promise<PackageResult<TResult>>;
 }
 
 // ============================================================================
@@ -61,18 +54,18 @@ export interface OrchestrationTask<TContext = void> {
 /**
  * Mutable state accumulated while iterating through dependency levels.
  */
-interface LevelTracker {
+interface LevelTracker<TResult> {
   failedPackages: Set<string>;
-  results: PackageResult[];
+  results: PackageResult<TResult>[];
   skippedPackages: Set<string>;
 }
 
 /**
  * Categorised outcome of a single dependency level.
  */
-interface LevelOutcome {
+interface LevelOutcome<TResult> {
   failed: string[];
-  results: PackageResult[];
+  results: PackageResult<TResult>[];
   skipped: string[];
   succeeded: string[];
 }
@@ -90,22 +83,20 @@ interface LevelOutcome {
  *
  * Domain-specific behaviour is supplied via an {@link OrchestrationTask}.
  * Orchestration events are emitted through the {@link OrchestrationEventBus}.
- *
- * @typeParam TContext — Shared context created by the task's `setup()` call.
  */
-export class Orchestrator<TContext = void> {
-  readonly bus: OrchestrationEventBus;
+export class Orchestrator<TResult> {
+  readonly bus: OrchestrationEventBus<TResult>;
   private readonly graph: ProjectGraph;
   private readonly logger: Logger | undefined;
   private readonly options: OrchestratorOptions;
-  private readonly task: OrchestrationTask<TContext>;
+  private readonly task: OrchestrationTask<TResult>;
 
   constructor(
     graph: ProjectGraph,
     options: OrchestratorOptions,
-    task: OrchestrationTask<TContext>,
+    task: OrchestrationTask<TResult>,
     logger?: Logger,
-    bus?: OrchestrationEventBus,
+    bus?: OrchestrationEventBus<TResult>,
   ) {
     this.graph = graph;
     this.options = options;
@@ -126,12 +117,11 @@ export class Orchestrator<TContext = void> {
    *
    * @returns OrchestrationResult with per-package outcomes.
    */
-  public async executeAll(packageNames: string[]): Promise<OrchestrationResult> {
+  public async executeAll(packageNames: string[]): Promise<OrchestrationResult<TResult>> {
     if (packageNames.length === 0) {
       return {
         duration: 0,
         failedPackages: [],
-        pendingValidations: [],
         results: [],
         skippedPackages: [],
         success: true,
@@ -144,9 +134,7 @@ export class Orchestrator<TContext = void> {
     const levels = this.resolveLevels(packageNames);
     this.emitOrchestrationStart(levels, includeDeps);
 
-    const context = await this.task.setup();
-
-    const tracker: LevelTracker = {
+    const tracker: LevelTracker<TResult> = {
       failedPackages: new Set(),
       results: [],
       skippedPackages: new Set(),
@@ -154,34 +142,24 @@ export class Orchestrator<TContext = void> {
 
     for (const [levelIndex, level] of levels.entries()) {
       // eslint-disable-next-line no-await-in-loop
-      await this.processLevel(level, levelIndex, tracker, context);
+      await this.processLevel(level, levelIndex, tracker);
     }
 
     return this.buildOrchestrationResult(tracker, orchestrationStart);
   }
 
-  // ========================================================================
-  // Dependency resolution
-  // ========================================================================
-
   /**
    * Build the final OrchestrationResult, emit orchestration:complete, and return.
    */
   private buildOrchestrationResult(
-    tracker: LevelTracker,
+    tracker: LevelTracker<TResult>,
     orchestrationStart: number,
-  ): OrchestrationResult {
+  ): OrchestrationResult<TResult> {
     const totalDuration = Date.now() - orchestrationStart;
 
-    // Collect pending validations from all successful package results
-    const pendingValidations = tracker.results
-    .filter(r => r.pendingValidation)
-    .map(r => r.pendingValidation!);
-
-    const result: OrchestrationResult = {
+    const result: OrchestrationResult<TResult> = {
       duration: totalDuration,
       failedPackages: [...tracker.failedPackages],
-      pendingValidations,
       results: tracker.results,
       skippedPackages: [...tracker.skippedPackages],
       success: tracker.failedPackages.size === 0,
@@ -214,11 +192,11 @@ export class Orchestrator<TContext = void> {
    * lists and append results to the tracker.
    */
   private collectLevelResults(
-    settled: PromiseSettledResult<PackageResult>[],
+    settled: PromiseSettledResult<PackageResult<TResult>>[],
     eligible: PackageNode[],
     level: PackageNode[],
-    tracker: LevelTracker,
-  ): LevelOutcome {
+    tracker: LevelTracker<TResult>,
+  ): LevelOutcome<TResult> {
     const succeeded: string[] = [];
     const failed: string[] = [];
     const skipped: string[] = [...tracker.skippedPackages].filter(s => level.some(n => n.name === s));
@@ -267,6 +245,7 @@ export class Orchestrator<TContext = void> {
   private emitOrchestrationStart(levels: PackageNode[][], includeDependencies: boolean): void {
     this.bus.start({
       includeDependencies,
+      levels: levels.map(l => l.map(n => n.name)),
       packageNames: levels.flat().map(n => n.name),
       totalLevels: levels.length,
       totalPackages: levels.reduce((sum, l) => sum + l.length, 0),
@@ -290,8 +269,7 @@ export class Orchestrator<TContext = void> {
   private async processLevel(
     level: PackageNode[],
     levelIndex: number,
-    tracker: LevelTracker,
-    context: TContext,
+    tracker: LevelTracker<TResult>,
   ): Promise<void> {
     const eligible = this.skipFailedDependents(level, levelIndex, tracker);
     if (eligible.length === 0) return;
@@ -302,7 +280,7 @@ export class Orchestrator<TContext = void> {
       packages: eligible.map(n => n.name),
     });
 
-    const settled = await Promise.allSettled(eligible.map(node => this.processPackageWithTracking(node.name, levelIndex, context)));
+    const settled = await Promise.allSettled(eligible.map(node => this.processPackageWithTracking(node.name, levelIndex)));
 
     const outcome = this.collectLevelResults(settled, eligible, level, tracker);
 
@@ -321,12 +299,11 @@ export class Orchestrator<TContext = void> {
   private async processPackageWithTracking(
     packageName: string,
     level: number,
-    context: TContext,
-  ): Promise<PackageResult> {
-    let result: PackageResult;
+  ): Promise<PackageResult<TResult>> {
+    let result: PackageResult<TResult>;
 
     try {
-      result = await this.task.processSinglePackage(packageName, level, context);
+      result = await this.task.processSinglePackage(packageName, level);
     } catch (error_) {
       const errorMessage = error_ instanceof Error ? error_.message : String(error_);
       result = {
@@ -375,10 +352,6 @@ export class Orchestrator<TContext = void> {
     return levels;
   }
 
-  // ========================================================================
-  // Infrastructure
-  // ========================================================================
-
   /**
    * Filter out packages whose dependencies have already failed, marking them
    * as skipped. Returns only the eligible nodes that should proceed.
@@ -386,7 +359,7 @@ export class Orchestrator<TContext = void> {
   private skipFailedDependents(
     level: PackageNode[],
     levelIndex: number,
-    tracker: LevelTracker,
+    tracker: LevelTracker<TResult>,
   ): PackageNode[] {
     if (this.options.continueOnError) {
       return level;

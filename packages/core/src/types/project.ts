@@ -1,6 +1,8 @@
 import {z} from 'zod';
 
-import {PackageType, TestLevel} from './package.js';
+import {
+  BuildOptions, InstallOptions, PackageType, TestLevel,
+} from './package.js';
 
 /** Salesforce key prefix for subscriber package version IDs */
 export const SUBSCRIBER_PKG_VERSION_ID_PREFIX = '04t';
@@ -27,7 +29,7 @@ export interface OrgAliasConfig {
 export interface PackageOptions {
   [key: string]: any;
   /** Whether this is the default package directory. */
-  build?: PackageBuildConfig;
+  build?: Omit<BuildOptions, 'buildNumber' | 'buildOrg'>;
   /**
    * Per-package hook configuration.
    *
@@ -48,7 +50,7 @@ export interface PackageOptions {
    */
   hooks?: Record<string, boolean | PackageHookConfig>;
   ignoreFiles?: string[];
-  install?: PackageInstallConfig;
+  install?: Omit<InstallOptions, 'origin'>;
   /**
    * Marks this package as org-aliased.
    * When `true`, uses default config (union mode).
@@ -64,11 +66,6 @@ export interface PackageOptions {
    * For more targeted control, consider using hook-specific filters instead of skipping entire stages.
    */
   skip?: string[];
-}
-
-export interface PackageBuildConfig {
-  asyncValidation?: boolean;
-  skipValidation?: boolean;
 }
 
 /**
@@ -97,29 +94,6 @@ export interface PackageHookConfig {
   /** Whether this hook should run for this package. Defaults to `true`. */
   enabled?: boolean;
 }
-
-/**
- * Install and deployment configuration for a package.
- *
- * Controls install-time and deploy-time behavior that is not hook-specific:
- * script assembly, optimized deployment, etc.
- */
-export interface PackageInstallConfig {
-  optimize?: boolean;
-  post?: {
-    destructiveChanges?: string;
-    unpackagedMetadata?: string;
-  }
-  pre?: {
-    destructiveChanges?: string;
-    unpackagedMetadata?: string;
-  },
-  testLevel?: TestLevel;
-}
-
-// ---------------------------------------------------------------------------
-// Package definition
-// ---------------------------------------------------------------------------
 
 /**
  * Versioned package directory entry with SFPM extensions.

@@ -1,8 +1,5 @@
-import {IgnoreFilesConfig} from '../../types/config.js';
-
 export interface AssemblyOptions {
   destructiveManifestPath?: string;
-  ignoreFilesConfig?: IgnoreFilesConfig;
   orgDefinitionPath?: string;
   replacementForceignorePath?: string;
   versionNumber?: string;

@@ -4,20 +4,19 @@ import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
-import {ArtifactResolution, ArtifactService} from '../artifacts/artifact-service.js';
+import ArtifactService, {ArtifactResolution} from '../artifacts/artifact-service.js';
 import {hydrateFromNpmPackageJson} from '../artifacts/npm-package-adapter.js';
 import {InstallEventBus, InstallEventSink} from '../events/install-event-bus.js';
-import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
-import {ArtifactResolutionOptions} from '../types/artifact.js';
+import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
-import {Logger} from '../types/logger.js';
+import Logger from '../types/logger.js';
 import {
-  InstallationMode, InstallationSource, PackageType, type TestLevel,
+  InstallOptions, PackageOrigin, PackageType,
 } from '../types/package.js';
-import {resolvePackageWorkspacePath} from '../utils/workspace-path.js';
 import {installerFactory, InstallTaskContext, InstallTaskRegistration} from './installers/installer-registry.js';
 import UpdateArtifactTask from './installers/tasks/update-artifact.js';
 import {ManagedPackageRef} from './installers/types.js';
+import PackageManager from './package-manager.js';
 import SfpmPackage, {
   isOrgAliasable, PackageFactory, SfpmUnlockedPackage,
 } from './sfpm-package.js';
@@ -25,29 +24,6 @@ import SfpmPackage, {
 import './installers/unlocked-package-installer.js';
 import './installers/source-package-installer.js';
 import './installers/managed-package-installer.js';
-
-export interface InstallOptions {
-  artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
-
-  deployment?: {
-    /**
-     * Salesforce test level for source deployments.
-     */
-    testLevel?: TestLevel;
-  };
-  /** Force reinstall even if already installed with matching version/hash */
-  force?: boolean;
-  /**
-   * Set specific installation mode (mainly for unlocked packages, overrides auto-detection).
-   */
-  mode?: InstallationMode;
-  /**
-   * Where to install from: 'local' (project source) or 'artifact'.
-   */
-  source?: InstallationSource;
-  updateArtifact?: boolean;
-  versionInstall?: {installationKeys?: {[packageName: string]: string}};
-}
 
 export interface InstallResult {
   /** Salesforce deploy ID or PackageInstallRequest ID (when available) */
@@ -75,34 +51,27 @@ interface RunInstallerOptions {
 /**
  * Orchestrator for package installations
  */
+export {PackageInstaller};
 export default class PackageInstaller {
   private bus?: InstallEventBus;
   private logger: Logger | undefined;
   private options: InstallOptions;
   private provider: ProjectDefinitionProvider;
-  private targetOrg!: Org;
+  private targetOrg: Org;
   private tasks: InstallTaskRegistration[] = [];
 
   constructor(
+    targetOrg: Org,
     provider: ProjectDefinitionProvider,
     options: InstallOptions,
     logger?: Logger,
-    targetOrg?: Org,
     bus?: InstallEventBus,
   ) {
     this.options = options;
     this.logger = logger;
     this.provider = provider;
-    if (targetOrg) this.targetOrg = targetOrg;
+    this.targetOrg = targetOrg;
     this.bus = bus;
-  }
-
-  public async connect(usernameOrOrg: Org | string): Promise<void> {
-    if (usernameOrOrg instanceof Org) {
-      this.targetOrg = usernameOrOrg;
-    } else {
-      this.targetOrg = await Org.create({aliasOrUsername: usernameOrOrg});
-    }
   }
 
   /**
@@ -114,23 +83,17 @@ export default class PackageInstaller {
    */
   public async deploySource(sfpmPackage: SfpmPackage): Promise<InstallResult> {
     // Resolve build output from the package workspace
-    const sourcePath = sfpmPackage.packageDefinition?.path;
-    if (!sourcePath) {
+    const packageDir = sfpmPackage.packageDirectory;
+    if (!packageDir) {
       throw new Error(`No package definition path for ${sfpmPackage.name}`);
     }
 
-    const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
-    const buildOutput = ArtifactService.getInstance().getBuildOutput(packageWorkspacePath);
-
-    if (!buildOutput) {
+    const buildDir = PackageManager.getInstance(this.targetOrg).getArtifactService().getBuildOutput(packageDir);
+    if (!buildDir) {
       throw new Error(`No build found for ${sfpmPackage.name}. Run 'sfpm build' before deploying.`);
     }
 
-    sfpmPackage.workingDirectory = buildOutput;
-
-    // Handle org-aliased packages: resolve the correct source directory
     await this.resolveOrgAliasForDeploy(sfpmPackage);
-
     this.logger?.info(`Deploying ${sfpmPackage.name} from build output`);
 
     return this.runInstaller(sfpmPackage, {
@@ -175,7 +138,7 @@ export default class PackageInstaller {
 
     try {
       // Source-local deploy: skip artifact resolution entirely — deploy from project source
-      if (this.options.source === InstallationSource.Local) {
+      if (this.options.origin === PackageOrigin.Local) {
         return await this.deploySource(sfpmPackage);
       }
 
@@ -203,11 +166,7 @@ export default class PackageInstaller {
     }
 
     // Use singleton artifact service
-    const artifactService = ArtifactService.getInstance()
-    .setOrg(this.targetOrg)
-    .setProjectDir(this.provider.projectDir)
-    .setLogger(this.logger);
-
+    const artifactService = PackageManager.getInstance(this.targetOrg).getArtifactService();
     await this.resolveArtifact(artifactService, sfpmPackage);
 
     // Log install decision
@@ -221,6 +180,7 @@ export default class PackageInstaller {
 
     return this.runInstaller(sfpmPackage, {
       checkInstalled: !this.options.force,
+      installAs: this.resolveInstallAs(sfpmPackage),
     });
   }
 
@@ -236,7 +196,7 @@ export default class PackageInstaller {
     const {packageName} = managedRef;
     const sink = this.bus?.forPackage(packageName);
 
-    const installer = installerFactory(this.provider.projectDir, managedRef, this.options, this.logger, sink);
+    const installer = installerFactory(managedRef, this.options, this.logger, sink);
     await installer.connect(this.targetOrg);
 
     // Check if already installed (unless forced)
@@ -342,7 +302,7 @@ export default class PackageInstaller {
       throw new Error(`No package definition path for ${sfpmPackage.name}`);
     }
 
-    const packageWorkspacePath = resolvePackageWorkspacePath(this.provider.projectDir, sourcePath);
+    const packageWorkspacePath = this.provider.getPackageDir(sfpmPackage.name);
 
     const resolution = await artifactService.resolveArtifact(
       packageWorkspacePath,
@@ -351,6 +311,17 @@ export default class PackageInstaller {
     );
 
     this.hydratePackageFromArtifact(sfpmPackage, resolution);
+  }
+
+  /**
+   * Determine if an unlocked package should be routed to the source installer.
+   * Returns undefined for non-unlocked packages (use natural type).
+   */
+  private resolveInstallAs(sfpmPackage: SfpmPackage): PackageType | undefined {
+    if (sfpmPackage.type !== PackageType.Unlocked) return undefined;
+    if (this.options.unlocked?.sourceOnly) return PackageType.Source;
+    if (!(sfpmPackage as SfpmUnlockedPackage).packageVersionId) return PackageType.Source;
+    return undefined;
   }
 
   /**
@@ -401,7 +372,7 @@ export default class PackageInstaller {
   private async runInstaller(sfpmPackage: SfpmPackage, options: RunInstallerOptions): Promise<InstallResult> {
     const sink = this.bus?.forPackage(sfpmPackage.name);
 
-    const installer = installerFactory(this.provider.projectDir, sfpmPackage, this.options, this.logger, sink, options.installAs);
+    const installer = installerFactory(sfpmPackage, this.options, this.logger, sink, options.installAs);
     await installer.connect(this.targetOrg);
 
     // Check if already installed

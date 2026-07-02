@@ -10,27 +10,8 @@ import './package/installers/managed-package-installer.js';
 import './package/analyzers/apex-type-analyzer.js';
 import './package/analyzers/fht-analyzer.js';
 import './package/analyzers/ft-analyzer.js';
-import './package/analyzers/manifest-analyzer.js';
 import './package/analyzers/picklist-analyzer.js';
 
-/**
- * @deprecated dead code
- */
-export class SfpmCore {
-  project!: ProjectService;
-
-  private constructor() {}
-
-  /**
-   * Creates and initializes a new SfpmCore instance.
-   * This is the recommended way to create an SfpmCore instance.
-   */
-  static async create(options: {apiKey: string; projectPath?: string; verbose?: boolean;}): Promise<SfpmCore> {
-    const core = new SfpmCore();
-    core.project = await ProjectService.create(options.projectPath);
-    return core;
-  }
-}
 export {ApexClassifier, type ApexClassInfo} from './apex/apex-classifier.js';
 export {
   ApexTestService, type ClassCoverage, type RunTestsOptions, type TestClassResult, type TestMethodResult, type TestRunResult,
@@ -39,8 +20,9 @@ export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type Change
 
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
 export {ArtifactResolver, type DownloadTarget} from './artifacts/artifact-resolver.js';
-export {
-  type ArtifactHistoryOptions, type ArtifactResolution, ArtifactService, type SfpmArtifactHistory__c, // eslint-disable-line camelcase
+export {default as ArtifactService} from './artifacts/artifact-service.js';
+export type {
+  ArtifactHistoryOptions, ArtifactResolution, SfpmArtifactHistory__c, // eslint-disable-line camelcase
 } from './artifacts/artifact-service.js';
 export {
   extractPackageVersionId, extractSourceHash, fromNpmPackageJson, hydrateFromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions,
@@ -66,25 +48,24 @@ export {
 } from './orchestrator/orchestrator.js';
 export {AnalyzerRegistry, type PackageAnalyzer} from './package/analyzers/analyzer-registry.js';
 export {
-  type Builder, type BuilderConstructor, builderFactory, type BuilderOptions, BuilderRegistry,
+  type Builder, type BuilderConstructor, builderFactory, BuilderRegistry,
   type BuilderResult, type BuildTask, type BuildTaskContext,
   type BuildTaskEnrichments, type BuildTaskRegistration,
   type BuildTaskResult,
-  type DependencyAnalysis, RegisterBuilder,
+  RegisterBuilder,
 } from './package/builders/builder-registry.js';
 export {assembleArtifactTask, default as AssembleArtifactTask, type AssembleArtifactTaskOptions} from './package/builders/tasks/assemble-artifact-task.js';
 export {
   type InstallCheckResult, type Installer, type InstallerConstructor, InstallerRegistry, type InstallerResult, RegisterInstaller,
 } from './package/installers/installer-registry.js';
-export {default as SourceDeployer} from './package/installers/strategies/source-deployer.js';
 export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
 export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from './package/org-alias-resolver.js';
-export {type BuildOptions, PackageBuilder, type ValidationLevel} from './package/package-builder.js';
+export {PackageBuilder} from './package/package-builder.js';
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
-export {type InstallOptions, type InstallResult, default as PackageInstaller} from './package/package-installer.js';
-export {type Package2, PackageService, type SubscriberPackage} from './package/package-service.js';
+export {type InstallResult, default as PackageInstaller} from './package/package-installer.js';
+export {type Package2, PackageService} from './package/package-service.js';
 export {
   isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';
@@ -127,11 +108,13 @@ export * from './types/config.js';
 export * from './types/dependency-analysis.js';
 export * from './types/errors.js';
 export * from './types/lifecycle.js';
+export {default as Logger} from './types/logger.js';
 export * from './types/logger.js';
 export * from './types/npm.js';
 export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
+export {type PendingValidationDescriptor, type ValidationLevel, type ValidationState} from './types/validation.js';
 export * from './types/watcher.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';

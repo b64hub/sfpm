@@ -1,5 +1,6 @@
 import {
-  BuildOrchestrator, type BuildOrchestratorOptions,
+  BuildOrchestrator,
+  type BuildOrchestratorOptions, type BuildOrg,
   type BuildWatcherPayload,
   type DependencyAnalyzer,
   LifecycleEngine,
@@ -32,6 +33,9 @@ interface ResolvedBuildFlags {
   async: boolean;
   autoCreatedBuildOrg?: {hubOrg: Org; username: string};
   buildOptions: BuildOrchestratorOptions;
+  buildOrgUsername?: string;
+  dependencyAnalyzer?: DependencyAnalyzer;
+  devhubUsername?: string;
   mode: OutputMode;
   noDependencies: boolean;
   packages: string[];
@@ -126,12 +130,23 @@ export default class Build extends SfpmCommand {
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();
 
+    // Resolve BuildOrg from resolved options
+    const buildOrg: BuildOrg = {}
+    if (resolved.devhubUsername) {
+      buildOrg.devhub = await Org.create({aliasOrUsername: resolved.devhubUsername})
+    }
+
+    if (resolved.buildOrgUsername) {
+      buildOrg.buildOrg = await Org.create({aliasOrUsername: resolved.buildOrgUsername})
+    }
+
     const orchestrator = new BuildOrchestrator(
       projectConfig,
       projectGraph,
+      buildOrg,
       {...resolved.buildOptions, includeDependencies: !resolved.noDependencies},
       this.sfpmLogger,
-      resolved.projectDir,
+      resolved.dependencyAnalyzer,
     )
 
     const renderer = new BuildProgressRenderer({
@@ -159,7 +174,11 @@ export default class Build extends SfpmCommand {
         this.error(`Build failed for: ${failedNames}`, {exit: 1})
       }
 
-      await this.handleValidationResults(result.pendingValidations, resolved)
+      const pendingValidations = result.results
+      .map(r => r.result)
+      .filter((r): r is PendingValidationDescriptor => r !== null && r !== undefined)
+
+      await this.handleValidationResults(pendingValidations, resolved)
     } catch (error) {
       renderer.handleError(error as Error)
 
@@ -197,7 +216,7 @@ export default class Build extends SfpmCommand {
    * - At least one resolved package is a Source package
    */
   private async ensureBuildOrg(resolved: ResolvedBuildFlags): Promise<void> {
-    if (resolved.buildOptions.buildOrg || resolved.buildOptions.validation === 'none' || resolved.buildOptions.validation === 'local') return
+    if (resolved.buildOrgUsername || resolved.buildOptions.validation === 'none' || resolved.buildOptions.validation === 'local') return
 
     // Check if any resolved package is a Source package
     const projectService = await ProjectService.getInstance(resolved.projectDir)
@@ -212,7 +231,7 @@ export default class Build extends SfpmCommand {
 
     if (!hasSourcePackage) return
 
-    if (!resolved.buildOptions.devhubUsername) {
+    if (!resolved.devhubUsername) {
       this.error('A target dev hub is required to auto-create a build org for source validation. Specify one with --target-dev-hub (-v).', {exit: 1})
     }
 
@@ -220,7 +239,7 @@ export default class Build extends SfpmCommand {
       ? ora('Creating scratch org for source validation...').start()
       : undefined
 
-    const hubOrg = await Org.create({aliasOrUsername: resolved.buildOptions.devhubUsername})
+    const hubOrg = await Org.create({aliasOrUsername: resolved.devhubUsername})
     const provider = new ScratchOrgProvider(hubOrg)
 
     const scratchDefPath = path.join(resolved.projectDir, 'config', 'project-scratch-def.json')
@@ -243,7 +262,7 @@ export default class Build extends SfpmCommand {
 
       spinner?.succeed(`Build org created: ${chalk.cyan(username)}`)
 
-      resolved.buildOptions.buildOrg = username
+      resolved.buildOrgUsername = username
       resolved.autoCreatedBuildOrg = {hubOrg, username}
     } catch (error) {
       spinner?.fail('Failed to create scratch org')
@@ -298,7 +317,7 @@ export default class Build extends SfpmCommand {
     const payload: BuildWatcherPayload = {
       ...(resolved.autoCreatedBuildOrg && {
         cleanupBuildOrg: {
-          devhubUsername: resolved.buildOptions.devhubUsername!,
+          devhubUsername: resolved.devhubUsername ?? '',
           username: resolved.autoCreatedBuildOrg.username,
         },
       }),
@@ -309,7 +328,7 @@ export default class Build extends SfpmCommand {
     };
 
     const state: WatcherState = {
-      auth: {username: resolved.buildOptions.devhubUsername ?? ''},
+      auth: {username: resolved.devhubUsername ?? ''},
       createdAt: Date.now(),
       jobType: 'build',
       payload,
@@ -392,13 +411,8 @@ export default class Build extends SfpmCommand {
 
     const buildOptions: BuildOrchestratorOptions = {
       buildNumber: flags['build-number'],
-      buildOrg: flags['build-org'],
-      dependencyAnalyzer,
-      devhubUsername,
       force: flags.force,
-      ignoreFilesConfig: sfpmConfig.ignoreFiles,
-      installationKey: flags['installation-key'],
-      sourceOnly: flags['source-only'],
+      unlocked: {installationKey: flags['installation-key'], sourceOnly: flags['source-only']},
       validation,
       waitTime: flags.wait,
     }
@@ -406,6 +420,9 @@ export default class Build extends SfpmCommand {
     return {
       async: flags.async ?? false,
       buildOptions,
+      buildOrgUsername: flags['build-org'],
+      dependencyAnalyzer,
+      devhubUsername,
       mode,
       noDependencies: flags['no-dependencies'],
       packages,
