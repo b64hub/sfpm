@@ -1,6 +1,5 @@
 import {
-  InstallEventBus, InstallOrchestrationTask, InstallOrchestrator, LifecycleEngine, Logger,
-  PackageOrigin,
+  InstallOrchestrator, LifecycleEngine, Logger,
   type ProjectDefinitionProvider, type ProjectGraph, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
@@ -12,7 +11,7 @@ import SfpmCommand from '../../sfpm-command.js'
 import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
 
-export interface DeployContext {
+export interface ResolvedDeployFlags {
   flags: Record<string, any>;
   logger: Logger;
   mode: OutputMode;
@@ -58,6 +57,27 @@ export default class Deploy extends SfpmCommand {
   }
   static override strict = false
 
+  protected async createOrchestrator(targetOrg: Org, resolvedFlags: ResolvedDeployFlags): Promise<{orchestrator: InstallOrchestrator, renderer: InstallProgressRenderer}> {
+    const {flags, logger, mode, projectConfig, projectGraph} = resolvedFlags
+
+    const orchestrator = InstallOrchestrator.forSource(
+      targetOrg,
+      projectConfig,
+      projectGraph,
+      {
+        force: flags.force,
+        includeDependencies: !flags['no-dependencies'],
+        testLevel: flags['test-level'] as TestLevel | undefined,
+      },
+      logger,
+    );
+
+    const renderer = this.createRenderer(mode, flags['target-org'])
+    renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
+
+    return {orchestrator, renderer}
+  }
+
   protected createRenderer(mode: OutputMode, targetOrg: string): InstallProgressRenderer {
     return new InstallProgressRenderer({
       logger: {
@@ -88,68 +108,13 @@ export default class Deploy extends SfpmCommand {
       flags.force = true
     }
 
-    const ctx = await this.setupDeployContext(packages, flags)
-
-    // Single-package mode: deploy exactly one package without orchestration.
-    // Activates when a single package is specified with --no-dependencies.
-    // Designed for external orchestrators (Turbo, CI matrix) that handle
-    // dependency ordering themselves.
-    if (packages.length === 1 && flags['no-dependencies']) {
-      await this.executeSinglePackage(ctx)
-      return
-    }
-
-    await this.executeOrchestrated(ctx)
+    const resolvedFlags = await this.resolveFlags(packages, flags);
+    const targetOrg = await Org.create({aliasOrUsername: flags['target-org']});
+    const {orchestrator, renderer} = await this.createOrchestrator(targetOrg, resolvedFlags)
+    await this.runOrchestrator(orchestrator, resolvedFlags.resolvedPackages, renderer)
   }
 
-  protected async executeOrchestrated(ctx: DeployContext): Promise<void> {
-    const {flags, logger, mode, projectConfig, projectGraph, resolvedPackages} = ctx
-
-    const targetOrg = await Org.create({aliasOrUsername: flags['target-org']})
-
-    const orchestrator = InstallOrchestrator.forSource(
-      targetOrg,
-      projectConfig,
-      projectGraph,
-      {
-        force: flags.force,
-        includeDependencies: !flags['no-dependencies'],
-        testLevel: flags['test-level'] as TestLevel | undefined,
-      },
-      logger,
-    );
-
-    const renderer = this.createRenderer(mode, flags['target-org'])
-    renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
-
-    await this.runOrchestrator(orchestrator, resolvedPackages, renderer, flags)
-  }
-
-  protected async runOrchestrator(
-    orchestrator: InstallOrchestrator,
-    resolvedPackages: string[],
-    renderer: InstallProgressRenderer,
-    flags: Record<string, any>,
-  ): Promise<void> {
-    try {
-      const result = await orchestrator.installAll(resolvedPackages)
-
-      if (!result.success) {
-        const failedNames = result.failedPackages.join(', ')
-        this.error(`Deploy failed for: ${failedNames}`, {exit: 2})
-      }
-    } catch (error) {
-      renderer.handleError(error as Error)
-
-      if (error instanceof Error) {
-        this.error(error.message, {exit: 2})
-      }
-
-      throw error
-    }
-  }
-
-  protected async setupDeployContext(packages: string[], flags: Record<string, any>): Promise<DeployContext> {
+  protected async resolveFlags(packages: string[], flags: Record<string, any>): Promise<ResolvedDeployFlags> {
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
     const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getDefinitionProvider();
@@ -183,33 +148,17 @@ export default class Deploy extends SfpmCommand {
     }
   }
 
-  private async executeSinglePackage(ctx: DeployContext): Promise<void> {
-    const {flags, logger, mode, projectConfig, resolvedPackages} = ctx
-
-    const installOptions = {
-      force: flags.force,
-      origin: PackageOrigin.Local,
-      testLevel: flags['test-level'] as TestLevel | undefined,
-    }
-
-    const deployTargetOrg = await Org.create({aliasOrUsername: flags['target-org']})
-    const installBus = new InstallEventBus()
-    const task = new InstallOrchestrationTask(
-      deployTargetOrg,
-      projectConfig,
-      installOptions,
-      logger,
-      installBus,
-    )
-
-    const renderer = this.createRenderer(mode, flags['target-org'])
-    renderer.attachTo(installBus)
-
+  protected async runOrchestrator(
+    orchestrator: InstallOrchestrator,
+    resolvedPackages: string[],
+    renderer: InstallProgressRenderer,
+  ): Promise<void> {
     try {
-      const result = await task.processSinglePackage(resolvedPackages[0], 0)
+      const result = await orchestrator.installAll(resolvedPackages)
 
       if (!result.success) {
-        this.error(`Deploy failed for: ${resolvedPackages[0]}${result.error ? ` — ${result.error}` : ''}`, {exit: 2})
+        const failedNames = result.failedPackages.join(', ')
+        this.error(`Deploy failed for: ${failedNames}`, {exit: 2})
       }
     } catch (error) {
       renderer.handleError(error as Error)
