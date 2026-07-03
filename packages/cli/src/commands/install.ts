@@ -1,5 +1,5 @@
 import {
-  InstallOrchestrator, LifecycleEngine, ProjectService, type TestLevel,
+  ArtifactProvider, InstallOrchestrator, LifecycleEngine, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {Args, Flags} from '@oclif/core'
@@ -67,7 +67,11 @@ export default class Install extends SfpmCommand {
 
     // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
-    const projectService = await ProjectService.getInstance(projectDir);
+
+    // Create ArtifactProvider: reads workspace config for package names,
+    // resolves definitions from built artifacts in node_modules.
+    const artifactProvider = new ArtifactProvider({logger: this.sfpmLogger, projectDir});
+    const projectService = await ProjectService.create(projectDir, artifactProvider);
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();
 

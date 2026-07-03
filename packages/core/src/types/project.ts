@@ -103,6 +103,8 @@ export interface PackageHookConfig {
  * format (sfdx-project.json or workspace package.json) into this shape.
  */
 export interface PackageDefinition {
+  /** Source API version (e.g., "63.0"). */
+  apiVersion?: string;
   /** Whether this package is the default package. */
   default?: boolean;
   /** Package dependencies with version constraints (e.g., { "core": "^1.0.0", "apex-utils": "2.2.0" }) */
@@ -125,8 +127,12 @@ export interface PackageDefinition {
   /** Per-package build, deploy, and hook configuration. */
   packageOptions?: PackageOptions;
 
+  /** Subscriber package version ID (04t prefix). Set by build, used by unlocked package installer. */
+  packageVersionId?: string;
   /** Relative path from project root to the source directory (e.g., "packages/core/force-app"). */
   path: string;
+  /** SHA-256 hash of the package source content. */
+  sourceHash?: string;
   /** Package type: unlocked, source, or data. Defaults to unlocked when unset. */
   type: PackageType;
   /** semver version number (e.g., "1.2.0"). */
@@ -159,6 +165,7 @@ export interface ProjectDefinition {
 // ---------------------------------------------------------------------------
 
 export const PackageDefinitionSchema = z.object({
+  apiVersion: z.string().optional(),
   default: z.boolean().optional(),
   dependencies: z.record(z.string(), z.string()).optional(),
   description: z.string().optional(),
@@ -200,7 +207,9 @@ export const PackageDefinitionSchema = z.object({
     ]).optional(),
     skip: z.array(z.string()).optional(),
   }).passthrough().optional(),
+  packageVersionId: z.string().optional(),
   path: z.string(),
+  sourceHash: z.string().optional(),
   type: z.nativeEnum(PackageType),
   version: z.string(),
 }).passthrough();

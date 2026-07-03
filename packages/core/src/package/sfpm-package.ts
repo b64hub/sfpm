@@ -738,10 +738,22 @@ export class PackageFactory {
     sfpmPackage.packageDefinition = packageDefinition;
     sfpmPackage.version = packageDefinition.version;
 
+    if (packageDefinition.apiVersion) {
+      sfpmPackage.apiVersion = packageDefinition.apiVersion;
+    }
+
+    if (packageDefinition.sourceHash) {
+      sfpmPackage.sourceHash = packageDefinition.sourceHash;
+    }
+
     if (packageType === PackageType.Unlocked && sfpmPackage instanceof SfpmUnlockedPackage) {
       const {packageId} = packageDefinition;
       if (packageId) {
         sfpmPackage.packageId = packageId;
+      }
+
+      if (packageDefinition.packageVersionId) {
+        sfpmPackage.packageVersionId = packageDefinition.packageVersionId;
       }
     }
 

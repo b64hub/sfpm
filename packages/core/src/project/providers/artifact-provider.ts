@@ -402,6 +402,18 @@ export class ArtifactProvider implements ProjectDefinitionProvider {
       definition.packageId = sfpm.packageId;
     }
 
+    if (sfpm.packageVersionId) {
+      definition.packageVersionId = sfpm.packageVersionId;
+    }
+
+    if (sfpm.apiVersion) {
+      definition.apiVersion = sfpm.apiVersion;
+    }
+
+    if (sfpm.sourceHash) {
+      definition.sourceHash = sfpm.sourceHash;
+    }
+
     // Dependencies: filter for sfpm packages in node_modules
     if (pkgJson.dependencies) {
       const sfpmDeps = this.filterSfpmDependencies(pkgJson.dependencies);
