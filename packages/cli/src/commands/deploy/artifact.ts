@@ -1,7 +1,8 @@
 import {
-  InstallOrchestrator, PackageOrigin, type TestLevel,
+  ArtifactProvider, InstallOrchestrator, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {Org} from '@salesforce/core'
+import {execSync} from 'node:child_process'
 
 import {InstallProgressRenderer} from '../../ui/install-progress-renderer.js'
 import Deploy, {ResolvedDeployFlags} from './index.js'
@@ -22,6 +23,7 @@ export default class DeployArtifact extends Deploy {
       {
         force: flags.force,
         includeDependencies: !flags['no-dependencies'],
+        unlocked: {sourceOnly: true},
       },
       logger,
     );
@@ -30,5 +32,14 @@ export default class DeployArtifact extends Deploy {
     renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
 
     return {orchestrator, renderer}
+  }
+
+  protected override async createProjectService(projectDir: string, packages: string[]): Promise<ProjectService> {
+    const pkgArgs = packages.map(p => `'${p}'`).join(' ');
+    this.log(`Fetching artifacts: ${packages.join(', ')}`);
+    execSync(`npm install --no-save ${pkgArgs}`, {cwd: projectDir, stdio: 'inherit'});
+
+    const artifactProvider = new ArtifactProvider({logger: this.sfpmLogger, packages, projectDir});
+    return ProjectService.create(projectDir, artifactProvider);
   }
 }

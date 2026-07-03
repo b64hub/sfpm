@@ -78,6 +78,14 @@ export default class Deploy extends SfpmCommand {
     return {orchestrator, renderer}
   }
 
+  /**
+   * Create the ProjectService for this command.
+   * Override in subclasses to change the provider (e.g., ArtifactProvider).
+   */
+  protected async createProjectService(projectDir: string, _packages: string[]): Promise<ProjectService> {
+    return ProjectService.getInstance(projectDir);
+  }
+
   protected createRenderer(mode: OutputMode, targetOrg: string): InstallProgressRenderer {
     return new InstallProgressRenderer({
       logger: {
@@ -116,7 +124,7 @@ export default class Deploy extends SfpmCommand {
 
   protected async resolveFlags(packages: string[], flags: Record<string, any>): Promise<ResolvedDeployFlags> {
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
-    const projectService = await ProjectService.getInstance(projectDir);
+    const projectService = await this.createProjectService(projectDir, packages);
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();
 
