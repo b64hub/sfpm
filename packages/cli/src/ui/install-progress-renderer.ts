@@ -85,7 +85,7 @@ export class InstallProgressRenderer {
   private timings: TimingInfo = {};
 
   constructor(options: {logger: OutputLogger; mode: OutputMode; targetOrg?: string}) {
-    this.display = createDisplayStrategy(options.mode, options.logger);
+    this.display = createDisplayStrategy(options.mode, options.logger, {operationLabel: 'installing...'});
     this.targetOrg = options.targetOrg;
   }
 

@@ -13,10 +13,10 @@ export {SilentDisplay} from './silent.js';
 /**
  * Factory to create the appropriate display strategy for the given output mode.
  */
-export function createDisplayStrategy(mode: OutputMode, logger: OutputLogger): DisplayStrategy {
+export function createDisplayStrategy(mode: OutputMode, logger: OutputLogger, options?: {operationLabel?: string}): DisplayStrategy {
   switch (mode) {
   case 'interactive': {
-    return new InteractiveDisplay(logger);
+    return new InteractiveDisplay(logger, options);
   }
 
   case 'json': {
