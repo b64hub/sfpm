@@ -712,27 +712,19 @@ export class PackageFactory {
   }
 
   createAll(): SfpmPackage[] {
-    const packageNames = this.provider.getAllPackageNames();
-    return packageNames.map(name => this.createFromName(name));
+    const allPackages = this.provider.getAllPackageDefinitions();
+    return allPackages.map(definition => this.createFromDefinition(definition)).filter(Boolean);
   }
 
-  createFromName(packageName: string): SfpmPackage {
-    const allPackages = this.provider.getAllPackageDefinitions();
-    const packageDefinition = allPackages.find(p => p.name === packageName || stripScope(p.name) === packageName);
-
-    if (!packageDefinition || this.isManagedPackage(packageName)) {
-      const managedRef = this.createManagedRef(packageName);
-      if (managedRef) {
-        throw new Error(`Package "${packageName}" is a managed dependency, not a local package. Use createManagedRef() instead.`);
-      }
-
-      throw new Error(`Package ${packageName} not found in project definition`);
+  createFromDefinition(packageDefinition: PackageDefinition): SfpmPackage | undefined {
+    if (!packageDefinition) {
+      return undefined;
     }
 
     const packageType = (packageDefinition.type?.toLowerCase() || 'source') as PackageType;
     const projectDirectory = this.provider.projectDir;
 
-    const sfpmPackage = this.createPackageInstance(packageType, packageName, projectDirectory);
+    const sfpmPackage = this.createPackageInstance(packageType, packageDefinition.name, projectDirectory);
     sfpmPackage.type = packageType;
 
     sfpmPackage.packageDefinition = packageDefinition;
@@ -758,6 +750,23 @@ export class PackageFactory {
     }
 
     return sfpmPackage;
+  }
+
+  createFromName(packageName: string): SfpmPackage {
+    const packageDefinition = this.provider.getPackageDefinition(packageName);
+    if (!packageDefinition || this.isManagedPackage(packageName)) {
+      const managedRef = this.createManagedRef(packageName);
+      if (managedRef) {
+        throw new Error(`Package "${packageName}" is a managed dependency, not a local package. Use createManagedRef() instead.`);
+      }
+    }
+
+    const packageInstance = this.createFromDefinition(packageDefinition!);
+    if (!packageInstance) {
+      throw new Error(`Unsupported package ${packageName} of type ${packageDefinition?.type}`);
+    }
+
+    return packageInstance;
   }
 
   createFromPath(packagePath: string): SfpmPackage {
