@@ -68,10 +68,11 @@ export default class Install extends SfpmCommand {
     // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
 
-    // Fetch specified packages from registry into node_modules
+    // Fetch specified packages (and transitive deps) from registry into node_modules.
+    // Uses npm (not pnpm) to bypass workspace symlink resolution.
     const pkgArgs = packages.map(p => `'${p}'`).join(' ');
-    this.log(`Fetching artifacts from registry: ${packages.join(', ')}`);
-    execSync(`pnpm install --no-save ${pkgArgs}`, {cwd: projectDir, stdio: 'inherit'});
+    this.log(`Fetching artifacts: ${packages.join(', ')}`);
+    execSync(`npm install --no-save ${pkgArgs}`, {cwd: projectDir, stdio: 'inherit'});
 
     // Create ArtifactProvider: starts from named packages, discovers
     // transitive sfpm dependencies by walking node_modules.
