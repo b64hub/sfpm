@@ -254,7 +254,7 @@ export class InstallProgressRenderer {
 
     const version = event.versionNumber ? `@${event.versionNumber}` : '';
     this.display.packageStart(event.packageName);
-    this.display.subtaskStart(event.packageName, `installing${version} (${event.packageType})`);
+    this.display.subtaskStart(event.packageName, `${event.packageName}${version} (${event.packageType})`);
   }
 
   // ========================================================================

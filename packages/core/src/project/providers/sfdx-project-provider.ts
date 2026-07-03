@@ -104,6 +104,14 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
     return {definition: validated};
   }
 
+  resolvePackage(packageName: string): PackageDefinition | undefined {
+    try {
+      return this.getPackageDefinition(packageName);
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
    * Resolve a single-package definition for staging and building.
    *

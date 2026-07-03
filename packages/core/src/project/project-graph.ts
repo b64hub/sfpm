@@ -80,11 +80,11 @@ export default class ProjectGraph {
   ): ProjectGraph {
     const graph = new ProjectGraph();
     graph.createLocalNodes(packages);
-    graph.createManagedNodes(packages);
+    const managedDefs = graph.createManagedNodes(packages);
     const discovered = graph.wireDependencyEdges(packageResolver);
 
-    // Feed discovered packages back so callers see the full set
-    packages.push(...discovered);
+    // Push all discovered packages back so provider queries stay consistent
+    packages.push(...managedDefs, ...discovered);
 
     return graph;
   }
@@ -362,7 +362,8 @@ export default class ProjectGraph {
    * package's managedDependencies that have no local entry.
    * Creates stub PackageDefinition nodes with type=managed.
    */
-  private createManagedNodes(packages: PackageDefinition[]): void {
+  private createManagedNodes(packages: PackageDefinition[]): PackageDefinition[] {
+    const created: PackageDefinition[] = [];
     for (const pkg of packages) {
       if (!pkg.managedDependencies) continue;
       for (const [depName, versionId] of Object.entries(pkg.managedDependencies)) {
@@ -377,9 +378,12 @@ export default class ProjectGraph {
             version: '0.0.0',
           };
           this.nodes.set(depName, new PackageNode(managedDef));
+          created.push(managedDef);
         }
       }
     }
+
+    return created;
   }
 
   /**
@@ -431,7 +435,7 @@ export default class ProjectGraph {
 
               // Create managed dep nodes for the newly discovered package
               if (depDef.managedDependencies) {
-                this.createManagedNodes([depDef]);
+                discovered.push(...this.createManagedNodes([depDef]));
               }
 
               if (!depNode.isManaged) {

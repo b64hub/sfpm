@@ -94,13 +94,9 @@ export interface ProjectDefinitionProvider {
 
   /**
    * Resolve a single package definition by name on demand.
-   * Used by ProjectGraph for lazy dependency resolution — when a dependency
-   * is not in the initial ProjectDefinition, the graph calls this to
-   * discover it from the backing source (workspace dirs or node_modules).
-   *
    * Returns undefined if the package is not found or not an sfpm package.
    */
-  resolvePackage?(packageName: string): PackageDefinition | undefined;
+  resolvePackage(packageName: string): PackageDefinition | undefined;
 
   /**
    * Resolve a single-package ProjectDefinition suitable for staging and building.

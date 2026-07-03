@@ -781,11 +781,13 @@ export class PackageFactory {
   }
 
   isManagedPackage(packageName: string): boolean {
-    const allPackages = this.provider.getAllPackageDefinitions();
-    if (allPackages.some(p => p.name === packageName || stripScope(p.name) === packageName)) {
-      return false;
+    const packageDef = this.provider.resolvePackage(packageName);
+
+    if (packageDef && packageDef.type === PackageType.Managed) {
+      return true;
     }
 
+    const allPackages = this.provider.getAllPackageDefinitions();
     return allPackages.some(p => p.managedDependencies?.[packageName] !== undefined);
   }
 
