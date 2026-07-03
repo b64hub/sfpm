@@ -67,16 +67,17 @@ export interface ProjectDefinitionProvider {
    */
   getDependencies(packageName: string): PackageDefinition[];
 
-  /** Lookup a package definition by name. Throws if not found. */
-  getPackageDefinition(packageName: string): PackageDefinition;
+  /** Lookup a package definition by name. Returns undefined if not found. */
+  getPackageDefinition(packageName: string): PackageDefinition | undefined;
 
   /** Lookup a package definition by its path. Throws if not found. */
   getPackageDefinitionByPath(packagePath: string): PackageDefinition;
 
   /**
    * Resolve the absolute workspace/package directory for a package.
+   * Returns undefined if the package is not found.
    */
-  getPackageDir(packageName: string): string;
+  getPackageDir(packageName: string): string | undefined;
 
   /** The resolved package type (defaults to Unlocked when unspecified). */
   getPackageType(packageName: string): PackageType;
@@ -91,12 +92,6 @@ export interface ProjectDefinitionProvider {
    * Resolve the full project definition from the backing source.
    */
   resolve(): ProjectDefinitionResult;
-
-  /**
-   * Resolve a single package definition by name on demand.
-   * Returns undefined if the package is not found or not an sfpm package.
-   */
-  resolvePackage(packageName: string): PackageDefinition | undefined;
 
   /**
    * Resolve a single-package ProjectDefinition suitable for staging and building.
@@ -135,18 +130,13 @@ export function getAllPackageNames(definition: ProjectDefinition): string[] {
   return getAllPackageDefinitions(definition).map(pkg => pkg.name);
 }
 
-export function getPackageDefinition(definition: ProjectDefinition, packageName: string): PackageDefinition {
-  const pkg = getAllPackageDefinitions(definition).find(p => p.name === packageName || stripScope(p.name) === packageName);
-  if (!pkg) {
-    throw new Error(`Package ${packageName} not found in project definition`);
-  }
-
-  return pkg;
+export function getPackageDefinition(definition: ProjectDefinition, packageName: string): PackageDefinition | undefined {
+  return getAllPackageDefinitions(definition).find(p => p.name === packageName || stripScope(p.name) === packageName);
 }
 
 export function getPackageType(definition: ProjectDefinition, packageName: string): PackageType {
   const pkg = getPackageDefinition(definition, packageName);
-  return (pkg.type as PackageType) || PackageType.Unlocked;
+  return (pkg?.type as PackageType) || PackageType.Unlocked;
 }
 
 export function getPackageDefinitionByPath(definition: ProjectDefinition, packagePath: string): PackageDefinition {
@@ -172,7 +162,7 @@ export function getPackageDefinitionByPath(definition: ProjectDefinition, packag
  */
 export function getDependencies(definition: ProjectDefinition, packageName: string): PackageDefinition[] {
   const pkg = getPackageDefinition(definition, packageName);
-  if (!pkg.dependencies) return [];
+  if (!pkg?.dependencies) return [];
 
   const resolved: PackageDefinition[] = [];
   for (const depName of Object.keys(pkg.dependencies)) {

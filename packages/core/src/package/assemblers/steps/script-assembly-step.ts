@@ -37,7 +37,7 @@ export class ScriptAssemblyStep implements AssemblyStep {
 
   public async execute(_options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
-    const hooksConfig = packageDefinition.packageOptions?.hooks;
+    const hooksConfig = packageDefinition?.packageOptions?.hooks;
 
     if (!hooksConfig) return;
 

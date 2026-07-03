@@ -42,6 +42,7 @@ export class SourceCopyStep implements AssemblyStep {
 
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
+    if (!packageDefinition) throw new Error(`Package "${this.packageName}" not found`);
     const sourceDir = path.join(this.provider.projectDir, packageDefinition.path);
     const destinationDir = path.join(output.stagingDirectory, FORCE_APP_DIR);
 

@@ -70,7 +70,7 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
     return getDependencies(this.resolve().definition, packageName);
   }
 
-  getPackageDefinition(packageName: string): PackageDefinition {
+  getPackageDefinition(packageName: string): PackageDefinition | undefined {
     return getPackageDefinition(this.resolve().definition, packageName);
   }
 
@@ -78,8 +78,9 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
     return getPackageDefinitionByPath(this.resolve().definition, packagePath);
   }
 
-  getPackageDir(packageName: string): string {
+  getPackageDir(packageName: string): string | undefined {
     const pkg = this.getPackageDefinition(packageName);
+    if (!pkg) return undefined;
     return path.resolve(this.projectDir, pkg.path);
   }
 

@@ -140,16 +140,36 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     return getDependencies(this.resolve().definition, packageName);
   }
 
-  getPackageDefinition(packageName: string): PackageDefinition {
-    return getPackageDefinition(this.resolve().definition, packageName);
+  getPackageDefinition(packageName: string): PackageDefinition | undefined {
+    // Fast path: check already-resolved definition
+    const cached = getPackageDefinition(this.resolve().definition, packageName);
+    if (cached) return cached;
+
+    // Fallback: resolve from workspace members on demand
+    const workspaceDirs = this.discoverWorkspaceMembers();
+    for (const dir of workspaceDirs) {
+      const pkgJsonPath = path.join(this.projectDir, dir, 'package.json');
+      try {
+        if (!fs.existsSync(pkgJsonPath)) continue;
+        const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+        if (pkgJson.name === packageName && pkgJson.sfpm?.packageType) {
+          return toPackageDefinition(pkgJson, dir);
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return undefined;
   }
 
   getPackageDefinitionByPath(packagePath: string): PackageDefinition {
     return getPackageDefinitionByPath(this.resolve().definition, packagePath);
   }
 
-  getPackageDir(packageName: string): string {
+  getPackageDir(packageName: string): string | undefined {
     const pkg = this.getPackageDefinition(packageName);
+    if (!pkg) return undefined;
     const parts = pkg.path.split('/');
 
     // Walk up from source path to find the nearest package.json with sfpm config
@@ -234,33 +254,6 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
 
     this.cachedResult = {definition: validated, packages: sfpmPackages, warnings};
     return this.cachedResult;
-  }
-
-  /**
-   * Resolve a single package from the workspace on demand.
-   * Called by ProjectGraph when a dependency is not in the initial definition.
-   */
-  resolvePackage(packageName: string): PackageDefinition | undefined {
-    // Check if already resolved in the cached definition
-    const cached = this.cachedResult?.definition.packages.find(p => p.name === packageName || stripScope(p.name) === stripScope(packageName));
-    if (cached) return cached;
-
-    // Look for the package in workspace members
-    const workspaceDirs = this.discoverWorkspaceMembers();
-    for (const dir of workspaceDirs) {
-      const pkgJsonPath = path.join(this.projectDir, dir, 'package.json');
-      try {
-        if (!fs.existsSync(pkgJsonPath)) continue;
-        const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
-        if (pkgJson.name === packageName && pkgJson.sfpm?.packageType) {
-          return toPackageDefinition(pkgJson, dir);
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    return undefined;
   }
 
   /**

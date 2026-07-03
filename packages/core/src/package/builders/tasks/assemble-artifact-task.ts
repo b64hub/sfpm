@@ -23,7 +23,7 @@ class AssembleArtifactTask implements BuildTask {
     // Get managed dependencies from the package's project definition
     const projectService = await ProjectService.getInstance(projectDirectory);
     const packageDef = projectService.getPackageDefinition(sfpmPackage.packageName);
-    const managed = packageDef.managedDependencies ?? {};
+    const managed = packageDef?.managedDependencies ?? {};
 
     const assemblerOptions: ArtifactAssemblerOptions = {
       additionalKeywords: this.options.additionalKeywords,

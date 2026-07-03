@@ -40,6 +40,11 @@ export default class Publish extends SfpmCommand {
 
     for (const name of packageNames) {
       const packageDir = provider.getPackageDir(name)
+      if (!packageDir) {
+        this.warn(`Package directory not found for ${name}. Skipping.`)
+        continue
+      }
+
       const distDir = path.join(packageDir, 'dist')
 
       if (!fs.existsSync(path.join(distDir, 'package.json'))) {

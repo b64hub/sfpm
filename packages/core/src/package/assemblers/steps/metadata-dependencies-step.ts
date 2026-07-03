@@ -26,7 +26,7 @@ export class MetadataDependenciesStep implements AssemblyStep {
 
   public async execute(_options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
-    const metaDeps = packageDefinition.metadataDependencies;
+    const metaDeps = packageDefinition?.metadataDependencies;
 
     if (!metaDeps) return;
 

@@ -720,7 +720,7 @@ export class PackageFactory {
     const allPackages = this.provider.getAllPackageDefinitions();
     const packageDefinition = allPackages.find(p => p.name === packageName || stripScope(p.name) === packageName);
 
-    if (!packageDefinition) {
+    if (!packageDefinition || this.isManagedPackage(packageName)) {
       const managedRef = this.createManagedRef(packageName);
       if (managedRef) {
         throw new Error(`Package "${packageName}" is a managed dependency, not a local package. Use createManagedRef() instead.`);
@@ -781,7 +781,7 @@ export class PackageFactory {
   }
 
   isManagedPackage(packageName: string): boolean {
-    const packageDef = this.provider.resolvePackage(packageName);
+    const packageDef = this.provider.getPackageDefinition(packageName);
 
     if (packageDef && packageDef.type === PackageType.Managed) {
       return true;

@@ -61,7 +61,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
     if (LifecycleEngine.isInitialized()) {
       const lifecycle = LifecycleEngine.getInstance();
       const packageDefinition = this.provider.getPackageDefinition(packageName);
-      const skipStages = packageDefinition.packageOptions?.skip ?? [];
+      const skipStages = packageDefinition?.packageOptions?.skip ?? [];
       if (skipStages.includes(lifecycle.stage)) {
         pkgLogger?.info(`Skipping — stage '${lifecycle.stage}' is in skip list`);
         return {

@@ -80,16 +80,34 @@ export class ArtifactProvider implements ProjectDefinitionProvider {
     return getDependencies(this.resolve().definition, packageName);
   }
 
-  getPackageDefinition(packageName: string): PackageDefinition {
-    return getPackageDefinition(this.resolve().definition, packageName);
+  getPackageDefinition(packageName: string): PackageDefinition | undefined {
+    // Fast path: check already-resolved definition
+    const cached = getPackageDefinition(this.resolve().definition, packageName);
+    if (cached) return cached;
+
+    // Fallback: resolve from node_modules on demand
+    const nodeModulesPath = path.join('node_modules', packageName);
+    const pkgJsonPath = path.join(this.projectDir, nodeModulesPath, 'package.json');
+
+    try {
+      if (!fs.existsSync(pkgJsonPath)) return undefined;
+      const pkgJson: NpmPackageJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+      if (!pkgJson.sfpm?.packageType) return undefined;
+
+      this.logger?.debug(`Resolved dependency ${packageName} from node_modules`);
+      return this.toPackageDefinition(pkgJson, nodeModulesPath);
+    } catch {
+      return undefined;
+    }
   }
 
   getPackageDefinitionByPath(packagePath: string): PackageDefinition {
     return getPackageDefinitionByPath(this.resolve().definition, packagePath);
   }
 
-  getPackageDir(packageName: string): string {
+  getPackageDir(packageName: string): string | undefined {
     const pkg = this.getPackageDefinition(packageName);
+    if (!pkg) return undefined;
     // For artifacts, the package dir is the node_modules location.
     // pkg.path is relative from project root (e.g., "node_modules/@scope/pkg/force-app").
     // Walk up from the source path to find the package root (directory containing package.json).
@@ -167,27 +185,6 @@ export class ArtifactProvider implements ProjectDefinitionProvider {
 
     this.cachedResult = {definition: validated, warnings};
     return this.cachedResult;
-  }
-
-  /**
-   * Resolve a single package from node_modules on demand.
-   * Called by ProjectGraph when it encounters a dependency not in the
-   * initial ProjectDefinition.
-   */
-  resolvePackage(packageName: string): PackageDefinition | undefined {
-    const nodeModulesPath = path.join('node_modules', packageName);
-    const pkgJsonPath = path.join(this.projectDir, nodeModulesPath, 'package.json');
-
-    try {
-      if (!fs.existsSync(pkgJsonPath)) return undefined;
-      const pkgJson: NpmPackageJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
-      if (!pkgJson.sfpm?.packageType) return undefined;
-
-      this.logger?.debug(`Resolved dependency ${packageName} from node_modules`);
-      return this.toPackageDefinition(pkgJson, nodeModulesPath);
-    } catch {
-      return undefined;
-    }
   }
 
   resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {

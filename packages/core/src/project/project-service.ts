@@ -79,7 +79,7 @@ export default class ProjectService {
     const definitionProvider = provider ?? await detectProvider(projectRoot, sfpmConfig);
     definitionProvider.resolve();
 
-    const resolver = definitionProvider.resolvePackage?.bind(definitionProvider);
+    const resolver = definitionProvider.getPackageDefinition.bind(definitionProvider);
     const definition = definitionProvider.getProjectDefinition();
     const graph = ProjectGraph.buildGraph(definition.packages, resolver);
 
@@ -97,7 +97,7 @@ export default class ProjectService {
     return ProjectService.instance;
   }
 
-  public static async getPackageDefinition(packageName: string, workingDirectory?: string): Promise<PackageDefinition> {
+  public static async getPackageDefinition(packageName: string, workingDirectory?: string): Promise<PackageDefinition | undefined> {
     const service = await ProjectService.getInstance(workingDirectory);
     return service.getPackageDefinition(packageName);
   }
@@ -161,7 +161,7 @@ export default class ProjectService {
     return this.definitionProvider.getDependencies(packageName);
   }
 
-  public getPackageDefinition(packageName: string): PackageDefinition {
+  public getPackageDefinition(packageName: string): PackageDefinition | undefined {
     return this.definitionProvider.getPackageDefinition(packageName);
   }
 
@@ -197,7 +197,7 @@ export default class ProjectService {
    */
   public resolveBuildConfig(packageName: string, runtimeOptions?: BuildOptions): BuildOptions {
     const pkg = this.definitionProvider.getPackageDefinition(packageName);
-    const packageBuildConfig = pkg.packageOptions?.build;
+    const packageBuildConfig = pkg?.packageOptions?.build;
 
     return {
       // Layer 1: global defaults
@@ -216,7 +216,7 @@ export default class ProjectService {
    */
   public resolveInstallConfig(packageName: string, runtimeOptions?: InstallOptions): InstallOptions {
     const pkg = this.definitionProvider.getPackageDefinition(packageName);
-    const packageInstallConfig = pkg.packageOptions?.install;
+    const packageInstallConfig = pkg?.packageOptions?.install;
 
     return {
       ...(this.sfpmConfig.sourceApiVersion ? {apiVersion: this.sfpmConfig.sourceApiVersion} : {}),

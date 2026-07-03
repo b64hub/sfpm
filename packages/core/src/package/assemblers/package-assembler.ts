@@ -77,6 +77,7 @@ export default class PackageAssembler {
       };
 
       const packageDefinition = this.provider.getPackageDefinition(this.packageName);
+      if (!packageDefinition) throw new Error(`Package "${this.packageName}" not found in project definition`);
       const packageType = packageDefinition.type?.toLowerCase();
 
       const steps = packageType === PackageType.Data
@@ -224,6 +225,7 @@ export default class PackageAssembler {
   private initializeStagingArea(): string {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
     const packageWorkspacePath = this.provider.getPackageDir(this.packageName);
+    if (!packageWorkspacePath) throw new Error(`Package directory not found for "${this.packageName}"`);
     return path.join(packageWorkspacePath, DIST_DIR);
   }
 }

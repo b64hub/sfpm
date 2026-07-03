@@ -289,10 +289,8 @@ export default class PackageBuilder {
       return undefined;
     }
 
-    let packageWorkspacePath: string;
-    try {
-      packageWorkspacePath = this.provider.getPackageDir(sfpmPackage.name);
-    } catch {
+    const packageWorkspacePath = this.provider.getPackageDir(sfpmPackage.name);
+    if (!packageWorkspacePath) {
       this.logger?.info('Could not resolve package workspace path, proceeding with build');
       return undefined;
     }

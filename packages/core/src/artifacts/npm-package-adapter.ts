@@ -345,16 +345,3 @@ function getRepositoryUrl(repository?: string | {type: string; url: string}): st
   if (!repository) return undefined;
   return typeof repository === 'string' ? repository : repository.url;
 }
-
-/**
- * Resolve pnpm workspace: protocol to normal version ranges.
- * "workspace:^0.5.0" → "^0.5.0", "workspace:*" → "*"
- */
-function resolveWorkspaceProtocol(dependencies: Record<string, string>): Record<string, string> {
-  const resolved: Record<string, string> = {};
-  for (const [name, version] of Object.entries(dependencies)) {
-    resolved[name] = version.startsWith('workspace:') ? version.slice('workspace:'.length) : version;
-  }
-
-  return resolved;
-}
