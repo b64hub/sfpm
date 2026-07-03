@@ -28,7 +28,7 @@ import {extractPackageVersionId, extractSourceHash, fromNpmPackageJson} from './
  *
  * Used by:
  * - ArtifactAssembler (for writing build output)
- * - ArtifactResolver (for reading and remote localization)
+ * - ArtifactProvider (for reading artifact metadata)
  * - PackageBuilder (for build-skip logic via source hash comparison)
  */
 export class ArtifactRepository {
