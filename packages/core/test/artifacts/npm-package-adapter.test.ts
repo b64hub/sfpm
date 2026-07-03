@@ -341,5 +341,29 @@ describe('npm-package-adapter', () => {
       expect(sfpm.source).toBeUndefined();
       expect(sfpm.orchestration).toBeUndefined();
     });
+
+    describe('resolveWorkspaceProtocol', () => {
+      it('should resolve workspace: protocol in dependencies', async () => {
+        const workspacePkgJson = createWorkspacePkgJson({
+          dependencies: {
+            '@myorg/dep-a': 'workspace:^0.5.0',
+            '@myorg/dep-b': 'workspace:*',
+            'fs-extra': '^11.0.0',
+          },
+        });
+
+        const result = toNpmPackageJson(
+          workspacePkgJson,
+          createMockPackage(),
+          '1.0.0',
+        );
+
+        expect(result.dependencies).toEqual({
+          '@myorg/dep-a': '^0.5.0',
+          '@myorg/dep-b': '*',
+          'fs-extra': '^11.0.0',
+        });
+      });
+    });
   });
 });

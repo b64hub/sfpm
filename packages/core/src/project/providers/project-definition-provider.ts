@@ -93,6 +93,12 @@ export interface ProjectDefinitionProvider {
   resolve(): ProjectDefinitionResult;
 
   /**
+   * Resolve a single package definition by name on demand.
+   * Returns undefined if the package is not found or not an sfpm package.
+   */
+  resolvePackage(packageName: string): PackageDefinition | undefined;
+
+  /**
    * Resolve a single-package ProjectDefinition suitable for staging and building.
    *
    * In workspace mode this builds from the package's own package.json.

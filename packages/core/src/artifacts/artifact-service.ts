@@ -1,16 +1,14 @@
 import {Connection, Org} from '@salesforce/core';
-import path from 'node:path';
 
 import SfpmPackage from '../package/sfpm-package.js';
 import {
-  ArtifactResolutionOptions, ResolvedArtifact, SfpmPackageSource,
+  SfpmPackageSource,
 } from '../types/artifact.js';
 import Logger from '../types/logger.js';
 import {InstalledArtifact} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
 import {soql} from '../utils/soql.js';
 import {ArtifactRepository} from './artifact-repository.js';
-import {ArtifactResolver, DownloadTarget} from './artifact-resolver.js';
 
 export interface SfpmArtifact__c {
   Checksum__c: string;
@@ -45,28 +43,6 @@ export interface ArtifactHistoryOptions {
   deployId?: string;
 }
 
-/**
- * Result of artifact resolution against the target org.
- * Combines the resolved artifact with the org's current installation status.
- * The install decision is made by the installer's `isInstalled()` method,
- * not by the artifact service.
- */
-export interface ArtifactResolution {
-  /** Current installation status in the org */
-  orgStatus: {
-    /** The currently installed sourceHash (if any) */
-    installedSourceHash?: string;
-    /** The currently installed version (if any) */
-    installedVersion?: string;
-    /** Whether the package is currently installed */
-    isInstalled: boolean;
-  };
-  /** The package name */
-  packageName: string;
-  /** The resolved artifact to install */
-  resolved: ResolvedArtifact;
-}
-
 const ARTIFACT_FIELDS = ['Id', 'Name', 'Tag__c', 'Version__c', 'Commit_Id__c', 'Checksum__c'];
 
 /**
@@ -91,7 +67,6 @@ export default class ArtifactService {
   /** In-memory cache of installed artifacts keyed by package name. Lazy-loaded on first access. */
   private installedArtifactsCache: Map<string, CachedArtifact> | null = null;
   private logger?: Logger;
-  private projectDir?: string;
   private targetOrg?: Org;
 
   constructor(targetOrg: Org, logger?: Logger) {
@@ -266,75 +241,6 @@ export default class ArtifactService {
   }
 
   /**
-   * Resolve the install target for a package.
-   *
-   * This is the main orchestration method that:
-   * 1. Resolves the best available artifact (local or from npm registry)
-   * 2. Checks what's currently installed in the target org
-   * 3. Determines if installation is needed and why
-   *
-   * Uses npm config (.npmrc) for registry and auth token resolution,
-   * including support for scoped registries (e.g., @myorg packages).
-   *
-   * @param packageWorkspacePath - Package workspace directory (contains artifacts/)
-   * @param packageName - Fully scoped name of the package to resolve
-   * @param options - Resolution options (version, forceRefresh, etc.)
-   * @returns ArtifactResolution with resolved artifact and org status
-   */
-  public async resolveArtifact(
-    packageWorkspacePath: string,
-    packageName: string,
-    options?: ArtifactResolutionOptions,
-  ): Promise<ArtifactResolution> {
-    // 1. Create resolver for this specific package (handles scoped registries)
-    const downloadTarget: DownloadTarget | undefined = this.projectDir
-      ? pkgName => path.join(this.projectDir!, 'node_modules', pkgName)
-      : undefined;
-
-    const resolver = ArtifactResolver.create(
-      packageWorkspacePath,
-      {
-        downloadTarget,
-        localOnly: options?.localOnly,
-      },
-      this.logger,
-    );
-
-    // Note: We still use the SFPM package name for local artifact resolution
-    // since that's how artifacts are stored locally
-    const resolved = await resolver.resolve(packageName, options);
-    this.logger?.debug(`Resolved ${packageName} to version ${resolved.version} from ${resolved.source}`);
-
-    // 2. Check org installation status (if org is available)
-    let orgStatus: ArtifactResolution['orgStatus'] = {
-      isInstalled: false,
-    };
-
-    if (this.targetOrg) {
-      // Ensure cache is loaded (lazy loading)
-      await this.ensureCacheLoaded();
-
-      // When cache is available, a single map lookup replaces 2+ SOQL queries
-      if (this.installedArtifactsCache) {
-        const cached = this.installedArtifactsCache.get(packageName);
-        if (cached) {
-          orgStatus = {
-            installedSourceHash: cached.checksum,
-            installedVersion: cached.version,
-            isInstalled: true,
-          };
-        }
-      }
-    }
-
-    return {
-      orgStatus,
-      packageName,
-      resolved,
-    };
-  }
-
-  /**
    * Set the logger for this service instance.
    * Useful when using the singleton pattern to configure after getInstance().
    */
@@ -349,15 +255,6 @@ export default class ArtifactService {
    */
   public setOrg(org: Org | undefined): this {
     this.targetOrg = org;
-    return this;
-  }
-
-  /**
-   * Set the project root directory.
-   * Used to resolve the download target for remote artifacts (e.g., `node_modules/`).
-   */
-  public setProjectDir(projectDir: string): this {
-    this.projectDir = projectDir;
     return this;
   }
 

@@ -19,22 +19,13 @@ export {
 export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
 
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
-export {ArtifactResolver, type DownloadTarget} from './artifacts/artifact-resolver.js';
 export {default as ArtifactService} from './artifacts/artifact-service.js';
 export type {
-  ArtifactHistoryOptions, ArtifactResolution, SfpmArtifactHistory__c, // eslint-disable-line camelcase
+  ArtifactHistoryOptions, SfpmArtifactHistory__c, // eslint-disable-line camelcase
 } from './artifacts/artifact-service.js';
 export {
   extractPackageVersionId, extractSourceHash, fromNpmPackageJson, hydrateFromNpmPackageJson, toNpmPackageJson, type ToNpmPackageJsonOptions,
 } from './artifacts/npm-package-adapter.js';
-export {
-  type DownloadResult,
-  PnpmRegistryClient,
-  RegistryClient,
-  type RegistryClientConfig,
-  type RegistryPackageInfo,
-  type RegistryVersionInfo,
-} from './artifacts/registry/index.js';
 export * from './events/index.js';
 export {GitService} from './git/git-service.js';
 export {default as Git} from './git/git.js';
@@ -76,6 +67,7 @@ export {type ResolveOptions, ValidationResolver} from './package/validation/vali
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export * from './project/project-graph.js';
 export {default as ProjectService} from './project/project-service.js';
+export {ArtifactProvider, type ArtifactProviderOptions} from './project/providers/artifact-provider.js';
 export {
   type ProjectDefinitionProvider,
   type ProjectDefinitionResult,

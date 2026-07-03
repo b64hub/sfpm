@@ -17,35 +17,6 @@ vi.mock('@salesforce/core', () => ({
     },
 }));
 
-// Mock the ArtifactService singleton
-vi.mock('../../../src/artifacts/artifact-service.js', () => ({
-    ArtifactService: {
-        getInstance: vi.fn().mockReturnValue({
-            setOrg: vi.fn().mockReturnThis(),
-            setLogger: vi.fn().mockReturnThis(),
-            setProjectDir: vi.fn().mockReturnThis(),
-            getBuildOutput: vi.fn().mockReturnValue('/test/project/packages/test-package/dist'),
-            resolveArtifact: vi.fn().mockResolvedValue({
-                resolved: {
-                    source: 'local',
-                    version: '1.0.0',
-                    artifactPath: '/test/project/packages/test-package/dist',
-                    manifest: { sourceHash: 'abc123', schemaVersion: 2, source: 'local' },
-                },
-                orgStatus: { isInstalled: false },
-                packageName: 'test-package',
-            }),
-            upsertArtifact: vi.fn().mockResolvedValue(undefined),
-            createHistoryRecord: vi.fn().mockResolvedValue(undefined),
-        }),
-    },
-}));
-
-// Mock workspace-path
-vi.mock('../../../src/utils/workspace-path.js', () => ({
-    resolvePackageWorkspacePath: vi.fn().mockReturnValue('/test/project/packages/test-package'),
-}));
-
 describe('PackageInstaller', () => {
     let installer: PackageInstaller;
     let installBus: InstallEventBus;
@@ -72,6 +43,7 @@ describe('PackageInstaller', () => {
 
         mockProvider = {
             projectDir: '/test/project',
+            getPackageDir: vi.fn().mockReturnValue('/test/project/node_modules/@test/test-package'),
         };
 
         mockPackage = {
@@ -81,8 +53,7 @@ describe('PackageInstaller', () => {
             type: PackageType.Unlocked,
             projectDir: '/test/project',
             version: '1.0.0',
-            packageDefinition: { path: 'packages/test-package/force-app' },
-            metadata: { source: {} },
+            packageDefinition: { path: 'node_modules/@test/test-package/force-app' },
         };
 
         mockInstallerInstance = {
@@ -91,12 +62,10 @@ describe('PackageInstaller', () => {
             run: vi.fn().mockResolvedValue({ installId: 'deploy-123' }),
         };
 
-        // Create a proper constructor mock that returns the instance
         mockInstallerConstructor = vi.fn(function(this: any) {
             return mockInstallerInstance;
         }) as any;
 
-        // Create package factory instance
         mockPackageFactoryInstance = {
             createFromName: vi.fn().mockReturnValue(mockPackage),
             isManagedPackage: vi.fn().mockReturnValue(false),
@@ -107,17 +76,15 @@ describe('PackageInstaller', () => {
             return mockPackageFactoryInstance;
         }) as any);
 
-        // Mock registry
         vi.spyOn(InstallerRegistry, 'getInstaller').mockReturnValue(mockInstallerConstructor);
 
         installBus = new InstallEventBus();
 
-        // Constructor: (provider, options, logger, targetOrg?, bus?)
         installer = new PackageInstaller(
+            mockOrg as any,
             mockProvider,
             {},
             mockLogger,
-            mockOrg as any,
             installBus,
         );
 
@@ -126,7 +93,12 @@ describe('PackageInstaller', () => {
 
     describe('install', () => {
         it('should throw if target org not connected', async () => {
-            const noOrgInstaller = new PackageInstaller(mockProvider, {}, mockLogger);
+            const noOrgInstaller = new PackageInstaller(
+                undefined as any,
+                mockProvider,
+                {},
+                mockLogger,
+            );
             await expect(noOrgInstaller.install('test-package')).rejects.toThrow(
                 'Target org not connected'
             );
@@ -173,8 +145,7 @@ describe('PackageInstaller', () => {
             const errorHandler = vi.fn();
             installBus.on('error', errorHandler);
 
-            const error = new Error('Installation failed');
-            mockInstallerInstance.run.mockRejectedValue(error);
+            mockInstallerInstance.run.mockRejectedValue(new Error('Installation failed'));
 
             await expect(installer.install('test-package')).rejects.toThrow('Installation failed');
 
@@ -209,16 +180,15 @@ describe('PackageInstaller', () => {
             });
 
             const forceInstaller = new PackageInstaller(
+                mockOrg as any,
                 mockProvider,
                 { force: true },
                 mockLogger,
-                mockOrg as any,
                 installBus,
             );
 
             await forceInstaller.install('test-package');
 
-            // isInstalled should not be called when force is true
             expect(mockInstallerInstance.isInstalled).not.toHaveBeenCalled();
             expect(mockInstallerInstance.run).toHaveBeenCalled();
         });

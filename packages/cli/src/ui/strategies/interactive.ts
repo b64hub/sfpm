@@ -28,9 +28,9 @@ export class InteractiveDisplay implements DisplayStrategy {
   private readonly listr: OrchestrationListrManager;
   private readonly logger: OutputLogger;
 
-  constructor(logger: OutputLogger) {
+  constructor(logger: OutputLogger, options?: {operationLabel?: string}) {
     this.logger = logger;
-    this.listr = new OrchestrationListrManager();
+    this.listr = new OrchestrationListrManager({operationLabel: options?.operationLabel});
   }
 
   // ===========================================================================

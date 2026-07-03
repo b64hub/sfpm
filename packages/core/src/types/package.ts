@@ -1,6 +1,6 @@
 import {Org} from '@salesforce/core';
 
-import type {ArtifactResolutionOptions, SfpmPackageSource} from './artifact.js';
+import type {SfpmPackageSource} from './artifact.js';
 
 import {ValidationLevel} from './validation.js';
 
@@ -70,7 +70,6 @@ export interface UnlockedBuildOptions {
 }
 
 export interface InstallOptions {
-  artifactResolution?: Omit<ArtifactResolutionOptions, 'version'>;
   /** Force reinstall even if already installed with matching version/hash */
   force?: boolean;
   /**

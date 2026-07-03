@@ -63,10 +63,15 @@ export class OrchestrationListrManager {
   private buildSubtasks = new Map<string, any>();
   private hookSlots = new Map<string, HookSlot>();
   private levelGates = new Map<number, Deferred>();
+  private readonly operationLabel: string;
   private packageDeferreds = new Map<string, Deferred>();
   private packageTasks = new Map<string, any>();
   private rootListr?: Listr;
   private validationQueued = new Set<string>();
+
+  constructor(options?: {operationLabel?: string}) {
+    this.operationLabel = options?.operationLabel ?? 'building...';
+  }
 
   // ==========================================================================
   // Public API
@@ -128,6 +133,16 @@ export class OrchestrationListrManager {
   }
 
   public resolvePackage(packageName: string): void {
+    // Resolve all subtask slots so nothing hangs
+    for (const timing of ['pre', 'post']) {
+      const slot = this.hookSlots.get(`${packageName}:${timing}`);
+      if (slot && !slot.activated) {
+        slot.activated = true;
+        slot.skipped = true;
+        slot.deferred.resolve();
+      }
+    }
+
     this.packageDeferreds.get(packageName)?.resolve();
   }
 
@@ -233,7 +248,7 @@ export class OrchestrationListrManager {
                 this.buildSubtasks.set(name, buildTask);
                 await this.packageDeferreds.get(name)!.promise;
               },
-              title: 'building...',
+              title: this.operationLabel,
             },
             {
               async task(_: any, t: any) {

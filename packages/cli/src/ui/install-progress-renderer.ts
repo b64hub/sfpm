@@ -85,7 +85,7 @@ export class InstallProgressRenderer {
   private timings: TimingInfo = {};
 
   constructor(options: {logger: OutputLogger; mode: OutputMode; targetOrg?: string}) {
-    this.display = createDisplayStrategy(options.mode, options.logger);
+    this.display = createDisplayStrategy(options.mode, options.logger, {operationLabel: 'installing...'});
     this.targetOrg = options.targetOrg;
   }
 
@@ -254,7 +254,7 @@ export class InstallProgressRenderer {
 
     const version = event.versionNumber ? `@${event.versionNumber}` : '';
     this.display.packageStart(event.packageName);
-    this.display.subtaskStart(event.packageName, `installing${version} (${event.packageType})`);
+    this.display.subtaskStart(event.packageName, `${event.packageName}${version} (${event.packageType})`);
   }
 
   // ========================================================================

@@ -87,6 +87,12 @@ export function toNpmPackageJson(
   // Keep scripts — npm lifecycle hooks (postinstall, etc.) need to travel with the artifact.
   const {devDependencies: _devDeps, private: _private, ...staticFields} = workspacePkgJson;
 
+  // Resolve workspace: protocol to normal version ranges so the artifact
+  // is self-contained and installable outside a workspace context.
+  if (staticFields.dependencies) {
+    staticFields.dependencies = resolveWorkspaceProtocol(staticFields.dependencies);
+  }
+
   const packageJson: NpmPackageJson = {
     ...staticFields,
     files: [
@@ -342,4 +348,17 @@ function buildRepositoryField(url?: string): string | undefined {
 function getRepositoryUrl(repository?: string | {type: string; url: string}): string | undefined {
   if (!repository) return undefined;
   return typeof repository === 'string' ? repository : repository.url;
+}
+
+/**
+ * Resolve pnpm workspace: protocol to normal version ranges.
+ * "workspace:^0.5.0" → "^0.5.0", "workspace:*" → "*"
+ */
+function resolveWorkspaceProtocol(dependencies: Record<string, string>): Record<string, string> {
+  const resolved: Record<string, string> = {};
+  for (const [name, version] of Object.entries(dependencies)) {
+    resolved[name] = version.startsWith('workspace:') ? version.slice('workspace:'.length) : version;
+  }
+
+  return resolved;
 }

@@ -1,11 +1,7 @@
 import {Org} from '@salesforce/core';
-import fs from 'fs-extra';
-import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
-import ArtifactService, {ArtifactResolution} from '../artifacts/artifact-service.js';
-import {hydrateFromNpmPackageJson} from '../artifacts/npm-package-adapter.js';
 import {InstallEventBus, InstallEventSink} from '../events/install-event-bus.js';
 import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
@@ -150,11 +146,11 @@ export default class PackageInstaller {
   }
 
   /**
-   * Install from a resolved artifact using the correct installer strategy.
+   * Install from a built artifact in node_modules.
    *
-   * Resolves the artifact (local or npm), updates the package with version
-   * and source hash, then delegates to {@link runInstaller} which handles
-   * the install-check and full lifecycle (hooks, tasks, install, tasks, hooks).
+   * The ArtifactProvider has already set packageDefinition with all build-time
+   * metadata (packageVersionId, sourceHash, apiVersion). PackageFactory has
+   * already hydrated the SfpmPackage from the definition. Just run the installer.
    */
   public async installArtifact(sfpmPackage: SfpmPackage): Promise<InstallResult> {
     const packageName = sfpmPackage.name;
@@ -165,11 +161,6 @@ export default class PackageInstaller {
         + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
     }
 
-    // Use singleton artifact service
-    const artifactService = PackageManager.getInstance(this.targetOrg).getArtifactService();
-    await this.resolveArtifact(artifactService, sfpmPackage);
-
-    // Log install decision
     this.logger?.info(`Installing ${packageName}@${sfpmPackage.version}`);
 
     // Register artifact update as a post-install task
@@ -257,60 +248,6 @@ export default class PackageInstaller {
       this.logger?.error(`Failed to install managed package ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     }
-  }
-
-  /**
-   * Hydrate the SfpmPackage with data from the resolved artifact.
-   * Reads the artifact's package.json and sets flat properties on the domain model.
-   */
-  private hydratePackageFromArtifact(sfpmPackage: SfpmPackage, resolution: ArtifactResolution): void {
-    const {resolved} = resolution;
-
-    // Set working directory to the build output (artifacts/package/)
-    sfpmPackage.workingDirectory = resolved.artifactPath;
-
-    // Hydrate from the artifact's package.json (version, source, content, etc.)
-    try {
-      const packageJsonPath = path.join(resolved.artifactPath, 'package.json');
-      if (fs.existsSync(packageJsonPath)) {
-        const packageJson = fs.readJsonSync(packageJsonPath);
-        if (packageJson?.sfpm) {
-          hydrateFromNpmPackageJson(sfpmPackage, packageJson);
-        }
-      }
-    } catch {
-      // Fall through to manifest-based hydration
-    }
-
-    // Always set version from resolved (authoritative)
-    sfpmPackage.version = resolved.version;
-
-    // Ensure source hash from manifest
-    if (resolved.manifest.sourceHash) {
-      sfpmPackage.sourceHash = resolved.manifest.sourceHash;
-    }
-
-    // For unlocked packages, ensure packageVersionId from manifest
-    if (sfpmPackage instanceof SfpmUnlockedPackage && resolved.packageVersionId) {
-      sfpmPackage.packageVersionId = resolved.packageVersionId;
-    }
-  }
-
-  private async resolveArtifact(artifactService: ArtifactService, sfpmPackage: SfpmPackage): Promise<void> {
-    const sourcePath = sfpmPackage.packageDefinition?.path;
-    if (!sourcePath) {
-      throw new Error(`No package definition path for ${sfpmPackage.name}`);
-    }
-
-    const packageWorkspacePath = this.provider.getPackageDir(sfpmPackage.name);
-
-    const resolution = await artifactService.resolveArtifact(
-      packageWorkspacePath,
-      sfpmPackage.name,
-      this.options.artifactResolution,
-    );
-
-    this.hydratePackageFromArtifact(sfpmPackage, resolution);
   }
 
   /**
