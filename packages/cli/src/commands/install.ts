@@ -4,12 +4,12 @@ import {
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {Args, Flags} from '@oclif/core'
 import {Org} from '@salesforce/core'
+import {execSync} from 'node:child_process'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../sfpm-command.js'
 import {InstallProgressRenderer} from '../ui/install-progress-renderer.js'
-import {resolvePackageInputs} from '../utils/package-resolver.js'
 
 export default class Install extends SfpmCommand {
   static override args = {
@@ -68,15 +68,20 @@ export default class Install extends SfpmCommand {
     // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
 
-    // Create ArtifactProvider: reads workspace config for package names,
-    // resolves definitions from built artifacts in node_modules.
-    const artifactProvider = new ArtifactProvider({logger: this.sfpmLogger, projectDir});
+    // Fetch specified packages from registry into node_modules
+    const pkgArgs = packages.map(p => `'${p}'`).join(' ');
+    this.log(`Fetching artifacts from registry: ${packages.join(', ')}`);
+    execSync(`pnpm install --no-save ${pkgArgs}`, {cwd: projectDir, stdio: 'inherit'});
+
+    // Create ArtifactProvider: starts from named packages, discovers
+    // transitive sfpm dependencies by walking node_modules.
+    const artifactProvider = new ArtifactProvider({logger: this.sfpmLogger, packages, projectDir});
     const projectService = await ProjectService.create(projectDir, artifactProvider);
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();
 
-    // Resolve user input (scoped or unscoped) to canonical scoped package names
-    const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: this.outputMode === 'json'})
+    // All resolved packages come from the provider (explicit + transitive sfpm deps)
+    const resolvedPackages = projectConfig.getAllPackageNames();
 
     const mode = this.outputMode;
 

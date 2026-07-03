@@ -1,7 +1,6 @@
 import {PackageType} from '../types/package.js';
 import {
   PackageDefinition,
-  ProjectDefinition,
   SUBSCRIBER_PKG_VERSION_ID_PREFIX,
 } from '../types/project.js';
 import {stripScope} from '../utils/scope-utils.js';
@@ -21,6 +20,12 @@ export interface GraphQueryOptions {
   /** Include managed (external) packages in results. Defaults to true. */
   includeManaged?: boolean;
 }
+
+/**
+ * Callback for lazy package resolution. When the graph encounters a dependency
+ * not in the initial ProjectDefinition, it calls this to resolve it on demand.
+ */
+export type PackageResolver = (packageName: string) => PackageDefinition | undefined;
 
 export class PackageNode {
   /** @internal */
@@ -69,11 +74,17 @@ export default class ProjectGraph {
 
   private constructor() {}
 
-  public static buildGraph(projectDefinition: ProjectDefinition): ProjectGraph {
+  public static buildGraph(
+    packages: PackageDefinition[],
+    packageResolver?: PackageResolver,
+  ): ProjectGraph {
     const graph = new ProjectGraph();
-    const packages = graph.createLocalNodes(projectDefinition);
-    graph.createManagedNodes(packages, projectDefinition);
-    graph.wireDependencyEdges();
+    graph.createLocalNodes(packages);
+    graph.createManagedNodes(packages);
+    const discovered = graph.wireDependencyEdges(packageResolver);
+
+    // Feed discovered packages back so callers see the full set
+    packages.push(...discovered);
 
     return graph;
   }
@@ -336,13 +347,7 @@ export default class ProjectGraph {
     return result;
   }
 
-  /**
-   * Creates graph nodes from project packages (project-local packages).
-   * Returns the filtered list of PackageDefinitions for use by subsequent steps.
-   */
-  private createLocalNodes(projectDefinition: ProjectDefinition): PackageDefinition[] {
-    const {packages} = projectDefinition;
-
+  private createLocalNodes(packages: PackageDefinition[]): void {
     for (const pkg of packages) {
       if (this.nodes.has(pkg.name)) {
         continue;
@@ -350,8 +355,6 @@ export default class ProjectGraph {
 
       this.nodes.set(pkg.name, new PackageNode(pkg));
     }
-
-    return packages;
   }
 
   /**
@@ -359,7 +362,7 @@ export default class ProjectGraph {
    * package's managedDependencies that have no local entry.
    * Creates stub PackageDefinition nodes with type=managed.
    */
-  private createManagedNodes(packages: PackageDefinition[], _projectDefinition: ProjectDefinition): void {
+  private createManagedNodes(packages: PackageDefinition[]): void {
     for (const pkg of packages) {
       if (!pkg.managedDependencies) continue;
       for (const [depName, versionId] of Object.entries(pkg.managedDependencies)) {
@@ -396,19 +399,47 @@ export default class ProjectGraph {
 
   /**
    * Wires dependency and dependent edges between nodes.
-   * Handles both workspace dependencies (from `dependencies` record)
-   * and managed dependencies (from `managedDependencies` record).
+   * When a dependency is not found and a packageResolver is provided,
+   * resolves the package on demand, creates the node, and continues
+   * iteratively until all reachable dependencies are wired.
+   *
+   * Returns any PackageDefinitions discovered via the resolver.
    */
-  private wireDependencyEdges(): void {
-    for (const node of this.nodes.values()) {
-      if (node.isManaged) continue;
+  private wireDependencyEdges(packageResolver?: PackageResolver): PackageDefinition[] {
+    const discovered: PackageDefinition[] = [];
+    const queue = [...this.nodes.values()].filter(n => !n.isManaged);
+    const processed = new Set<string>();
+
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      if (processed.has(node.name)) continue;
+      processed.add(node.name);
 
       const def = node.definition;
 
-      // Wire workspace dependencies
+      // Wire workspace/sfpm dependencies
       if (def.dependencies) {
         for (const depName of Object.keys(def.dependencies)) {
-          const depNode = this.resolveNode(depName);
+          let depNode = this.resolveNode(depName);
+
+          if (!depNode && packageResolver) {
+            const depDef = packageResolver(depName);
+            if (depDef) {
+              depNode = new PackageNode(depDef);
+              this.nodes.set(depDef.name, depNode);
+              discovered.push(depDef);
+
+              // Create managed dep nodes for the newly discovered package
+              if (depDef.managedDependencies) {
+                this.createManagedNodes([depDef]);
+              }
+
+              if (!depNode.isManaged) {
+                queue.push(depNode);
+              }
+            }
+          }
+
           if (depNode) {
             node._dependencies.add(depNode);
             depNode._dependents.add(node);
@@ -427,5 +458,7 @@ export default class ProjectGraph {
         }
       }
     }
+
+    return discovered;
   }
 }

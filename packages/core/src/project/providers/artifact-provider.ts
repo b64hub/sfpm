@@ -41,6 +41,13 @@ import {
 
 export interface ArtifactProviderOptions {
   logger?: Logger;
+  /**
+   * Explicit package names to resolve from node_modules.
+   * When provided, skips workspace discovery and uses these as the starting
+   * set. Transitive sfpm dependencies are discovered by walking each
+   * package's dependencies in node_modules.
+   */
+  packages?: string[];
   /** Absolute path to the project root directory */
   projectDir: string;
 }
@@ -52,11 +59,13 @@ export interface ArtifactProviderOptions {
 export class ArtifactProvider implements ProjectDefinitionProvider {
   public readonly projectDir: string;
   private cachedResult?: ProjectDefinitionResult;
+  private readonly explicitPackages?: string[];
   private readonly logger: Logger | undefined;
 
   constructor(options: ArtifactProviderOptions) {
     this.projectDir = options.projectDir;
     this.logger = options.logger;
+    this.explicitPackages = options.packages;
   }
 
   getAllPackageDefinitions(): PackageDefinition[] {
@@ -105,28 +114,40 @@ export class ArtifactProvider implements ProjectDefinitionProvider {
   }
 
   /**
-   * Resolve the project: discover workspace members, find their artifacts
-   * in node_modules, and build a ProjectDefinition from artifact metadata.
+   * Resolve the project: discover sfpm packages and build a ProjectDefinition
+   * from artifact metadata in node_modules.
+   *
+   * Two discovery modes:
+   * - Explicit packages: resolves named packages from node_modules.
+   *   Transitive sfpm dependencies are discovered by the ProjectGraph
+   *   via the resolvePackage callback.
+   * - Workspace discovery: enumerates workspace members, resolves from node_modules
    */
   resolve(): ProjectDefinitionResult {
     if (this.cachedResult) return this.cachedResult;
 
     const warnings: string[] = [];
 
-    // 1. Discover workspace member directories
-    const workspaceDirs = this.discoverWorkspaceMembers();
-    this.logger?.debug(`Found ${workspaceDirs.length} workspace member(s)`);
-
-    // 2. Collect workspace package names from their package.json files
-    const workspacePackageNames = this.collectWorkspacePackageNames(workspaceDirs, warnings);
-    if (workspacePackageNames.length === 0) {
-      throw new Error('No workspace packages with an "sfpm" field found.');
+    let packageNames: string[];
+    if (this.explicitPackages?.length) {
+      // Explicit mode: use named packages directly.
+      // Transitive deps are resolved lazily by ProjectGraph via resolvePackage().
+      packageNames = this.explicitPackages;
+    } else {
+      // Workspace mode: enumerate workspace members
+      const workspaceDirs = this.discoverWorkspaceMembers();
+      this.logger?.debug(`Found ${workspaceDirs.length} workspace member(s)`);
+      packageNames = this.collectWorkspacePackageNames(workspaceDirs, warnings);
     }
 
-    this.logger?.debug(`Found ${workspacePackageNames.length} SFPM package(s): ${workspacePackageNames.join(', ')}`);
+    if (packageNames.length === 0) {
+      throw new Error('No SFPM packages found. Ensure packages are installed in node_modules.');
+    }
 
-    // 3. Resolve each package from node_modules artifact
-    const packageDefinitions = this.resolveFromNodeModules(workspacePackageNames, warnings);
+    this.logger?.debug(`Resolving ${packageNames.length} SFPM package(s): ${packageNames.join(', ')}`);
+
+    // Resolve each package from node_modules artifact
+    const packageDefinitions = this.resolveFromNodeModules(packageNames, warnings);
     if (packageDefinitions.length === 0) {
       throw new Error('No SFPM artifacts found in node_modules. Run `pnpm install` first.');
     }
@@ -146,6 +167,27 @@ export class ArtifactProvider implements ProjectDefinitionProvider {
 
     this.cachedResult = {definition: validated, warnings};
     return this.cachedResult;
+  }
+
+  /**
+   * Resolve a single package from node_modules on demand.
+   * Called by ProjectGraph when it encounters a dependency not in the
+   * initial ProjectDefinition.
+   */
+  resolvePackage(packageName: string): PackageDefinition | undefined {
+    const nodeModulesPath = path.join('node_modules', packageName);
+    const pkgJsonPath = path.join(this.projectDir, nodeModulesPath, 'package.json');
+
+    try {
+      if (!fs.existsSync(pkgJsonPath)) return undefined;
+      const pkgJson: NpmPackageJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+      if (!pkgJson.sfpm?.packageType) return undefined;
+
+      this.logger?.debug(`Resolved dependency ${packageName} from node_modules`);
+      return this.toPackageDefinition(pkgJson, nodeModulesPath);
+    } catch {
+      return undefined;
+    }
   }
 
   resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {

@@ -237,6 +237,33 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
   }
 
   /**
+   * Resolve a single package from the workspace on demand.
+   * Called by ProjectGraph when a dependency is not in the initial definition.
+   */
+  resolvePackage(packageName: string): PackageDefinition | undefined {
+    // Check if already resolved in the cached definition
+    const cached = this.cachedResult?.definition.packages.find(p => p.name === packageName || stripScope(p.name) === stripScope(packageName));
+    if (cached) return cached;
+
+    // Look for the package in workspace members
+    const workspaceDirs = this.discoverWorkspaceMembers();
+    for (const dir of workspaceDirs) {
+      const pkgJsonPath = path.join(this.projectDir, dir, 'package.json');
+      try {
+        if (!fs.existsSync(pkgJsonPath)) continue;
+        const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+        if (pkgJson.name === packageName && pkgJson.sfpm?.packageType) {
+          return toPackageDefinition(pkgJson, dir);
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
    * Resolve a single-package ProjectDefinition from the workspace package.json.
    *
    * Builds a single-package definition suitable for staging and building.

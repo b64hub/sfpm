@@ -79,7 +79,9 @@ export default class ProjectService {
     const definitionProvider = provider ?? await detectProvider(projectRoot, sfpmConfig);
     definitionProvider.resolve();
 
-    const graph = ProjectGraph.buildGraph(definitionProvider.getProjectDefinition());
+    const resolver = definitionProvider.resolvePackage?.bind(definitionProvider);
+    const definition = definitionProvider.getProjectDefinition();
+    const graph = ProjectGraph.buildGraph(definition.packages, resolver);
 
     return new ProjectService(graph, sfpmConfig, definitionProvider);
   }
