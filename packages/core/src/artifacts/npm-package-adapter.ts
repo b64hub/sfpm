@@ -85,13 +85,9 @@ export function toNpmPackageJson(
 
   // Start from workspace package.json, omit workspace-only fields.
   // Keep scripts — npm lifecycle hooks (postinstall, etc.) need to travel with the artifact.
+  // Note: workspace: protocol in dependencies is preserved.
+  // pnpm resolves it automatically during `pnpm publish`.
   const {devDependencies: _devDeps, private: _private, ...staticFields} = workspacePkgJson;
-
-  // Resolve workspace: protocol to normal version ranges so the artifact
-  // is self-contained and installable outside a workspace context.
-  if (staticFields.dependencies) {
-    staticFields.dependencies = resolveWorkspaceProtocol(staticFields.dependencies);
-  }
 
   const packageJson: NpmPackageJson = {
     ...staticFields,
