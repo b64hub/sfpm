@@ -9,6 +9,7 @@ import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adap
 import {BuildError} from '../../types/errors.js';
 import Logger from '../../types/logger.js';
 import {BuildOptions, PackageType} from '../../types/package.js'
+import {PackageVersionValidationDescriptor} from '../../types/validation.js';
 import PackageService, {PackageVersionCreateReportProgress, PackageVersionCreateRequestResult} from '../package-service.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
@@ -64,78 +65,21 @@ export default class UnlockedPackageBuilder implements Builder {
     }
 
     await this.pruneOrgDependentPackage();
-    await this.buildPackage();
+    const result = await this.buildPackage();
 
-    // Return build results — no more side-effect mutations
-    const {validationState} = this.sfpmPackage;
+    this.hydratePackageVersionResult(result);
+    const validationDescriptor = this.buildValidationDescriptor(result?.Id);
+
     return {
+      packageName: this.sfpmPackage.name,
       packageType: PackageType.Unlocked,
       packageVersionId: this.sfpmPackage.packageVersionId,
-      pendingValidation: validationState?.status === 'pending' ? validationState.pending : undefined,
-      validationState,
-      version: this.sfpmPackage.version,
+      pendingValidation: validationDescriptor,
+      version: this.sfpmPackage.version as string,
     };
   }
 
-  /**
-   * Apply a successful create result to the package — updates version,
-   * emits the completion event, and enforces code coverage if required.
-   *
-   * Used both in the happy path and the verify-after-failure recovery.
-   */
-  private applyCreateResult(result: PackageVersionCreateRequestResult | undefined): void {
-    if (!result) return;
-
-    if (result.SubscriberPackageVersionId) {
-      this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
-    }
-
-    if (result.VersionNumber) {
-      this.sfpmPackage.version = result.VersionNumber;
-      this.logger?.debug(`Updated package version to ${result.VersionNumber}`);
-    }
-
-    // Set validation state on the domain model
-    const validated = Boolean(this.options.validation) && this.options.validation !== 'none';
-    const checks: Array<'dependencies' | 'deploy' | 'test'> = validated ? ['deploy', 'test', 'dependencies'] : [];
-
-    if (validated) {
-      this.sfpmPackage.validationState = {
-        checks,
-        pending: {
-          operationId: result.Id,
-          operationType: 'package-version-request',
-          packageName: this.sfpmPackage.packageName,
-          startedAt: new Date().toISOString(),
-          targetOrg: this.devhub?.getUsername() ?? 'unknown',
-        },
-        status: 'pending',
-      };
-    } else {
-      this.sfpmPackage.validationState = {
-        checks,
-        status: 'passed',
-        ...(result.CodeCoverage !== undefined && result.CodeCoverage !== null && {testCoverage: result.CodeCoverage}),
-      };
-    }
-
-    this.sink?.createComplete({
-      codeCoverage: result.CodeCoverage ?? undefined,
-      createdDate: result.CreatedDate ?? undefined,
-      hasMetadataRemoved: result.HasMetadataRemoved ?? undefined,
-      hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
-      packageId: result.Package2Id ?? '',
-      packageVersionCreateRequestId: result.Id,
-      packageVersionId: result.SubscriberPackageVersionId ?? '',
-      status: result.Status,
-      subscriberPackageVersionId: result.SubscriberPackageVersionId ?? '',
-      totalNumberOfMetadataFiles: result.TotalNumberOfMetadataFiles ?? undefined,
-      totalSizeOfMetadataFiles: result.TotalSizeOfMetadataFiles ?? undefined,
-      versionNumber: result.VersionNumber || this.sfpmPackage.version || '',
-    });
-  }
-
-  private async buildPackage(): Promise<void> {
+  private async buildPackage(): Promise<PackageVersionCreateRequestResult | undefined> {
     await this.rewriteMetadataPathsForCwd();
 
     const packageService = new PackageService(this.devhub!, this.logger);
@@ -181,7 +125,20 @@ export default class UnlockedPackageBuilder implements Builder {
       await this.handleFailure(packageService, error, tracker, waitTime);
     }
 
-    this.applyCreateResult(result);
+    return result;
+  }
+
+  private buildValidationDescriptor(requestId: string | undefined): PackageVersionValidationDescriptor | undefined {
+    if (!this.options.validation && this.options.validation === 'none') return undefined;
+    if (!requestId) return undefined;
+
+    return {
+      devhub: this.devhub?.getUsername() ?? 'unknown',
+      operationType: 'package-version-request',
+      packageName: this.sfpmPackage.packageName,
+      packageVersionRequestId: requestId,
+      startedAt: new Date().toISOString(),
+    }
   }
 
   /**
@@ -206,7 +163,7 @@ export default class UnlockedPackageBuilder implements Builder {
 
         if (status.Status === 'Success' && status.SubscriberPackageVersionId) {
           this.logger?.info('Package version creation succeeded server-side despite client error');
-          this.applyCreateResult(status);
+          this.hydratePackageVersionResult(status);
           return;
         }
 
@@ -301,6 +258,40 @@ export default class UnlockedPackageBuilder implements Builder {
         this.logger.error(`Creation errors: ${data.Error.join('\n')}`);
       }
     }
+  }
+
+  /**
+   * Apply a successful create result to the package — updates version,
+   * emits the completion event, and enforces code coverage if required.
+   *
+   * Used both in the happy path and the verify-after-failure recovery.
+   */
+  private hydratePackageVersionResult(result: PackageVersionCreateRequestResult | undefined): void {
+    if (!result) return;
+
+    if (result.SubscriberPackageVersionId) {
+      this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
+    }
+
+    if (result.VersionNumber) {
+      this.sfpmPackage.version = result.VersionNumber;
+      this.logger?.debug(`Updated package version to ${result.VersionNumber}`);
+    }
+
+    this.sink?.createComplete({
+      codeCoverage: result.CodeCoverage ?? undefined,
+      createdDate: result.CreatedDate ?? undefined,
+      hasMetadataRemoved: result.HasMetadataRemoved ?? undefined,
+      hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
+      packageId: result.Package2Id ?? '',
+      packageVersionCreateRequestId: result.Id,
+      packageVersionId: result.SubscriberPackageVersionId ?? '',
+      status: result.Status,
+      subscriberPackageVersionId: result.SubscriberPackageVersionId ?? '',
+      totalNumberOfMetadataFiles: result.TotalNumberOfMetadataFiles ?? undefined,
+      totalSizeOfMetadataFiles: result.TotalSizeOfMetadataFiles ?? undefined,
+      versionNumber: result.VersionNumber || this.sfpmPackage.version || '',
+    });
   }
 
   /**

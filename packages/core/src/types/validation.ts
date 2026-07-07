@@ -1,3 +1,4 @@
+import {TestLevel} from './package.js';
 
 /**
  * Validation level for builds.
@@ -9,9 +10,23 @@
  */
 export type ValidationLevel = 'full' | 'local' | 'none' | 'org';
 
-
 /** Individual validation check that was performed during the build. */
 export type ValidationCheck = 'dependencies' | 'deploy' | 'test';
+
+export interface PackageVersionValidationDescriptor {
+  devhub: string;
+  operationType: 'package-version-request';
+  packageName: string;
+  packageVersionRequestId: string;
+  startedAt?: string;
+}
+
+export interface DeployValidationDescriptor {
+  operationType: 'deploy';
+  packageName: string;
+  targetOrg: string;
+  testLevel: TestLevel
+}
 
 /**
  * Serializable descriptor for a pending (in-flight) validation operation.
@@ -19,18 +34,7 @@ export type ValidationCheck = 'dependencies' | 'deploy' | 'test';
  * subsequent CI steps) can pick up and resolve the validation without the
  * original process being alive.
  */
-export interface PendingValidationDescriptor {
-  /** The SF operation identifier (deployId for source, PackageVersionCreateRequestId for unlocked) */
-  operationId: string;
-  /** Which SF API operation to poll for resolution */
-  operationType: 'deploy' | 'package-version-request';
-  /** Package this validation belongs to */
-  packageName: string;
-  /** ISO timestamp when the operation was initiated */
-  startedAt: string;
-  /** The org against which the operation was submitted */
-  targetOrg: string;
-}
+export type PendingValidationDescriptor = DeployValidationDescriptor | PackageVersionValidationDescriptor;
 
 /**
  * Discriminated union describing what validation was performed and its outcome.
