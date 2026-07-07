@@ -83,6 +83,31 @@ export interface OrchestrationErrorPayload {
 }
 
 // ============================================================================
+// Regression Test Payloads
+// ============================================================================
+
+export interface RegressionTestStartPayload {
+  /** Dependent packages being regression-tested */
+  packages: string[];
+}
+
+export interface RegressionTestPackageCompletePayload {
+  error?: string;
+  failed: number;
+  /** The dependent package that was tested */
+  packageName: string;
+  passed: number;
+  success: boolean;
+  total: number;
+}
+
+export interface RegressionTestCompletePayload {
+  duration: number;
+  failed: string[];
+  passed: string[];
+}
+
+// ============================================================================
 // Derived Event Types (what listeners receive = Payload & OrchestrationBaseEvent)
 // ============================================================================
 
@@ -92,6 +117,9 @@ export type OrchestrationPackageCompleteEvent = OrchestrationBaseEvent & Orchest
 export type OrchestrationLevelCompleteEvent = OrchestrationBaseEvent & OrchestrationLevelCompletePayload;
 export type OrchestrationCompleteEvent<TResult> = OrchestrationBaseEvent & OrchestrationCompletePayload<TResult>;
 export type OrchestrationErrorEvent = OrchestrationBaseEvent & OrchestrationErrorPayload;
+export type RegressionTestStartEvent = OrchestrationBaseEvent & RegressionTestStartPayload;
+export type RegressionTestPackageCompleteEvent = OrchestrationBaseEvent & RegressionTestPackageCompletePayload;
+export type RegressionTestCompleteEvent = OrchestrationBaseEvent & RegressionTestCompletePayload;
 
 // ============================================================================
 // Orchestration Event Map
@@ -103,6 +131,9 @@ export interface OrchestrationEvents<TResult> {
   'level:complete': [OrchestrationLevelCompleteEvent];
   'level:start': [OrchestrationLevelStartEvent];
   'package:complete': [OrchestrationPackageCompleteEvent];
+  'regression:complete': [RegressionTestCompleteEvent];
+  'regression:package:complete': [RegressionTestPackageCompleteEvent];
+  'regression:start': [RegressionTestStartEvent];
   start: [OrchestrationStartEvent];
 }
 
@@ -161,6 +192,18 @@ export class OrchestrationEventBus<TResult> extends TypedEventEmitter<Orchestrat
 
   packageComplete(p: OrchestrationPackageCompletePayload): void {
     this.emit('package:complete', p as any);
+  }
+
+  regressionComplete(p: RegressionTestCompletePayload): void {
+    this.emit('regression:complete', p as any);
+  }
+
+  regressionPackageComplete(p: RegressionTestPackageCompletePayload): void {
+    this.emit('regression:package:complete', p as any);
+  }
+
+  regressionStart(p: RegressionTestStartPayload): void {
+    this.emit('regression:start', p as any);
   }
 
   start(p: OrchestrationStartPayload): void {

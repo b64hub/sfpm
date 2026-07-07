@@ -2,9 +2,9 @@ import type {
   TestResult as ApexTestResult,
   TestRunIdResult,
 } from '@salesforce/apex-node';
+import type {Connection} from '@salesforce/core';
 
 import {TestLevel, TestService} from '@salesforce/apex-node';
-import {Org} from '@salesforce/core';
 
 import type Logger from '../types/logger.js';
 
@@ -55,37 +55,35 @@ export interface RunTestsOptions {
 /**
  * Low-level service for running Apex tests against a Salesforce org.
  *
- * Package-agnostic — operates on test class names and an org alias.
+ * Package-agnostic — operates on test class names and a Connection.
  * Provides both fire-and-forget (returns testRunId) and await (polls for result) APIs.
  *
  * @example
  * ```ts
- * const service = new ApexTestService(logger);
- * const testRunId = await service.runTests('my-org', ['MyTestClass']);
- * const result = await service.awaitTests(testRunId, 'my-org');
+ * const connection = org.getConnection();
+ * const service = new ApexTestService(connection, logger);
+ * const testRunId = await service.runTests(['MyTestClass']);
+ * const result = await service.awaitTests(testRunId);
  * ```
  */
 export class ApexTestService {
+  private readonly connection: Connection;
   private readonly logger?: Logger;
+  private readonly testService: TestService;
 
-  constructor(logger?: Logger) {
+  constructor(connection: Connection, logger?: Logger) {
+    this.connection = connection;
     this.logger = logger;
+    this.testService = new TestService(connection);
   }
 
   /**
    * Wait for a previously started test run to complete and return results.
    * Polls the Salesforce API until tests finish.
    */
-  async awaitTests(
-    testRunId: string,
-    targetOrg: string,
-  ): Promise<TestRunResult> {
-    const org = await Org.create({aliasOrUsername: targetOrg});
-    const connection = org.getConnection();
-    const testService = new TestService(connection);
-
-    this.logger?.info(`Awaiting test run ${testRunId} on ${targetOrg}`);
-    const apexResult = await testService.reportAsyncResults(testRunId, true);
+  async awaitTests(testRunId: string): Promise<TestRunResult> {
+    this.logger?.info(`Awaiting test run ${testRunId}`);
+    const apexResult = await this.testService.reportAsyncResults(testRunId, true);
 
     return this.mapResult(apexResult as ApexTestResult);
   }
@@ -95,28 +93,23 @@ export class ApexTestService {
    * The tests continue server-side — use {@link awaitTests} to get results.
    */
   async runTests(
-    targetOrg: string,
     testClasses: string[],
     _options?: RunTestsOptions,
   ): Promise<string> {
-    const org = await Org.create({aliasOrUsername: targetOrg});
-    const connection = org.getConnection();
-    const testService = new TestService(connection);
-
-    const payload = await testService.buildAsyncPayload(
+    const payload = await this.testService.buildAsyncPayload(
       TestLevel.RunSpecifiedTests,
       undefined,
       testClasses.join(','),
     );
 
-    const result = await testService.runTestAsynchronous(
+    const result = await this.testService.runTestAsynchronous(
       payload,
       false,
       true, // immediatelyReturn — just get the testRunId
     );
 
     const {testRunId} = (result as TestRunIdResult);
-    this.logger?.info(`Test run started: ${testRunId} against ${targetOrg} (${testClasses.length} classes)`);
+    this.logger?.info(`Test run started: ${testRunId} (${testClasses.length} classes)`);
 
     return testRunId;
   }
