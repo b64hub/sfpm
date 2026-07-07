@@ -29,28 +29,27 @@ export interface ForkWatcherResult {
 // ============================================================================
 
 /**
- * Save a watcher state and fork a background polling process.
+ * Save a watcher state and fork a background process.
  *
- * The forked process runs `watcher-runner.js` — a generic script that:
- * 1. Loads the state file
- * 2. Resolves the polling strategy from the strategy registry
- * 3. Connects to Salesforce
- * 4. Polls in a loop with retry/backoff
- * 5. Updates the state file with results
- * 6. Sends a desktop notification
+ * Two runner scripts are available:
+ * - `watcher-runner.js` (default) — generic poll loop for deploy/test jobs.
+ *   Resolves a {@link PollingStrategy} by `jobType`, connects, polls in a loop.
+ * - `validation-runner.js` — single-pass validation for build jobs.
+ *   Runs {@link ValidationResolver.resolve()} directly. Use via
+ *   {@link validationRunnerScript}.
  *
  * The child process is detached and unref'd so the parent CLI process
  * can exit immediately.
  */
-export async function forkWatcher(state: WatcherState): Promise<ForkWatcherResult> {
+export async function forkWatcher(state: WatcherState, runnerScript?: string): Promise<ForkWatcherResult> {
   const store = new WatcherStateStore(state.projectDir);
   const id = await store.save(state);
   const stateFilePath = store.getFilePath(id);
 
   const thisDir = path.dirname(fileURLToPath(import.meta.url));
-  const runnerScript = path.resolve(thisDir, 'watcher-runner.js');
+  const script = runnerScript ?? path.resolve(thisDir, 'watcher-runner.js');
 
-  const child = fork(runnerScript, [stateFilePath, id], {
+  const child = fork(script, [stateFilePath, id], {
     detached: true,
     stdio: 'ignore',
   });
@@ -63,4 +62,12 @@ export async function forkWatcher(state: WatcherState): Promise<ForkWatcherResul
   await store.update(id, state);
 
   return {id, pid: child.pid, stateFilePath};
+}
+
+/**
+ * Resolve the path to the validation-runner.js script (sibling of this file).
+ */
+export function validationRunnerScript(): string {
+  const thisDir = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(thisDir, 'validation-runner.js');
 }

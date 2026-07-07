@@ -1,7 +1,6 @@
 import type {Connection} from '@salesforce/core';
 
 import {Org} from '@salesforce/core';
-import fs from 'node:fs';
 
 import type {ScopedValidationSink, ValidationEventBus, ValidationEventSink} from '../../events/index.js';
 import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
@@ -33,41 +32,6 @@ export interface ResolveOptions {
   pollingIntervalMs?: number;
   /** Run regression tests on direct dependents after deploy validation */
   regressionTest?: boolean;
-}
-
-const PENDING_VALIDATIONS_FILE = 'pending-validations.json';
-
-// ============================================================================
-// ValidationCache
-// ============================================================================
-
-class ValidationCache {
-  data: Map<string, PendingValidationDescriptor> = new Map();
-  projectRoot: string;
-
-  constructor(projectRoot: string) {
-    this.projectRoot = projectRoot;
-  }
-
-  public add(descriptor: PendingValidationDescriptor): void {
-    this.data.set(descriptor.packageName, descriptor);
-  }
-
-  public async read(): Promise<Map<string, PendingValidationDescriptor>> {
-    const data = await fs.promises.readFile(`${this.projectRoot}/.sfpm/${PENDING_VALIDATIONS_FILE}`, 'utf8');
-    const parsed = JSON.parse(data) as Record<string, PendingValidationDescriptor>;
-    this.data = new Map(Object.entries(parsed));
-    return this.data;
-  }
-
-  public remove(packageName: string): void {
-    this.data.delete(packageName);
-  }
-
-  public async write(): Promise<void> {
-    const data = JSON.stringify(Object.fromEntries(this.data), null, 2);
-    await fs.promises.writeFile(`${this.projectRoot}/.sfpm/${PENDING_VALIDATIONS_FILE}`, data, 'utf8');
-  }
 }
 
 // ============================================================================

@@ -27,7 +27,7 @@ import SfpmCommand from '../../sfpm-command.js'
 import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
 import {ValidationProgressRenderer} from '../../ui/validation-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
-import {forkWatcher} from '../../utils/watcher.js'
+import {forkWatcher, validationRunnerScript} from '../../utils/watcher.js'
 
 interface ResolvedBuildFlags {
   async: boolean;
@@ -273,8 +273,8 @@ export default class Build extends SfpmCommand {
   /**
    * Handle pending validations: resolve inline or fork a background watcher.
    *
-   * - No `--async`: resolve inline with ValidationResolver, fail on any failures.
-   * - `--async`: fork watcher process for background polling.
+   * - No `--async`: resolve all validations inline with ValidationResolver.
+   * - `--async`: fork watcher process for background resolution.
    */
   private async handleValidationResults(
     pendingValidations: PendingValidationDescriptor[],
@@ -283,35 +283,14 @@ export default class Build extends SfpmCommand {
     if (pendingValidations.length === 0) return
 
     if (resolved.async) {
-      await this.handleValidationResutlsAsync(pendingValidations, resolved);
+      await this.handleValidationResultsAsync(pendingValidations, resolved);
       return;
     }
 
-    const validationBus = new ValidationEventBus()
-    const renderer = new ValidationProgressRenderer(resolved.mode, {
-      error: msg => this.error(msg),
-      log: msg => this.log(msg),
-    })
-    renderer.attachTo(validationBus)
-
-    const resolver = new ValidationResolver(this.sfpmLogger, validationBus);
-    const results = await resolver.resolve(pendingValidations, {
-      maxWaitMs: resolved.waitMinutes * 60 * 1000,
-    });
-
-    const failures: string[] = [];
-    for (const [packageName, result] of results) {
-      if (result.status === 'failed') {
-        failures.push(`${packageName}: ${result.error}`);
-      }
-    }
-
-    if (failures.length > 0) {
-      this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1})
-    }
+    await this.resolveValidationsInline(pendingValidations, resolved);
   }
 
-  private async handleValidationResutlsAsync(pendingValidations: PendingValidationDescriptor[], resolved: ResolvedBuildFlags): Promise<void> {
+  private async handleValidationResultsAsync(pendingValidations: PendingValidationDescriptor[], resolved: ResolvedBuildFlags): Promise<void> {
     this.log(chalk.yellow('\nValidation results will be available asynchronously.'));
 
     const payload: BuildWatcherPayload = {
@@ -321,10 +300,7 @@ export default class Build extends SfpmCommand {
           username: resolved.autoCreatedBuildOrg.username,
         },
       }),
-      targets: pendingValidations.map(pv => ({
-        packageName: pv.packageName,
-        packageVersionCreateRequestId: pv.operationId,
-      })),
+      validations: pendingValidations,
     };
 
     const state: WatcherState = {
@@ -338,7 +314,7 @@ export default class Build extends SfpmCommand {
       watcherStatus: 'starting',
     };
 
-    const {id, pid} = await forkWatcher(state);
+    const {id, pid} = await forkWatcher(state, validationRunnerScript());
     const pkgNames = pendingValidations.map(pv => pv.packageName).join(', ');
 
     if (resolved.mode === 'json') {
@@ -430,6 +406,35 @@ export default class Build extends SfpmCommand {
       resolvedPackages,
       sfpmConfig,
       waitMinutes: flags.wait,
+    }
+  }
+
+  private async resolveValidationsInline(
+    descriptors: PendingValidationDescriptor[],
+    resolved: ResolvedBuildFlags,
+  ): Promise<void> {
+    const validationBus = new ValidationEventBus()
+    const renderer = new ValidationProgressRenderer(resolved.mode, {
+      error: msg => this.error(msg),
+      log: msg => this.log(msg),
+    })
+    renderer.attachTo(validationBus)
+
+    const projectService = await ProjectService.getInstance(resolved.projectDir);
+    const resolver = new ValidationResolver(projectService.getDefinitionProvider(), projectService.getProjectGraph(), this.sfpmLogger, validationBus);
+    const results = await resolver.resolve(descriptors, {
+      maxWaitMs: resolved.waitMinutes * 60 * 1000,
+    });
+
+    const failures: string[] = [];
+    for (const [packageName, result] of results) {
+      if (result.status === 'failed') {
+        failures.push(`${packageName}: ${result.error}`);
+      }
+    }
+
+    if (failures.length > 0) {
+      this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1})
     }
   }
 }

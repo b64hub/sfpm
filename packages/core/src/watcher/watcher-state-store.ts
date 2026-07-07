@@ -15,11 +15,16 @@ const WATCHERS_DIR = '.sfpm/watchers';
 // ============================================================================
 
 /**
- * Reads and writes watcher state files for async polling jobs.
+ * Reads and writes watcher state files for async background jobs.
  *
  * State files live at `<projectDir>/.sfpm/watchers/<id>.json`.
- * Each async job creates a state file. The watcher runner updates
- * it with results when polling completes.
+ * Each async job (build validation, deploy poll, test poll) creates
+ * a state file. The background runner updates it with results on completion.
+ *
+ * This is the unified persistence layer for all async operations.
+ * The {@link ValidationResolver} is intentionally stateless — it owns
+ * the validation data format and execution logic, while this store
+ * owns serialization and cross-process state transfer.
  */
 export class WatcherStateStore {
   private readonly dir: string;
