@@ -400,10 +400,10 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   }
 
   public getComponentSet(sourcePath?: string): ComponentSet {
-    const resolvedPath = sourcePath ?? this.packageDirectory;
+    const resolvedPath = sourcePath ?? this.packageBuiltSourceDirectory ?? this.packageDirectory;
 
     if (!resolvedPath) {
-      throw new Error('Package must have a working directory and a defined path');
+      throw new Error('Package must have a metadata source directory and a defined path');
     }
 
     if (!this._componentSet || sourcePath) {
