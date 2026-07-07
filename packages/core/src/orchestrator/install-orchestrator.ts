@@ -26,10 +26,7 @@ import {
 // Types
 // ============================================================================
 
-export type InstallOrchestratorOptions = InstallOptions & OrchestratorOptions & {
-  /** Run tests in direct dependents of installed packages after orchestration completes. */
-  regressionTest?: boolean;
-};
+export type InstallOrchestratorOptions = InstallOptions & OrchestratorOptions;
 
 /** Regression test outcome for a single dependent package. */
 export interface RegressionTestResult {

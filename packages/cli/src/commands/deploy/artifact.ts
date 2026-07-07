@@ -23,6 +23,7 @@ export default class DeployArtifact extends Deploy {
       {
         force: flags.force,
         includeDependencies: !flags['no-dependencies'],
+        regressionTest: flags['regression-test'],
         unlocked: {sourceOnly: true},
       },
       logger,

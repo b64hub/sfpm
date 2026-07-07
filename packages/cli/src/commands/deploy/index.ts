@@ -45,6 +45,7 @@ export default class Deploy extends SfpmCommand {
     force: Flags.boolean({char: 'f', description: 'force deploy even if already installed'}),
     'no-dependencies': Flags.boolean({description: 'only deploy the specified packages, skip transitive dependencies'}),
     'no-hooks': Flags.boolean({description: 'skip lifecycle hooks'}),
+    'regression-test': Flags.boolean({description: 'run tests in direct dependents after deploy to detect regressions'}),
     'target-org': Flags.string({
       char: 'o',
       description: 'target org username',
@@ -67,6 +68,7 @@ export default class Deploy extends SfpmCommand {
       {
         force: flags.force,
         includeDependencies: !flags['no-dependencies'],
+        regressionTest: flags['regression-test'],
         testLevel: flags['test-level'] as TestLevel | undefined,
       },
       logger,

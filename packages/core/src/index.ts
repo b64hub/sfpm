@@ -33,7 +33,10 @@ export {default as Git} from './git/git.js';
 export {isHookEnabled, type ResolvedHookConfig, resolveHookConfig} from './lifecycle/hook-config.js';
 export {LifecycleEngine} from './lifecycle/lifecycle-engine.js';
 export {BuildOrchestrationTask, BuildOrchestrator, type BuildOrchestratorOptions} from './orchestrator/build-orchestrator.js';
-export {InstallOrchestrationTask, InstallOrchestrator, type InstallOrchestratorOptions} from './orchestrator/install-orchestrator.js';
+export {
+  type InstallOrchestrationResult, InstallOrchestrationTask,
+  InstallOrchestrator, type InstallOrchestratorOptions, type RegressionTestResult,
+} from './orchestrator/install-orchestrator.js';
 export {
   type OrchestrationTask, Orchestrator, type OrchestratorOptions,
 } from './orchestrator/orchestrator.js';

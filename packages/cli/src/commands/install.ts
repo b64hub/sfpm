@@ -36,6 +36,7 @@ export default class Install extends SfpmCommand {
     force: Flags.boolean({char: 'f', description: 'force reinstall even if already installed'}),
     'installation-key': Flags.string({char: 'k', description: 'installation key for unlocked packages'}),
     'no-dependencies': Flags.boolean({description: 'only install the specified packages, skip transitive dependencies'}),
+    'regression-test': Flags.boolean({description: 'run tests in direct dependents after install to detect regressions'}),
     'target-org': Flags.string({
       char: 'o', description: 'target org username', env: 'SF_TARGET_ORG', required: true,
     }),
@@ -116,7 +117,7 @@ export default class Install extends SfpmCommand {
       targetOrg,
       projectConfig,
       projectGraph,
-      {...installOptions, includeDependencies: !flags['no-dependencies']},
+      {...installOptions, includeDependencies: !flags['no-dependencies'], regressionTest: flags['regression-test']},
       this.sfpmLogger,
     )
 

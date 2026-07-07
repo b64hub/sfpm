@@ -10,6 +10,9 @@ import type {
   OrchestrationLevelCompleteEvent,
   OrchestrationLevelStartEvent,
   OrchestrationStartEvent,
+  RegressionTestCompleteEvent,
+  RegressionTestPackageCompleteEvent,
+  RegressionTestStartEvent,
 } from '@b64hub/sfpm-core';
 
 import chalk from 'chalk';
@@ -79,6 +82,9 @@ export class InstallProgressRenderer {
     complete: {description: 'Orchestration complete', handler: this.handleOrchestrationComplete.bind(this)},
     'level:complete': {description: 'Level complete', handler: this.handleOrchestrationLevelComplete.bind(this)},
     'level:start': {description: 'Level started', handler: this.handleOrchestrationLevelStart.bind(this)},
+    'regression:complete': {description: 'Regression tests complete', handler: this.handleRegressionComplete.bind(this)},
+    'regression:package:complete': {description: 'Regression package complete', handler: this.handleRegressionPackageComplete.bind(this)},
+    'regression:start': {description: 'Regression tests started', handler: this.handleRegressionStart.bind(this)},
     start: {description: 'Orchestration started', handler: this.handleOrchestrationStart.bind(this)},
   };
   private targetOrg?: string;
@@ -302,6 +308,49 @@ export class InstallProgressRenderer {
     }
 
     this.display.start(title, event.packageNames, event.levels);
+  }
+
+  // ========================================================================
+  // Regression Test Events
+  // ========================================================================
+
+  private handleRegressionComplete(event: RegressionTestCompleteEvent): void {
+    this.logEvent('regression:complete', event);
+
+    const passCount = event.passed.length;
+    const failCount = event.failed.length;
+    const duration = formatDuration(event.duration);
+
+    if (failCount === 0) {
+      this.display.info(`${chalk.green('✓')} Regression tests passed — ${chalk.cyan(String(passCount))} dependent package(s) ${chalk.gray(`(${duration})`)}`);
+    } else {
+      this.display.info(`${chalk.red('✗')} Regression tests — ${chalk.green(String(passCount))} passed, ${chalk.red(String(failCount))} failed ${chalk.gray(`(${duration})`)}`);
+    }
+  }
+
+  private handleRegressionPackageComplete(event: RegressionTestPackageCompleteEvent): void {
+    this.logEvent('regression:package:complete', event);
+
+    if (event.success) {
+      const detail = `${event.passed}/${event.total} tests passed`;
+      this.display.packageComplete(event.packageName, detail);
+    } else if (event.error) {
+      this.display.packageFail(event.packageName, event.error);
+    } else {
+      this.display.packageFail(event.packageName, `${event.failed}/${event.total} tests failed`);
+    }
+  }
+
+  private handleRegressionStart(event: RegressionTestStartEvent): void {
+    this.logEvent('regression:start', event);
+
+    const pkgText = event.packages.length === 1 ? 'dependent' : 'dependents';
+    this.display.info(`\n${chalk.cyan('⟳')} Running regression tests on ${chalk.cyan(String(event.packages.length))} ${pkgText}`);
+
+    for (const pkg of event.packages) {
+      this.display.packageStart(pkg);
+      this.display.subtaskStart(pkg, 'running apex tests');
+    }
   }
 
   // ========================================================================

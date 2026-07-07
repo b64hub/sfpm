@@ -31,7 +31,7 @@ import {forkWatcher} from '../../utils/watcher.js'
 
 interface ResolvedBuildFlags {
   async: boolean;
-  autoCreatedBuildOrg?: {hubOrg: Org; username: string};
+  autoCreatedBuildOrg?: {devhub: Org; username: string};
   buildOptions: BuildOrchestratorOptions;
   buildOrgUsername?: string;
   dependencyAnalyzer?: DependencyAnalyzer;
@@ -192,7 +192,7 @@ export default class Build extends SfpmCommand {
   private async cleanupBuildOrg(resolved: ResolvedBuildFlags): Promise<void> {
     if (!resolved.autoCreatedBuildOrg) return
 
-    const {hubOrg, username} = resolved.autoCreatedBuildOrg
+    const {devhub: hubOrg, username} = resolved.autoCreatedBuildOrg
     const spinner = resolved.mode === 'interactive'
       ? ora(`Deleting build org ${chalk.cyan(username)}...`).start()
       : undefined
@@ -263,7 +263,7 @@ export default class Build extends SfpmCommand {
       spinner?.succeed(`Build org created: ${chalk.cyan(username)}`)
 
       resolved.buildOrgUsername = username
-      resolved.autoCreatedBuildOrg = {hubOrg, username}
+      resolved.autoCreatedBuildOrg = {devhub: hubOrg, username}
     } catch (error) {
       spinner?.fail('Failed to create scratch org')
       throw error
