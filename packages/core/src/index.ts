@@ -109,7 +109,10 @@ export * from './types/npm.js';
 export * from './types/org.js';
 export * from './types/package.js';
 export * from './types/project.js';
-export {type PendingValidationDescriptor, type ValidationLevel, type ValidationState} from './types/validation.js';
+export {
+  type DeployValidationDescriptor, type PackageVersionValidationDescriptor,
+  type PendingValidationDescriptor, type ValidationLevel, type ValidationState,
+} from './types/validation.js';
 export * from './types/watcher.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
