@@ -175,10 +175,6 @@ export class ArtifactRepository {
     return fs.existsSync(this.getDistPackageJsonPath());
   }
 
-  // =========================================================================
-  // Legacy Compatibility
-  // =========================================================================
-
   /**
    * Read dist/package.json asynchronously.
    */
@@ -196,6 +192,10 @@ export class ArtifactRepository {
     return undefined;
   }
 
+  // =========================================================================
+  // Legacy Compatibility
+  // =========================================================================
+
   /**
    * Read dist/package.json synchronously.
    */
@@ -211,6 +211,26 @@ export class ArtifactRepository {
     }
 
     return undefined;
+  }
+
+  /**
+   * Update the `sfpm.validation` field in `dist/package.json`.
+   * Used by the validation resolver to stamp results after resolution.
+   */
+  public async updateValidation(validation: Record<string, unknown>): Promise<void> {
+    const pkgJsonPath = this.getDistPackageJsonPath();
+    const packageJson = await this.readDistPackageJson();
+    if (!packageJson) {
+      this.logger?.warn(`Cannot update validation — dist/package.json not found for ${this.packageName}`);
+      return;
+    }
+
+    if (!packageJson.sfpm) {
+      packageJson.sfpm = {} as any;
+    }
+
+    (packageJson.sfpm as any).validation = validation;
+    await fs.writeJson(pkgJsonPath, packageJson, {spaces: 2});
   }
 
   // =========================================================================

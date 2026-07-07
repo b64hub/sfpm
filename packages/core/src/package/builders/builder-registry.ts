@@ -4,7 +4,7 @@ import type {BuildEventSink} from '../../events/build-event-bus.js';
 
 import Logger from '../../types/logger.js';
 import {BuildOptions, PackageType} from '../../types/package.js'
-import {PendingValidationDescriptor, ValidationState} from '../../types/validation.js';
+import {PendingValidationDescriptor} from '../../types/validation.js';
 import SfpmPackage from '../sfpm-package.js';
 
 // ============================================================================

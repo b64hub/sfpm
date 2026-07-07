@@ -17,7 +17,6 @@ import {
   VersionFormat,
 } from '../types/package.js';
 import {OrgAliasConfig, PackageDefinition} from '../types/project.js';
-import {type ValidationState} from '../types/validation.js';
 import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
@@ -220,7 +219,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   public testLevel?: TestLevel;
   private _analyzed = false;
   private _customFields?: SourceComponent[];
-  private _validationState?: ValidationState;
 
   constructor(packageName: string, projectDirectory: string) {
     super(packageName, projectDirectory);
@@ -371,14 +369,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     .getSourceComponents()
     .toArray()
     .filter(c => c.type.id === 'apextrigger');
-  }
-
-  get validationState(): undefined | ValidationState {
-    return this._validationState;
-  }
-
-  set validationState(state: ValidationState) {
-    this._validationState = state;
   }
 
   /** Alias for the version property, satisfying the SourceDeployable interface. */

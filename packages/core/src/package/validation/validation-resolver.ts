@@ -15,6 +15,7 @@ import type {
   ValidationStatePassed,
 } from '../../types/validation.js';
 
+import {ArtifactRepository} from '../../artifacts/artifact-repository.js';
 import {type InstallOrchestrationResult, InstallOrchestrator} from '../../orchestrator/install-orchestrator.js';
 import {ProjectGraph} from '../../project/project-graph.js';
 import {type PackageValidationResult, ValidationPoller} from './validation-poller.js';
@@ -122,13 +123,15 @@ export class ValidationResolver {
       this.sink?.complete({
         failed, passed, timedOut: 0, total: results.size,
       });
+
+      await this.persistResults(results);
     }
 
     return results;
   }
 
   // ========================================================================
-  // Deploy validation (install orchestration)
+  // Artifact persistence
   // ========================================================================
 
   private mapPollResult(result: PackageValidationResult): ValidationStateFailed | ValidationStatePassed {
@@ -153,6 +156,31 @@ export class ValidationResolver {
       status: 'failed',
       testCoverage: result.codeCoverage,
     };
+  }
+
+  // ========================================================================
+  // Deploy validation (install orchestration)
+  // ========================================================================
+
+  /**
+   * Write validation results to each package's `dist/package.json`.
+   * Uses the provider to resolve package paths and ArtifactRepository
+   * to patch the `sfpm.validation` field.
+   */
+  private async persistResults(results: Map<string, ValidationStateFailed | ValidationStatePassed>): Promise<void> {
+    for (const [packageName, result] of results) {
+      const definition = this.provider.getPackageDefinition(packageName);
+      if (!definition?.path) continue;
+
+      try {
+        const repo = new ArtifactRepository(definition.path, this.logger, packageName);
+        // eslint-disable-next-line no-await-in-loop
+        await repo.updateValidation(result as unknown as Record<string, unknown>);
+        this.logger?.debug(`Persisted validation result for '${packageName}'`);
+      } catch (error) {
+        this.logger?.warn(`Failed to persist validation for '${packageName}': ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
 
   // ========================================================================

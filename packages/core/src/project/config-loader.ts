@@ -13,6 +13,21 @@ import Logger from '../types/logger.js';
 const CORE_ENTRY_POINT = fileURLToPath(new URL('../index.js', import.meta.url));
 
 /**
+ * Resolve sibling sfpm packages so config files can import them
+ * even when the project hasn't installed them (e.g. dev/link scenarios).
+ * Works by walking up from core's dist to find sibling package dirs.
+ */
+function resolveSiblingPackage(name: string): string | undefined {
+  // @b64hub/sfpm-orgs → orgs
+  const shortName = name.split('/').pop()?.replace('sfpm-', '');
+  if (!shortName) return undefined;
+
+  // core/dist/../../../<shortName>/dist/index.js
+  const candidate = resolve(fileURLToPath(new URL('..', import.meta.url)), '..', '..', shortName, 'dist', 'index.js');
+  return existsSync(candidate) ? candidate : undefined;
+}
+
+/**
  * Config file names searched in priority order.
  * TypeScript files are preferred for type-safe authoring.
  */
@@ -63,10 +78,17 @@ export async function loadSfpmConfig(
     // resolve from the target project's node_modules, not from the sfpm monorepo.
     // Alias @b64hub/sfpm-core to this package so config files can always import it,
     // even when the project hasn't installed it (e.g. cloned bootstrap repos).
+    const alias: Record<string, string> = {
+      '@b64hub/sfpm-core': CORE_ENTRY_POINT,
+    };
+      // Resolve sibling packages so config files work without explicit installation
+    for (const sibling of ['@b64hub/sfpm-orgs', '@b64hub/sfpm-hooks', '@b64hub/sfpm-sfdmu']) {
+      const resolved = resolveSiblingPackage(sibling);
+      if (resolved) alias[sibling] = resolved;
+    }
+
     const jiti = createJiti(configPath, {
-      alias: {
-        '@b64hub/sfpm-core': CORE_ENTRY_POINT,
-      },
+      alias,
       fsCache: true,
       interopDefault: true,
     });
