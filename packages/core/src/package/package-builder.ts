@@ -196,10 +196,6 @@ export default class PackageBuilder {
     if (result.packageVersionId && 'packageVersionId' in sfpmPackage) {
       (sfpmPackage as any).packageVersionId = result.packageVersionId;
     }
-
-    if (result.validationState && sfpmPackage instanceof SfpmMetadataPackage) {
-      sfpmPackage.validationState = result.validationState;
-    }
   }
 
   /** Apply task enrichments to the package. */
@@ -414,9 +410,12 @@ export default class PackageBuilder {
       this.applyBuilderResult(sfpmPackage, result);
 
       if (result.pendingValidation) {
+        const pv = result.pendingValidation;
         this.sink?.validateQueued({
-          operationId: result.pendingValidation.operationId,
-          operationType: result.pendingValidation.operationType,
+          operationId: pv.operationType === 'package-version-request'
+            ? pv.packageVersionRequestId
+            : pv.packageName,
+          operationType: pv.operationType,
         });
       }
 

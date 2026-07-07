@@ -713,7 +713,7 @@ export class PackageFactory {
 
   createAll(): SfpmPackage[] {
     const allPackages = this.provider.getAllPackageDefinitions();
-    return allPackages.map(definition => this.createFromDefinition(definition)).filter(Boolean);
+    return allPackages.map(definition => this.createFromDefinition(definition)).filter((p): p is SfpmPackage => p !== undefined);
   }
 
   createFromDefinition(packageDefinition: PackageDefinition): SfpmPackage | undefined {
