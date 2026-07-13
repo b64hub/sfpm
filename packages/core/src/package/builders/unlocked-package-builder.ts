@@ -104,7 +104,7 @@ export default class UnlockedPackageBuilder implements Builder {
 
     let result: PackageVersionCreateRequestResult | undefined;
 
-    if (!this.sfpmPackage.isOrgDependent && validate) {
+    if (this.sfpmPackage.isOrgDependent && validate) {
       this.logger?.debug('Async org validation not available for org-dependent unlocked packages. Defaulting to synchronous.');
     }
 

@@ -82,7 +82,7 @@ export class PlainDisplay implements DisplayStrategy {
   }
 
   subtaskUpdate(packageName: string, phase: string, status: string): void {
-    this.logger.log(`  ${sym.progress} ${chalk.dim(`${phase}: ${status}`)}`);
+    // Only show complete messages
   }
 
   warn(message: string): void {

@@ -111,6 +111,8 @@ export interface PackageDefinition {
   dependencies?: {[packageName: string]: string};
   /** Package description */
   description?: string;
+  /** Whether this unlocked package is org-dependent (no namespace, deploys directly into the org). */
+  isOrgDependent?: boolean;
   /** Managed package dependencies with version Id (e.g., { "nebula-logger": "04tXXXXXXXXXXXX" }) */
   managedDependencies?: {[packageName: string]: string};
   /** Metadata dependencies with relative paths (e.g., { "seed": "path/to/seed", "unpackaged": "path/to/unpackaged" }) */
@@ -122,8 +124,6 @@ export interface PackageDefinition {
   name: string;
   /** Salesforce namespace (empty string for no namespace). */
   namespace?: string;
-  /** Whether this unlocked package is org-dependent (no namespace, deploys directly into the org). */
-  orgDependent?: boolean;
   /** Salesforce Package2 ID (0Ho prefix). */
   packageId?: string;
   /** Per-package build, deploy, and hook configuration. */
