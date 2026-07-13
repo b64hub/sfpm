@@ -114,6 +114,7 @@ export default class UnlockedPackageBuilder implements Builder {
           definitionfile: buildOptions.unlocked?.definitionFile,
           installationkey: buildOptions.unlocked?.installationKey,
           installationkeybypass: buildOptions.unlocked?.installationKey ? undefined : true,
+          projectPath: this.workingDirectory,
           skipvalidation: !validate,
           tag: this.sfpmPackage.tag,
           versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),

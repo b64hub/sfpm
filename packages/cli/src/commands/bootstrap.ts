@@ -384,6 +384,7 @@ export default class Bootstrap extends SfpmCommand {
       {
         force: flags.force,
         includeDependencies: true,
+        testLevel: 'RunLocalTests',
       },
       ctx.logger,
     )
