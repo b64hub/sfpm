@@ -238,6 +238,7 @@ export default class Bootstrap extends SfpmCommand {
       {devhub: devhubOrg},
       {
         force, includeDependencies: true,
+        validation: 'org',
       },
       ctx.logger,
     )

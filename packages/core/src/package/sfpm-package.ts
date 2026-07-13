@@ -737,6 +737,8 @@ export class PackageFactory {
       if (packageDefinition.packageVersionId) {
         sfpmPackage.packageVersionId = packageDefinition.packageVersionId;
       }
+
+      sfpmPackage.isOrgDependent = packageDefinition.orgDependent ?? false;
     }
 
     return sfpmPackage;

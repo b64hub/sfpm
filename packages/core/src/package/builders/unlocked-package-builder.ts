@@ -95,7 +95,7 @@ export default class UnlockedPackageBuilder implements Builder {
     const waitTime = buildOptions.waitTime || 120;
 
     this.logger?.debug(`PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, `
-      + `version=${this.sfpmPackage.version}, validation=${validate}`);
+      + `version=${this.sfpmPackage.version}, validation=${validate}, isOrgDependent=${this.sfpmPackage.isOrgDependent}`);
 
     const tracker: {lastRequestId?: string; lastStatus?: string} = {
       lastRequestId: undefined,
@@ -104,12 +104,16 @@ export default class UnlockedPackageBuilder implements Builder {
 
     let result: PackageVersionCreateRequestResult | undefined;
 
+    if (!this.sfpmPackage.isOrgDependent && validate) {
+      this.logger?.debug('Async org validation not available for org-dependent unlocked packages. Defaulting to synchronous.');
+    }
+
     try {
       result = await packageService.createPackageVersion(
         this.sfpmPackage.packageId,
         {
           apiVersion: this.sfpmPackage.apiVersion,
-          asyncvalidation: validate,
+          asyncvalidation: !this.sfpmPackage.isOrgDependent && validate,
           codecoverage: validate,
           definitionfile: buildOptions.unlocked?.definitionFile,
           installationkey: buildOptions.unlocked?.installationKey,

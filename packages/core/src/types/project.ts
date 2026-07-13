@@ -122,6 +122,8 @@ export interface PackageDefinition {
   name: string;
   /** Salesforce namespace (empty string for no namespace). */
   namespace?: string;
+  /** Whether this unlocked package is org-dependent (no namespace, deploys directly into the org). */
+  orgDependent?: boolean;
   /** Salesforce Package2 ID (0Ho prefix). */
   packageId?: string;
   /** Per-package build, deploy, and hook configuration. */
