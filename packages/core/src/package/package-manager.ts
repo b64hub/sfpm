@@ -1,12 +1,47 @@
 import {Org} from '@salesforce/core';
 
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
+
 import ArtifactService from '../artifacts/artifact-service.js';
 import Logger from '../types/logger.js';
 import {InstalledArtifact, PackageType} from '../types/package.js';
+import {stripScope} from '../utils/scope-utils.js';
 import {InstallCheckResult} from './installers/installer-registry.js';
 import {VersionInstallable} from './installers/types.js';
-import PackageService from './package-service.js';
+import PackageService, {type Package2} from './package-service.js';
 import SfpmPackage from './sfpm-package.js';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/**
+ * Result of attempting to create or resolve a single Package2 container in the DevHub.
+ */
+export interface PackageCreationResult {
+  /** Whether the package was freshly created (false = already existed). */
+  created: boolean;
+  /** The Package2 name. */
+  name: string;
+  /** The Package2 Id (0Ho prefix). */
+  packageId: string;
+}
+
+/**
+ * Configuration for creating a Package2 container in a DevHub.
+ */
+export interface PackageCreateConfig {
+  /** Human-readable description of the package. */
+  description: string;
+  /** Whether this is an org-dependent unlocked package. */
+  isOrgDependent: boolean;
+  /** Package name (may include npm scope). Scope is stripped for DevHub operations. */
+  name: string;
+  /** Relative path to the package directory. */
+  path: string;
+}
+
+// ---------------------------------------------------------------------------
 
 /**
  * Consolidation layer across sfpm artifacts and Salesforce subscriber packages.
@@ -71,6 +106,68 @@ export default class PackageManager {
   // -----------------------------------------------------------------------
   // Service accessors
   // -----------------------------------------------------------------------
+
+  /**
+   * Create a Package2 record in the DevHub for the given config.
+   * Scope is stripped from the name before the DevHub call.
+   * Returns the new Package2 ID (0Ho prefix).
+   */
+  public async createPackageFromConfig(config: PackageCreateConfig, projectDir: string): Promise<string> {
+    const sfName = stripScope(config.name);
+    const result = await this.packageService.createPackage(sfName, 'Unlocked', config.path, {
+      description: config.description,
+      errorNotificationUsername: '',
+      noNamespace: true,
+      orgDependent: config.isOrgDependent,
+      projectPath: projectDir,
+    });
+    this.logger?.info(`Created package '${sfName}' with Id ${result.Id}`);
+    return result.Id;
+  }
+
+  /**
+   * Ensure all packages have Package2 records in the DevHub.
+   *
+   * For each package:
+   * 1. If a matching Package2 already exists → reuse its ID
+   * 2. If missing → call `shouldCreate`; if approved, create it
+   * 3. Persist the packageId via the ProjectDefinitionProvider
+   */
+  public async ensurePackages(
+    packages: PackageCreateConfig[],
+    provider: ProjectDefinitionProvider,
+    projectDir: string,
+    shouldCreate: (name: string) => Promise<boolean>,
+  ): Promise<PackageCreationResult[]> {
+    const existing = await this.queryExistingPackages(packages.map(p => p.name));
+    const results: PackageCreationResult[] = [];
+
+    /* eslint-disable no-await-in-loop -- sequential: later packages may depend on earlier ones */
+    for (const config of packages) {
+      const sfName = stripScope(config.name);
+      const found = existing.get(sfName);
+
+      if (found) {
+        this.logger?.info(`Package '${sfName}' already exists (${found.Id})`);
+        await provider.updatePackageConfig(config.name, {packageId: found.Id});
+        results.push({created: false, name: sfName, packageId: found.Id});
+        continue;
+      }
+
+      const approved = await shouldCreate(sfName);
+      if (!approved) {
+        throw new Error(`Package '${sfName}' does not exist in the DevHub and creation was declined. `
+          + 'Cannot proceed with bootstrap.');
+      }
+
+      const packageId = await this.createPackageFromConfig(config, projectDir);
+      await provider.updatePackageConfig(config.name, {packageId});
+      results.push({created: true, name: sfName, packageId});
+    }
+    /* eslint-enable no-await-in-loop */
+
+    return results;
+  }
 
   /**
    * Return all installed packages: sfpm artifacts merged with subscriber packages.
@@ -150,21 +247,17 @@ export default class PackageManager {
     }
   }
 
+  // -----------------------------------------------------------------------
+  // Package creation
+  // -----------------------------------------------------------------------
+
   public getArtifactService(): ArtifactService {
     return this.artifactService;
   }
 
-  // -----------------------------------------------------------------------
-  // Install checks
-  // -----------------------------------------------------------------------
-
   public getPackageService(): PackageService {
     return this.packageService;
   }
-
-  // -----------------------------------------------------------------------
-  // Query — merged view
-  // -----------------------------------------------------------------------
 
   /**
    * Check whether a package is already installed in the target org.
@@ -191,6 +284,33 @@ export default class PackageManager {
     }
 
     return {installReason: 'not-installed', needsInstall: true};
+  }
+
+  // -----------------------------------------------------------------------
+  // Install checks
+  // -----------------------------------------------------------------------
+
+  // -----------------------------------------------------------------------
+  // Query — merged view
+  // -----------------------------------------------------------------------
+
+  /**
+   * Query the DevHub for Package2 records matching the given names.
+   * Scope is stripped before comparison. Returns a map of name → Package2.
+   */
+  public async queryExistingPackages(names: string[]): Promise<Map<string, Package2>> {
+    const sfNames = names.map(n => stripScope(n));
+    const allPackages = await this.packageService.listPackages();
+
+    const nameSet = new Set(sfNames);
+    const result = new Map<string, Package2>();
+    for (const pkg of allPackages) {
+      if (nameSet.has(pkg.Name)) {
+        result.set(pkg.Name, pkg);
+      }
+    }
+
+    return result;
   }
 
   // -----------------------------------------------------------------------
