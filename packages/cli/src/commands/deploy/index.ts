@@ -1,6 +1,6 @@
 import {
   InstallOrchestrator, LifecycleEngine, Logger,
-  type ProjectDefinitionProvider, type ProjectGraph, ProjectService, type TestLevel,
+  type ProjectDefinitionProvider, type ProjectGraph, ProjectService, type TestLevel, WorkspaceProvider,
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
 import {ConfigAggregator, Org} from '@salesforce/core'
@@ -85,7 +85,7 @@ export default class Deploy extends SfpmCommand {
    * Override in subclasses to change the provider (e.g., ArtifactProvider).
    */
   protected async createProjectService(projectDir: string, _packages: string[]): Promise<ProjectService> {
-    return ProjectService.getInstance(projectDir);
+    return ProjectService.create(projectDir, new WorkspaceProvider({distAware: true, projectDir}));
   }
 
   protected createRenderer(mode: OutputMode, targetOrg: string): InstallProgressRenderer {
