@@ -243,11 +243,7 @@ export default class PackageService {
 
     try {
       env.setBoolean('SF_APPLY_REPLACEMENTS_ON_CONVERT', true);
-      // SfProject.clearInstances();
-      console.log(SfProject.resolveProjectPathSync(options?.projectPath));
       const project = await SfProject.resolve(options?.projectPath);
-      console.log(project.getSfProjectJson());
-      console.log(await project.resolveProjectConfig());
 
       const result = await PackageVersion.create(
         {
