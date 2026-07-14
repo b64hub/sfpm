@@ -263,11 +263,9 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
    * The returned definition is converted to sfdx-project.json format via the adapter.
    */
   resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
-    const result = this.resolve();
-    const {definition} = result;
+    const definition = this.getProjectDefinition();
+    const pkg = this.getPackageDefinition(packageName);
 
-    // Find the target package
-    const pkg = definition.packages.find(p => p.name === packageName || stripScope(p.name) === packageName);
     if (!pkg) {
       throw new Error(`Package "${packageName}" not found in workspace.`);
     }
@@ -278,7 +276,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     singlePkg.default = true;
 
     // Strip dependencies if org-dependent
-    if (options?.isOrgDependent && singlePkg.dependencies) {
+    if (pkg.isOrgDependent && singlePkg.dependencies) {
       delete singlePkg.dependencies;
     }
 

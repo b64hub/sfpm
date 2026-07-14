@@ -71,7 +71,7 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
    * so it can be resolved standalone without querying the DevHub.
    */
   private async buildDependencyPackageIds(): Promise<Record<string, string>> {
-    const projectService = await ProjectService.getInstance();
+    const projectService = await ProjectService.getInstance(this.provider.projectDir);
     const graph = projectService.getProjectGraph();
     const node = graph.getNode(this.packageName);
     if (!node) return {};

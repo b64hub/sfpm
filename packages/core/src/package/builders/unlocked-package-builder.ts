@@ -64,7 +64,7 @@ export default class UnlockedPackageBuilder implements Builder {
       this.workingDirectory = this.sfpmPackage.workingDirectory;
     }
 
-    await this.pruneOrgDependentPackage();
+    // await this.pruneOrgDependentPackage();
     const result = await this.buildPackage();
 
     this.hydratePackageVersionResult(result);
@@ -84,7 +84,7 @@ export default class UnlockedPackageBuilder implements Builder {
 
     const packageService = new PackageService(this.devhub!, this.logger);
 
-    const buildOptions = (await ProjectService.getInstance()).resolveBuildConfig(this.sfpmPackage.packageName, this.options)
+    const buildOptions = (await ProjectService.getInstance(this.workingDirectory)).resolveBuildConfig(this.sfpmPackage.packageName, this.options)
 
     this.sink?.createStart({
       packageId: this.sfpmPackage.packageId,
