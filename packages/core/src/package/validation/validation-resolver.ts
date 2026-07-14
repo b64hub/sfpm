@@ -18,7 +18,7 @@ import type {
 import {ArtifactRepository} from '../../artifacts/artifact-repository.js';
 import {type InstallOrchestrationResult, InstallOrchestrator} from '../../orchestrator/install-orchestrator.js';
 import {ProjectGraph} from '../../project/project-graph.js';
-import {type PackageValidationResult, ValidationPoller} from './validation-poller.js';
+import PackageService, {type PackageVersionCreateRequestResult} from '../package-service.js';
 
 // ============================================================================
 // Types
@@ -47,7 +47,7 @@ export interface ResolveOptions {
  *   (with optional regression testing of direct dependents), then maps
  *   per-package install results to validation states.
  * - `'package-version-request'` — polls the DevHub for unlocked package
- *   creation status via {@link ValidationPoller}.
+ *   creation status via {@link PackageService.awaitValidation}.
  *
  * Both paths run in parallel. Org connections are resolved internally
  * from descriptor fields, so the API stays simple: pass descriptors in,
@@ -134,28 +134,26 @@ export class ValidationResolver {
   // Artifact persistence
   // ========================================================================
 
-  private mapPollResult(result: PackageValidationResult): ValidationStateFailed | ValidationStatePassed {
+  private mapReport(
+    descriptor: PackageVersionValidationDescriptor,
+    report: PackageVersionCreateRequestResult,
+  ): ValidationStateFailed | ValidationStatePassed {
     const checks: ValidationCheck[] = ['dependencies', 'deploy', 'test'];
 
-    if (result.status === 'Success') {
-      this.logger?.info(`Validation passed for '${result.packageName}' (coverage: ${result.codeCoverage ?? 'N/A'}%)`);
-      this.sinkFor(result.packageName)?.passed({checks, codeCoverage: result.codeCoverage});
-      return {
-        checks,
-        status: 'passed',
-        testCoverage: result.codeCoverage,
-      };
+    if (report.Status === 'Success') {
+      const codeCoverage = typeof report.CodeCoverage === 'number' ? report.CodeCoverage : undefined;
+      this.logger?.info(`Validation passed for '${descriptor.packageName}' (coverage: ${codeCoverage ?? 'N/A'}%)`);
+      this.sinkFor(descriptor.packageName)?.passed({checks, codeCoverage});
+      return {checks, status: 'passed', testCoverage: codeCoverage};
     }
 
-    const error = result.error ?? `Validation ${result.status.toLowerCase()}`;
-    this.logger?.debug(`Validation failed for '${result.packageName}': ${error}`);
-    this.sinkFor(result.packageName)?.failed({error});
-    return {
-      checks,
-      error,
-      status: 'failed',
-      testCoverage: result.codeCoverage,
-    };
+    // Status === 'Error'
+    const errors = (report.Error as undefined | unknown[])?.length
+      ? (report.Error as unknown[]).map(e => typeof e === 'string' ? e : (e as {Message?: string}).Message ?? JSON.stringify(e)).join('; ')
+      : 'Unknown error';
+    this.logger?.error(`Validation failed for '${descriptor.packageName}': ${errors}`);
+    this.sinkFor(descriptor.packageName)?.failed({error: errors});
+    return {checks, error: errors, status: 'failed'};
   }
 
   // ========================================================================
@@ -299,22 +297,27 @@ export class ValidationResolver {
         return;
       }
 
-      const poller = new ValidationPoller(
-        org.getConnection() as Connection,
-        {maxWaitMs: options.maxWaitMs, pollingIntervalMs: options.pollingIntervalMs},
-        this.logger,
-      );
-
-      const targets = group.map(d => ({
-        packageName: d.packageName,
-        packageVersionCreateRequestId: d.packageVersionRequestId,
+      await Promise.all(group.map(async descriptor => {
+        try {
+          const report = await PackageService.awaitValidation(
+            descriptor.packageVersionRequestId,
+            org.getConnection() as Connection,
+            {maxWaitMs: options.maxWaitMs, pollingIntervalMs: options.pollingIntervalMs},
+            this.logger,
+          );
+          results.set(descriptor.packageName, this.mapReport(descriptor, report));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const timedOut = (error as {name?: string}).name === 'PackageValidationTimeout';
+          this.logger?.[timedOut ? 'error' : 'warn'](`${descriptor.packageName}: ${message}`);
+          this.sinkFor(descriptor.packageName)?.failed({error: message});
+          results.set(descriptor.packageName, {
+            checks: ['dependencies', 'deploy', 'test'],
+            error: message,
+            status: 'failed',
+          });
+        }
       }));
-
-      const pollResults = await poller.pollAll(targets);
-
-      for (const pollResult of pollResults) {
-        results.set(pollResult.packageName, this.mapPollResult(pollResult));
-      }
     }));
 
     return results;

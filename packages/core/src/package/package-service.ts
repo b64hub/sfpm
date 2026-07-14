@@ -70,7 +70,7 @@ const UPGRADE_TYPE_MAP: Record<string, PackageInstallCreateRequest['UpgradeType'
 
 export {PackageService};
 /**
- * Wrapper and entrypoint for operations through the @salesforce/packaging sdk
+ * Entrypoint service for interactions with the @salesforce/packaging sdk
  */
 export default class PackageService {
   private static readonly PACKAGE2_VERSION_FIELDS = [
