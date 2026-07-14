@@ -64,7 +64,6 @@ export default class UnlockedPackageBuilder implements Builder {
       this.workingDirectory = this.sfpmPackage.workingDirectory;
     }
 
-    // await this.pruneOrgDependentPackage();
     const result = await this.buildPackage();
 
     this.hydratePackageVersionResult(result);
@@ -296,31 +295,6 @@ export default class UnlockedPackageBuilder implements Builder {
       totalNumberOfMetadataFiles: result.TotalNumberOfMetadataFiles ?? undefined,
       totalSizeOfMetadataFiles: result.TotalSizeOfMetadataFiles ?? undefined,
       versionNumber: result.VersionNumber || this.sfpmPackage.version || '',
-    });
-  }
-
-  /**
-   * @description: cleanup sfpm constructs in working directory
-   * TODO: move file write responsibility to ProjectService
-   */
-  private async pruneOrgDependentPackage(): Promise<void> {
-    if (!this.sfpmPackage.isOrgDependent) {
-      return;
-    }
-
-    this.sink?.pruneStart({
-      reason: 'Org-dependent package requires pruning',
-    });
-
-    const projectService = await ProjectService.getInstance(this.workingDirectory);
-    const prunedDefinition = projectService.resolveSingleProjectDefinition(this.sfpmPackage.packageName, {
-      isOrgDependent: true,
-    });
-
-    await fs.writeJson(path.join(this.workingDirectory, 'sfdx-project.json'), toSalesforceProjectJson(prunedDefinition), {spaces: 4});
-
-    this.sink?.pruneComplete({
-      prunedFiles: 1,
     });
   }
 

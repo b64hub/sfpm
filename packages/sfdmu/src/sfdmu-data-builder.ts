@@ -3,8 +3,9 @@ import type {Org} from '@salesforce/core';
 import {
   assembleArtifactTask,
   type Builder,
-  type BuilderOptions,
   type BuilderResult,
+  type BuildEventSink,
+  type BuildOptions,
   type BuildTaskRegistration,
   type Logger,
   PackageType,
@@ -13,7 +14,6 @@ import {
   type SfpmPackage,
 } from '@b64hub/sfpm-core';
 import fs from 'fs-extra';
-import EventEmitter from 'node:events';
 import path from 'node:path';
 
 import type {SfdmuExportJson, SfdmuObjectConfig} from './types.js';
@@ -31,19 +31,20 @@ import type {SfdmuExportJson, SfdmuObjectConfig} from './types.js';
  */
 // eslint-disable-next-line new-cap
 @RegisterBuilder(PackageType.Data)
-export default class SfdmuDataBuilder extends EventEmitter implements Builder {
+export default class SfdmuDataBuilder implements Builder {
   public tasks: BuildTaskRegistration[] = [];
   private readonly logger?: Logger;
   private readonly sfpmPackage: SfpmDataPackage;
+  private readonly sink?: BuildEventSink;
   private readonly workingDirectory: string;
 
   constructor(
     workingDirectory: string,
     sfpmPackage: SfpmPackage,
-    _options: BuilderOptions,
+    _options: BuildOptions,
     logger?: Logger,
+    sink?: BuildEventSink,
   ) {
-    super();
     if (!(sfpmPackage instanceof SfpmDataPackage)) {
       throw new TypeError(`SfdmuDataBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
@@ -51,6 +52,7 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
     this.workingDirectory = workingDirectory;
     this.sfpmPackage = sfpmPackage;
     this.logger = logger;
+    this.sink = sink;
 
     this.tasks = [
       {factory: assembleArtifactTask(), phase: 'post'},
@@ -67,7 +69,9 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
   public async exec(): Promise<BuilderResult> {
     await this.validate();
     return {
+      packageName: this.sfpmPackage.name,
       packageType: PackageType.Data,
+      version: this.sfpmPackage.version!,
     };
   }
 
@@ -98,14 +102,9 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
    * 3. Count data files for metadata
    */
   private async validate(): Promise<void> {
-    this.emit('task:start', {
-      packageName: this.sfpmPackage.packageName,
-      taskName: 'SfdmuValidation',
-      taskType: 'build',
-      timestamp: new Date(),
-    });
+    this.sink?.taskStart({taskName: 'SfdmuValidation', taskType: 'pre-build'});
 
-    const exportJsonPath = path.join(this.sfpmPackage.dataDirectory, 'export.json');
+    const exportJsonPath = path.join(this.sfpmPackage.packageDirectory!, 'export.json');
 
     // Validate export.json exists
 
@@ -113,13 +112,7 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
       const error = new Error(`export.json not found at ${exportJsonPath}. `
         + 'SFDMU data packages must contain an export.json file in the package directory.');
 
-      this.emit('task:complete', {
-        packageName: this.sfpmPackage.packageName,
-        success: false,
-        taskName: 'SfdmuValidation',
-        taskType: 'build',
-        timestamp: new Date(),
-      });
+      this.sink?.taskComplete({success: false, taskName: 'SfdmuValidation', taskType: 'pre-build'});
 
       throw error;
     }
@@ -152,12 +145,6 @@ export default class SfdmuDataBuilder extends EventEmitter implements Builder {
       throw error;
     }
 
-    this.emit('task:complete', {
-      packageName: this.sfpmPackage.packageName,
-      success: true,
-      taskName: 'SfdmuValidation',
-      taskType: 'build',
-      timestamp: new Date(),
-    });
+    this.sink?.taskComplete({success: true, taskName: 'SfdmuValidation', taskType: 'pre-build'});
   }
 }
