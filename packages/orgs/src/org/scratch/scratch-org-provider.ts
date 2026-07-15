@@ -404,7 +404,7 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
   const orgId = record.ScratchOrg ?? '';
   const username = record.SignupUsername ?? '';
   const tag = record.Tag__c ?? '';
-  const status = (record.Stage__c ?? PoolStage.Available) as PoolStage;
+  const stage = (record.Stage__c ?? PoolStage.Available) as PoolStage;
 
   return {
     auth: {
@@ -417,7 +417,7 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
     orgId,
     orgType: OrgTypes.Scratch,
     pool: {
-      stage: status,
+      stage,
       tag,
       timestamp: record.CreatedDate ? new Date(record.CreatedDate).getTime() : Date.now(),
     },
