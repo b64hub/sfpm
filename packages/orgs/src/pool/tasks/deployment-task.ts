@@ -1,6 +1,7 @@
 import {
   InstallOrchestrator,
   type Logger,
+  PackageOrigin,
   ProjectService,
   type TestLevel,
 } from '@b64hub/sfpm-core';
@@ -21,6 +22,8 @@ export interface DeploymentTaskOptions {
   include?: string[];
   /** Apex test level (default: NoTestRun) */
   testLevel?: string;
+  /** Deploy from local project source instead of downloaded artifacts */
+  useLocalSource?: boolean;
   /** Root project directory (contains sfdx-project.json or workspace package.json) */
   workingDirectory: string;
 }
@@ -68,8 +71,12 @@ export class DeploymentTask implements PoolOrgTask {
 
     logger.info(`Deploying ${packages.length} package(s) to ${username}`);
 
-    const orchestrator = InstallOrchestrator.forArtifact(targetOrg, provider, graph, {
+    const origin = this.options.useLocalSource ? PackageOrigin.Local : PackageOrigin.Artifact;
+
+    const orchestrator = new InstallOrchestrator(targetOrg, provider, graph, {
       force: true,
+      includeManagedPackages: !this.options.useLocalSource,
+      origin,
       testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel,
       unlocked: {sourceOnly: true},
     }, logger);

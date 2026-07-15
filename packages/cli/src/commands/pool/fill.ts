@@ -40,59 +40,56 @@ export default class PoolFill extends SfpmCommand {
       description: 'pool type: scratch or sandbox (inferred from config if omitted)',
       options: [OrgTypes.Scratch, OrgTypes.Sandbox],
     }),
+    'use-local-source': Flags.boolean({description: 'deploy from local project source instead of downloaded artifacts'}),
   }
 
   public async execute(): Promise<any> {
     const {flags} = await this.parse(PoolFill);
     const mode = this.outputMode;
 
-    try {
-      const orgConfig = await this.loadOrgConfig(this.sfpmLogger);
-      const config = this.buildPoolConfig(flags, orgConfig);
-      const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const orgConfig = await this.loadOrgConfig(this.sfpmLogger);
+    const config = this.buildPoolConfig(flags, orgConfig);
+    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
 
-      let manager: Awaited<ReturnType<typeof createPoolServices>>['manager'];
+    let manager: Awaited<ReturnType<typeof createPoolServices>>['manager'];
 
-      const {devhub} = await connectDevHub({
-        alias: flags['target-dev-hub'],
-        mode,
-        validate: [
-          {
-            label: 'Validating prerequisites...',
-            run: async hub => {
-              const tasks = this.buildTasks(config, hub, projectDir);
-              const services = createPoolServices({
-                devhub: hub,
-                logger: this.sfpmLogger,
-                poolType: config.type as OrgTypes,
-                tasks,
-              });
-              manager = services.manager;
-              await manager.validatePrerequisites();
-            },
+    const {devhub} = await connectDevHub({
+      alias: flags['target-dev-hub'],
+      mode,
+      validate: [
+        {
+          label: 'Validating prerequisites...',
+          run: async hub => {
+            const tasks = this.buildTasks(config, hub, projectDir, flags['use-local-source']);
+            const services = createPoolServices({
+              devhub: hub,
+              logger: this.sfpmLogger,
+              poolType: config.type as OrgTypes,
+              tasks,
+            });
+            manager = services.manager;
+            await manager.validatePrerequisites();
           },
-        ],
-      });
-
-      const renderer = new PoolProgressRenderer({
-        logger: {
-          error: (msg: Error | string) => this.error(msg),
-          log: (msg: string) => this.log(msg),
         },
-        mode,
-      });
-      renderer.attachToManager(manager!);
+      ],
+    });
 
-      const result = await manager!.provision(flags.tag as string, config);
+    const renderer = new PoolProgressRenderer({
+      logger: {
+        error: (msg: Error | string) => this.error(msg),
+        log: (msg: string) => this.log(msg),
+      },
+      mode,
+    });
+    renderer.attachToManager(manager!);
 
-      if (result.failed > 0 && result.succeeded.length === 0) {
-        this.error(`Pool provisioning failed: ${result.errors.join(', ')}`, {exit: 1});
-      }
+    const result = await manager!.provision(flags.tag as string, config);
 
-      return {...result, events: renderer.getJsonOutput().events, success: result.failed === 0};
-    } catch (error) {
-      throw error;
+    if (result.failed > 0 && result.succeeded.length === 0) {
+      this.error(`Pool provisioning failed: ${result.errors.join(', ')}`, {exit: 1});
     }
+
+    return {...result, events: renderer.getJsonOutput().events, success: result.failed === 0};
   }
 
   private buildPoolConfig(flags: Record<string, any>, orgConfig?: {[tag: string]: PoolConfig}): PoolConfig {
@@ -142,7 +139,7 @@ export default class PoolFill extends SfpmCommand {
     } as PoolConfig;
   }
 
-  private buildTasks(config: PoolConfig, devhub: Org, projectDir: string): PoolOrgTask[] {
+  private buildTasks(config: PoolConfig, devhub: Org, projectDir: string, useLocalSource?: boolean): PoolOrgTask[] {
     const tasks: PoolOrgTask[] = [];
     const isScratch = config.type === OrgTypes.Scratch;
 
@@ -155,6 +152,7 @@ export default class PoolFill extends SfpmCommand {
     tasks.push(new DeploymentTask({
       continueOnError: config.deployment?.continueOnError ?? true,
       testLevel: config.deployment?.testLevel,
+      useLocalSource,
       workingDirectory: projectDir,
     }));
 

@@ -36,7 +36,7 @@ export default class SfdmuDataBuilder implements Builder {
   private readonly logger?: Logger;
   private readonly sfpmPackage: SfpmDataPackage;
   private readonly sink?: BuildEventSink;
-  private readonly workingDirectory: string;
+  private workingDirectory: string;
 
   constructor(
     workingDirectory: string,
@@ -67,6 +67,10 @@ export default class SfdmuDataBuilder implements Builder {
    * Execute the build: validate SFDMU export.json and data files.
    */
   public async exec(): Promise<BuilderResult> {
+    if (this.sfpmPackage.workingDirectory) {
+      this.workingDirectory = this.sfpmPackage.workingDirectory;
+    }
+
     await this.validate();
     return {
       packageName: this.sfpmPackage.name,
@@ -91,7 +95,7 @@ export default class SfdmuDataBuilder implements Builder {
   }
 
   private async findCsvFiles(): Promise<string[]> {
-    const files = await fs.readdir(this.sfpmPackage.dataDirectory);
+    const files = await fs.readdir(this.sfpmPackage.packageBuiltSourceDirectory!);
     return files.filter(f => f.toLowerCase().endsWith('.csv'));
   }
 
@@ -104,7 +108,7 @@ export default class SfdmuDataBuilder implements Builder {
   private async validate(): Promise<void> {
     this.sink?.taskStart({taskName: 'SfdmuValidation', taskType: 'pre-build'});
 
-    const exportJsonPath = path.join(this.sfpmPackage.packageDirectory!, 'export.json');
+    const exportJsonPath = path.join(this.sfpmPackage.packageBuiltSourceDirectory!, 'export.json');
 
     // Validate export.json exists
 
