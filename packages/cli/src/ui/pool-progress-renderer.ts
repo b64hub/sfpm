@@ -268,7 +268,7 @@ export class PoolProgressRenderer {
     if (!this.isInteractive()) return;
 
     if (this.singleTaskRef) {
-      this.singleTaskRef.title = `${sym.success} Claimed ${payload.username}`;
+      this.singleTaskRef.title = `Claimed ${payload.username}`;
     }
   }
 
