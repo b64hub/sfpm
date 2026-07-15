@@ -405,7 +405,7 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
   const username = record.SignupUsername ?? '';
   const tag = record.Tag__c ?? '';
   // ponytail: field was renamed to lowercase 's' in some orgs for compatibility with another tool
-  const status = (record.Allocation_Status__c ?? (record as Record<string, unknown>).Allocation_status__c ?? AllocationStatus.Available) as AllocationStatus;
+  const status = (record.Allocation_Status__c ?? (record as unknown as Record<string, unknown>).Allocation_status__c ?? AllocationStatus.Available) as AllocationStatus;
 
   return {
     auth: {
