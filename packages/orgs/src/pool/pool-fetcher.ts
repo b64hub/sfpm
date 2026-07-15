@@ -161,7 +161,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
     const orgs: PoolOrg[] = candidates.map((org, i) => ({
       ...org,
       auth: {...org.auth, alias: `SO${i + 1}`},
-      pool: {status: PoolStage.Available, tag: org.pool?.tag ?? tag, timestamp: org.pool?.timestamp ?? Date.now()},
+      pool: {stage: PoolStage.Available, tag: org.pool?.tag ?? tag, timestamp: org.pool?.timestamp ?? Date.now()},
     }));
 
     const validOrgs = await this.handlePostClaims(orgs, postClaimActions);
