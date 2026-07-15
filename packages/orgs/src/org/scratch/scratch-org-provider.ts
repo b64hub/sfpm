@@ -310,7 +310,7 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgRequest
   async validate(): Promise<void> {
     const describe = await this.conn.sobject('ScratchOrgInfo').describe();
 
-    const allocationField = describe.fields.find(f => f.name === 'Allocation_Status__c');
+    const allocationField = describe.fields.find(f => f.name.toLowerCase() === 'allocation_status__c');
 
     if (!allocationField) {
       throw new OrgError(
@@ -404,7 +404,8 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
   const orgId = record.ScratchOrg ?? '';
   const username = record.SignupUsername ?? '';
   const tag = record.Tag__c ?? '';
-  const status = (record.Allocation_Status__c ?? undefined) as AllocationStatus;
+  // ponytail: field was renamed to lowercase 's' in some orgs for compatibility with another tool
+  const status = (record.Allocation_Status__c ?? (record as Record<string, unknown>).Allocation_status__c ?? AllocationStatus.Available) as AllocationStatus;
 
   return {
     auth: {

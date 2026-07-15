@@ -75,7 +75,7 @@ export class DeploymentTask implements PoolOrgTask {
 
     const orchestrator = new InstallOrchestrator(targetOrg, provider, graph, {
       force: true,
-      includeManagedPackages: !this.options.useLocalSource,
+      includeManagedPackages: true,
       origin,
       testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel,
       unlocked: {sourceOnly: true},

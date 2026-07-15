@@ -1,4 +1,4 @@
-import {loadSfpmConfig, type Logger} from '@b64hub/sfpm-core';
+import {LifecycleEngine, loadSfpmConfig, type Logger} from '@b64hub/sfpm-core';
 import {
   ArtifactPackageInstallTask, createPoolServices, DeploymentTask, type PoolConfig, type PoolOrgTask,
 } from '@b64hub/sfpm-orgs';
@@ -46,6 +46,8 @@ export default class PoolFill extends SfpmCommand {
   public async execute(): Promise<any> {
     const {flags} = await this.parse(PoolFill);
     const mode = this.outputMode;
+
+    LifecycleEngine.stage('pool');
 
     const orgConfig = await this.loadOrgConfig(this.sfpmLogger);
     const config = this.buildPoolConfig(flags, orgConfig);
