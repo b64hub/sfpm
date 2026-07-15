@@ -7,8 +7,8 @@ import type {OrgCreateOptions, OrgProvider} from '../org/org-provider.js';
 import type {PoolOrg, PoolOrgRecord} from '../org/pool-org.js';
 
 import {
-  AllocationStatus,
   OrgError,
+  PoolStage,
 } from '../org/types.js';
 import {
   DEFAULT_POOL_SIZING,
@@ -196,7 +196,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * Delete scratch orgs from a pool.
    *
    * Queries all orgs matching the pool tag, optionally filtering to
-   * only 'In_Progress' orgs or orgs owned by the current user. Each
+   * only 'InProgress' orgs or orgs owned by the current user. Each
    * matching org with a valid `orgId` is deleted via the provider.
    *
    * @param options - Tag, filter, and ownership options
@@ -214,7 +214,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     // 2. Apply status filter
     if (inProgressOnly) {
-      orgs = orgs.filter(org => org.pool?.status === AllocationStatus.InProgress);
+      orgs = orgs.filter(org => org.pool?.status === PoolStage.InProgress);
     }
 
     if (orgs.length === 0) {
@@ -248,10 +248,6 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       try {
         // eslint-disable-next-line no-await-in-loop -- sequential deletion avoids overwhelming the DevHub API
         await this.provider.deleteOrgs([org.recordId]);
-        if (org.pool) {
-          org.pool.status = AllocationStatus.Return;
-        }
-
         deleted.push(org);
 
         this.emit('pool:org:deleted', {
@@ -377,7 +373,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     // 7. Mark successfully prepared orgs as Available
     const availableOrgs = await this.markOrgsAvailable(registeredOrgs, tag, taskResults);
 
-    // 8. Clean up orgs where tasks failed (stuck In_Progress)
+    // 8. Clean up orgs where tasks failed (stuck InProgress)
     if (taskResults) {
       const failedOrgs = registeredOrgs.filter(org => !availableOrgs.includes(org) && org.recordId);
       if (failedOrgs.length > 0) {
@@ -482,15 +478,15 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       }
     }
 
-    // Fallback: mark undeleted orgs as Available rather than leaving them stuck In_Progress.
+    // Fallback: mark undeleted orgs as Available rather than leaving them stuck InProgress.
     // A partially prepared org is preferable to a permanently orphaned one.
     if (undeleted.length > 0) {
-      this.logger?.warn(`Marking ${undeleted.length} undeleted org(s) as Available to prevent In_Progress leak`);
+      this.logger?.warn(`Marking ${undeleted.length} undeleted org(s) as Available to prevent InProgress leak`);
       try {
         await this.markOrgsAvailable(undeleted, tag);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        this.logger?.error(`Failed to mark orgs as Available — orgs may be stuck as In_Progress: ${message}`);
+        this.logger?.error(`Failed to mark orgs as Available — orgs may be stuck as InProgress: ${message}`);
       }
     }
   }
@@ -558,7 +554,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       const createOptions = this.buildCreateOptions(config, alias);
       const org = await this.provider.createOrg(createOptions);
 
-      org.pool = {status: AllocationStatus.InProgress, tag, timestamp: Date.now()};
+      org.pool = {status: PoolStage.InProgress, tag, timestamp: Date.now()};
 
       this.emit('pool:org:created', {
         alias,
@@ -635,10 +631,10 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   // --------------------------------------------------------------------------
 
   /**
-   * Transition orgs from In_Progress to Available after tasks complete.
+   * Transition orgs from InProgress to Available after tasks complete.
    *
    * When tasks are configured, only orgs where all tasks succeeded are
-   * marked Available. Orgs with failed tasks remain In_Progress (visible
+   * marked Available. Orgs with failed tasks remain InProgress (visible
    * in `pool list` but not claimable by `getAvailableByTag`).
    *
    * When no tasks are configured, all orgs are marked Available.
@@ -665,10 +661,10 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     const records: PoolOrgRecord[] = successfulOrgs
     .filter(org => org.recordId)
     .map(org => ({
-      allocationStatus: AllocationStatus.Available as const,
       authUrl: org.auth.authUrl,
       id: org.recordId!,
       poolTag: tag,
+      stage: PoolStage.Available as const,
     }));
 
     if (records.length > 0) {
@@ -689,15 +685,15 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     const records: PoolOrgRecord[] = enrichedOrgs
     .filter(org => org.recordId)
     .map(org => ({
-      allocationStatus: AllocationStatus.InProgress as const,
       authUrl: org.auth.authUrl,
       id: org.recordId!,
       poolTag: tag,
+      stage: PoolStage.InProgress as const,
     }));
 
     if (records.length > 0) {
       await this.provider.updatePoolMetadata(records);
-      this.logger?.debug(`Registered ${records.length} org(s) in pool "${tag}" as In_Progress`);
+      this.logger?.debug(`Registered ${records.length} org(s) in pool "${tag}" as InProgress`);
     }
 
     return enrichedOrgs.filter(org => org.recordId);

@@ -555,10 +555,7 @@ function formatStatus(status?: string): string {
   case 'Available': {return chalk.green('Available  ');
   }
 
-  case 'In_Progress': {return chalk.yellow('In Progress');
-  }
-
-  case 'Return': {return chalk.magenta('Return     ');
+  case 'InProgress': {return chalk.yellow('In Progress');
   }
 
   default: {return chalk.dim((status ?? 'Unknown').padEnd(11));

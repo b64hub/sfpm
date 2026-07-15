@@ -6,7 +6,7 @@ import type {OrgProvider} from '../org/org-provider.js';
 import type {PoolOrg} from '../org/pool-org.js';
 import type {PoolFetchOptions, PostClaimAction} from './types.js';
 
-import {AllocationStatus, OrgError} from '../org/types.js';
+import {OrgError, PoolStage} from '../org/types.js';
 
 /**
  * Event map for PoolFetcher. Provides progress tracking during
@@ -89,7 +89,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
 
       if (claimed) {
         if (org.pool) {
-          org.pool.status = AllocationStatus.Allocated;
+          org.pool.status = PoolStage.Assigned;
         }
 
         this.emit('pool:fetch:claimed', {
@@ -161,7 +161,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
     const orgs: PoolOrg[] = candidates.map((org, i) => ({
       ...org,
       auth: {...org.auth, alias: `SO${i + 1}`},
-      pool: {status: AllocationStatus.Available, tag: org.pool?.tag ?? tag, timestamp: org.pool?.timestamp ?? Date.now()},
+      pool: {status: PoolStage.Available, tag: org.pool?.tag ?? tag, timestamp: org.pool?.timestamp ?? Date.now()},
     }));
 
     const validOrgs = await this.handlePostClaims(orgs, postClaimActions);

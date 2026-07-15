@@ -21,11 +21,11 @@ export interface ScratchOrg extends PoolOrg {
  * ScratchOrgInfo record with pool-specific custom fields.
  *
  * Extends the SDK's `ScratchOrgInfo` type with DevHub custom fields
- * required for pool operations (`Tag__c`, `Allocation_Status__c`, `Auth_Url__c`).
+ * required for pool operations (`Tag__c`, `Stage__c`, `Auth_Url__c`).
  */
 export interface ScratchOrgInfoRecord extends ScratchOrgInfo {
-  Allocation_Status__c?: string;
   Auth_Url__c?: string;
+  Stage__c?: string;
   Tag__c?: string;
 }
 

@@ -1,18 +1,16 @@
 import {describe, expect, it} from 'vitest';
 
-import {AllocationStatus, OrgError} from '../../src/org/types.js';
+import {OrgError, PoolStage} from '../../src/org/types.js';
 
 // ============================================================================
-// AllocationStatus Tests
+// PoolStage Tests
 // ============================================================================
 
-describe('AllocationStatus', () => {
-  it('should define all expected statuses', () => {
-    expect(AllocationStatus.Allocated).toBe('Allocated');
-    expect(AllocationStatus.Assigned).toBe('Assigned');
-    expect(AllocationStatus.Available).toBe('Available');
-    expect(AllocationStatus.InProgress).toBe('In_Progress');
-    expect(AllocationStatus.Return).toBe('Return');
+describe('PoolStage', () => {
+  it('should define all expected stages', () => {
+    expect(PoolStage.Available).toBe('Available');
+    expect(PoolStage.InProgress).toBe('InProgress');
+    expect(PoolStage.Assigned).toBe('Assigned');
   });
 });
 

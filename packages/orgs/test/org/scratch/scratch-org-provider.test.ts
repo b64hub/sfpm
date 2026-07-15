@@ -84,7 +84,7 @@ function createMockOrg() {
 
 function createSoInfoRecord(overrides?: Record<string, unknown>) {
   return {
-    Allocation_Status__c: 'Available',
+    Stage__c: 'Available',
     Auth_Url__c: 'force://token@instance.salesforce.com',
     CreatedDate: '2025-01-08T00:00:00.000+0000',
     ExpirationDate: '2025-01-15',
@@ -129,17 +129,15 @@ describe('ScratchOrgProvider', () => {
   // --------------------------------------------------------------------------
 
   describe('validate', () => {
-    it('should pass when Allocation_Status__c field has all required picklist values', async () => {
+    it('should pass when Stage__c field has all required picklist values', async () => {
       mocks.sobject.describe.mockResolvedValue({
         fields: [
           {
-            name: 'Allocation_Status__c',
+            name: 'Stage__c',
             picklistValues: [
-              {value: 'Allocated'},
-              {value: 'Assigned'},
               {value: 'Available'},
-              {value: 'In_Progress'},
-              {value: 'Return'},
+              {value: 'InProgress'},
+              {value: 'Assigned'},
             ],
           },
           {name: 'Tag__c'},
@@ -150,18 +148,18 @@ describe('ScratchOrgProvider', () => {
       await expect(strategy.validate()).resolves.not.toThrow();
     });
 
-    it('should throw when Allocation_Status__c is missing', async () => {
+    it('should throw when Stage__c is missing', async () => {
       mocks.sobject.describe.mockResolvedValue({fields: []});
 
       await expect(strategy.validate()).rejects.toThrow(OrgError);
-      await expect(strategy.validate()).rejects.toThrow('Allocation_Status__c');
+      await expect(strategy.validate()).rejects.toThrow('Stage__c');
     });
 
     it('should throw when required picklist values are missing', async () => {
       mocks.sobject.describe.mockResolvedValue({
         fields: [
           {
-            name: 'Allocation_Status__c',
+            name: 'Stage__c',
             picklistValues: [{value: 'Available'}],
           },
           {name: 'Tag__c'},
@@ -178,13 +176,13 @@ describe('ScratchOrgProvider', () => {
   // --------------------------------------------------------------------------
 
   describe('claimOrg', () => {
-    it('should update Allocation_Status__c to Allocated', async () => {
+    it('should update Stage__c to Assigned', async () => {
       mocks.sobject.update.mockResolvedValue({success: true});
 
       const result = await strategy.claimOrg('a00000000000001');
 
       expect(mocks.sobject.update).toHaveBeenCalledWith({
-        Allocation_Status__c: 'Allocated',
+        Stage__c: 'Assigned',
         Id: 'a00000000000001',
       });
       expect(result).toBe(true);
@@ -365,11 +363,11 @@ describe('ScratchOrgProvider', () => {
       mocks.sobject.update.mockResolvedValue({success: true});
 
       await strategy.updatePoolMetadata([
-        {allocationStatus: 'Available', authUrl: 'force://auth@test', id: 'rec-1', poolTag: 'dev-pool'},
+        {stage: 'Available', authUrl: 'force://auth@test', id: 'rec-1', poolTag: 'dev-pool'},
       ]);
 
       expect(mocks.sobject.update).toHaveBeenCalledWith([{
-        Allocation_Status__c: 'Available',
+        Stage__c: 'Available',
         Auth_Url__c: 'force://auth@test',
         Id: 'rec-1',
         Tag__c: 'dev-pool',

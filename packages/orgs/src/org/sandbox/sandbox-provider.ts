@@ -8,7 +8,7 @@ import type {PoolOrg, PoolOrgRecord, PoolOrgUsage} from '../pool-org.js';
 import type {Sandbox, SandboxCreateOptions} from './types.js';
 
 import {generatePassword} from '../../index.js';
-import {AllocationStatus, OrgError, PasswordResult} from '../types.js';
+import {OrgError, PasswordResult, PoolStage} from '../types.js';
 import {DEFAULT_SANDBOX} from './types.js';
 
 // ============================================================================
@@ -46,16 +46,16 @@ export interface SandboxInfoRecord {
  * - `Org_Id__c`  — Plain Text(18) holding the sandbox's 18-char org ID
  *   (matches `SandboxInfo.SandboxOrganization`).
  * - `Tag__c`     — Pool tag for grouping sandboxes.
- * - `Allocation_Status__c` — Picklist tracking the allocation lifecycle.
+ * - `Stage__c`  — Picklist tracking the pool lifecycle stage.
  * - `Auth_Url__c` — SFDX auth URL for authenticating to the sandbox.
  */
 export interface SandboxPoolOrgRecord {
-  Allocation_Status__c?: string;
   Auth_Url__c?: string;
   CreatedDate?: string;
   Id?: string;
   Name?: string;
   Org_Id__c?: string;
+  Stage__c?: string;
   Tag__c?: string;
 }
 
@@ -74,7 +74,7 @@ const SANDBOX_INFO_FIELDS: (keyof SandboxInfoRecord)[] = [
 ];
 
 const SANDBOX_POOL_ORG_FIELDS: (keyof SandboxPoolOrgRecord)[] = [
-  'Allocation_Status__c',
+  'Stage__c',
   'Auth_Url__c',
   'CreatedDate',
   'Id',
@@ -82,10 +82,10 @@ const SANDBOX_POOL_ORG_FIELDS: (keyof SandboxPoolOrgRecord)[] = [
   'Tag__c',
 ];
 
-const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
-  AllocationStatus.Available,
-  AllocationStatus.Allocated,
-  AllocationStatus.InProgress,
+const REQUIRED_STAGES: PoolStage[] = [
+  PoolStage.Available,
+  PoolStage.InProgress,
+  PoolStage.Assigned,
 ];
 
 /**
@@ -95,7 +95,7 @@ const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
  * and sandbox query methods for lifecycle operations (create, clone, delete,
  * status checks).
  *
- * Pool metadata (`Tag__c`, `Allocation_Status__c`, `Auth_Url__c`) is stored
+ * Pool metadata (`Tag__c`, `Stage__c`, `Auth_Url__c`) is stored
  * on a separate **`Sandbox_Pool_Org__c`** custom object rather than on
  * `SandboxInfo` directly.  `SandboxInfo` is a Tooling API object that does
  * not support custom fields — the shadow object bridges this gap by holding
@@ -141,8 +141,8 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
   async claimOrg(id: string): Promise<boolean> {
     try {
       const result = await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).update({
-        Allocation_Status__c: 'Allocated' as const, // eslint-disable-line camelcase -- Salesforce custom field
         Id: id,
+        Stage__c: 'Assigned' as const, // eslint-disable-line camelcase -- Salesforce custom field
       });
       return result.success === true;
     } catch {
@@ -207,8 +207,8 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
 
     // Create the shadow pool record for tracking this sandbox
     const poolRecord = await this.conn.sobject(SANDBOX_POOL_ORG_OBJECT).create({
-      Allocation_Status__c: AllocationStatus.InProgress, // eslint-disable-line camelcase -- Salesforce custom field
       Org_Id__c: orgId, // eslint-disable-line camelcase -- Salesforce custom field
+      Stage__c: PoolStage.InProgress, // eslint-disable-line camelcase -- Salesforce custom field
       Tag__c: '', // eslint-disable-line camelcase -- Salesforce custom field (set later by updatePoolMetadata)
     });
 
@@ -221,7 +221,7 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       orgId,
       orgType: OrgTypes.Sandbox,
       pool: {
-        status: AllocationStatus.InProgress,
+        status: PoolStage.InProgress,
         tag: '',
         timestamp: Date.now(),
       },
@@ -285,7 +285,7 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     const escapedTag = escapeSOQL(tag);
     const conditions = [
       `Tag__c = '${escapedTag}'`,
-      `(Allocation_Status__c = '${AllocationStatus.Available}' OR Allocation_Status__c = '${AllocationStatus.InProgress}')`,
+      `(Stage__c = '${PoolStage.Available}' OR Stage__c = '${PoolStage.InProgress}')`,
     ];
 
     if (myPool) {
@@ -446,9 +446,9 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
     if (records.length === 0) return;
 
     const updates = records.map(r => ({
-      Allocation_Status__c: r.allocationStatus, // eslint-disable-line camelcase -- Salesforce custom field
       Auth_Url__c: r.authUrl, // eslint-disable-line camelcase -- Salesforce custom field
       Id: r.id,
+      Stage__c: r.stage, // eslint-disable-line camelcase -- Salesforce custom field
       Tag__c: r.poolTag, // eslint-disable-line camelcase -- Salesforce custom field
     }));
 
@@ -495,22 +495,22 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       );
     }
 
-    const allocationField = describe.fields.find(f => f.name === 'Allocation_Status__c');
-    if (!allocationField) {
+    const stageField = describe.fields.find(f => f.name === 'Stage__c');
+    if (!stageField) {
       throw new OrgError(
         'prerequisite',
-        `${SANDBOX_POOL_ORG_OBJECT} is missing the "Allocation_Status__c" field. `
+        `${SANDBOX_POOL_ORG_OBJECT} is missing the "Stage__c" field. `
         + 'Deploy the sfpm sandbox pool custom object to your production org.',
       );
     }
 
-    const picklistValues = new Set((allocationField.picklistValues ?? []).map(v => v.value));
-    const missing = REQUIRED_ALLOCATION_STATUSES.filter(s => !picklistValues.has(s));
+    const picklistValues = new Set((stageField.picklistValues ?? []).map(v => v.value));
+    const missing = REQUIRED_STAGES.filter(s => !picklistValues.has(s));
 
     if (missing.length > 0) {
       throw new OrgError(
         'prerequisite',
-        `Allocation_Status__c on ${SANDBOX_POOL_ORG_OBJECT} is missing required picklist values: ${missing.join(', ')}. `
+        `Stage__c on ${SANDBOX_POOL_ORG_OBJECT} is missing required picklist values: ${missing.join(', ')}. `
         + `Update the picklist on ${SANDBOX_POOL_ORG_OBJECT} in your production org.`,
         {context: {existing: [...picklistValues], missing}},
       );
@@ -722,7 +722,7 @@ function mapFromPoolRecord(poolRecord: SandboxPoolOrgRecord, info?: SandboxInfoR
   const orgId = poolRecord.Org_Id__c ?? info?.SandboxOrganization ?? '';
   const sandboxName = info?.SandboxName ?? '';
   const tag = poolRecord.Tag__c ?? '';
-  const status = (poolRecord.Allocation_Status__c ?? '') as AllocationStatus;
+  const status = (poolRecord.Stage__c ?? '') as PoolStage;
 
   return {
     auth: {
@@ -761,7 +761,7 @@ function mapFromSandboxInfo(record: SandboxInfoRecord): Sandbox {
     orgId,
     orgType: OrgTypes.Sandbox,
     pool: {
-      status: '' as AllocationStatus,
+      status: '' as PoolStage,
       tag: '',
       timestamp: record.CreatedDate ? new Date(record.CreatedDate).getTime() : Date.now(),
     },
