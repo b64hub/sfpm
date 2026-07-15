@@ -89,7 +89,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
 
       if (claimed) {
         if (org.pool) {
-          org.pool.status = PoolStage.Assigned;
+          org.pool.stage = PoolStage.Assigned;
         }
 
         this.emit('pool:fetch:claimed', {

@@ -32,7 +32,7 @@ export interface PoolOrgAuth {
  */
 export interface PoolOrgInfo {
   isScriptExecuted?: boolean;
-  status: PoolStage;
+  stage: PoolStage;
   tag: string;
   timestamp: number;
 }

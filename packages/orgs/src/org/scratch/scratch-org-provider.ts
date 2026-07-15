@@ -417,7 +417,7 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
     orgId,
     orgType: OrgTypes.Scratch,
     pool: {
-      status,
+      stage: status,
       tag,
       timestamp: record.CreatedDate ? new Date(record.CreatedDate).getTime() : Date.now(),
     },

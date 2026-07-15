@@ -214,7 +214,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     // 2. Apply status filter
     if (inProgressOnly) {
-      orgs = orgs.filter(org => org.pool?.status === PoolStage.InProgress);
+      orgs = orgs.filter(org => org.pool?.stage === PoolStage.InProgress);
     }
 
     if (orgs.length === 0) {
@@ -554,7 +554,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       const createOptions = this.buildCreateOptions(config, alias);
       const org = await this.provider.createOrg(createOptions);
 
-      org.pool = {status: PoolStage.InProgress, tag, timestamp: Date.now()};
+      org.pool = {stage: PoolStage.InProgress, tag, timestamp: Date.now()};
 
       this.emit('pool:org:created', {
         alias,

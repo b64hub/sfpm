@@ -221,7 +221,7 @@ export default class SandboxProvider implements OrgProvider<SandboxCreateOptions
       orgId,
       orgType: OrgTypes.Sandbox,
       pool: {
-        status: PoolStage.InProgress,
+        stage: PoolStage.InProgress,
         tag: '',
         timestamp: Date.now(),
       },
@@ -734,7 +734,7 @@ function mapFromPoolRecord(poolRecord: SandboxPoolOrgRecord, info?: SandboxInfoR
     orgId,
     orgType: OrgTypes.Sandbox,
     pool: {
-      status,
+      stage: status,
       tag,
       timestamp: poolRecord.CreatedDate ? new Date(poolRecord.CreatedDate).getTime() : Date.now(),
     },
@@ -761,7 +761,7 @@ function mapFromSandboxInfo(record: SandboxInfoRecord): Sandbox {
     orgId,
     orgType: OrgTypes.Sandbox,
     pool: {
-      status: '' as PoolStage,
+      stage: '' as PoolStage,
       tag: '',
       timestamp: record.CreatedDate ? new Date(record.CreatedDate).getTime() : Date.now(),
     },
