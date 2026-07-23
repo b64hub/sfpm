@@ -366,12 +366,12 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
    * Deploy/install path: call `ensureAnalyzed()` before reading
    * content that depends on analysis (testClasses, fhtFields, etc.).
    */
-  public async ensureAnalyzed(provider: ProjectDefinitionProvider): Promise<void> {
+  public async ensureAnalyzed(): Promise<void> {
     if (this._analyzed) return;
     this._analyzed = true;
 
     const analyzers = AnalyzerRegistry.getAnalyzers();
-    await Promise.all(analyzers.filter(a => a.isEnabled(this)).map(a => a.analyze(this, provider)));
+    await Promise.all(analyzers.filter(a => a.isEnabled(this)).map(a => a.analyze(this)));
   }
 
   public getComponentSet(sourcePath?: string): ComponentSet {

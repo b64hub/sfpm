@@ -125,7 +125,7 @@ export default class PackageBuilder {
     });
 
     try {
-      const metadataContribution = await analyzer.analyze(sfpmPackage, this.provider);
+      const metadataContribution = await analyzer.analyze(sfpmPackage);
       if (sfpmPackage instanceof SfpmMetadataPackage) {
         sfpmPackage.updateContent(metadataContribution);
       }

@@ -61,7 +61,7 @@ export default class SourcePackageBuilder implements Builder {
     });
 
     // Ensure content analysis is done (no-op if build already ran analyzers)
-    await this.sfpmPackage.ensureAnalyzed(this.provider);
+    await this.sfpmPackage.ensureAnalyzed();
 
     this.handleApexTestClasses(this.sfpmPackage);
 

@@ -1,5 +1,4 @@
 import ArtifactAssembler, {ArtifactAssemblerOptions} from '../../../artifacts/artifact-assembler.js';
-import ProjectService from '../../../project/project-service.js';
 import {BuildTask, BuildTaskContext} from '../builder-registry.js';
 
 export interface AssembleArtifactTaskOptions {
@@ -18,11 +17,10 @@ class AssembleArtifactTask implements BuildTask {
   }
 
   public async exec(): Promise<void> {
-    const {projectDirectory, sfpmPackage} = this.ctx;
+    const {provider, sfpmPackage} = this.ctx;
 
     // Get managed dependencies from the package's project definition
-    const projectService = await ProjectService.getInstance(projectDirectory);
-    const packageDef = projectService.getPackageDefinition(sfpmPackage.packageName);
+    const packageDef = provider.getPackageDefinition(sfpmPackage.packageName);
     const managed = packageDef?.managedDependencies ?? {};
 
     const assemblerOptions: ArtifactAssemblerOptions = {
@@ -32,7 +30,7 @@ class AssembleArtifactTask implements BuildTask {
 
     await new ArtifactAssembler(
       sfpmPackage,
-      projectDirectory,
+      provider,
       assemblerOptions,
       this.ctx.logger,
       this.ctx.sink,
