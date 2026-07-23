@@ -34,20 +34,6 @@ describe('SfpmDataPackage', () => {
     expect(dataPackage.type).toBe(PackageType.Data);
   });
 
-  it('should resolve dataDirectory from project source', () => {
-    expect(dataPackage.dataDirectory).toBe(path.join(tmpDir, 'data'));
-  });
-
-  it('should resolve dataDirectory from staging when staged', () => {
-    dataPackage.workingDirectory = '/staging/area';
-    expect(dataPackage.dataDirectory).toBe(path.join('/staging/area', 'data'));
-  });
-
-  it('should throw if no path defined', () => {
-    const pkg = new SfpmDataPackage('no-path', tmpDir);
-    expect(() => pkg.dataDirectory).toThrow('must have a path defined');
-  });
-
   it('should count files in data directory', async () => {
     const count = await dataPackage.componentCount();
     expect(count).toBe(2); // export.json + Account.csv

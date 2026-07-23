@@ -59,6 +59,7 @@ vi.mock('../../src/utils/workspace-path.js', () => ({
 
 // Import after mocks are set up
 import ArtifactAssembler, { ArtifactAssemblerOptions } from '../../src/artifacts/artifact-assembler.js';
+import type { ProjectDefinitionProvider } from '../../src/project/providers/project-definition-provider.js';
 
 describe('ArtifactAssembler', () => {
     let mockSfpmPackage: any;
@@ -67,9 +68,11 @@ describe('ArtifactAssembler', () => {
     let assembler: ArtifactAssembler;
 
     const projectDirectory = '/project';
+    const stagingDirectory = '/tmp/builds/test-build/package';
     const packageName = 'my-package';
     const scopedName = `@testorg/${packageName}`;
     const version = '1.0.0-1';
+    let mockProvider: ProjectDefinitionProvider;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -84,7 +87,6 @@ describe('ArtifactAssembler', () => {
             name: `@testorg/${packageName}`,
             version,
             type: PackageType.Unlocked,
-            workingDirectory: '/tmp/builds/test-build/package',
             packageDirectory: '/project/force-app',
             dependencies: [],
             orchestration: {},
@@ -93,6 +95,13 @@ describe('ArtifactAssembler', () => {
             projectDefinition: { packageAliases: {} },
             packageDefinition: { path: 'packages/my-package/force-app', versionDescription: 'Test package' },
         };
+
+        mockProvider = {
+            projectDir: projectDirectory,
+            getPackageBuildDirectory: vi.fn().mockReturnValue(stagingDirectory),
+            getPackageBuiltSourceDirectory: vi.fn().mockReturnValue(`${stagingDirectory}/force-app`),
+            getPackageDir: vi.fn().mockReturnValue('/project/packages/my-package'),
+        } as unknown as ProjectDefinitionProvider;
 
         mockLogger = {
             info: vi.fn(),
@@ -124,7 +133,7 @@ describe('ArtifactAssembler', () => {
 
         assembler = new ArtifactAssembler(
             mockSfpmPackage,
-            projectDirectory,
+            mockProvider,
             mockOptions,
             mockLogger,
         );
@@ -163,7 +172,7 @@ describe('ArtifactAssembler', () => {
             const result = await assembler.assemble();
 
             // Should return the package content directory
-            expect(result).toBe('/tmp/builds/test-build/package');
+            expect(result).toBe(stagingDirectory);
             
             // Should generate package.json in the package directory
             expect(fs.writeJson).toHaveBeenCalledWith(
@@ -183,11 +192,14 @@ describe('ArtifactAssembler', () => {
         });
 
         it('should throw ArtifactError if no staging directory is available', async () => {
-            mockSfpmPackage.workingDirectory = undefined;
-            
+            const noStagingProvider = {
+                ...mockProvider,
+                getPackageBuildDirectory: vi.fn().mockReturnValue(undefined),
+            } as unknown as ProjectDefinitionProvider;
+
             assembler = new ArtifactAssembler(
                 mockSfpmPackage,
-                projectDirectory,
+                noStagingProvider,
                 mockOptions,
                 mockLogger,
             );
@@ -196,7 +208,7 @@ describe('ArtifactAssembler', () => {
         });
 
         it('should throw ArtifactError and log if assembly fails', async () => {
-            vi.mocked(fs.pathExists).mockRejectedValue(new Error('Disk full'));
+            vi.mocked(fs.readJson as any).mockRejectedValue(new Error('Disk full'));
 
             await expect(assembler.assemble()).rejects.toThrow('Failed to assemble artifact');
             expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Failed to assemble artifact'));
@@ -248,7 +260,7 @@ describe('ArtifactAssembler', () => {
             // Recreate assembler with managed dependencies in options
             assembler = new ArtifactAssembler(
                 mockSfpmPackage,
-                projectDirectory,
+                mockProvider,
                 {
                     ...mockOptions,
                     managedDependencies: { 'Nebula Logger@4.16.0': '04taA000005CtsHQAS' },
