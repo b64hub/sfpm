@@ -1,3 +1,4 @@
+import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 import type {TestClassResult, ValidationResult, ValidationStrategy} from './validation/types.js';
 
 import {BuildEventSink} from '../../../events/build-event-bus.js';
@@ -44,6 +45,7 @@ class ValidationTask implements BuildTask {
   public readonly name = 'validation';
   private readonly logger?: Logger;
   private readonly options: ValidationTaskOptions;
+  private readonly provider: ProjectDefinitionProvider;
   private readonly sfpmPackage: SfpmMetadataPackage;
   private readonly sink?: BuildEventSink;
   private readonly strategy: ValidationStrategy;
@@ -55,6 +57,7 @@ class ValidationTask implements BuildTask {
     }
 
     this.sfpmPackage = ctx.sfpmPackage;
+    this.provider = ctx.provider;
     this.validationOrg = options.validationOrg;
     this.logger = ctx.logger;
     this.sink = ctx.sink;
@@ -72,7 +75,7 @@ class ValidationTask implements BuildTask {
 
   public async exec(): Promise<BuildTaskResult | void> {
     // Ensure content analysis is done (no-op if build already ran analyzers)
-    await this.sfpmPackage.ensureAnalyzed();
+    await this.sfpmPackage.ensureAnalyzed(this.provider);
 
     const testClasses = this.guardTestClasses();
     this.emitTestStart(testClasses.length);

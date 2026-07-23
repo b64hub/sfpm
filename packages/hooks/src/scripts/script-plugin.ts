@@ -173,9 +173,13 @@ async function executeScripts(
   context: HookContext,
   failOnError: boolean,
 ): Promise<void> {
-  const {logger, sfpmPackage} = context;
+  const {logger, provider, sfpmPackage} = context;
   const packageName = sfpmPackage.name;
-  const packagePath = sfpmPackage.packageDirectory ?? '';
+  // Build post-hooks run against the staged directory; all other hooks use the project/artifact source.
+  const isBuildPost = context.operation === 'build' && timing === 'post';
+  const packagePath = (isBuildPost
+    ? provider.getPackageBuildDirectory(sfpmPackage.name)
+    : provider.getPackageDir(sfpmPackage.name)) ?? '';
   const {projectDir} = context;
   const runner = new ScriptRunner(logger);
 
@@ -200,7 +204,7 @@ async function executeScripts(
         packageName,
         packagePath,
         projectDir,
-        stagingDirectory: sfpmPackage.workingDirectory,
+        stagingDirectory: isBuildPost ? provider.getPackageBuildDirectory(sfpmPackage.name) : undefined,
         targetOrg: context.targetOrg,
       });
 

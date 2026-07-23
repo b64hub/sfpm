@@ -59,7 +59,8 @@ const PROFILE_SUPPORTED_METADATA_TYPES = new Set([
 
 export default abstract class SfpmPackage {
   protected _packageDefinition?: PackageDefinition;
-  public projectDirectory: string;
+  /** Project root — internal path anchor; use the provider for external path resolution. */
+  protected readonly projectDirectory: string;
   public readonly scope: string | undefined;
   public sourceHash?: string;
   private _apiVersion?: string;
@@ -365,12 +366,12 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
    * Deploy/install path: call `ensureAnalyzed()` before reading
    * content that depends on analysis (testClasses, fhtFields, etc.).
    */
-  public async ensureAnalyzed(): Promise<void> {
+  public async ensureAnalyzed(provider: ProjectDefinitionProvider): Promise<void> {
     if (this._analyzed) return;
     this._analyzed = true;
 
     const analyzers = AnalyzerRegistry.getAnalyzers();
-    await Promise.all(analyzers.filter(a => a.isEnabled(this)).map(a => a.analyze(this)));
+    await Promise.all(analyzers.filter(a => a.isEnabled(this)).map(a => a.analyze(this, provider)));
   }
 
   public getComponentSet(sourcePath?: string): ComponentSet {
@@ -530,18 +531,6 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
     this.type = PackageType.Data;
   }
 
-  /**
-   * Absolute path to the data directory in the project source.
-   */
-  get dataDirectory(): string {
-    const packagePath = this.packageDefinition?.path;
-    if (!packagePath) {
-      throw new Error('Data package must have a path defined in packageDefinition');
-    }
-
-    return path.join(this.projectDirectory, packagePath);
-  }
-
   /** Alias for the version property, satisfying the DataDeployable interface. */
   get versionNumber(): string | undefined {
     return this.version;
@@ -549,8 +538,10 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
 
   /** Returns the number of data files in the package. */
   public async componentCount(): Promise<number> {
+    const dataDir = this.packageDirectory;
+    if (!dataDir) throw new Error('Package directory not set');
     const files = await fg(['**/*'], {
-      cwd: this.dataDirectory,
+      cwd: dataDir,
       dot: false,
       onlyFiles: true,
     });

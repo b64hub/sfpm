@@ -28,8 +28,6 @@ export interface SourceDeployable {
  * interpret the directory contents (export.json, CSVs, etc.).
  */
 export interface DataDeployable {
-  /** Absolute path to the directory containing the data files */
-  dataDirectory: string;
   versionNumber?: string;
 }
 

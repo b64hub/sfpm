@@ -1,4 +1,5 @@
 import type SfpmPackage from '../package/sfpm-package.js';
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type Logger from './logger.js';
 
 // ============================================================================
@@ -32,6 +33,12 @@ export interface HookContext {
   operation: PackageOperation;
   /** Absolute path to the project root directory. */
   projectDir: string;
+  /**
+   * Provider for resolving package and project paths.
+   * Use `provider.getPackageBuildDirectory(sfpmPackage.name)` for build-staged paths,
+   * or `provider.getPackageDirectory(sfpmPackage.name)` for project source / installed artifact paths.
+   */
+  provider: ProjectDefinitionProvider;
   /** The package being processed. */
   sfpmPackage: SfpmPackage;
   /** The lifecycle stage that triggered this invocation (e.g., 'validate', 'deploy', 'install', 'build'). */

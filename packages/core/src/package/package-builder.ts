@@ -125,7 +125,7 @@ export default class PackageBuilder {
     });
 
     try {
-      const metadataContribution = await analyzer.analyze(sfpmPackage);
+      const metadataContribution = await analyzer.analyze(sfpmPackage, this.provider);
       if (sfpmPackage instanceof SfpmMetadataPackage) {
         sfpmPackage.updateContent(metadataContribution);
       }
@@ -461,9 +461,9 @@ export default class PackageBuilder {
       logger: this.logger,
       operation: 'build',
       projectDir: this.provider.projectDir,
+      provider: this.provider,
       sfpmPackage,
       stage: lifecycle.stage,
-      stagingDirectory: this.provider.getPackageBuildDirectory(sfpmPackage.name),
       targetOrg: this.buildOrg?.devhub?.getUsername() ?? this.buildOrg?.buildOrg?.getUsername(),
       timing,
     };
@@ -488,7 +488,6 @@ export default class PackageBuilder {
 
     const ctx: BuildTaskContext = {
       logger: this.logger,
-      projectDirectory: this.provider.projectDir,
       provider: this.provider,
       sfpmPackage,
       sink: this.sink,

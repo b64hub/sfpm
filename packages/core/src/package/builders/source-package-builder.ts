@@ -24,6 +24,7 @@ export default class SourcePackageBuilder implements Builder {
   private buildOrg?: Org;
   private logger?: Logger;
   private options: BuildOptions;
+  private provider: ProjectDefinitionProvider;
   private sfpmPackage: SfpmMetadataPackage;
   private sink?: BuildEventSink;
   private workingDirectory: string;
@@ -39,6 +40,7 @@ export default class SourcePackageBuilder implements Builder {
       throw new TypeError(`SourcePackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
 
+    this.provider = provider;
     this.workingDirectory = provider.getPackageBuildDirectory(sfpmPackage.name)!;
     this.sfpmPackage = sfpmPackage;
     this.options = options;
@@ -59,7 +61,7 @@ export default class SourcePackageBuilder implements Builder {
     });
 
     // Ensure content analysis is done (no-op if build already ran analyzers)
-    await this.sfpmPackage.ensureAnalyzed();
+    await this.sfpmPackage.ensureAnalyzed(this.provider);
 
     this.handleApexTestClasses(this.sfpmPackage);
 

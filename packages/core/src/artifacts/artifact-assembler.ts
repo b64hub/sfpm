@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import crypto from 'node:crypto';
 import path from 'node:path';
 
+import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {WorkspacePackageJson} from '../project/providers/types/workspace.js';
 
 import {GitService} from '../git/git-service.js';
@@ -30,14 +31,14 @@ export interface ArtifactEventSink {
  * Can be implemented later with Git or other providers.
  */
 export interface ChangelogProvider {
-  generateChangelog(pkg: SfpmPackage, projectDirectory: string): Promise<any>;
+  generateChangelog(pkg: SfpmPackage, provider: ProjectDefinitionProvider): Promise<any>;
 }
 
 /**
  * Stub implementation of the ChangelogProvider.
  */
 class StubChangelogProvider implements ChangelogProvider {
-  async generateChangelog(_pkg: SfpmPackage, _projectDirectory: string): Promise<any> {
+  async generateChangelog(_pkg: SfpmPackage, _provider: ProjectDefinitionProvider): Promise<any> {
     return {
       message: 'Changelog generation is currently disabled.',
       timestamp: Date.now(),
@@ -77,7 +78,7 @@ export default class ArtifactAssembler {
 
   constructor(
     private sfpmPackage: SfpmPackage,
-    private projectDirectory: string,
+    private provider: ProjectDefinitionProvider,
     options: ArtifactAssemblerOptions,
     private logger?: Logger,
     sink?: ArtifactEventSink,
@@ -131,7 +132,10 @@ export default class ArtifactAssembler {
     if (this.sfpmPackage instanceof SfpmMetadataPackage) {
       hash = await SourceHasher.calculate(this.sfpmPackage);
     } else if (this.sfpmPackage instanceof SfpmDataPackage) {
-      hash = await DirectoryHasher.calculate(this.sfpmPackage.dataDirectory);
+      // Hash staged data (build context) or project source (install context).
+      const dataDir = this.provider.getPackageBuiltSourceDirectory(this.sfpmPackage.name)
+        ?? this.provider.getPackageDir(this.sfpmPackage.name)!;
+      hash = await DirectoryHasher.calculate(dataDir);
     } else {
       hash = crypto.createHash('sha256').update(Date.now().toString()).digest('hex');
     }
@@ -174,7 +178,7 @@ export default class ArtifactAssembler {
    * Generate changelog.json in the staging directory.
    */
   private async generateChangelog(stagingDir: string): Promise<void> {
-    const changelog = await this.changelogProvider.generateChangelog(this.sfpmPackage, this.projectDirectory);
+    const changelog = await this.changelogProvider.generateChangelog(this.sfpmPackage, this.provider);
     const changelogPath = path.join(stagingDir, 'changelog.json');
     await fs.writeJson(changelogPath, changelog, {spaces: 4});
   }
@@ -195,7 +199,7 @@ export default class ArtifactAssembler {
     // Auto-resolve git context for repository URL
     let repositoryUrl: string | undefined;
     try {
-      const git = new Git(this.projectDirectory, this.logger);
+      const git = new Git(this.provider.projectDir, this.logger);
       const gitService = new GitService(git, this.logger);
       const gitContext = await gitService.getPackageSourceContext();
       repositoryUrl = gitContext.repositoryUrl;
@@ -219,17 +223,18 @@ export default class ArtifactAssembler {
    * Content has already been staged by PackageAssembler into `artifacts/package/`.
    */
   private prepareStagingDirectory(): string {
-    if (!this.sfpmPackage.workingDirectory) {
+    const stagingDirectory = this.provider.getPackageBuildDirectory(this.sfpmPackage.name);
+    if (!stagingDirectory) {
       throw new ArtifactError(
         this.sfpmPackage.name,
         'assembly',
-        'No staging directory available - package must be staged before assembly',
+        'No staging directory available — package not found in provider',
         {version: this.packageVersionNumber},
       );
     }
 
-    this.logger?.debug(`Using staging directory: ${this.sfpmPackage.workingDirectory}`);
-    return this.sfpmPackage.workingDirectory;
+    this.logger?.debug(`Using staging directory: ${stagingDirectory}`);
+    return stagingDirectory;
   }
 
   /**
@@ -241,39 +246,20 @@ export default class ArtifactAssembler {
    * - sfpm.path is "." or unset → package.json is at the source path root
    */
   private async readWorkspacePackageJson(): Promise<WorkspacePackageJson> {
-    const sourcePath = this.sfpmPackage.packageDefinition?.path;
-    if (!sourcePath) {
+    // The provider already knows which directory holds the package.json for this package.
+    const pkgDir = this.provider.getPackageDir(this.sfpmPackage.name);
+    if (!pkgDir) {
       throw new ArtifactError(
         this.sfpmPackage.name,
         'assembly',
-        'Package definition path is not set — cannot locate workspace package.json',
+        'Package directory not found in provider — cannot locate workspace package.json',
         {version: this.packageVersionNumber},
       );
     }
 
-    const parts = sourcePath.split('/');
-    for (let i = parts.length; i > 0; i--) {
-      const candidatePath = path.join(this.projectDirectory, ...parts.slice(0, i), 'package.json');
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        if (await fs.pathExists(candidatePath)) {
-          // eslint-disable-next-line no-await-in-loop
-          const pkgJson = await fs.readJson(candidatePath);
-          if (pkgJson.sfpm?.packageType) {
-            this.logger?.debug(`Using workspace package.json from ${candidatePath}`);
-            return pkgJson as WorkspacePackageJson;
-          }
-        }
-      } catch {
-        // Continue searching
-      }
-    }
-
-    throw new ArtifactError(
-      this.sfpmPackage.name,
-      'assembly',
-      `No workspace package.json found for source path "${sourcePath}"`,
-      {version: this.packageVersionNumber},
-    );
+    const candidatePath = path.join(pkgDir, 'package.json');
+    const pkgJson = await fs.readJson(candidatePath);
+    this.logger?.debug(`Using workspace package.json from ${candidatePath}`);
+    return pkgJson as WorkspacePackageJson;
   }
 }
