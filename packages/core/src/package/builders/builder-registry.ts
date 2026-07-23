@@ -1,6 +1,7 @@
 import type {Org} from '@salesforce/core';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 
 import Logger from '../../types/logger.js';
 import {BuildOptions, PackageType} from '../../types/package.js'
@@ -17,7 +18,7 @@ import SfpmPackage from '../sfpm-package.js';
  */
 export interface BuildTaskContext {
   readonly logger?: Logger;
-  readonly projectDirectory: string;
+  readonly provider: ProjectDefinitionProvider;
   readonly sfpmPackage: SfpmPackage;
   readonly sink?: BuildEventSink;
 }
@@ -121,7 +122,7 @@ export interface Builder {
  * Constructor signature for package builders
  */
 export type BuilderConstructor = new (
-  workingDirectory: string,
+  provider: ProjectDefinitionProvider,
   sfpmPackage: SfpmPackage,
   options: BuildOptions,
   logger?: Logger,
@@ -170,6 +171,7 @@ export function RegisterBuilder(type: Omit<PackageType, 'managed'>) {
  * @returns A configured builder instance
  */
 export function builderFactory(
+  provider: ProjectDefinitionProvider,
   sfpmPackage: SfpmPackage,
   options: BuildOptions,
   logger?: Logger,
@@ -183,12 +185,8 @@ export function builderFactory(
     throw new Error(`No builder registered for package type: ${sfpmPackage.type}`);
   }
 
-  if (!sfpmPackage.workingDirectory) {
-    throw new Error('Package must be staged before building');
-  }
-
   return new BuilderClass(
-    sfpmPackage.workingDirectory,
+    provider,
     sfpmPackage,
     options,
     logger,

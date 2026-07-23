@@ -2,6 +2,7 @@ import {Org} from '@salesforce/core';
 import path from 'node:path';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 
 import Logger from '../../types/logger.js';
 import {BuildOptions, PackageType} from '../../types/package.js';
@@ -28,7 +29,7 @@ export default class SourcePackageBuilder implements Builder {
   private workingDirectory: string;
 
   constructor(
-    workingDirectory: string,
+    provider: ProjectDefinitionProvider,
     sfpmPackage: SfpmPackage,
     options: BuildOptions,
     logger?: Logger,
@@ -38,7 +39,7 @@ export default class SourcePackageBuilder implements Builder {
       throw new TypeError(`SourcePackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
 
-    this.workingDirectory = workingDirectory;
+    this.workingDirectory = provider.getPackageBuildDirectory(sfpmPackage.name)!;
     this.sfpmPackage = sfpmPackage;
     this.options = options;
     this.logger = logger;

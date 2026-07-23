@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import path from 'node:path';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 
 import ProjectService from '../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
@@ -28,12 +29,12 @@ export default class UnlockedPackageBuilder implements Builder {
   private sink?: BuildEventSink;
   private workingDirectory: string;
 
-  constructor(workingDirectory: string, sfpmPackage: SfpmPackage, options: BuildOptions, logger?: Logger, sink?: BuildEventSink) {
+  constructor(provider: ProjectDefinitionProvider, sfpmPackage: SfpmPackage, options: BuildOptions, logger?: Logger, sink?: BuildEventSink) {
     if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
       throw new TypeError(`UnlockedPackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
 
-    this.workingDirectory = workingDirectory;
+    this.workingDirectory = provider.getPackageBuildDirectory(sfpmPackage.name)!;
     this.sfpmPackage = sfpmPackage;
     this.options = options;
     this.logger = logger;
@@ -57,11 +58,6 @@ export default class UnlockedPackageBuilder implements Builder {
   public async exec(): Promise<BuilderResult> {
     if (!this.devhub) {
       throw new Error('Must run connect() before exec()');
-    }
-
-    // Update working directory to staging if available
-    if (this.sfpmPackage.workingDirectory) {
-      this.workingDirectory = this.sfpmPackage.workingDirectory;
     }
 
     const result = await this.buildPackage();

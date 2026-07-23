@@ -1,4 +1,5 @@
 import {Org} from '@salesforce/core';
+import {ComponentSet} from '@salesforce/source-deploy-retrieve';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {DependencyAnalyzer} from '../types/dependency-analysis.js';
@@ -375,7 +376,7 @@ export default class PackageBuilder {
 
     const buildAs = this.resolveBuildAs(sfpmPackage, modeConfig);
 
-    const builderInstance = builderFactory(sfpmPackage, this.options, this.logger, this.sink, buildAs as PackageType);
+    const builderInstance = builderFactory(this.provider, sfpmPackage, this.options, this.logger, this.sink, buildAs as PackageType);
 
     // Register dependency analysis as a pre-build task when analyzer is provided
     if (this.dependencyAnalyzer && modeConfig.dependencyAnalysis) {
@@ -462,6 +463,7 @@ export default class PackageBuilder {
       projectDir: this.provider.projectDir,
       sfpmPackage,
       stage: lifecycle.stage,
+      stagingDirectory: this.provider.getPackageBuildDirectory(sfpmPackage.name),
       targetOrg: this.buildOrg?.devhub?.getUsername() ?? this.buildOrg?.buildOrg?.getUsername(),
       timing,
     };
@@ -487,6 +489,7 @@ export default class PackageBuilder {
     const ctx: BuildTaskContext = {
       logger: this.logger,
       projectDirectory: this.provider.projectDir,
+      provider: this.provider,
       sfpmPackage,
       sink: this.sink,
     };
@@ -537,7 +540,7 @@ export default class PackageBuilder {
 
   private async stagePackage(sfpmPackage: SfpmPackage): Promise<number> {
     this.sink?.stageStart({
-      stagingDirectory: sfpmPackage.workingDirectory,
+      stagingDirectory: this.provider.getPackageBuildDirectory(sfpmPackage.name),
     });
 
     try {
@@ -550,7 +553,14 @@ export default class PackageBuilder {
         this.logger,
       ).assemble();
 
-      sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
+      // Initialise the ComponentSet from staged source so the package model
+      // never needs to know about the staging directory itself.
+      if (sfpmPackage instanceof SfpmMetadataPackage) {
+        const stagedSourcePath = this.provider.getPackageBuiltSourceDirectory(sfpmPackage.name);
+        if (stagedSourcePath) {
+          sfpmPackage.setComponentSet(ComponentSet.fromSource(stagedSourcePath));
+        }
+      }
 
       this.sink?.stageComplete({
         componentCount: assemblyOutput.componentCount || 0,

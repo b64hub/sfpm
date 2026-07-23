@@ -67,6 +67,20 @@ export interface ProjectDefinitionProvider {
    */
   getDependencies(packageName: string): PackageDefinition[];
 
+  /**
+   * Absolute path to the package's build output directory.
+   * This is where the assembler stages the package (e.g., <packageDir>/dist).
+   * Returns undefined if the package is not found.
+   */
+  getPackageBuildDirectory(packageName: string): string | undefined;
+
+  /**
+   * Absolute path to the staged source within the build output directory.
+   * This is where assembled source metadata lives (e.g., <packageDir>/dist/force-app).
+   * Returns undefined if the package is not found.
+   */
+  getPackageBuiltSourceDirectory(packageName: string): string | undefined;
+
   /** Lookup a package definition by name. Returns undefined if not found. */
   getPackageDefinition(packageName: string): PackageDefinition | undefined;
 
