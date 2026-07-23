@@ -9,6 +9,7 @@ import {
   type BuildTaskRegistration,
   type Logger,
   PackageType,
+  type ProjectDefinitionProvider,
   RegisterBuilder,
   SfpmDataPackage,
   type SfpmPackage,
@@ -34,12 +35,12 @@ import type {SfdmuExportJson, SfdmuObjectConfig} from './types.js';
 export default class SfdmuDataBuilder implements Builder {
   public tasks: BuildTaskRegistration[] = [];
   private readonly logger?: Logger;
+  private readonly provider: ProjectDefinitionProvider;
   private readonly sfpmPackage: SfpmDataPackage;
   private readonly sink?: BuildEventSink;
-  private workingDirectory: string;
 
   constructor(
-    workingDirectory: string,
+    provider: ProjectDefinitionProvider,
     sfpmPackage: SfpmPackage,
     _options: BuildOptions,
     logger?: Logger,
@@ -49,7 +50,7 @@ export default class SfdmuDataBuilder implements Builder {
       throw new TypeError(`SfdmuDataBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
 
-    this.workingDirectory = workingDirectory;
+    this.provider = provider;
     this.sfpmPackage = sfpmPackage;
     this.logger = logger;
     this.sink = sink;
@@ -67,10 +68,6 @@ export default class SfdmuDataBuilder implements Builder {
    * Execute the build: validate SFDMU export.json and data files.
    */
   public async exec(): Promise<BuilderResult> {
-    if (this.sfpmPackage.workingDirectory) {
-      this.workingDirectory = this.sfpmPackage.workingDirectory;
-    }
-
     await this.validate();
     return {
       packageName: this.sfpmPackage.name,
@@ -95,8 +92,8 @@ export default class SfdmuDataBuilder implements Builder {
   }
 
   private async findCsvFiles(): Promise<string[]> {
-    const files = await fs.readdir(this.sfpmPackage.packageBuiltSourceDirectory!);
-    return files.filter(f => f.toLowerCase().endsWith('.csv'));
+    const files = await fs.readdir(this.provider.getPackageBuiltSourceDirectory(this.sfpmPackage.name)!);
+    return files.filter((f: string) => f.toLowerCase().endsWith('.csv'));
   }
 
   /**
@@ -108,7 +105,7 @@ export default class SfdmuDataBuilder implements Builder {
   private async validate(): Promise<void> {
     this.sink?.taskStart({taskName: 'SfdmuValidation', taskType: 'pre-build'});
 
-    const exportJsonPath = path.join(this.sfpmPackage.packageBuiltSourceDirectory!, 'export.json');
+    const exportJsonPath = path.join(this.provider.getPackageBuiltSourceDirectory(this.sfpmPackage.name)!, 'export.json');
 
     // Validate export.json exists
 

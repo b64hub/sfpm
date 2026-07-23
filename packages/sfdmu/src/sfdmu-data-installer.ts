@@ -5,6 +5,7 @@ import {
   type InstallerResult,
   type Logger,
   PackageType,
+  type ProjectDefinitionProvider,
   RegisterInstaller,
   SfpmDataPackage,
   type SfpmPackage,
@@ -29,15 +30,17 @@ import SfdmuImportService from './sfdmu-import-service.js';
 export default class SfdmuDataInstaller extends EventEmitter implements Installer {
   private readonly logger?: Logger;
   private org?: Org;
+  private readonly provider: ProjectDefinitionProvider;
   private readonly service: SfdmuImportService;
   private readonly sfpmPackage: SfpmDataPackage;
 
-  constructor(_workingDirectory: string, sfpmPackage: SfpmPackage, _options?: unknown, logger?: Logger) {
+  constructor(provider: ProjectDefinitionProvider, sfpmPackage: SfpmPackage, _options?: unknown, logger?: Logger) {
     super();
     if (!(sfpmPackage instanceof SfpmDataPackage)) {
       throw new TypeError(`SfdmuDataInstaller received incompatible package type: ${(sfpmPackage as any).constructor.name}`);
     }
 
+    this.provider = provider;
     this.sfpmPackage = sfpmPackage;
     this.logger = logger;
     this.service = new SfdmuImportService(logger);
@@ -55,7 +58,10 @@ export default class SfdmuDataInstaller extends EventEmitter implements Installe
     const {packageName} = this.sfpmPackage;
     const targetOrg = this.org!.getUsername()!;
 
-    const exportJsonPath = path.join(this.sfpmPackage.dataDirectory, 'export.json');
+    const dataDir = this.provider.getPackageDir(packageName);
+    if (!dataDir) throw new InstallationError(packageName, targetOrg, `Data directory not found for package '${packageName}'`);
+
+    const exportJsonPath = path.join(dataDir, 'export.json');
     const exportJson: SfdmuExportJson = await fs.readJson(exportJsonPath);
     const allObjects = this.extractObjects(exportJson);
     const sObjectNames = allObjects.map(o => o.objectName ?? o.query?.split(/\s+FROM\s+/i)[1]?.split(/\s+/)[0] ?? 'unknown');
@@ -71,7 +77,7 @@ export default class SfdmuDataInstaller extends EventEmitter implements Installe
 
     const options: SfdmuRunOptions = {
       noprompt: true,
-      path: this.sfpmPackage.dataDirectory,
+      path: dataDir,
       sourceusername: 'csvfile',
       targetusername: targetOrg,
       ...(exportJson.apiVersion ? {apiVersion: exportJson.apiVersion} : {}),
