@@ -77,7 +77,7 @@ export default class SourcePackageInstaller implements Installer {
     const deployService = new MetadataDeployService(this.targetOrg!, this.logger);
 
     const deployId = await deployService.deploy(componentSet, {
-      testLevel: this.options?.testLevel as 'NoTestRun' | 'RunLocalTests' | 'RunSpecifiedTests' | undefined,
+      testLevel: this.options?.testLevel as 'NoTestRun' | 'RunLocalTests' | 'RunRelevantTests' | 'RunSpecifiedTests' | undefined,
     });
 
     const result = await deployService.awaitDeploy(deployId, progress => {

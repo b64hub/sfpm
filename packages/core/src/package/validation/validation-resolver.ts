@@ -1,39 +1,19 @@
-import type {Connection} from '@salesforce/core';
-
-import {Org} from '@salesforce/core';
-
-import type {ScopedValidationSink, ValidationEventBus} from '../../events/index.js';
+import type {ValidationEventBus} from '../../events/index.js';
 import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 import type Logger from '../../types/logger.js';
-import type {TestLevel} from '../../types/package.js';
 import type {
   DeployValidationDescriptor,
   PackageVersionValidationDescriptor,
   PendingValidationDescriptor,
-  ValidationCheck,
+  ResolveOptions,
   ValidationStateFailed,
   ValidationStatePassed,
 } from '../../types/validation.js';
 
 import {ArtifactRepository} from '../../artifacts/artifact-repository.js';
-import {type InstallOrchestrationResult, InstallOrchestrator} from '../../orchestrator/install-orchestrator.js';
 import {ProjectGraph} from '../../project/project-graph.js';
-import PackageService, {type PackageVersionCreateRequestResult} from '../package-service.js';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface ResolveOptions {
-  /** Minimum code coverage percentage required (default: 75) */
-  coverageThreshold?: number;
-  /** Maximum time to wait for package version polling in milliseconds (default: 7_200_000 = 120 min) */
-  maxWaitMs?: number;
-  /** Polling interval for package version requests in milliseconds (default: 30_000 = 30s) */
-  pollingIntervalMs?: number;
-  /** Run regression tests on direct dependents after deploy validation */
-  regressionTest?: boolean;
-}
+import {DeployValidationResolver} from './deploy-validation-resolver.js';
+import {PackageVersionResolver} from './package-version-resolver.js';
 
 // ============================================================================
 // ValidationResolver
@@ -43,15 +23,14 @@ export interface ResolveOptions {
  * Resolves pending validation operations into a final {@link ValidationState}.
  *
  * Routes by `operationType`:
- * - `'deploy'` — runs an install orchestration for all deploy packages
- *   (with optional regression testing of direct dependents), then maps
- *   per-package install results to validation states.
- * - `'package-version-request'` — polls the DevHub for unlocked package
- *   creation status via {@link PackageService.awaitValidation}.
+ * - `'deploy'` — delegates to {@link DeployValidationResolver}, which runs
+ *   install orchestration per target org in parallel.
+ * - `'package-version-request'` — delegates to {@link PackageVersionResolver},
+ *   which polls the DevHub for package creation status.
  *
- * Both paths run in parallel. Org connections are resolved internally
- * from descriptor fields, so the API stays simple: pass descriptors in,
- * get validation states out.
+ * Both paths run concurrently. Results are persisted to each package's artifact
+ * metadata, filtered to the descriptor set (upstream dependencies that the
+ * orchestrator installs as side-effects are logged but not persisted).
  *
  * @example
  * ```ts
@@ -83,9 +62,12 @@ export class ValidationResolver {
   /**
    * Resolve pending validations.
    *
-   * - Deploy descriptors are validated via a single install orchestration.
+   * - Deploy descriptors are validated via install orchestration (one per target org, in parallel).
    * - Package-version-request descriptors are polled in parallel.
    * - Both paths run concurrently.
+   *
+   * Returns results scoped to the requested descriptor set only. Upstream
+   * dependencies installed as side-effects are logged at debug level.
    */
   async resolve(
     descriptors: PendingValidationDescriptor[],
@@ -103,16 +85,16 @@ export class ValidationResolver {
     const results = new Map<string, ValidationStateFailed | ValidationStatePassed>();
 
     try {
+      const deployResolver = new DeployValidationResolver(this.provider, this.graph, this.logger);
+      const packageVersionResolver = new PackageVersionResolver(this.logger, this.bus);
+
       await Promise.all([
-        this.resolveDeployValidation(deployDescriptors, mergedOptions).then(resolved => {
-          for (const [name, result] of resolved) {
-            results.set(name, result);
-          }
+        deployResolver.resolve(deployDescriptors, mergedOptions).then(({incidental, primary}) => {
+          for (const [name, result] of primary) results.set(name, result);
+          this.logIncidental(incidental);
         }),
-        this.resolvePackageVersionRequests(packageVersionDescriptors, mergedOptions).then(resolved => {
-          for (const [name, result] of resolved) {
-            results.set(name, result);
-          }
+        packageVersionResolver.resolve(packageVersionDescriptors, mergedOptions).then(resolved => {
+          for (const [name, result] of resolved) results.set(name, result);
         }),
       ]);
     } finally {
@@ -132,34 +114,21 @@ export class ValidationResolver {
   }
 
   // ========================================================================
-  // Artifact persistence
+  // Private
   // ========================================================================
 
-  private mapReport(
-    descriptor: PackageVersionValidationDescriptor,
-    report: PackageVersionCreateRequestResult,
-  ): ValidationStateFailed | ValidationStatePassed {
-    const checks: ValidationCheck[] = ['dependencies', 'deploy', 'test'];
-
-    if (report.Status === 'Success') {
-      const codeCoverage = typeof report.CodeCoverage === 'number' ? report.CodeCoverage : undefined;
-      this.logger?.info(`Validation passed for '${descriptor.packageName}' (coverage: ${codeCoverage ?? 'N/A'}%)`);
-      this.sinkFor(descriptor.packageName)?.passed({checks, codeCoverage});
-      return {checks, status: 'passed', testCoverage: codeCoverage};
+  /**
+   * Log upstream dependency results (informational, not persisted).
+   * These are packages the orchestrator installed as side-effects of resolving
+   * dependencies — not packages the caller explicitly requested.
+   */
+  private logIncidental(incidental: Map<string, ValidationStateFailed | ValidationStatePassed>): void {
+    if (incidental.size === 0) return;
+    for (const [name, result] of incidental) {
+      const detail = result.status === 'failed' ? `failed: ${result.error}` : 'passed';
+      this.logger?.debug(`Upstream dependency '${name}' deploy result (informational): ${detail}`);
     }
-
-    // Status === 'Error'
-    const errors = (report.Error as undefined | unknown[])?.length
-      ? (report.Error as unknown[]).map(e => typeof e === 'string' ? e : (e as {Message?: string}).Message ?? JSON.stringify(e)).join('; ')
-      : 'Unknown error';
-    this.logger?.error(`Validation failed for '${descriptor.packageName}': ${errors}`);
-    this.sinkFor(descriptor.packageName)?.failed({error: errors});
-    return {checks, error: errors, status: 'failed'};
   }
-
-  // ========================================================================
-  // Deploy validation (install orchestration)
-  // ========================================================================
 
   /**
    * Write validation results to each package's `dist/package.json`.
@@ -181,150 +150,6 @@ export class ValidationResolver {
       }
     }
   }
-
-  // ========================================================================
-  // Package version request validation (polling)
-  // ========================================================================
-
-  private async resolveDeployValidation(
-    descriptors: DeployValidationDescriptor[],
-    options: ResolveOptions,
-  ): Promise<Map<string, ValidationStateFailed | ValidationStatePassed>> {
-    const results = new Map<string, ValidationStateFailed | ValidationStatePassed>();
-    if (descriptors.length === 0) return results;
-
-    const targetOrgAlias = descriptors[0].targetOrg;
-    const {testLevel} = descriptors[0];
-    const packageNames = descriptors.map(d => d.packageName);
-
-    this.logger?.info(`Deploy validation: installing ${packageNames.length} package(s) to ${targetOrgAlias}`);
-
-    let targetOrg: Org;
-    try {
-      targetOrg = await Org.create({aliasOrUsername: targetOrgAlias});
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      for (const name of packageNames) {
-        results.set(name, {
-          checks: ['deploy'],
-          error: `Failed to connect to org ${targetOrgAlias}: ${message}`,
-          status: 'failed',
-        });
-      }
-
-      return results;
-    }
-
-    const orchestrator = InstallOrchestrator.forArtifact(
-      targetOrg,
-      this.provider,
-      this.graph,
-      {
-        includeDependencies: true,
-        regressionTest: options.regressionTest,
-        testLevel: testLevel as TestLevel | undefined,
-      },
-      this.logger,
-    );
-
-    let orchestrationResult: InstallOrchestrationResult;
-    try {
-      orchestrationResult = await orchestrator.installAll(packageNames);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      for (const name of packageNames) {
-        results.set(name, {
-          checks: ['deploy'],
-          error: `Install orchestration failed: ${message}`,
-          status: 'failed',
-        });
-      }
-
-      return results;
-    }
-
-    // Map per-package install results to validation states
-    for (const pkgResult of orchestrationResult.results) {
-      if (pkgResult.success) {
-        results.set(pkgResult.packageName, {
-          checks: ['deploy'],
-          status: 'passed',
-        });
-      } else {
-        results.set(pkgResult.packageName, {
-          checks: ['deploy'],
-          error: pkgResult.error ?? 'Installation failed',
-          status: 'failed',
-        });
-      }
-    }
-
-    return results;
-  }
-
-  // ========================================================================
-  // Helpers
-  // ========================================================================
-
-  private async resolvePackageVersionRequests(
-    descriptors: PackageVersionValidationDescriptor[],
-    options: ResolveOptions,
-  ): Promise<Map<string, ValidationStateFailed | ValidationStatePassed>> {
-    const results = new Map<string, ValidationStateFailed | ValidationStatePassed>();
-    if (descriptors.length === 0) return results;
-
-    // Group by devhub to share connections
-    const byDevhub = new Map<string, PackageVersionValidationDescriptor[]>();
-    for (const d of descriptors) {
-      const group = byDevhub.get(d.devhub) ?? [];
-      group.push(d);
-      byDevhub.set(d.devhub, group);
-    }
-
-    await Promise.all([...byDevhub.entries()].map(async ([devhub, group]) => {
-      let org: Org;
-      try {
-        org = await Org.create({aliasOrUsername: devhub});
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        for (const d of group) {
-          results.set(d.packageName, {
-            checks: ['dependencies', 'deploy', 'test'],
-            error: `Failed to connect to devhub ${devhub}: ${message}`,
-            status: 'failed',
-          });
-        }
-
-        return;
-      }
-
-      await Promise.all(group.map(async descriptor => {
-        try {
-          const report = await PackageService.awaitValidation(
-            descriptor.packageVersionRequestId,
-            org.getConnection() as Connection,
-            {maxWaitMs: options.maxWaitMs, pollingIntervalMs: options.pollingIntervalMs},
-            this.logger,
-          );
-          results.set(descriptor.packageName, this.mapReport(descriptor, report));
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          const timedOut = (error as {name?: string}).name === 'PackageValidationTimeout';
-          this.logger?.[timedOut ? 'error' : 'warn'](`${descriptor.packageName}: ${message}`);
-          this.sinkFor(descriptor.packageName)?.failed({error: message});
-          results.set(descriptor.packageName, {
-            checks: ['dependencies', 'deploy', 'test'],
-            error: message,
-            status: 'failed',
-          });
-        }
-      }));
-    }));
-
-    return results;
-  }
-
-  private sinkFor(packageName: string): ScopedValidationSink | undefined {
-    return this.bus?.forPackage(packageName);
-  }
 }
+
+export {type ResolveOptions} from '../../types/validation.js';

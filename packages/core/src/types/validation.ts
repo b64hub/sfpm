@@ -72,6 +72,21 @@ export interface ValidationStatePassed {
   testCoverage?: number;
 }
 
+// ============================================================================
+// Resolver options
+// ============================================================================
+
+export interface ResolveOptions {
+  /** Minimum code coverage percentage required (default: 75) */
+  coverageThreshold?: number;
+  /** Maximum time to wait for package version polling in milliseconds (default: 7_200_000 = 120 min) */
+  maxWaitMs?: number;
+  /** Polling interval for package version requests in milliseconds (default: 30_000 = 30s) */
+  pollingIntervalMs?: number;
+  /** Run regression tests on direct dependents after deploy validation */
+  regressionTest?: boolean;
+}
+
 export interface ValidationStateFailed {
   /** Which validation checks were attempted */
   checks: ValidationCheck[];

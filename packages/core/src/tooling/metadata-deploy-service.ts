@@ -1,6 +1,7 @@
 import type {
   ComponentSet, DeploySetOptions, MetadataApiDeploy, MetadataApiDeployStatus,
 } from '@salesforce/source-deploy-retrieve';
+
 import {type Connection, Org} from '@salesforce/core';
 
 import type Logger from '../types/logger.js';
@@ -10,7 +11,7 @@ export interface DeployOptions {
   /** Apex test classes to run during deployment */
   testClasses?: string[];
   /** Test level for the deployment (default: 'NoTestRun' unless testClasses provided) */
-  testLevel?: 'NoTestRun' | 'RunLocalTests' | 'RunSpecifiedTests';
+  testLevel?: 'NoTestRun' | 'RunLocalTests' | 'RunRelevantTests' | 'RunSpecifiedTests';
 }
 
 /** A component that failed during deployment. */
@@ -18,7 +19,6 @@ export interface DeployComponentError {
   fullName: string;
   problem: string;
 }
-
 
 export class DeployError extends Error {
   constructor(message: string, public readonly deployId: string) {
@@ -54,7 +54,6 @@ export interface TestRunResult {
 
 /** Normalized deployment result with rich test data and helper methods. */
 export interface DeployResult {
-  id: string;
   /** Number of components successfully deployed */
   deployed: number;
   /** Component-level errors */
@@ -63,6 +62,7 @@ export interface DeployResult {
   formatErrors(): string;
   /** Whether any tests failed during the deployment. */
   hasTestFailures(): boolean;
+  id: string;
   /** Whether coverage meets the specified threshold. */
   meetsCoverageThreshold(threshold: number): boolean;
   /** The raw Salesforce deploy response (for advanced consumers) */
@@ -102,7 +102,6 @@ export class MetadataDeployService {
   private readonly logger?: Logger;
   private readonly pendingDeploys = new Map<string, MetadataApiDeploy>();
   private targetOrg: Org;
-
 
   constructor(targetOrg: Org, logger?: Logger) {
     this.targetOrg = targetOrg;
@@ -144,7 +143,7 @@ export class MetadataDeployService {
     const deployOptions: DeploySetOptions = {
       apiOptions: {
         ...(options?.testClasses?.length && {runTests: options.testClasses}),
-        testLevel: testLevel,
+        testLevel,
       },
       usernameOrConnection: this.targetOrg.getConnection(),
     };
@@ -153,9 +152,9 @@ export class MetadataDeployService {
     try {
       this.logger?.debug(`Starting deployment against ${this.targetOrg.getUsername()} with test level '${testLevel}'`);
       deploy = await componentSet.deploy(deployOptions);
-    } catch (err) {
-      this.logger?.error(`Failed to start deploy against '${this.targetOrg.getUsername()}': ${(err as Error).message}`);
-      throw err as Error;
+    } catch (error) {
+      this.logger?.error(`Failed to start deploy against '${this.targetOrg.getUsername()}': ${(error as Error).message}`);
+      throw error;
     }
 
     if (!deploy.id) {
@@ -289,7 +288,6 @@ export class MetadataDeployService {
     const testResults = this.extractTestResults(response);
 
     return {
-      id: response.id,
       deployed: response.numberComponentsDeployed,
       errors,
       formatErrors() {
@@ -299,6 +297,7 @@ export class MetadataDeployService {
       hasTestFailures() {
         return (this.testResults?.failed ?? 0) > 0;
       },
+      id: response.id,
       meetsCoverageThreshold(threshold: number) {
         if (this.testResults?.coverage === undefined) return true;
         return this.testResults.coverage >= threshold;
