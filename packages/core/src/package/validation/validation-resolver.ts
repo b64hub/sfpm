@@ -2,7 +2,7 @@ import type {Connection} from '@salesforce/core';
 
 import {Org} from '@salesforce/core';
 
-import type {ScopedValidationSink, ValidationEventBus, ValidationEventSink} from '../../events/index.js';
+import type {ScopedValidationSink, ValidationEventBus} from '../../events/index.js';
 import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 import type Logger from '../../types/logger.js';
 import type {TestLevel} from '../../types/package.js';
@@ -65,7 +65,6 @@ export class ValidationResolver {
   private readonly logger?: Logger;
   private readonly options?: ResolveOptions;
   private readonly provider: ProjectDefinitionProvider;
-  private readonly sink?: ValidationEventSink;
 
   constructor(
     provider: ProjectDefinitionProvider,
@@ -95,7 +94,7 @@ export class ValidationResolver {
     const mergedOptions = {...this.options, ...options};
     const packageNames = descriptors.map(d => d.packageName);
 
-    this.sink?.start({packageNames});
+    this.bus?.start({packageNames});
     this.logger?.info(`Resolving ${descriptors.length} validation(s): ${packageNames.join(', ')}`);
 
     const deployDescriptors = descriptors.filter((d): d is DeployValidationDescriptor => d.operationType === 'deploy');
@@ -120,7 +119,7 @@ export class ValidationResolver {
       const passed = [...results.values()].filter(r => r.status === 'passed').length;
       const failed = [...results.values()].filter(r => r.status === 'failed').length;
 
-      this.sink?.complete({
+      this.bus?.complete({
         failed, passed, timedOut: 0, total: results.size,
       });
 
