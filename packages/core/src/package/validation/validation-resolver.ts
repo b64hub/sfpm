@@ -73,7 +73,7 @@ export class ValidationResolver {
     descriptors: PendingValidationDescriptor[],
     options?: ResolveOptions,
   ): Promise<Map<string, ValidationStateFailed | ValidationStatePassed>> {
-    const mergedOptions = {...this.options, ...options};
+    const mergedOptions: ResolveOptions = {...this.options, ...options};
     const packageNames = descriptors.map(d => d.packageName);
 
     this.bus?.start({packageNames});

@@ -13,17 +13,10 @@ import chalk from 'chalk';
 import type {OutputLogger, OutputMode} from './renderer-utils.js';
 import type {ValidationDisplayStrategy} from './strategies/validation-display-strategy.js';
 
-import {formatDuration, sym} from './renderer-utils.js';
+import {formatDuration} from './renderer-utils.js';
 import {createValidationDisplayStrategy} from './strategies/validation-display-strategy.js';
 
-// ============================================================================
-// Per-package tracking
-// ============================================================================
-
-interface PackageState {
-  startedAt?: number;
-  status: 'done' | 'failed' | 'polling' | 'queued' | 'timed-out';
-}
+export type {OutputMode} from './renderer-utils.js';
 
 // ============================================================================
 // ValidationProgressRenderer
@@ -35,10 +28,12 @@ interface PackageState {
  * Translates {@link ValidationEventBus} events into display strategy calls.
  * The renderer owns event-to-semantic translation; the display strategy
  * (interactive, plain, silent) owns how that is rendered.
+ *
+ * Interactive mode shows a per-package Listr task (spinner while pending,
+ * ✔ or ✖ on completion). Plain mode logs one line per result.
  */
 export class ValidationProgressRenderer {
   private readonly display: ValidationDisplayStrategy;
-  private readonly packages = new Map<string, PackageState>();
 
   constructor(mode: OutputMode, log: OutputLogger) {
     this.display = createValidationDisplayStrategy(mode, log);
@@ -57,34 +52,29 @@ export class ValidationProgressRenderer {
   }
 
   // ========================================================================
-  // Event Handlers
+  // Event handlers
   // ========================================================================
 
-  /**
-   * Color a coverage percentage: red (<75), yellow (75–89), green (90+).
-   */
   private colorCoverage(coverage: number): string {
-    const label = `${coverage}%`;
-    if (coverage >= 90) return chalk.dim.green(label);
-    if (coverage >= 75) return chalk.dim.yellow(label);
-    return chalk.dim.red(label);
+    if (coverage < 75) return chalk.red(`${coverage}% coverage`);
+    if (coverage < 90) return chalk.yellow(`${coverage}% coverage`);
+    return chalk.green(`${coverage}% coverage`);
   }
 
-  /**
-   * Build a dimmed parenthetical detail string with component counts and coverage.
-   */
   private formatDetails(deployed?: number, total?: number, coverage?: number): string {
-    if (deployed === undefined && total === undefined && coverage === undefined) return '';
-
     if (deployed !== undefined && total !== undefined && coverage !== undefined) {
-      return ` ${chalk.dim(`(${deployed}/${total} deployed,`)} ${this.colorCoverage(coverage)}${chalk.dim(')')}`;
+      return ` ${chalk.dim('(')}${deployed}/${total} deployed, ${this.colorCoverage(coverage)}${chalk.dim(')')}`;
+    }
+
+    if (deployed !== undefined && total !== undefined) {
+      return ` ${chalk.dim('(')}${deployed}/${total} deployed${chalk.dim(')')}`;
     }
 
     if (coverage !== undefined) {
       return ` ${chalk.dim('(')}${this.colorCoverage(coverage)}${chalk.dim(')')}`;
     }
 
-    return chalk.dim(` (${deployed}/${total} deployed)`);
+    return '';
   }
 
   private onComplete(event: ResolveCompleteEvent): void {
@@ -92,29 +82,20 @@ export class ValidationProgressRenderer {
   }
 
   private onFailed(event: ResolveFailedEvent): void {
-    const name = (event as any).packageName ?? 'unknown';
-    this.packages.set(name, {status: 'failed'});
-    const details = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
-    this.display.result(
-      `${sym.fail} ${chalk.cyan(name)}${details} ${chalk.dim('—')} ${chalk.red(event.error)}`,
-      this.remainingCount(),
-    );
+    const components = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
+    const detail = `${components} ${chalk.dim('—')} ${chalk.red(event.error)}`;
+    this.display.packageFail(event.packageName, detail);
   }
 
   private onPassed(event: ResolvePassedEvent): void {
-    const name = (event as any).packageName ?? 'unknown';
-    this.packages.set(name, {status: 'done'});
-    const details = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
-    this.display.result(`${sym.success} ${chalk.cyan(name)}${details}`, this.remainingCount());
+    const detail = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
+    this.display.packagePass(event.packageName, detail);
   }
 
   private onStart(event: ResolveStartEvent): void {
-    for (const name of event.packageNames) {
-      this.packages.set(name, {startedAt: Date.now(), status: 'queued'});
-    }
-
-    const count = event.packageNames.length;
-    this.display.start(count, count === 1 ? 'validation' : 'validations');
+    const {packageNames} = event;
+    this.display.start(packageNames.length, packageNames.length === 1 ? 'validation' : 'validations');
+    this.display.packageStart(packageNames);
   }
 
   // ========================================================================
@@ -122,32 +103,16 @@ export class ValidationProgressRenderer {
   // ========================================================================
 
   private onStatus(event: ResolveStatusEvent): void {
-    const name = (event as any).packageName ?? 'unknown';
-    const pkg = this.packages.get(name) ?? {status: 'queued'};
-    pkg.status = event.status === 'in-progress' || event.status === 'polling' ? 'polling' : 'queued';
-    this.packages.set(name, pkg);
-
-    const statusLabel = event.status === 'polling'
-      ? `Polling ${chalk.cyan(name)}`
+    const text = event.status === 'polling'
+      ? `polling${event.attempt ? ` (attempt ${event.attempt})` : ''}`
       : event.status === 'queued'
-        ? `Queued ${chalk.dim(name)}`
-        : `Resolving ${chalk.cyan(name)}`;
-
-    const attempt = event.attempt ? chalk.dim(` (attempt ${event.attempt})`) : '';
-    const waiting = event.waitingFor ? chalk.dim(` waiting for ${event.waitingFor}`) : '';
-    this.display.status(`${statusLabel}${attempt}${waiting}`);
+        ? `queued${event.waitingFor ? ` — waiting for ${event.waitingFor}` : ''}`
+        : 'validating...';
+    this.display.packageStatus(event.packageName, text);
   }
 
   private onTimeout(event: ResolveTimeoutEvent): void {
-    const name = (event as any).packageName ?? 'unknown';
-    this.packages.set(name, {status: 'timed-out'});
-    this.display.result(
-      `${sym.warn} ${chalk.bold(name)} ${chalk.yellow('timed out')} ${chalk.dim(`after ${formatDuration(event.elapsedMs)}`)}`,
-      this.remainingCount(),
-    );
-  }
-
-  private remainingCount(): number {
-    return [...this.packages.values()].filter(s => s.status === 'polling' || s.status === 'queued').length;
+    const detail = ` ${chalk.dim('—')} ${chalk.yellow('timed out')} ${chalk.dim(`after ${formatDuration(event.elapsedMs)}`)}`;
+    this.display.packageFail(event.packageName, detail);
   }
 }
