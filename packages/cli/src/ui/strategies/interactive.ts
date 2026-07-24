@@ -66,6 +66,7 @@ export class InteractiveDisplay implements DisplayStrategy {
     const allSucceeded = summary.failed === 0;
     const title = allSucceeded ? 'Orchestration Complete' : 'Orchestration Complete (with failures)';
 
+    this.logger.log('\n');
     if (allSucceeded) {
       this.logger.log(successBox(title, entries));
     } else {
