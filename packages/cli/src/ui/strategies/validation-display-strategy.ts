@@ -4,7 +4,7 @@ import {Listr} from 'listr2';
 import type {OutputLogger, OutputMode} from '../renderer-utils.js';
 
 import {createDeferred, type Deferred} from '../orchestration-listr.js';
-import {rawSym, sym} from '../renderer-utils.js';
+import {sym} from '../renderer-utils.js';
 
 // ============================================================================
 // ValidationDisplayStrategy Interface
@@ -69,13 +69,7 @@ class ValidationListrManager {
         },
         title: chalk.dim(name),
       })),
-      {
-        concurrent: true,
-        exitOnError: false,
-        rendererOptions: {
-          icon: {SKIPPED_WITH_COLLAPSE: rawSym.skip},
-        },
-      },
+      {concurrent: true, exitOnError: false},
     );
 
     listr.run().catch(() => {});
