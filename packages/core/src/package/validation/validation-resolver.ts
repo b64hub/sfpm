@@ -124,8 +124,10 @@ export class ValidationResolver {
         failed, passed, timedOut: 0, total: results.size,
       });
 
-      await this.persistResults(results);
+      await this.persistResults(new Map([...results].filter(([k]) => packageNames.includes(k))));
     }
+
+    this.logger?.info(`Validation resolution complete for: ${packageNames.join(', ')}`);
 
     return results;
   }

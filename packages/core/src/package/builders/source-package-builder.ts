@@ -99,7 +99,7 @@ export default class SourcePackageBuilder implements Builder {
 
     return {
       operationType: 'deploy',
-      packageName: this.sfpmPackage.packageName,
+      packageName: this.sfpmPackage.name,
       targetOrg: targetOrg?.getUsername() as string,
       testLevel,
     };
