@@ -303,7 +303,7 @@ export class BuildProgressRenderer {
 
   private handleCreateStart(event: CreateStartEvent): void {
     this.timings.createStart = event.timestamp;
-    this.display.subtaskUpdate(event.packageName, 'build', `creating version ${event.versionNumber}...`);
+    this.display.subtaskUpdate(event.packageName, 'build', `creating version: ${event.versionNumber}`);
   }
 
   private handleHookComplete(event: HookCompleteEvent): void {

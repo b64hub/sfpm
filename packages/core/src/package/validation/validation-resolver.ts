@@ -76,7 +76,9 @@ export class ValidationResolver {
     const mergedOptions: ResolveOptions = {...this.options, ...options};
     const packageNames = descriptors.map(d => d.packageName);
 
-    this.bus?.start({packageNames});
+    // UI lifecycle (spinner start/finish) is driven by the caller around this
+    // call, so the display is live before we begin work. Here we only run the
+    // work and emit per-package progress + completion events on the bus.
     this.logger?.info(`Resolving ${descriptors.length} validation(s): ${packageNames.join(', ')}`);
 
     const deployDescriptors = descriptors.filter((d): d is DeployValidationDescriptor => d.operationType === 'deploy');
@@ -90,7 +92,11 @@ export class ValidationResolver {
 
       await Promise.all([
         deployResolver.resolve(deployDescriptors, mergedOptions).then(({incidental, primary}) => {
-          for (const [name, result] of primary) results.set(name, result);
+          for (const [name, result] of primary) {
+            results.set(name, result);
+            this.emitDeployResult(name, result);
+          }
+
           this.logIncidental(incidental);
         }),
         packageVersionResolver.resolve(packageVersionDescriptors, mergedOptions).then(resolved => {
@@ -122,6 +128,28 @@ export class ValidationResolver {
    * These are packages the orchestrator installed as side-effects of resolving
    * dependencies — not packages the caller explicitly requested.
    */
+  /** Fire resolve:passed or resolve:failed on the bus for a deploy validation result. */
+  private emitDeployResult(packageName: string, result: ValidationStateFailed | ValidationStatePassed): void {
+    const sink = this.bus?.forPackage(packageName);
+    if (!sink) return;
+
+    if (result.status === 'passed') {
+      sink.passed({
+        checks: result.checks,
+        codeCoverage: result.testCoverage,
+        componentsDeployed: result.componentsDeployed,
+        componentsTotal: result.componentsTotal,
+      });
+    } else {
+      sink.failed({
+        codeCoverage: result.testCoverage,
+        componentsDeployed: result.componentsDeployed,
+        componentsTotal: result.componentsTotal,
+        error: result.error ?? 'Installation failed',
+      });
+    }
+  }
+
   private logIncidental(incidental: Map<string, ValidationStateFailed | ValidationStatePassed>): void {
     if (incidental.size === 0) return;
     for (const [name, result] of incidental) {

@@ -27,14 +27,9 @@ import {EventSimulator, type TimelineEntry} from './event-simulator.js';
 // finishes — independently, without intermediate status updates.
 // ============================================================================
 
-const timeline: TimelineEntry<ValidationEvents>[] = [
-  // All four packages appear as spinners immediately
-  {
-    delay: 0,
-    event: 'resolve:start',
-    payload: {packageNames: ['core-data', 'ui-components', 'analytics', 'apex-utils']},
-  },
+const packageNames = ['core-data', 'ui-components', 'analytics', 'apex-utils'];
 
+const timeline: TimelineEntry<ValidationEvents>[] = [
   // core-data finishes first — full metadata deploy + coverage
   {
     delay: 1500,
@@ -106,5 +101,11 @@ const renderer = new ValidationProgressRenderer('interactive', {
 });
 renderer.attachTo(bus);
 
+// Explicit lifecycle: start the spinner (await until live), play progress
+// events, then finish (final paint + summary) — mirrors resolveValidationsInline.
+await renderer.begin(packageNames);
+
 const simulator = new EventSimulator(bus);
 await simulator.play(timeline, {speed: 1});
+
+await renderer.end();

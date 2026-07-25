@@ -4,6 +4,7 @@ import {
   type BuildWatcherPayload,
   type DependencyAnalyzer,
   LifecycleEngine,
+  noopLogger,
   type OrchestrationResult,
   PackageFactory,
   PackageType,
@@ -421,10 +422,26 @@ export default class Build extends SfpmCommand {
     renderer.attachTo(validationBus)
 
     const projectService = await ProjectService.getInstance(resolved.projectDir);
-    const resolver = new ValidationResolver(projectService.getDefinitionProvider(), projectService.getProjectGraph(), this.sfpmLogger, validationBus);
+    // In interactive mode the Listr renderer owns the terminal. The pino-backed
+    // sfpmLogger writes directly to the stderr fd (bypassing Listr's stdout hijack),
+    // which corrupts log-update's cursor tracking and prevents the spinner from
+    // rendering. Feed the resolver a noop logger so the Listr has exclusive control;
+    // results/errors still surface via the event bus (resolve:passed/failed -> spinner).
+    const resolverLogger = resolved.mode === 'interactive' ? noopLogger : this.sfpmLogger;
+    const resolver = new ValidationResolver(projectService.getDefinitionProvider(), projectService.getProjectGraph(), resolverLogger, validationBus);
+
+    // Start the UI and wait until the spinner is actually live BEFORE kicking
+    // off the (event-loop-heavy) validation work. Otherwise the work starves
+    // the Listr's async render setup and the spinner never appears.
+    await renderer.begin(descriptors.map(d => d.packageName));
+
     const results = await resolver.resolve(descriptors, {
       maxWaitMs: resolved.waitMinutes * 60 * 1000,
     });
+
+    // Paint the final task states + summary before we may process.exit() on
+    // failure below, otherwise the render is abandoned mid-paint.
+    await renderer.end();
 
     const failures: string[] = [];
     for (const [packageName, result] of results) {

@@ -19,6 +19,7 @@ export interface PackageResultSummary {
   name: string;
   skipped?: boolean;
   success: boolean;
+  version?: string;
 }
 
 /**

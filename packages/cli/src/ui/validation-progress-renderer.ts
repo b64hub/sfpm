@@ -2,7 +2,6 @@ import type {
   ResolveCompleteEvent,
   ResolveFailedEvent,
   ResolvePassedEvent,
-  ResolveStartEvent,
   ResolveStatusEvent,
   ResolveTimeoutEvent,
   ValidationEventBus,
@@ -25,30 +24,59 @@ export type {OutputMode} from './renderer-utils.js';
 /**
  * Renders post-build validation resolution progress.
  *
- * Translates {@link ValidationEventBus} events into display strategy calls.
- * The renderer owns event-to-semantic translation; the display strategy
- * (interactive, plain, silent) owns how that is rendered.
+ * Translates {@link ValidationEventBus} progress events into display strategy
+ * calls. The UI lifecycle is driven explicitly by the caller, not by events,
+ * so the spinner is guaranteed live before validation work starts and its
+ * final frame is painted before the process may exit:
+ *
+ *   await renderer.begin(packageNames);   // spinner live
+ *   await resolver.resolve(...);          // work → progress events
+ *   await renderer.end();                 // final paint + summary
  *
  * Interactive mode shows a per-package Listr task (spinner while pending,
  * ✔ or ✖ on completion). Plain mode logs one line per result.
  */
 export class ValidationProgressRenderer {
   private readonly display: ValidationDisplayStrategy;
+  private summary?: {failed: number; passed: number; timedOut: number; total: number};
 
   constructor(mode: OutputMode, log: OutputLogger) {
     this.display = createValidationDisplayStrategy(mode, log);
   }
 
   /**
-   * Attach to a validation event bus and start listening.
+   * Attach to a validation event bus and listen for per-package progress.
+   * Call {@link begin} to start the UI and {@link end} to finish it.
    */
   public attachTo(bus: ValidationEventBus): void {
-    bus.on('resolve:start', event => this.onStart(event));
     bus.on('resolve:status', event => this.onStatus(event));
     bus.on('resolve:passed', event => this.onPassed(event));
     bus.on('resolve:failed', event => this.onFailed(event));
     bus.on('resolve:timeout', event => this.onTimeout(event));
     bus.on('resolve:complete', event => this.onComplete(event));
+  }
+
+  /**
+   * Start the UI for the given packages. Resolves only once the display is
+   * live (interactive: the Listr spinner is registered). Await this BEFORE
+   * starting event-loop-heavy validation work, otherwise the work can starve
+   * the async render setup and the spinner never appears.
+   */
+  public begin(packageNames: string[]): Promise<void> {
+    return this.display.begin(packageNames);
+  }
+
+  /**
+   * Finish the UI: await the final render, then write the summary line. Await
+   * this before the process may exit (e.g. before `this.error({exit})`), so the
+   * validation Listr is not abandoned mid-paint.
+   */
+  public async end(): Promise<void> {
+    await this.display.end();
+    if (this.summary) {
+      const {failed, passed, timedOut, total} = this.summary;
+      this.display.complete(passed, failed, timedOut, total);
+    }
   }
 
   // ========================================================================
@@ -78,7 +106,11 @@ export class ValidationProgressRenderer {
   }
 
   private onComplete(event: ResolveCompleteEvent): void {
-    this.display.complete(event.passed, event.failed, event.timedOut, event.total);
+    // Defer the summary line until end(), after the Listr paints its final
+    // task states — otherwise the summary would print above the ✔/✖ rows.
+    this.summary = {
+      failed: event.failed, passed: event.passed, timedOut: event.timedOut, total: event.total,
+    };
   }
 
   private onFailed(event: ResolveFailedEvent): void {
@@ -90,12 +122,6 @@ export class ValidationProgressRenderer {
   private onPassed(event: ResolvePassedEvent): void {
     const detail = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
     this.display.packagePass(event.packageName, detail);
-  }
-
-  private onStart(event: ResolveStartEvent): void {
-    const {packageNames} = event;
-    this.display.start(packageNames.length, packageNames.length === 1 ? 'validation' : 'validations');
-    this.display.packageStart(packageNames);
   }
 
   // ========================================================================

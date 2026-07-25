@@ -88,7 +88,6 @@ export type {
   ResolveCompleteEvent, ResolveCompletePayload,
   ResolveFailedEvent, ResolveFailedPayload,
   ResolvePassedEvent, ResolvePassedPayload,
-  ResolveStartEvent, ResolveStartPayload,
   ResolveStatusEvent, ResolveStatusPayload,
   ResolveTimeoutEvent, ResolveTimeoutPayload,
   ValidationEvents, ValidationEventSink,
