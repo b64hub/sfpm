@@ -21,6 +21,7 @@ import type {
 } from './project-definition-provider.js';
 import type {WorkspacePackageJson} from './types/workspace.js';
 
+import {DIST_DIR, FORCE_APP_DIR} from '../../types/artifact.js';
 import {type PackageDefinition, type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
 import {stripScope} from '../../utils/scope-utils.js';
 import {
@@ -39,6 +40,16 @@ import {toPackageDefinition} from './workspace-adapter.js';
 // ---------------------------------------------------------------------------
 
 export interface WorkspaceProviderOptions {
+  /**
+   * When true, overlays build-time fields (packageVersionId, sourceHash) from
+   * each package's dist/package.json onto the resolved PackageDefinition.
+   *
+   * Use in install contexts where the local build output is the source of truth
+   * for artifact identity. Falls back gracefully when dist/ doesn't exist yet.
+   *
+   * Cache is automatically invalidated when dist/package.json mtimes change.
+   */
+  distAware?: boolean;
   logger?: Logger;
   /** Absolute path to the project root directory */
   projectDir: string;
@@ -56,6 +67,7 @@ export interface WorkspaceProviderOptions {
 
 export class WorkspaceProvider implements ProjectDefinitionProvider {
   public readonly projectDir: string;
+  private cachedDistMtimes?: Map<string, number>;
   private cachedResult?: ProjectDefinitionResult;
   private readonly logger: Logger | undefined;
   private readonly options: WorkspaceProviderOptions;
@@ -140,6 +152,16 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     return getDependencies(this.resolve().definition, packageName);
   }
 
+  getPackageBuildDirectory(packageName: string): string | undefined {
+    const pkgDir = this.getPackageDir(packageName);
+    return pkgDir ? path.join(pkgDir, DIST_DIR) : undefined;
+  }
+
+  getPackageBuiltSourceDirectory(packageName: string): string | undefined {
+    const pkgDir = this.getPackageDir(packageName);
+    return pkgDir ? path.join(pkgDir, DIST_DIR, FORCE_APP_DIR) : undefined;
+  }
+
   getPackageDefinition(packageName: string): PackageDefinition | undefined {
     // Fast path: check already-resolved definition
     const cached = getPackageDefinition(this.resolve().definition, packageName);
@@ -206,7 +228,11 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
    * Resolve the workspace: discover packages, build a ProjectDefinition.
    */
   resolve(): ProjectDefinitionResult {
-    if (this.cachedResult) return this.cachedResult;
+    if (this.cachedResult) {
+      if (!this.distFilesChanged()) return this.cachedResult;
+      this.cachedResult = undefined;
+      this.cachedDistMtimes = undefined;
+    }
 
     const warnings: string[] = [];
 
@@ -230,8 +256,12 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     }
 
     // 4. Convert to PackageDefinitions
-    const packageDefinitions = sfpmPackages.map(({packageDir, pkgJson}) =>
-      toPackageDefinition(pkgJson, packageDir, workspaceVersions));
+    const distMtimes = new Map<string, number>();
+    const packageDefinitions = sfpmPackages.map(({packageDir, pkgJson}) => {
+      const def = toPackageDefinition(pkgJson, packageDir, workspaceVersions);
+      if (this.options.distAware) this.mergeDistFields(def, packageDir, distMtimes);
+      return def;
+    });
 
     // Mark first package as default
     if (packageDefinitions.length > 0) {
@@ -252,6 +282,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     // Keep sfdx-project.json in sync so @salesforce/core can load it
     WorkspaceProvider.ensureSfdxProject(this.projectDir, validated);
 
+    if (this.options.distAware) this.cachedDistMtimes = distMtimes;
     this.cachedResult = {definition: validated, packages: sfpmPackages, warnings};
     return this.cachedResult;
   }
@@ -263,11 +294,9 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
    * The returned definition is converted to sfdx-project.json format via the adapter.
    */
   resolveSingleProjectDefinition(packageName: string, options?: ResolveForPackageOptions): ProjectDefinition {
-    const result = this.resolve();
-    const {definition} = result;
+    const definition = this.getProjectDefinition();
+    const pkg = this.getPackageDefinition(packageName);
 
-    // Find the target package
-    const pkg = definition.packages.find(p => p.name === packageName || stripScope(p.name) === packageName);
     if (!pkg) {
       throw new Error(`Package "${packageName}" not found in workspace.`);
     }
@@ -278,7 +307,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     singlePkg.default = true;
 
     // Strip dependencies if org-dependent
-    if (options?.isOrgDependent && singlePkg.dependencies) {
+    if (pkg.isOrgDependent && singlePkg.dependencies) {
       delete singlePkg.dependencies;
     }
 
@@ -336,10 +365,11 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
 
     // Invalidate cache so next resolve() picks up the new values
     this.cachedResult = undefined;
+    this.cachedDistMtimes = undefined;
   }
 
   // =========================================================================
-  // Validation
+  // Dist overlay
   // =========================================================================
 
   /**
@@ -367,10 +397,6 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       }
     }
   }
-
-  // =========================================================================
-  // Workspace Discovery
-  // =========================================================================
 
   /**
    * Discover workspace member directories from pnpm-workspace.yaml or
@@ -400,6 +426,31 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     throw new Error('No workspace configuration found. Expected pnpm-workspace.yaml '
       + 'or a "workspaces" field in the root package.json.');
   }
+
+  // =========================================================================
+  // Validation
+  // =========================================================================
+
+  /**
+   * Returns true if any tracked dist/package.json has changed since the cache was populated.
+   * Only relevant when distAware is enabled.
+   */
+  private distFilesChanged(): boolean {
+    if (!this.options.distAware || !this.cachedDistMtimes) return false;
+    for (const [filePath, mtime] of this.cachedDistMtimes) {
+      try {
+        if (fs.statSync(filePath).mtimeMs !== mtime) return true;
+      } catch {
+        return true; // dist file removed = stale
+      }
+    }
+
+    return false;
+  }
+
+  // =========================================================================
+  // Workspace Discovery
+  // =========================================================================
 
   private loadSfpmPackages(
     workspaceDirs: string[],
@@ -439,6 +490,27 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     }
 
     return packages;
+  }
+
+  /**
+   * Reads dist/package.json for a package and overlays build-time fields onto `def`.
+   * Silently skips when dist hasn't been built yet.
+   */
+  private mergeDistFields(
+    def: PackageDefinition,
+    packageDir: string,
+    mtimes: Map<string, number>,
+  ): void {
+    const distPkgPath = path.join(this.projectDir, packageDir, DIST_DIR, 'package.json');
+    try {
+      const stat = fs.statSync(distPkgPath);
+      mtimes.set(distPkgPath, stat.mtimeMs);
+      const distPkg = JSON.parse(fs.readFileSync(distPkgPath, 'utf8'));
+      if (distPkg.sfpm?.packageVersionId) def.packageVersionId = distPkg.sfpm.packageVersionId;
+      if (distPkg.sfpm?.sourceHash) def.sourceHash = distPkg.sfpm.sourceHash;
+    } catch {
+      // dist not yet built — leave fields undefined
+    }
   }
 
   private parsePnpmWorkspace(filePath: string): string[] {

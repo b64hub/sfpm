@@ -69,6 +69,9 @@ const UPGRADE_TYPE_MAP: Record<string, PackageInstallCreateRequest['UpgradeType'
 // ---------------------------------------------------------------------------
 
 export {PackageService};
+/**
+ * Entrypoint service for interactions with the @salesforce/packaging sdk
+ */
 export default class PackageService {
   private static readonly PACKAGE2_VERSION_FIELDS = [
     'SubscriberPackageVersionId',
@@ -96,15 +99,56 @@ export default class PackageService {
   }
 
   /**
-   * Clear the installed packages cache.
+   * Static entry point for callers that already hold a {@link Connection} (e.g.
+   * the deprecated {@link ValidationPoller}).
+   *
+   * Polls `PackageVersion.getCreateVersionReport` on a fixed interval until
+   * the request reaches a terminal state or the deadline expires.
+   *
+   * @throws Error with `name: 'PackageValidationTimeout'` on deadline exceeded
    */
-  public clearCache(): void {
-    this.installedCache = undefined;
+  static async awaitValidation(
+    requestId: string,
+    connection: Connection,
+    options?: {maxWaitMs?: number; pollingIntervalMs?: number},
+    logger?: Logger,
+  ): Promise<PackageVersionCreateRequestResult> {
+    return pollUntil(
+      () => PackageVersion.getCreateVersionReport(requestId, connection),
+      result => result.Status === Package2VersionStatus.success || result.Status === Package2VersionStatus.error,
+      options?.maxWaitMs ?? DEFAULT_POLL_MAX_WAIT_MS,
+      options?.pollingIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
+      requestId,
+      logger,
+    );
   }
 
   // -----------------------------------------------------------------------
   // Package — Update
   // -----------------------------------------------------------------------
+
+  /**
+   * Poll a package version create request until it reaches a terminal state.
+   *
+   * @param requestId - Package2VersionCreateRequest ID (08c)
+   * @param options   - maxWaitMs / pollingIntervalMs overrides
+   * @returns Terminal {@link PackageVersionCreateRequestResult} (Status 'Success' or 'Error')
+   * @throws Error with `name: 'PackageValidationTimeout'` when the deadline is exceeded
+   */
+  public async awaitPackageValidation(
+    requestId: string,
+    options?: {maxWaitMs?: number; pollingIntervalMs?: number},
+  ): Promise<PackageVersionCreateRequestResult> {
+    const connection = await this.requireDevhubConnection();
+    return PackageService.awaitValidation(requestId, connection, options, this.logger);
+  }
+
+  /**
+   * Clear the installed packages cache.
+   */
+  public clearCache(): void {
+    this.installedCache = undefined;
+  }
 
   /**
    * Create a new 2GP package in the DevHub.
@@ -743,4 +787,44 @@ export default class PackageService {
   private async toolingQuery<T>(connection: Connection, query: string): Promise<T[]> {
     return (await connection.tooling.query(query)).records as T[];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Polling helpers
+// ---------------------------------------------------------------------------
+
+const DEFAULT_POLL_MAX_WAIT_MS = 7_200_000; // 120 min
+const DEFAULT_POLL_INTERVAL_MS = 30_000;    // 30 s
+
+/**
+ * Polls `fn` every `intervalMs` until `isTerminal(result)` returns true or
+ * `maxWaitMs` elapses.
+ *
+ * Acts as a thin decorator over any async probe — the caller owns the probe
+ * logic, this function owns the retry cadence.
+ */
+async function pollUntil<T>(
+  fn: () => Promise<T>,
+  isTerminal: (result: T) => boolean,
+  maxWaitMs: number,
+  intervalMs: number,
+  label: string,
+  logger?: Logger,
+): Promise<T> {
+  const deadline = Date.now() + maxWaitMs;
+
+  /* eslint-disable no-await-in-loop -- polling loop is inherently sequential */
+  while (Date.now() < deadline) {
+    const result = await fn();
+    logger?.debug(`[${label}] Status = ${(result as Record<string, unknown>).Status ?? '?'}`);
+    if (isTerminal(result)) return result;
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, intervalMs);
+    });
+  }
+  /* eslint-enable no-await-in-loop */
+
+  const err = new Error(`[${label}] Validation timed out after ${maxWaitMs / 60_000}m`) as Error & {name: string};
+  err.name = 'PackageValidationTimeout';
+  throw err;
 }

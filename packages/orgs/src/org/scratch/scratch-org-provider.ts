@@ -11,8 +11,9 @@ import type {PoolOrg, PoolOrgRecord, PoolOrgUsage} from '../pool-org.js';
 import generatePassword from '../../utils/password-generator.js';
 import setAlias from '../../utils/set-alias.js';
 import {
-  AllocationStatus, OrgError,
+  OrgError,
   PasswordResult,
+  PoolStage,
 } from '../types.js';
 import {
   DEFAULT_SCRATCH_ORG,
@@ -30,7 +31,7 @@ export interface ActiveScratchOrgRecord {
 }
 
 export const SCRATCH_ORG_INFO_FIELDS: (keyof ScratchOrgInfoRecord)[] = [
-  'Allocation_Status__c',
+  'Stage__c',
   'CreatedDate',
   'ExpirationDate',
   'Id',
@@ -43,11 +44,10 @@ export const SCRATCH_ORG_INFO_FIELDS: (keyof ScratchOrgInfoRecord)[] = [
   'SignupUsername',
 ];
 
-const REQUIRED_ALLOCATION_STATUSES: AllocationStatus[] = [
-  AllocationStatus.Available,
-  AllocationStatus.Allocated,
-  AllocationStatus.InProgress,
-  AllocationStatus.Return,
+const REQUIRED_STAGES: PoolStage[] = [
+  PoolStage.Available,
+  PoolStage.InProgress,
+  PoolStage.Assigned,
 ];
 
 /**
@@ -88,8 +88,8 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgRequest
   async claimOrg(id: string): Promise<boolean> {
     try {
       const result = await this.conn.sobject('ScratchOrgInfo').update({
-        Allocation_Status__c: 'Allocated' as const, // eslint-disable-line camelcase -- Salesforce custom field
         Id: id,
+        Stage__c: 'Assigned' as const, // eslint-disable-line camelcase -- Salesforce custom field
       });
       return result.success === true;
     } catch {
@@ -173,7 +173,7 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgRequest
     const conditions = [
       `Tag__c = '${escapedTag}'`,
       "Status = 'Active'",
-      `(Allocation_Status__c = '${AllocationStatus.Available}' OR Allocation_Status__c = '${AllocationStatus.InProgress}')`,
+      `(Stage__c = '${PoolStage.Available}' OR Stage__c = '${PoolStage.InProgress}')`,
     ];
 
     const username: string = this.hubOrg.getUsername()!;
@@ -223,7 +223,7 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgRequest
 
   /** Find active orgs that have no pool tag. */
   async getOrphanedOrgs(): Promise<PoolOrg[]> {
-    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE Tag__c = null AND Allocation_Status__c = 'Active' ORDER BY CreatedDate DESC`;
+    const query = soql`SELECT ${SCRATCH_ORG_INFO_FIELDS.join(', ')} FROM ScratchOrgInfo WHERE Tag__c = null AND Stage__c = 'Active' ORDER BY CreatedDate DESC`;
     const result = await this.conn.query<ScratchOrgInfoRecord>(query);
     return result.records.map(r => mapToScratchOrg(r));
   }
@@ -293,9 +293,9 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgRequest
     if (records.length === 0) return;
 
     const updates = records.map(r => ({
-      Allocation_Status__c: r.allocationStatus, // eslint-disable-line camelcase -- Salesforce custom field
       Auth_Url__c: r.authUrl, // eslint-disable-line camelcase -- Salesforce custom field
       Id: r.id,
+      Stage__c: r.stage, // eslint-disable-line camelcase -- Salesforce custom field
       Tag__c: r.poolTag, // eslint-disable-line camelcase -- Salesforce custom field
     }));
 
@@ -310,23 +310,23 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgRequest
   async validate(): Promise<void> {
     const describe = await this.conn.sobject('ScratchOrgInfo').describe();
 
-    const allocationField = describe.fields.find(f => f.name === 'Allocation_Status__c');
+    const stageField = describe.fields.find(f => f.name === 'Stage__c');
 
-    if (!allocationField) {
+    if (!stageField) {
       throw new OrgError(
         'prerequisite',
-        'ScratchOrgInfo is missing the "Allocation_Status__c" custom field. '
+        'ScratchOrgInfo is missing the "Stage__c" custom field. '
         + 'Deploy the sfpm pool custom fields to your DevHub before running pool operations.',
       );
     }
 
-    const picklistValues = new Set((allocationField.picklistValues ?? []).map(v => v.value));
-    const missing = REQUIRED_ALLOCATION_STATUSES.filter(s => !picklistValues.has(s));
+    const picklistValues = new Set((stageField.picklistValues ?? []).map(v => v.value));
+    const missing = REQUIRED_STAGES.filter(s => !picklistValues.has(s));
 
     if (missing.length > 0) {
       throw new OrgError(
         'prerequisite',
-        `Allocation_Status__c is missing required picklist values: ${missing.join(', ')}. `
+        `Stage__c is missing required picklist values: ${missing.join(', ')}. `
         + 'Update the picklist on ScratchOrgInfo in your DevHub.',
         {context: {existing: [...picklistValues], missing}},
       );
@@ -404,7 +404,7 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
   const orgId = record.ScratchOrg ?? '';
   const username = record.SignupUsername ?? '';
   const tag = record.Tag__c ?? '';
-  const status = (record.Allocation_Status__c ?? undefined) as AllocationStatus;
+  const stage = (record.Stage__c ?? PoolStage.Available) as PoolStage;
 
   return {
     auth: {
@@ -417,7 +417,7 @@ function mapToScratchOrg(record: ScratchOrgInfoRecord): ScratchOrg {
     orgId,
     orgType: OrgTypes.Scratch,
     pool: {
-      status,
+      stage,
       tag,
       timestamp: record.CreatedDate ? new Date(record.CreatedDate).getTime() : Date.now(),
     },

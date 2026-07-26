@@ -4,6 +4,7 @@ import {
   type BuildWatcherPayload,
   type DependencyAnalyzer,
   LifecycleEngine,
+  noopLogger,
   type OrchestrationResult,
   PackageFactory,
   PackageType,
@@ -27,11 +28,11 @@ import SfpmCommand from '../../sfpm-command.js'
 import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
 import {ValidationProgressRenderer} from '../../ui/validation-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
-import {forkWatcher} from '../../utils/watcher.js'
+import {forkWatcher, validationRunnerScript} from '../../utils/watcher.js'
 
 interface ResolvedBuildFlags {
   async: boolean;
-  autoCreatedBuildOrg?: {hubOrg: Org; username: string};
+  autoCreatedBuildOrg?: {devhub: Org; username: string};
   buildOptions: BuildOrchestratorOptions;
   buildOrgUsername?: string;
   dependencyAnalyzer?: DependencyAnalyzer;
@@ -192,7 +193,7 @@ export default class Build extends SfpmCommand {
   private async cleanupBuildOrg(resolved: ResolvedBuildFlags): Promise<void> {
     if (!resolved.autoCreatedBuildOrg) return
 
-    const {hubOrg, username} = resolved.autoCreatedBuildOrg
+    const {devhub: hubOrg, username} = resolved.autoCreatedBuildOrg
     const spinner = resolved.mode === 'interactive'
       ? ora(`Deleting build org ${chalk.cyan(username)}...`).start()
       : undefined
@@ -263,7 +264,7 @@ export default class Build extends SfpmCommand {
       spinner?.succeed(`Build org created: ${chalk.cyan(username)}`)
 
       resolved.buildOrgUsername = username
-      resolved.autoCreatedBuildOrg = {hubOrg, username}
+      resolved.autoCreatedBuildOrg = {devhub: hubOrg, username}
     } catch (error) {
       spinner?.fail('Failed to create scratch org')
       throw error
@@ -273,8 +274,8 @@ export default class Build extends SfpmCommand {
   /**
    * Handle pending validations: resolve inline or fork a background watcher.
    *
-   * - No `--async`: resolve inline with ValidationResolver, fail on any failures.
-   * - `--async`: fork watcher process for background polling.
+   * - No `--async`: resolve all validations inline with ValidationResolver.
+   * - `--async`: fork watcher process for background resolution.
    */
   private async handleValidationResults(
     pendingValidations: PendingValidationDescriptor[],
@@ -283,35 +284,14 @@ export default class Build extends SfpmCommand {
     if (pendingValidations.length === 0) return
 
     if (resolved.async) {
-      await this.handleValidationResutlsAsync(pendingValidations, resolved);
+      await this.handleValidationResultsAsync(pendingValidations, resolved);
       return;
     }
 
-    const validationBus = new ValidationEventBus()
-    const renderer = new ValidationProgressRenderer(resolved.mode, {
-      error: msg => this.error(msg),
-      log: msg => this.log(msg),
-    })
-    renderer.attachTo(validationBus)
-
-    const resolver = new ValidationResolver(this.sfpmLogger, validationBus);
-    const results = await resolver.resolve(pendingValidations, {
-      maxWaitMs: resolved.waitMinutes * 60 * 1000,
-    });
-
-    const failures: string[] = [];
-    for (const [packageName, result] of results) {
-      if (result.status === 'failed') {
-        failures.push(`${packageName}: ${result.error}`);
-      }
-    }
-
-    if (failures.length > 0) {
-      this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1})
-    }
+    await this.resolveValidationsInline(pendingValidations, resolved);
   }
 
-  private async handleValidationResutlsAsync(pendingValidations: PendingValidationDescriptor[], resolved: ResolvedBuildFlags): Promise<void> {
+  private async handleValidationResultsAsync(pendingValidations: PendingValidationDescriptor[], resolved: ResolvedBuildFlags): Promise<void> {
     this.log(chalk.yellow('\nValidation results will be available asynchronously.'));
 
     const payload: BuildWatcherPayload = {
@@ -321,10 +301,7 @@ export default class Build extends SfpmCommand {
           username: resolved.autoCreatedBuildOrg.username,
         },
       }),
-      targets: pendingValidations.map(pv => ({
-        packageName: pv.packageName,
-        packageVersionCreateRequestId: pv.operationId,
-      })),
+      validations: pendingValidations,
     };
 
     const state: WatcherState = {
@@ -338,7 +315,7 @@ export default class Build extends SfpmCommand {
       watcherStatus: 'starting',
     };
 
-    const {id, pid} = await forkWatcher(state);
+    const {id, pid} = await forkWatcher(state, validationRunnerScript());
     const pkgNames = pendingValidations.map(pv => pv.packageName).join(', ');
 
     if (resolved.mode === 'json') {
@@ -430,6 +407,51 @@ export default class Build extends SfpmCommand {
       resolvedPackages,
       sfpmConfig,
       waitMinutes: flags.wait,
+    }
+  }
+
+  private async resolveValidationsInline(
+    descriptors: PendingValidationDescriptor[],
+    resolved: ResolvedBuildFlags,
+  ): Promise<void> {
+    const validationBus = new ValidationEventBus()
+    const renderer = new ValidationProgressRenderer(resolved.mode, {
+      error: msg => this.error(msg),
+      log: msg => this.log(msg),
+    })
+    renderer.attachTo(validationBus)
+
+    const projectService = await ProjectService.getInstance(resolved.projectDir);
+    // In interactive mode the Listr renderer owns the terminal. The pino-backed
+    // sfpmLogger writes directly to the stderr fd (bypassing Listr's stdout hijack),
+    // which corrupts log-update's cursor tracking and prevents the spinner from
+    // rendering. Feed the resolver a noop logger so the Listr has exclusive control;
+    // results/errors still surface via the event bus (resolve:passed/failed -> spinner).
+    const resolverLogger = resolved.mode === 'interactive' ? noopLogger : this.sfpmLogger;
+    const resolver = new ValidationResolver(projectService.getDefinitionProvider(), projectService.getProjectGraph(), resolverLogger, validationBus);
+
+    // Start the UI and wait until the spinner is actually live BEFORE kicking
+    // off the (event-loop-heavy) validation work. Otherwise the work starves
+    // the Listr's async render setup and the spinner never appears.
+    await renderer.begin(descriptors.map(d => d.packageName));
+
+    const results = await resolver.resolve(descriptors, {
+      maxWaitMs: resolved.waitMinutes * 60 * 1000,
+    });
+
+    // Paint the final task states + summary before we may process.exit() on
+    // failure below, otherwise the render is abandoned mid-paint.
+    await renderer.end();
+
+    const failures: string[] = [];
+    for (const [packageName, result] of results) {
+      if (result.status === 'failed') {
+        failures.push(`${packageName}: ${result.error}`);
+      }
+    }
+
+    if (failures.length > 0) {
+      this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1})
     }
   }
 }

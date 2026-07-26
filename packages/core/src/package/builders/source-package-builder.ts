@@ -2,14 +2,12 @@ import {Org} from '@salesforce/core';
 import path from 'node:path';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 
-import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
-import {FORCE_APP_DIR} from '../../types/artifact.js';
-import {BuildError} from '../../types/errors.js';
 import Logger from '../../types/logger.js';
 import {BuildOptions, PackageType} from '../../types/package.js';
 import {
-  PendingValidationDescriptor, type ValidationCheck,
+  DeployValidationDescriptor, type ValidationCheck,
 } from '../../types/validation.js'
 import SfpmPackage, {SfpmMetadataPackage, SfpmSourcePackage} from '../sfpm-package.js';
 import {
@@ -26,12 +24,13 @@ export default class SourcePackageBuilder implements Builder {
   private buildOrg?: Org;
   private logger?: Logger;
   private options: BuildOptions;
+  private provider: ProjectDefinitionProvider;
   private sfpmPackage: SfpmMetadataPackage;
   private sink?: BuildEventSink;
   private workingDirectory: string;
 
   constructor(
-    workingDirectory: string,
+    provider: ProjectDefinitionProvider,
     sfpmPackage: SfpmPackage,
     options: BuildOptions,
     logger?: Logger,
@@ -41,7 +40,8 @@ export default class SourcePackageBuilder implements Builder {
       throw new TypeError(`SourcePackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
 
-    this.workingDirectory = workingDirectory;
+    this.provider = provider;
+    this.workingDirectory = provider.getPackageBuildDirectory(sfpmPackage.name)!;
     this.sfpmPackage = sfpmPackage;
     this.options = options;
     this.logger = logger;
@@ -70,38 +70,38 @@ export default class SourcePackageBuilder implements Builder {
       sourcePath: this.workingDirectory,
     });
 
-    // Validate if enabled and an org is available
-    const pendingValidation = await this.validate();
-
-    // Build validation state based on what was done
-    const validationState = this.buildValidationState(pendingValidation);
+    const validationDescriptor = this.buildValidationDescriptor();
 
     return {
+      packageName: this.sfpmPackage.name,
       packageType: PackageType.Source,
-      pendingValidation,
-      validationState,
+      pendingValidation: validationDescriptor,
+      version: this.sfpmPackage.version as string,
     };
   }
 
   /**
-   * Construct validation state from the build outcome.
+   * Construct validation descriptor for validation to be done
    *
-   * - If validation ran (pendingValidation returned), status is 'pending' with
-   *   a deploy check queued.
+   * - If validation ran (pendingValidation returned) a deploy check queued.
    * - If validation was skipped (no org, disabled, or no Apex), no state is set.
    */
-  private buildValidationState(pendingValidation: PendingValidationDescriptor | undefined) {
-    if (!pendingValidation) return;
+  private buildValidationDescriptor(): DeployValidationDescriptor | undefined {
+    const targetOrg = this.buildOrg;
 
-    const checks: ValidationCheck[] = ['deploy'];
-    if (this.sfpmPackage.hasApex) {
-      checks.push('test');
+    if (!this.options.validation || this.options.validation === 'none') return undefined;
+    if (!targetOrg) {
+      this.logger?.warn(`No build org defined for ${this.sfpmPackage.name}. Skipping validaiton.`);
+      return undefined
     }
 
+    const testLevel = this.getTestClasses().length > 0 ? VALIDATION_TEST_LEVEL : 'NoTestRun';
+
     return {
-      checks,
-      pending: pendingValidation,
-      status: 'pending' as const,
+      operationType: 'deploy',
+      packageName: this.sfpmPackage.name,
+      targetOrg: targetOrg?.getUsername() as string,
+      testLevel,
     };
   }
 
@@ -113,61 +113,5 @@ export default class SourcePackageBuilder implements Builder {
     if (sfpmPackage instanceof SfpmSourcePackage && sfpmPackage.hasApex && sfpmPackage.testClasses.length === 0) {
       sfpmPackage.testLevel = 'RunLocalTests';
     }
-  }
-
-  /**
-   * Initiate validation by deploying metadata with tests against the build org.
-   *
-   * Skipped (returns undefined) when:
-   * - Validation is disabled (`options.validation === false`)
-   * - No build org is available
-   *
-   * When the package has no Apex, deploys with NoTestRun (deploy-only validation).
-   * When the package has Apex, deploys with RunSpecifiedTests.
-   */
-  private async validate(): Promise<PendingValidationDescriptor | undefined> {
-    const targetOrg = this.buildOrg;
-
-    if (!this.options.validation || this.options.validation === 'none' || !targetOrg) return undefined;
-
-    const testClasses = this.getTestClasses();
-    if (this.sfpmPackage.hasApex && testClasses.length === 0) {
-      throw new BuildError(this.sfpmPackage.packageName, 'Package contains Apex but has no test classes defined', {
-        buildStep: 'validation',
-      });
-    }
-
-    // No Apex → deploy-only validation (no tests to run)
-    const testLevel = testClasses.length > 0 ? VALIDATION_TEST_LEVEL : 'NoTestRun';
-
-    this.logger?.info(`Validating '${this.sfpmPackage.packageName}' against ${targetOrg.getUsername()} [${testLevel}]`);
-    if (testClasses.length > 0) {
-      this.logger?.info(`Running ${testClasses.length} test class(es): ${testClasses.join(', ')}`);
-    }
-
-    this.sink?.taskValidateStart({
-      testCount: testClasses.length,
-      testLevel,
-    });
-
-    const deployService = new MetadataDeployService(targetOrg, this.logger);
-
-    // Deploy metadata with specified tests — use the artifact's metadata path
-    const metadataPath = path.join(this.workingDirectory, FORCE_APP_DIR);
-
-    const componentSet = this.sfpmPackage.getComponentSet(metadataPath);
-    const deployId = await deployService.deploy(componentSet, {
-      testClasses: testClasses.length > 0 ? testClasses : undefined,
-      testLevel,
-    });
-
-    // Return pending descriptor — the orchestrator decides whether to await resolution
-    return {
-      operationId: deployId,
-      operationType: 'deploy',
-      packageName: this.sfpmPackage.packageName,
-      startedAt: new Date().toISOString(),
-      targetOrg: targetOrg.getUsername() as string,
-    };
   }
 }

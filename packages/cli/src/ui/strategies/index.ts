@@ -9,6 +9,8 @@ export type {CompleteSummary, DisplayStrategy, PackageResultSummary} from './dis
 export {InteractiveDisplay} from './interactive.js';
 export {PlainDisplay} from './plain.js';
 export {SilentDisplay} from './silent.js';
+export type {ValidationDisplayStrategy} from './validation-display-strategy.js';
+export {createValidationDisplayStrategy} from './validation-display-strategy.js';
 
 /**
  * Factory to create the appropriate display strategy for the given output mode.

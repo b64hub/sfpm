@@ -186,14 +186,14 @@ export class PoolProgressRenderer {
         {key: 'type', name: 'Type'},
         {key: 'username', name: 'Username'},
         {key: 'alias', name: 'Alias'},
-        {key: 'status', name: 'Status'},
+        {key: 'stage', name: 'Stage'},
         {key: 'expiryDate', name: 'Expires'},
       ],
       data: orgs.map(org => ({
         alias: org.auth.alias ?? '',
         expiryDate: org.expiry ? formatExpiry(org.expiry) : '',
         loginURL: org.auth.loginUrl ?? '',
-        status: formatStatus(org.pool?.status),
+        stage: formatStatus(org.pool?.stage),
         tag: org.pool?.tag ?? '',
         type: org.orgType ?? '',
         username: org.auth.username ?? '',
@@ -268,7 +268,7 @@ export class PoolProgressRenderer {
     if (!this.isInteractive()) return;
 
     if (this.singleTaskRef) {
-      this.singleTaskRef.title = `${sym.success} Claimed ${payload.username}`;
+      this.singleTaskRef.title = `Claimed ${payload.username}`;
     }
   }
 
@@ -555,10 +555,7 @@ function formatStatus(status?: string): string {
   case 'Available': {return chalk.green('Available  ');
   }
 
-  case 'In_Progress': {return chalk.yellow('In Progress');
-  }
-
-  case 'Return': {return chalk.magenta('Return     ');
+  case 'InProgress': {return chalk.yellow('In Progress');
   }
 
   default: {return chalk.dim((status ?? 'Unknown').padEnd(11));

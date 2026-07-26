@@ -20,6 +20,7 @@ import type {
   ResolveForPackageOptions,
 } from './project-definition-provider.js';
 
+import {DIST_DIR, FORCE_APP_DIR} from '../../types/artifact.js';
 import {type PackageDefinition, type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
 import {stripScope} from '../../utils/scope-utils.js';
 import {
@@ -68,6 +69,16 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
 
   getDependencies(packageName: string): PackageDefinition[] {
     return getDependencies(this.resolve().definition, packageName);
+  }
+
+  getPackageBuildDirectory(packageName: string): string | undefined {
+    const pkgDir = this.getPackageDir(packageName);
+    return pkgDir ? path.join(pkgDir, DIST_DIR) : undefined;
+  }
+
+  getPackageBuiltSourceDirectory(packageName: string): string | undefined {
+    const pkgDir = this.getPackageDir(packageName);
+    return pkgDir ? path.join(pkgDir, DIST_DIR, FORCE_APP_DIR) : undefined;
   }
 
   getPackageDefinition(packageName: string): PackageDefinition | undefined {

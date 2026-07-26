@@ -167,10 +167,7 @@ export class DeployAndTestStrategy implements ValidationStrategy {
     const org = await Org.create({aliasOrUsername: this.validationOrg});
     const connection = org.getConnection();
 
-    const metadataPath = this.sfpmPackage.workingDirectory
-      ? path.join(this.sfpmPackage.workingDirectory, 'force-app')
-      : undefined;
-    const componentSet = this.sfpmPackage.getComponentSet(metadataPath);
+    const componentSet = this.sfpmPackage.getComponentSet();
     const deployOptions: DeploySetOptions = {
       apiOptions: {
         runTests: testClasses,

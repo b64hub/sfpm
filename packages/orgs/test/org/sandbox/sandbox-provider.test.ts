@@ -2,7 +2,7 @@ import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
-import {AllocationStatus, OrgError} from '../../../src/org/types.js';
+import {OrgError, PoolStage} from '../../../src/org/types.js';
 
 // ---------------------------------------------------------------------------
 // Mock @salesforce/core before imports
@@ -118,13 +118,11 @@ describe('SandboxProvider', () => {
       {name: 'Org_Id__c'},
       {name: 'Tag__c'},
       {
-        name: 'Allocation_Status__c',
+        name: 'Stage__c',
         picklistValues: [
-          {value: 'Allocated'},
-          {value: 'Assigned'},
           {value: 'Available'},
-          {value: 'In_Progress'},
-          {value: 'Return'},
+          {value: 'InProgress'},
+          {value: 'Assigned'},
         ],
       },
       {name: 'Auth_Url__c'},
@@ -167,19 +165,19 @@ describe('SandboxProvider', () => {
       await expect(provider.validate()).rejects.toThrow('Tag__c');
     });
 
-    it('should throw when Allocation_Status__c is missing', async () => {
+    it('should throw when Stage__c is missing', async () => {
       mockConnection.query.mockResolvedValueOnce({records: []});
-      mockPoolOrgDescribe(validFields.filter(f => f.name !== 'Allocation_Status__c'));
+      mockPoolOrgDescribe(validFields.filter(f => f.name !== 'Stage__c'));
       const provider = createProvider();
 
       await expect(provider.validate()).rejects.toThrow(OrgError);
-      await expect(provider.validate()).rejects.toThrow('Allocation_Status__c');
+      await expect(provider.validate()).rejects.toThrow('Stage__c');
     });
 
-    it('should throw when Allocation_Status__c has missing picklist values', async () => {
+    it('should throw when Stage__c has missing picklist values', async () => {
       mockConnection.query.mockResolvedValueOnce({records: []});
       const partialFields = validFields.map(f => {
-        if (f.name === 'Allocation_Status__c') {
+        if (f.name === 'Stage__c') {
           return {...f, picklistValues: [{value: 'Available'}]};
         }
 
@@ -236,7 +234,7 @@ describe('SandboxProvider', () => {
       // Verify pool record was created
       expect(mockPoolSobject.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          Allocation_Status__c: 'In_Progress',
+          Stage__c: 'InProgress',
           Org_Id__c: '00D999000000001',
         }),
       );
@@ -338,7 +336,7 @@ describe('SandboxProvider', () => {
   // --------------------------------------------------------------------------
 
   describe('claimOrg', () => {
-    it('should update Allocation_Status__c to Allocated on Sandbox_Pool_Org__c', async () => {
+    it('should update Stage__c to Assigned on Sandbox_Pool_Org__c', async () => {
       mockPoolSobject.update.mockResolvedValue({success: true});
       const provider = createProvider();
 
@@ -346,7 +344,7 @@ describe('SandboxProvider', () => {
 
       expect(mockConnection.sobject).toHaveBeenCalledWith('Sandbox_Pool_Org__c');
       expect(mockPoolSobject.update).toHaveBeenCalledWith({
-        Allocation_Status__c: 'Allocated',
+        Stage__c: 'Assigned',
         Id: 'a01000000000001',
       });
       expect(success).toBe(true);
@@ -397,7 +395,7 @@ describe('SandboxProvider', () => {
         // Pool record query
         .mockResolvedValueOnce({
           records: [{
-            Allocation_Status__c: 'Available',
+            Stage__c: 'Available',
             Auth_Url__c: 'force://token@instance.salesforce.com',
             CreatedDate: '2024-01-01T00:00:00.000+0000',
             Id: 'a01000000000001',
@@ -632,12 +630,12 @@ describe('SandboxProvider', () => {
       const provider = createProvider();
 
       await provider.updatePoolMetadata([
-        {allocationStatus: AllocationStatus.Available, authUrl: 'force://url', id: 'rec-1', poolTag: 'sb-pool'},
+        {stage: PoolStage.Available, authUrl: 'force://url', id: 'rec-1', poolTag: 'sb-pool'},
       ]);
 
       expect(mockConnection.sobject).toHaveBeenCalledWith('Sandbox_Pool_Org__c');
       expect(mockPoolSobject.update).toHaveBeenCalledWith([{
-        Allocation_Status__c: 'Available',
+        Stage__c: 'Available',
         Auth_Url__c: 'force://url',
         Id: 'rec-1',
         Tag__c: 'sb-pool',
@@ -771,11 +769,11 @@ describe('SandboxProvider', () => {
         {name: 'Org_Id__c'},
         {name: 'Tag__c'},
         {
-          name: 'Allocation_Status__c',
+          name: 'Stage__c',
           picklistValues: [
-            {value: 'Allocated'},
             {value: 'Available'},
-            {value: 'In_Progress'},
+            {value: 'InProgress'},
+            {value: 'Assigned'},
           ],
         },
         {name: 'Auth_Url__c'},
@@ -825,13 +823,13 @@ describe('SandboxProvider', () => {
         .mockResolvedValueOnce({
           records: [
             {
-              Allocation_Status__c: 'Available',
+              Stage__c: 'Available',
               Id: 'pool-1',
               Org_Id__c: '00D000000000001',
               Tag__c: 'sb-pool',
             },
             {
-              Allocation_Status__c: 'Available',
+              Stage__c: 'Available',
               Id: 'pool-stale',
               Org_Id__c: '00D000000000099', // deleted sandbox
               Tag__c: 'sb-pool',

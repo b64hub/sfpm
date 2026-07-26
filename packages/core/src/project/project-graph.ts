@@ -167,6 +167,29 @@ export default class ProjectGraph {
   }
 
   /**
+   * Returns unique direct dependents (consumers) of the given packages.
+   * Excludes managed packages and any package in the input set itself.
+   */
+  public getDirectDependents(packageNames: string[]): PackageNode[] {
+    const inputSet = new Set(packageNames);
+    const seen = new Set<string>();
+    const result: PackageNode[] = [];
+
+    for (const name of packageNames) {
+      const node = this.resolveNode(name);
+      if (!node) continue;
+
+      for (const dependent of node.dependents) {
+        if (dependent.isManaged || inputSet.has(dependent.name) || seen.has(dependent.name)) continue;
+        seen.add(dependent.name);
+        result.push(dependent);
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Organizes packages into parallel installation levels using topological sort.
    * Packages in the same level can be installed in parallel.
    *

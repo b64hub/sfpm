@@ -111,6 +111,8 @@ export interface PackageDefinition {
   dependencies?: {[packageName: string]: string};
   /** Package description */
   description?: string;
+  /** Whether this unlocked package is org-dependent (no namespace, deploys directly into the org). */
+  isOrgDependent?: boolean;
   /** Managed package dependencies with version Id (e.g., { "nebula-logger": "04tXXXXXXXXXXXX" }) */
   managedDependencies?: {[packageName: string]: string};
   /** Metadata dependencies with relative paths (e.g., { "seed": "path/to/seed", "unpackaged": "path/to/unpackaged" }) */

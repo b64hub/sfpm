@@ -53,16 +53,14 @@ export interface PasswordResult {
 }
 
 /**
- * Allocation status values for scratch orgs managed by a pool.
+ * Stage values tracking the lifecycle of an org through a pool.
  *
- * Mirrors the picklist on the DevHub's `ScratchOrgInfo.Allocation_Status__c`.
+ * Mirrors the picklist on the DevHub's `ScratchOrgInfo.Stage__c`.
  */
-export enum AllocationStatus {
-  Allocated = 'Allocated',
+export enum PoolStage {
   Assigned = 'Assigned',
   Available = 'Available',
-  InProgress = 'In_Progress',
-  Return = 'Return',
+  InProgress = 'InProgress',
 }
 
 /**

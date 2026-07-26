@@ -8,10 +8,6 @@ import {TypedEventEmitter} from './typed-event-emitter.js';
 // Validation Resolution Payloads (what producers pass — source of truth)
 // ============================================================================
 
-export interface ResolveStartPayload {
-  packageNames: string[];
-}
-
 export interface ResolveStatusPayload {
   attempt?: number;
   status: 'in-progress' | 'polling' | 'queued';
@@ -47,7 +43,6 @@ export interface ResolveCompletePayload {
 // Derived Event Types (Payload + BaseEvent — what listeners receive)
 // ============================================================================
 
-export type ResolveStartEvent = BaseEvent & ResolveStartPayload;
 export type ResolveStatusEvent = BaseEvent & ResolveStatusPayload;
 export type ResolvePassedEvent = BaseEvent & ResolvePassedPayload;
 export type ResolveFailedEvent = BaseEvent & ResolveFailedPayload;
@@ -62,7 +57,6 @@ export interface ValidationEvents {
   'resolve:complete': [ResolveCompleteEvent];
   'resolve:failed': [ResolveFailedEvent];
   'resolve:passed': [ResolvePassedEvent];
-  'resolve:start': [ResolveStartEvent];
   'resolve:status': [ResolveStatusEvent];
   'resolve:timeout': [ResolveTimeoutEvent];
 }
@@ -75,7 +69,6 @@ export interface ValidationEventSink extends EventSink<ValidationEvents> {
   complete(payload: ResolveCompletePayload): void;
   failed(payload: ResolveFailedPayload): void;
   passed(payload: ResolvePassedPayload): void;
-  start(payload: ResolveStartPayload): void;
   status(payload: ResolveStatusPayload): void;
   timeout(payload: ResolveTimeoutPayload): void;
 }
@@ -95,10 +88,6 @@ export class ScopedValidationSink extends ScopedEventSink<ValidationEvents> impl
 
   passed(p: ResolvePassedPayload): void {
     this.emit('resolve:passed', p as any);
-  }
-
-  start(p: ResolveStartPayload): void {
-    this.emit('resolve:start', p as any);
   }
 
   status(p: ResolveStatusPayload): void {
@@ -146,10 +135,6 @@ export class ValidationEventBus extends TypedEventEmitter<ValidationEvents> impl
 
   passed(p: ResolvePassedPayload): void {
     this.emit('resolve:passed', p as any);
-  }
-
-  start(p: ResolveStartPayload): void {
-    this.emit('resolve:start', p as any);
   }
 
   status(p: ResolveStatusPayload): void {

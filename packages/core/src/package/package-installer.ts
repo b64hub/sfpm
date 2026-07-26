@@ -280,6 +280,7 @@ export default class PackageInstaller {
       logger: this.logger,
       operation: 'install',
       projectDir: this.provider.projectDir,
+      provider: this.provider,
       sfpmPackage,
       stage: lifecycle.stage,
       targetOrg: this.targetOrg.getUsername()!,

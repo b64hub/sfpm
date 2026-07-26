@@ -1,5 +1,7 @@
 import type {Connection} from '@salesforce/core';
 
+import type {PendingValidationDescriptor} from './validation.js';
+
 // ============================================================================
 // Job Types
 // ============================================================================
@@ -7,9 +9,13 @@ import type {Connection} from '@salesforce/core';
 /**
  * Supported watcher job types.
  *
- * - `build` — polls Package2VersionCreateRequest for unlocked package builds
- * - `deploy` — polls metadata deploy status
- * - `test`  — polls async Apex test run status
+ * - `build`  — runs validation resolver: deploy orchestration + package version polling
+ * - `deploy` — polls a single metadata deploy status
+ * - `test`   — polls a single async Apex test run status
+ *
+ * The `build` job type uses {@link ValidationResolver} directly (via `validation-runner`)
+ * rather than the poll-loop watcher. Deploy and test jobs use polling strategies
+ * via `watcher-runner`.
  */
 export type WatcherJobType = 'build' | 'deploy' | 'test';
 
@@ -75,10 +81,26 @@ export type WatcherStatus = 'cancelled' | 'completed' | 'error' | 'polling' | 's
  * Generic watcher state persisted to `.sfpm/watchers/<id>.json`.
  *
  * The envelope carries common metadata (timing, PID, status) while
- * the `payload` and `result` fields are strategy-specific.
+ * the `payload` and `result` fields are job-specific.
  *
- * @typeParam TPayload - Input the polling strategy needs (job IDs, package names, etc.)
- * @typeParam TResult  - Output the polling strategy produces
+ * Two execution models use this state:
+ *
+ * **Poll-loop** (`watcher-runner`) — for `deploy` and `test` jobs.
+ *   Resolves a {@link PollingStrategy} by `jobType`, calls `strategy.poll()`
+ *   in a loop until completion, timeout, or fatal error.
+ *
+ * **Single-pass** (`validation-runner`) — for `build` jobs.
+ *   Reconstructs {@link ProjectService} from `projectDir`, runs
+ *   {@link ValidationResolver.resolve()} with the full
+ *   {@link PendingValidationDescriptor} array from the payload.
+ *   Handles both deploy orchestration and package-version polling
+ *   in a single pass — no poll loop needed.
+ *
+ * Both runners update the state file with results and send a desktop
+ * notification on completion.
+ *
+ * @typeParam TPayload - Job-specific input (e.g. {@link BuildWatcherPayload})
+ * @typeParam TResult  - Job-specific output written on completion
  */
 export interface WatcherState<TPayload = unknown, TResult = unknown> {
   /** Authentication context for Salesforce connection */
@@ -89,13 +111,13 @@ export interface WatcherState<TPayload = unknown, TResult = unknown> {
   error?: string;
   /** Polling interval override in milliseconds (uses strategy default if omitted) */
   intervalMs?: number;
-  /** Which type of job this watcher is polling */
+  /** Which type of job this watcher runs — determines the runner and execution model */
   jobType: WatcherJobType;
-  /** Strategy-specific input data */
+  /** Job-specific input data */
   payload: TPayload;
-  /** Project directory (for path resolution) */
+  /** Project directory — runners use this to reconstruct ProjectService */
   projectDir: string;
-  /** Strategy-specific result data (populated on completion) */
+  /** Job-specific result data (populated on completion) */
   result?: TResult;
   /** Timeout in milliseconds (uses strategy default if omitted) */
   timeoutMs?: number;
@@ -112,18 +134,17 @@ export interface WatcherState<TPayload = unknown, TResult = unknown> {
 // ============================================================================
 
 /**
- * Payload for the `build` job type — polls Package2VersionCreateRequest.
+ * Payload for the `build` job type.
+ *
+ * Carries the full validation descriptors so both package-version-request
+ * polling and deploy validation (via InstallOrchestrator) can run from
+ * a background watcher process.
  */
 export interface BuildWatcherPayload {
   /** Auto-created scratch org to delete after validation completes */
   cleanupBuildOrg?: {devhubUsername: string; username: string};
-  targets: BuildWatcherTarget[];
-}
-
-export interface BuildWatcherTarget {
-  packageName: string;
-  packageVersionCreateRequestId: string;
-  packageVersionId?: string;
+  /** Full validation descriptors (deploy + package-version-request) */
+  validations: PendingValidationDescriptor[];
 }
 
 export interface BuildWatcherResult {

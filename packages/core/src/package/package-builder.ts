@@ -1,4 +1,5 @@
 import {Org} from '@salesforce/core';
+import {ComponentSet} from '@salesforce/source-deploy-retrieve';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {DependencyAnalyzer} from '../types/dependency-analysis.js';
@@ -196,10 +197,6 @@ export default class PackageBuilder {
     if (result.packageVersionId && 'packageVersionId' in sfpmPackage) {
       (sfpmPackage as any).packageVersionId = result.packageVersionId;
     }
-
-    if (result.validationState && sfpmPackage instanceof SfpmMetadataPackage) {
-      sfpmPackage.validationState = result.validationState;
-    }
   }
 
   /** Apply task enrichments to the package. */
@@ -379,7 +376,7 @@ export default class PackageBuilder {
 
     const buildAs = this.resolveBuildAs(sfpmPackage, modeConfig);
 
-    const builderInstance = builderFactory(sfpmPackage, this.options, this.logger, this.sink, buildAs as PackageType);
+    const builderInstance = builderFactory(this.provider, sfpmPackage, this.options, this.logger, this.sink, buildAs as PackageType);
 
     // Register dependency analysis as a pre-build task when analyzer is provided
     if (this.dependencyAnalyzer && modeConfig.dependencyAnalysis) {
@@ -414,9 +411,12 @@ export default class PackageBuilder {
       this.applyBuilderResult(sfpmPackage, result);
 
       if (result.pendingValidation) {
+        const pv = result.pendingValidation;
         this.sink?.validateQueued({
-          operationId: result.pendingValidation.operationId,
-          operationType: result.pendingValidation.operationType,
+          operationId: pv.operationType === 'package-version-request'
+            ? pv.packageVersionRequestId
+            : pv.packageName,
+          operationType: pv.operationType,
         });
       }
 
@@ -461,6 +461,7 @@ export default class PackageBuilder {
       logger: this.logger,
       operation: 'build',
       projectDir: this.provider.projectDir,
+      provider: this.provider,
       sfpmPackage,
       stage: lifecycle.stage,
       targetOrg: this.buildOrg?.devhub?.getUsername() ?? this.buildOrg?.buildOrg?.getUsername(),
@@ -487,7 +488,7 @@ export default class PackageBuilder {
 
     const ctx: BuildTaskContext = {
       logger: this.logger,
-      projectDirectory: this.provider.projectDir,
+      provider: this.provider,
       sfpmPackage,
       sink: this.sink,
     };
@@ -538,7 +539,7 @@ export default class PackageBuilder {
 
   private async stagePackage(sfpmPackage: SfpmPackage): Promise<number> {
     this.sink?.stageStart({
-      stagingDirectory: sfpmPackage.workingDirectory,
+      stagingDirectory: this.provider.getPackageBuildDirectory(sfpmPackage.name),
     });
 
     try {
@@ -551,7 +552,14 @@ export default class PackageBuilder {
         this.logger,
       ).assemble();
 
-      sfpmPackage.workingDirectory = assemblyOutput.stagingDirectory;
+      // Initialise the ComponentSet from staged source so the package model
+      // never needs to know about the staging directory itself.
+      if (sfpmPackage instanceof SfpmMetadataPackage) {
+        const stagedSourcePath = this.provider.getPackageBuiltSourceDirectory(sfpmPackage.name);
+        if (stagedSourcePath) {
+          sfpmPackage.setComponentSet(ComponentSet.fromSource(stagedSourcePath));
+        }
+      }
 
       this.sink?.stageComplete({
         componentCount: assemblyOutput.componentCount || 0,

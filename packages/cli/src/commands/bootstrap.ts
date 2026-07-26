@@ -2,11 +2,16 @@ import {
   BuildOrchestrator,
   InstallOrchestrator,
   Logger,
+  OrchestrationResult,
   PackageCreator,
   PackageService,
+  PendingValidationDescriptor,
   type ProjectDefinitionProvider,
   ProjectService,
   stripScope,
+  ValidationEventBus,
+  ValidationResolver,
+  WorkspaceProvider,
 } from '@b64hub/sfpm-core'
 import {confirm, select} from '@inquirer/prompts'
 import {Flags} from '@oclif/core'
@@ -169,6 +174,16 @@ export default class Bootstrap extends SfpmCommand {
             }
           }
         }
+
+        const pendingValidations = buildResult.results.map(packageResult => packageResult.result).filter(descriptor => descriptor && descriptor.operationType === 'package-version-request') as PendingValidationDescriptor[];
+
+        const resolver = new ValidationResolver(
+          projectService.getDefinitionProvider(),
+          projectService.getProjectGraph(),
+          this.sfpmLogger,
+        )
+
+        const validationResults = await resolver.resolve(pendingValidations);
       }
 
       // ── 4. Promote unpromoted versions (newly built + previously built but not promoted) ──
@@ -200,11 +215,13 @@ export default class Bootstrap extends SfpmCommand {
       .filter(name => !failedNames.has(name))
 
       if (installNames.length > 0) {
-        if (!projectService) {
-          projectService = await ProjectService.create(tmpDir)
-        }
-
-        const installResults = await this.installPackages(projectService, installNames, flags, ctx)
+        // Use a fresh dist-aware provider so packageVersionId + sourceHash from
+        // dist/package.json (written by the build step above) are visible.
+        const installService = await ProjectService.create(
+          tmpDir,
+          new WorkspaceProvider({distAware: true, projectDir: tmpDir}),
+        )
+        const installResults = await this.installPackages(installService, installNames, flags, ctx)
         for (const ir of installResults) {
           results.push(ir)
         }
@@ -225,7 +242,7 @@ export default class Bootstrap extends SfpmCommand {
     packageNames: string[],
     force: boolean,
     ctx: BootstrapContext,
-  ): Promise<{failedPackages?: string[]; success: boolean}> {
+  ): Promise<OrchestrationResult<PendingValidationDescriptor>> {
     if (ctx.isInteractive) {
       this.log(chalk.bold('\nBuilding packages...\n'))
     }
@@ -238,6 +255,7 @@ export default class Bootstrap extends SfpmCommand {
       {devhub: devhubOrg},
       {
         force, includeDependencies: true,
+        validation: 'org',
       },
       ctx.logger,
     )
@@ -251,12 +269,7 @@ export default class Bootstrap extends SfpmCommand {
     })
     buildRenderer.attachTo(buildOrchestrator.buildBus, buildOrchestrator.orchestrationBus)
 
-    const buildResult = await buildOrchestrator.buildAll(packageNames)
-
-    return {
-      failedPackages: buildResult.failedPackages,
-      success: buildResult.success,
-    }
+    return buildOrchestrator.buildAll(packageNames);
   }
 
   private async cleanup(tmpDir: string, isInteractive: boolean): Promise<void> {
@@ -384,6 +397,7 @@ export default class Bootstrap extends SfpmCommand {
       {
         force: flags.force,
         includeDependencies: true,
+        testLevel: 'RunLocalTests',
       },
       ctx.logger,
     )

@@ -145,13 +145,9 @@ function buildMetadataFromPackage(pkg: SfpmPackage, baseVersion: string): Record
 
   if (pkg.apiVersion) base.apiVersion = pkg.apiVersion;
 
-  // Metadata packages: add content + validation
+  // Metadata packages: add content
   if (pkg instanceof SfpmMetadataPackage) {
     base.content = simplifyContent(pkg.resolveContentMetadata());
-
-    if (pkg.validationState) {
-      base.validation = pkg.validationState;
-    }
   }
 
   // Unlocked packages: add identity fields
@@ -201,7 +197,7 @@ function simplifyContent(content: Record<string, any>): Record<string, any> {
  *
  * Sets flat properties directly on the domain model:
  * version, source, apiVersion, and (for metadata packages) content,
- * testCoverage, validationState. For unlocked packages, sets packageId,
+ * testCoverage. For unlocked packages, sets packageId,
  * packageVersionId, isOrgDependent.
  *
  * This is the read-side counterpart to `buildMetadataFromPackage()`.
@@ -222,7 +218,7 @@ export function hydrateFromNpmPackageJson(pkg: SfpmPackage, packageJson: NpmPack
     pkg.sourceHash = sourceHash;
   }
 
-  // Metadata packages: content + validation
+  // Metadata packages: content
   if (pkg instanceof SfpmMetadataPackage) {
     if (sfpm.content) {
       pkg.updateContent(sfpm.content);
@@ -230,10 +226,6 @@ export function hydrateFromNpmPackageJson(pkg: SfpmPackage, packageJson: NpmPack
 
     if (sfpm.content?.testCoverage !== undefined) {
       pkg.testCoverage = sfpm.content.testCoverage;
-    }
-
-    if (sfpm.validation) {
-      pkg.validationState = sfpm.validation;
     }
   }
 

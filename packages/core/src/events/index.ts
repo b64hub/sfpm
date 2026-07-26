@@ -62,6 +62,9 @@ export type {
   OrchestrationResult,
   OrchestrationStartEvent, OrchestrationStartPayload,
   PackageResult,
+  RegressionTestCompleteEvent, RegressionTestCompletePayload,
+  RegressionTestPackageCompleteEvent, RegressionTestPackageCompletePayload,
+  RegressionTestStartEvent, RegressionTestStartPayload,
 } from './orchestration-event-bus.js';
 export {TypedEventEmitter} from './typed-event-emitter.js';
 export type {
@@ -85,7 +88,6 @@ export type {
   ResolveCompleteEvent, ResolveCompletePayload,
   ResolveFailedEvent, ResolveFailedPayload,
   ResolvePassedEvent, ResolvePassedPayload,
-  ResolveStartEvent, ResolveStartPayload,
   ResolveStatusEvent, ResolveStatusPayload,
   ResolveTimeoutEvent, ResolveTimeoutPayload,
   ValidationEvents, ValidationEventSink,

@@ -3,6 +3,7 @@ import type {Connection} from '@salesforce/core';
 import {Org} from '@salesforce/core';
 import {PackageVersion} from '@salesforce/packaging';
 
+import type {PackageVersionValidationDescriptor} from '../../types/validation.js';
 import type {
   BuildWatcherPackageResult,
   BuildWatcherPayload,
@@ -42,16 +43,25 @@ export class BuildPollingStrategy implements PollingStrategy<BuildWatcherPayload
     connection: Connection,
     payload: BuildWatcherPayload,
   ): Promise<PollOutcome<BuildWatcherResult>> {
+    // Only poll package-version-request descriptors — deploy validation
+    // is handled by ValidationResolver (not a pollable operation)
+    const targets = payload.validations
+    .filter((v): v is PackageVersionValidationDescriptor => v.operationType === 'package-version-request');
+
+    if (targets.length === 0) {
+      return {result: {packages: []}, status: 'completed'};
+    }
+
     const results: BuildWatcherPackageResult[] = [];
     let anyPending = false;
     let anyFailed = false;
     let completedCount = 0;
 
-    for (const target of payload.targets) {
+    for (const target of targets) {
       try {
         // eslint-disable-next-line no-await-in-loop
         const status = await PackageVersion.getCreateStatus(
-          target.packageVersionCreateRequestId,
+          target.packageVersionRequestId,
           connection,
         );
 
@@ -59,7 +69,6 @@ export class BuildPollingStrategy implements PollingStrategy<BuildWatcherPayload
           results.push({
             error: 'Creation request not found',
             packageName: target.packageName,
-            packageVersionId: target.packageVersionId,
             status: 'Error',
           });
           anyFailed = true;
@@ -72,7 +81,7 @@ export class BuildPollingStrategy implements PollingStrategy<BuildWatcherPayload
             codeCoverage: typeof status.CodeCoverage === 'number' ? status.CodeCoverage : undefined,
             hasPassedCodeCoverageCheck: status.HasPassedCodeCoverageCheck ?? undefined,
             packageName: target.packageName,
-            packageVersionId: status.SubscriberPackageVersionId ?? target.packageVersionId,
+            packageVersionId: status.SubscriberPackageVersionId ?? undefined,
             status: 'Success',
           });
           continue;
@@ -87,7 +96,7 @@ export class BuildPollingStrategy implements PollingStrategy<BuildWatcherPayload
           results.push({
             error: errors,
             packageName: target.packageName,
-            packageVersionId: status.SubscriberPackageVersionId ?? target.packageVersionId,
+            packageVersionId: status.SubscriberPackageVersionId ?? undefined,
             status: 'Error',
           });
           anyFailed = true;
@@ -104,7 +113,7 @@ export class BuildPollingStrategy implements PollingStrategy<BuildWatcherPayload
 
     if (anyPending) {
       return {
-        message: `${completedCount}/${payload.targets.length} packages complete`,
+        message: `${completedCount}/${targets.length} packages complete`,
         status: 'pending',
       };
     }

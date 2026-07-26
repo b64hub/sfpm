@@ -47,30 +47,29 @@ export class InteractiveDisplay implements DisplayStrategy {
       if (pkg.skipped) {
         this.logger.log(`  ${sym.skip} ${chalk.cyan(pkg.name)} ${chalk.dim(`— ${pkg.error || 'skipped'}`)}`);
       } else if (pkg.success) {
-        this.logger.log(`  ${sym.success} ${chalk.cyan(pkg.name)}${pkg.duration ? ` ${chalk.gray(`(${pkg.duration})`)}` : ''}`);
+        this.logger.log(`  ${sym.success} ${chalk.cyan(pkg.name)}${pkg.version ? '@' + chalk.cyan(pkg.version) : ''} ${pkg.duration ? ` ${chalk.gray(`(${pkg.duration})`)}` : ''}`);
       } else {
         this.logger.log(`  ${sym.fail} ${chalk.cyan(pkg.name)}${pkg.error ? ` ${chalk.red(`— ${pkg.error}`)}` : ''}`);
       }
     }
 
-    this.logger.log('');
+    // const entries: Record<string, string> = {
+    //   Succeeded: String(summary.succeeded),
+    //   'Total Packages': String(summary.packages.length),
+    // };
+    // if (summary.failed > 0) entries.Failed = chalk.red(String(summary.failed));
+    // if (summary.skipped > 0) entries.Skipped = chalk.yellow(String(summary.skipped));
+    // entries.Duration = summary.duration;
 
-    const entries: Record<string, string> = {
-      Succeeded: String(summary.succeeded),
-      'Total Packages': String(summary.packages.length),
-    };
-    if (summary.failed > 0) entries.Failed = chalk.red(String(summary.failed));
-    if (summary.skipped > 0) entries.Skipped = chalk.yellow(String(summary.skipped));
-    entries.Duration = summary.duration;
+    // const allSucceeded = summary.failed === 0;
+    // const title = allSucceeded ? 'Orchestration Complete' : 'Orchestration Complete (with failures)';
 
-    const allSucceeded = summary.failed === 0;
-    const title = allSucceeded ? 'Orchestration Complete' : 'Orchestration Complete (with failures)';
-
-    if (allSucceeded) {
-      this.logger.log(successBox(title, entries));
-    } else {
-      this.logger.log(warningBox(title, entries));
-    }
+    // this.logger.log('\n');
+    // if (allSucceeded) {
+    //   this.logger.log(successBox(title, entries));
+    // } else {
+    //   this.logger.log(warningBox(title, entries));
+    // }
   }
 
   error(_error: Error): void {

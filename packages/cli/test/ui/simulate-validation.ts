@@ -4,69 +4,89 @@
  *
  * Run with: npx tsx packages/cli/test/ui/simulate-validation.ts
  *
- * Adjust `speed` to iterate faster (2 = 2x speed, 0 = instant).
+ * Demonstrates:
+ * - Per-package Listr spinners (all packages deploying concurrently)
+ * - Results arriving independently as deploys complete
+ * - (N/N deployed, X% coverage) annotation on pass
+ * - Error annotation on failure
+ * - Final pass/fail summary line
+ *
+ * Adjust `speed` to iterate faster (2 = 2×, 0 = instant).
  */
 import type {ValidationEvents} from '@b64hub/sfpm-core';
 
 import {ValidationEventBus} from '@b64hub/sfpm-core';
 
 import {ValidationProgressRenderer} from '../../src/ui/validation-progress-renderer.js';
-import {EventSimulator, TimelineEntry} from './event-simulator.js';
+import {EventSimulator, type TimelineEntry} from './event-simulator.js';
 
 // ============================================================================
-// Timeline: mixed source + unlocked package validation
+// Timeline: deploy-style validation (packages deploy in parallel, no polling)
+//
+// All four packages start simultaneously. Results arrive as each deploy
+// finishes — independently, without intermediate status updates.
 // ============================================================================
+
+const packageNames = ['core-data', 'ui-components', 'analytics', 'apex-utils'];
 
 const timeline: TimelineEntry<ValidationEvents>[] = [
-  {
-    delay: 0,
-    event: 'resolve:start',
-    payload: {packageNames: ['core-data', 'ui-components', 'analytics']},
-  },
-  {
-    delay: 500,
-    event: 'resolve:status',
-    payload: {packageName: 'core-data', status: 'polling'} as any,
-  },
-  {
-    delay: 800,
-    event: 'resolve:status',
-    payload: {packageName: 'ui-components', status: 'queued', waitingFor: 'core-data'} as any,
-  },
-  {
-    delay: 1200,
-    event: 'resolve:status',
-    payload: {attempt: 2, packageName: 'core-data', status: 'polling'} as any,
-  },
-  {
-    delay: 2000,
-    event: 'resolve:passed',
-    payload: {checks: ['deploy', 'test'], codeCoverage: 87, componentsDeployed: 42, componentsTotal: 42, packageName: 'core-data'} as any,
-  },
-  {
-    delay: 500,
-    event: 'resolve:status',
-    payload: {packageName: 'ui-components', status: 'polling'} as any,
-  },
-  {
-    delay: 300,
-    event: 'resolve:status',
-    payload: {packageName: 'analytics', status: 'polling'} as any,
-  },
+  // core-data finishes first — full metadata deploy + coverage
   {
     delay: 1500,
     event: 'resolve:passed',
-    payload: {checks: ['deploy', 'test', 'dependencies'], codeCoverage: 92, componentsDeployed: 24, componentsTotal: 24, packageName: 'analytics'} as any,
+    payload: {
+      checks: ['deploy'],
+      codeCoverage: 87,
+      componentsDeployed: 42,
+      componentsTotal: 42,
+      packageName: 'core-data',
+    } as any,
   },
+
+  // analytics finishes next
   {
-    delay: 2000,
-    event: 'resolve:failed',
-    payload: {codeCoverage: 68, componentsDeployed: 15, componentsTotal: 15, error: 'Coverage 68% below required 75%', packageName: 'ui-components'} as any,
+    delay: 800,
+    event: 'resolve:passed',
+    payload: {
+      checks: ['deploy'],
+      codeCoverage: 92,
+      componentsDeployed: 24,
+      componentsTotal: 24,
+      packageName: 'analytics',
+    } as any,
   },
+
+  // ui-components fails — coverage below threshold
+  {
+    delay: 700,
+    event: 'resolve:failed',
+    payload: {
+      checks: ['deploy'],
+      codeCoverage: 68,
+      componentsDeployed: 15,
+      componentsTotal: 15,
+      error: 'Coverage 68% below required 75%',
+      packageName: 'ui-components',
+    } as any,
+  },
+
+  // apex-utils passes — config/metadata package, no coverage measured
+  {
+    delay: 600,
+    event: 'resolve:passed',
+    payload: {
+      checks: ['deploy'],
+      componentsDeployed: 31,
+      componentsTotal: 31,
+      packageName: 'apex-utils',
+    } as any,
+  },
+
+  // Summary
   {
     delay: 300,
     event: 'resolve:complete',
-    payload: {failed: 1, passed: 2, timedOut: 0, total: 3},
+    payload: {failed: 1, passed: 3, timedOut: 0, total: 4},
   },
 ];
 
@@ -81,5 +101,11 @@ const renderer = new ValidationProgressRenderer('interactive', {
 });
 renderer.attachTo(bus);
 
+// Explicit lifecycle: start the spinner (await until live), play progress
+// events, then finish (final paint + summary) — mirrors resolveValidationsInline.
+await renderer.begin(packageNames);
+
 const simulator = new EventSimulator(bus);
 await simulator.play(timeline, {speed: 1});
+
+await renderer.end();

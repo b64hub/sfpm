@@ -2,27 +2,20 @@ import type {
   ResolveCompleteEvent,
   ResolveFailedEvent,
   ResolvePassedEvent,
-  ResolveStartEvent,
   ResolveStatusEvent,
   ResolveTimeoutEvent,
   ValidationEventBus,
 } from '@b64hub/sfpm-core';
 
 import chalk from 'chalk';
-import ora, {Ora} from 'ora';
 
 import type {OutputLogger, OutputMode} from './renderer-utils.js';
+import type {ValidationDisplayStrategy} from './strategies/validation-display-strategy.js';
 
-import {formatDuration, sym} from './renderer-utils.js';
+import {formatDuration} from './renderer-utils.js';
+import {createValidationDisplayStrategy} from './strategies/validation-display-strategy.js';
 
-// ============================================================================
-// Per-package tracking
-// ============================================================================
-
-interface PackageState {
-  startedAt?: number;
-  status: 'done' | 'failed' | 'polling' | 'queued' | 'timed-out';
-}
+export type {OutputMode} from './renderer-utils.js';
 
 // ============================================================================
 // ValidationProgressRenderer
@@ -31,28 +24,31 @@ interface PackageState {
 /**
  * Renders post-build validation resolution progress.
  *
- * Standalone component — attach to a {@link ValidationEventBus} via
- * {@link attachTo}. Uses a single spinner with rolling text that
- * reflects the current polling state. The spinner is created once
- * on `resolve:start` and only its text is updated — never destroyed
- * and recreated — to avoid orphaned spinner lines in the terminal.
+ * Translates {@link ValidationEventBus} progress events into display strategy
+ * calls. The UI lifecycle is driven explicitly by the caller, not by events,
+ * so the spinner is guaranteed live before validation work starts and its
+ * final frame is painted before the process may exit:
+ *
+ *   await renderer.begin(packageNames);   // spinner live
+ *   await resolver.resolve(...);          // work → progress events
+ *   await renderer.end();                 // final paint + summary
+ *
+ * Interactive mode shows a per-package Listr task (spinner while pending,
+ * ✔ or ✖ on completion). Plain mode logs one line per result.
  */
 export class ValidationProgressRenderer {
-  private readonly log: OutputLogger;
-  private readonly mode: OutputMode;
-  private readonly packages = new Map<string, PackageState>();
-  private spinner: Ora | undefined;
+  private readonly display: ValidationDisplayStrategy;
+  private summary?: {failed: number; passed: number; timedOut: number; total: number};
 
   constructor(mode: OutputMode, log: OutputLogger) {
-    this.mode = mode;
-    this.log = log;
+    this.display = createValidationDisplayStrategy(mode, log);
   }
 
   /**
-   * Attach to a validation event bus and start listening.
+   * Attach to a validation event bus and listen for per-package progress.
+   * Call {@link begin} to start the UI and {@link end} to finish it.
    */
   public attachTo(bus: ValidationEventBus): void {
-    bus.on('resolve:start', event => this.onStart(event));
     bus.on('resolve:status', event => this.onStatus(event));
     bus.on('resolve:passed', event => this.onPassed(event));
     bus.on('resolve:failed', event => this.onFailed(event));
@@ -60,101 +56,72 @@ export class ValidationProgressRenderer {
     bus.on('resolve:complete', event => this.onComplete(event));
   }
 
-  // ========================================================================
-  // Event Handlers
-  // ========================================================================
-
   /**
-   * Color a coverage percentage: red (<75), yellow (75–89), green (90+).
+   * Start the UI for the given packages. Resolves only once the display is
+   * live (interactive: the Listr spinner is registered). Await this BEFORE
+   * starting event-loop-heavy validation work, otherwise the work can starve
+   * the async render setup and the spinner never appears.
    */
-  private colorCoverage(coverage: number): string {
-    const label = `${coverage}%`;
-    if (coverage >= 90) return chalk.dim.green(label);
-    if (coverage >= 75) return chalk.dim.yellow(label);
-    return chalk.dim.red(label);
+  public begin(packageNames: string[]): Promise<void> {
+    return this.display.begin(packageNames);
   }
 
   /**
-   * Build a dimmed parenthetical detail string with component counts and coverage.
-   * e.g. ` (42/42 deployed, 87%)` or ` (87%)` or ``
+   * Finish the UI: await the final render, then write the summary line. Await
+   * this before the process may exit (e.g. before `this.error({exit})`), so the
+   * validation Listr is not abandoned mid-paint.
    */
+  public async end(): Promise<void> {
+    await this.display.end();
+    if (this.summary) {
+      const {failed, passed, timedOut, total} = this.summary;
+      this.display.complete(passed, failed, timedOut, total);
+    }
+  }
+
+  // ========================================================================
+  // Event handlers
+  // ========================================================================
+
+  private colorCoverage(coverage: number): string {
+    if (coverage < 75) return chalk.red(`${coverage}% coverage`);
+    if (coverage < 90) return chalk.yellow(`${coverage}% coverage`);
+    return chalk.green(`${coverage}% coverage`);
+  }
+
   private formatDetails(deployed?: number, total?: number, coverage?: number): string {
-    const parts: string[] = [];
+    if (deployed !== undefined && total !== undefined && coverage !== undefined) {
+      return ` ${chalk.dim('(')}${deployed}/${total} deployed, ${this.colorCoverage(coverage)}${chalk.dim(')')}`;
+    }
 
     if (deployed !== undefined && total !== undefined) {
-      parts.push(`${deployed}/${total} deployed`);
-    }
-
-    if (coverage !== undefined) {
-      parts.push(this.colorCoverage(coverage));
-    }
-
-    if (parts.length === 0) return '';
-
-    // coverage is already colored, so build the string with dim for everything else
-    if (deployed !== undefined && total !== undefined && coverage !== undefined) {
-      return ` ${chalk.dim(`(${deployed}/${total} deployed,`)} ${this.colorCoverage(coverage)}${chalk.dim(')')}`;
+      return ` ${chalk.dim('(')}${deployed}/${total} deployed${chalk.dim(')')}`;
     }
 
     if (coverage !== undefined) {
       return ` ${chalk.dim('(')}${this.colorCoverage(coverage)}${chalk.dim(')')}`;
     }
 
-    return chalk.dim(` (${parts.join(', ')})`);
+    return '';
   }
 
   private onComplete(event: ResolveCompleteEvent): void {
-    this.spinner?.stop();
-    this.spinner = undefined;
-
-    if (this.mode === 'json') return;
-
-    const parts: string[] = [];
-    if (event.passed > 0) parts.push(chalk.green(`${event.passed} passed`));
-    if (event.failed > 0) parts.push(chalk.red(`${event.failed} failed`));
-    if (event.timedOut > 0) parts.push(chalk.yellow(`${event.timedOut} timed out`));
-
-    const summary = parts.join(chalk.dim(', '));
-    this.log.log(`\n  ${chalk.bold('Validation')} ${summary} ${chalk.dim(`(${event.total} total)`)}`);
+    // Defer the summary line until end(), after the Listr paints its final
+    // task states — otherwise the summary would print above the ✔/✖ rows.
+    this.summary = {
+      failed: event.failed, passed: event.passed, timedOut: event.timedOut, total: event.total,
+    };
   }
 
   private onFailed(event: ResolveFailedEvent): void {
-    const name = (event as any).packageName ?? 'unknown';
-    this.packages.set(name, {status: 'failed'});
-
-    if (this.mode === 'json') return;
-
-    const details = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
-    this.writeResult(`${sym.fail} ${chalk.cyan(name)}${details} ${chalk.dim('—')} ${chalk.red(event.error)}`);
+    const components = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
+    const detail = `${components} ${chalk.dim('—')} ${chalk.red(event.error)}`;
+    this.display.packageFail(event.packageName, detail);
   }
 
   private onPassed(event: ResolvePassedEvent): void {
-    const name = (event as any).packageName ?? 'unknown';
-    this.packages.set(name, {status: 'done'});
-
-    if (this.mode === 'json') return;
-
-    const details = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
-    this.writeResult(`${sym.success} ${chalk.cyan(name)}${details}`);
-  }
-
-  private onStart(event: ResolveStartEvent): void {
-    for (const name of event.packageNames) {
-      this.packages.set(name, {startedAt: Date.now(), status: 'queued'});
-    }
-
-    if (this.mode === 'json') return;
-
-    const count = event.packageNames.length;
-    const label = count === 1 ? 'validation' : 'validations';
-    this.log.log(`\n\n${chalk.bold('Resolving')} ${chalk.cyan(String(count))} ${label}`);
-
-    if (this.mode !== 'interactive') return;
-
-    this.spinner = ora({
-      prefixText: '',
-      text: 'Waiting for results...',
-    }).start();
+    const detail = this.formatDetails(event.componentsDeployed, event.componentsTotal, event.codeCoverage);
+    this.display.packagePass(event.packageName, detail);
   }
 
   // ========================================================================
@@ -162,63 +129,16 @@ export class ValidationProgressRenderer {
   // ========================================================================
 
   private onStatus(event: ResolveStatusEvent): void {
-    const name = (event as any).packageName ?? 'unknown';
-    const pkg = this.packages.get(name) ?? {status: 'queued'};
-    pkg.status = event.status === 'in-progress' || event.status === 'polling' ? 'polling' : 'queued';
-    this.packages.set(name, pkg);
-
-    if (!this.spinner || this.mode !== 'interactive') return;
-
-    const statusLabel = event.status === 'polling'
-      ? `Polling ${chalk.cyan(name)}`
+    const text = event.status === 'polling'
+      ? `polling${event.attempt ? ` (attempt ${event.attempt})` : ''}`
       : event.status === 'queued'
-        ? `Queued ${chalk.dim(name)}`
-        : `Resolving ${chalk.cyan(name)}`;
-
-    const attempt = event.attempt ? chalk.dim(` (attempt ${event.attempt})`) : '';
-    const waiting = event.waitingFor ? chalk.dim(` waiting for ${event.waitingFor}`) : '';
-    this.spinner.text = `${statusLabel}${attempt}${waiting}`;
+        ? `queued${event.waitingFor ? ` — waiting for ${event.waitingFor}` : ''}`
+        : 'validating...';
+    this.display.packageStatus(event.packageName, text);
   }
 
   private onTimeout(event: ResolveTimeoutEvent): void {
-    const name = (event as any).packageName ?? 'unknown';
-    this.packages.set(name, {status: 'timed-out'});
-
-    if (this.mode === 'json') return;
-
-    this.writeResult(`${sym.warn} ${chalk.bold(name)} ${chalk.yellow('timed out')} ${chalk.dim(`after ${formatDuration(event.elapsedMs)}`)}`);
-  }
-
-  // ========================================================================
-  // Output helpers
-  // ========================================================================
-
-  /**
-   * Write a result line while preserving the single spinner.
-   *
-   * Clears the spinner line, writes the result, then restarts the
-   * spinner with an updated "remaining" count — all on the same
-   * {@link Ora} instance to avoid orphaned terminal lines.
-   */
-  private writeResult(line: string): void {
-    if (this.spinner) {
-      this.spinner.clear();
-      // Temporarily stop so the log line isn't overwritten by the spinner frame
-      this.spinner.stop();
-    }
-
-    this.log.log(`  ${line}`);
-
-    // Resume the same spinner with an updated remaining count
-    if (this.spinner && this.mode === 'interactive') {
-      const remaining = [...this.packages.values()]
-      .filter(s => s.status === 'polling' || s.status === 'queued')
-      .length;
-
-      if (remaining > 0) {
-        this.spinner.text = `Resolving ${chalk.cyan(String(remaining))} remaining...`;
-        this.spinner.start();
-      }
-    }
+    const detail = ` ${chalk.dim('—')} ${chalk.yellow('timed out')} ${chalk.dim(`after ${formatDuration(event.elapsedMs)}`)}`;
+    this.display.packageFail(event.packageName, detail);
   }
 }

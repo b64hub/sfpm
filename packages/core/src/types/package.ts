@@ -76,6 +76,8 @@ export interface InstallOptions {
    * Where to install from: 'local' (project source ./dist) or 'artifact' (installed node_modules).
    */
   origin?: PackageOrigin;
+  /** Run tests in direct dependents of installed packages after orchestration completes. */
+  regressionTest?: boolean;
   testLevel?: TestLevel;
   unlocked?: UnlockedInstallOptions;
   /** Update sfpm artifact records in org upon installation */

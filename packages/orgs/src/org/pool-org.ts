@@ -3,7 +3,7 @@ import {OrgTypes} from '@salesforce/core';
 import type {Sandbox} from './sandbox/types.js';
 import type {ScratchOrg} from './scratch/types.js';
 
-import {AllocationStatus} from './types.js';
+import {PoolStage} from './types.js';
 
 /**
  * Authentication fields stored against a pool-managed org.
@@ -32,7 +32,7 @@ export interface PoolOrgAuth {
  */
 export interface PoolOrgInfo {
   isScriptExecuted?: boolean;
-  status: AllocationStatus;
+  stage: PoolStage;
   tag: string;
   timestamp: number;
 }
@@ -66,11 +66,11 @@ export interface PoolOrg {
  * Record shape for updating org pool metadata
  */
 export interface PoolOrgRecord {
-  allocationStatus: AllocationStatus;
   authUrl?: string;
   id: string;
   password?: string;
   poolTag: string;
+  stage: PoolStage;
 }
 
 /**

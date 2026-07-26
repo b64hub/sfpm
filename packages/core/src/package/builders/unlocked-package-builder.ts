@@ -3,12 +3,14 @@ import fs from 'fs-extra';
 import path from 'node:path';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 
 import ProjectService from '../../project/project-service.js';
 import {toSalesforceProjectJson} from '../../project/providers/sfdx-project-adapter.js';
 import {BuildError} from '../../types/errors.js';
 import Logger from '../../types/logger.js';
 import {BuildOptions, PackageType} from '../../types/package.js'
+import {PackageVersionValidationDescriptor} from '../../types/validation.js';
 import PackageService, {PackageVersionCreateReportProgress, PackageVersionCreateRequestResult} from '../package-service.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
@@ -27,12 +29,12 @@ export default class UnlockedPackageBuilder implements Builder {
   private sink?: BuildEventSink;
   private workingDirectory: string;
 
-  constructor(workingDirectory: string, sfpmPackage: SfpmPackage, options: BuildOptions, logger?: Logger, sink?: BuildEventSink) {
+  constructor(provider: ProjectDefinitionProvider, sfpmPackage: SfpmPackage, options: BuildOptions, logger?: Logger, sink?: BuildEventSink) {
     if (!(sfpmPackage instanceof SfpmUnlockedPackage)) {
       throw new TypeError(`UnlockedPackageBuilder received incompatible package type: ${sfpmPackage.constructor.name}`);
     }
 
-    this.workingDirectory = workingDirectory;
+    this.workingDirectory = provider.getPackageBuildDirectory(sfpmPackage.name)!;
     this.sfpmPackage = sfpmPackage;
     this.options = options;
     this.logger = logger;
@@ -58,89 +60,26 @@ export default class UnlockedPackageBuilder implements Builder {
       throw new Error('Must run connect() before exec()');
     }
 
-    // Update working directory to staging if available
-    if (this.sfpmPackage.workingDirectory) {
-      this.workingDirectory = this.sfpmPackage.workingDirectory;
-    }
+    const result = await this.buildPackage();
 
-    await this.pruneOrgDependentPackage();
-    await this.buildPackage();
+    this.hydratePackageVersionResult(result);
+    const validationDescriptor = this.buildValidationDescriptor(result?.Id);
 
-    // Return build results — no more side-effect mutations
-    const {validationState} = this.sfpmPackage;
     return {
+      packageName: this.sfpmPackage.name,
       packageType: PackageType.Unlocked,
       packageVersionId: this.sfpmPackage.packageVersionId,
-      pendingValidation: validationState?.status === 'pending' ? validationState.pending : undefined,
-      validationState,
-      version: this.sfpmPackage.version,
+      pendingValidation: validationDescriptor,
+      version: this.sfpmPackage.version as string,
     };
   }
 
-  /**
-   * Apply a successful create result to the package — updates version,
-   * emits the completion event, and enforces code coverage if required.
-   *
-   * Used both in the happy path and the verify-after-failure recovery.
-   */
-  private applyCreateResult(result: PackageVersionCreateRequestResult | undefined): void {
-    if (!result) return;
-
-    if (result.SubscriberPackageVersionId) {
-      this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
-    }
-
-    if (result.VersionNumber) {
-      this.sfpmPackage.version = result.VersionNumber;
-      this.logger?.debug(`Updated package version to ${result.VersionNumber}`);
-    }
-
-    // Set validation state on the domain model
-    const validated = Boolean(this.options.validation) && this.options.validation !== 'none';
-    const checks: Array<'dependencies' | 'deploy' | 'test'> = validated ? ['deploy', 'test', 'dependencies'] : [];
-
-    if (validated) {
-      this.sfpmPackage.validationState = {
-        checks,
-        pending: {
-          operationId: result.Id,
-          operationType: 'package-version-request',
-          packageName: this.sfpmPackage.packageName,
-          startedAt: new Date().toISOString(),
-          targetOrg: this.devhub?.getUsername() ?? 'unknown',
-        },
-        status: 'pending',
-      };
-    } else {
-      this.sfpmPackage.validationState = {
-        checks,
-        status: 'passed',
-        ...(result.CodeCoverage !== undefined && result.CodeCoverage !== null && {testCoverage: result.CodeCoverage}),
-      };
-    }
-
-    this.sink?.createComplete({
-      codeCoverage: result.CodeCoverage ?? undefined,
-      createdDate: result.CreatedDate ?? undefined,
-      hasMetadataRemoved: result.HasMetadataRemoved ?? undefined,
-      hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
-      packageId: result.Package2Id ?? '',
-      packageVersionCreateRequestId: result.Id,
-      packageVersionId: result.SubscriberPackageVersionId ?? '',
-      status: result.Status,
-      subscriberPackageVersionId: result.SubscriberPackageVersionId ?? '',
-      totalNumberOfMetadataFiles: result.TotalNumberOfMetadataFiles ?? undefined,
-      totalSizeOfMetadataFiles: result.TotalSizeOfMetadataFiles ?? undefined,
-      versionNumber: result.VersionNumber || this.sfpmPackage.version || '',
-    });
-  }
-
-  private async buildPackage(): Promise<void> {
+  private async buildPackage(): Promise<PackageVersionCreateRequestResult | undefined> {
     await this.rewriteMetadataPathsForCwd();
 
     const packageService = new PackageService(this.devhub!, this.logger);
 
-    const buildOptions = (await ProjectService.getInstance()).resolveBuildConfig(this.sfpmPackage.packageName, this.options)
+    const buildOptions = (await ProjectService.getInstance(this.workingDirectory)).resolveBuildConfig(this.sfpmPackage.packageName, this.options)
 
     this.sink?.createStart({
       packageId: this.sfpmPackage.packageId,
@@ -151,7 +90,7 @@ export default class UnlockedPackageBuilder implements Builder {
     const waitTime = buildOptions.waitTime || 120;
 
     this.logger?.debug(`PackageVersion.create options: packageId=${this.sfpmPackage.packageId}, `
-      + `version=${this.sfpmPackage.version}, validation=${validate}`);
+      + `version=${this.sfpmPackage.version}, validation=${validate}, isOrgDependent=${this.sfpmPackage.isOrgDependent}`);
 
     const tracker: {lastRequestId?: string; lastStatus?: string} = {
       lastRequestId: undefined,
@@ -160,16 +99,21 @@ export default class UnlockedPackageBuilder implements Builder {
 
     let result: PackageVersionCreateRequestResult | undefined;
 
+    if (this.sfpmPackage.isOrgDependent && validate) {
+      this.logger?.debug('Async org validation not available for org-dependent unlocked packages. Defaulting to synchronous.');
+    }
+
     try {
       result = await packageService.createPackageVersion(
         this.sfpmPackage.packageId,
         {
           apiVersion: this.sfpmPackage.apiVersion,
-          asyncvalidation: validate,
+          asyncvalidation: !this.sfpmPackage.isOrgDependent && validate,
           codecoverage: validate,
           definitionfile: buildOptions.unlocked?.definitionFile,
           installationkey: buildOptions.unlocked?.installationKey,
           installationkeybypass: buildOptions.unlocked?.installationKey ? undefined : true,
+          projectPath: this.workingDirectory,
           skipvalidation: !validate,
           tag: this.sfpmPackage.tag,
           versionnumber: this.sfpmPackage.getVersionNumber('salesforce'),
@@ -181,7 +125,20 @@ export default class UnlockedPackageBuilder implements Builder {
       await this.handleFailure(packageService, error, tracker, waitTime);
     }
 
-    this.applyCreateResult(result);
+    return result;
+  }
+
+  private buildValidationDescriptor(requestId: string | undefined): PackageVersionValidationDescriptor | undefined {
+    if (!this.options.validation && this.options.validation === 'none') return undefined;
+    if (!requestId) return undefined;
+
+    return {
+      devhub: this.devhub?.getUsername() ?? 'unknown',
+      operationType: 'package-version-request',
+      packageName: this.sfpmPackage.packageName,
+      packageVersionRequestId: requestId,
+      startedAt: new Date().toISOString(),
+    }
   }
 
   /**
@@ -206,7 +163,7 @@ export default class UnlockedPackageBuilder implements Builder {
 
         if (status.Status === 'Success' && status.SubscriberPackageVersionId) {
           this.logger?.info('Package version creation succeeded server-side despite client error');
-          this.applyCreateResult(status);
+          this.hydratePackageVersionResult(status);
           return;
         }
 
@@ -304,27 +261,36 @@ export default class UnlockedPackageBuilder implements Builder {
   }
 
   /**
-   * @description: cleanup sfpm constructs in working directory
-   * TODO: move file write responsibility to ProjectService
+   * Apply a successful create result to the package — updates version,
+   * emits the completion event, and enforces code coverage if required.
+   *
+   * Used both in the happy path and the verify-after-failure recovery.
    */
-  private async pruneOrgDependentPackage(): Promise<void> {
-    if (!this.sfpmPackage.isOrgDependent) {
-      return;
+  private hydratePackageVersionResult(result: PackageVersionCreateRequestResult | undefined): void {
+    if (!result) return;
+
+    if (result.SubscriberPackageVersionId) {
+      this.sfpmPackage.packageVersionId = result.SubscriberPackageVersionId;
     }
 
-    this.sink?.pruneStart({
-      reason: 'Org-dependent package requires pruning',
-    });
+    if (result.VersionNumber) {
+      this.sfpmPackage.version = result.VersionNumber;
+      this.logger?.debug(`Updated package version to ${result.VersionNumber}`);
+    }
 
-    const projectService = await ProjectService.getInstance(this.workingDirectory);
-    const prunedDefinition = projectService.resolveSingleProjectDefinition(this.sfpmPackage.packageName, {
-      isOrgDependent: true,
-    });
-
-    await fs.writeJson(path.join(this.workingDirectory, 'sfdx-project.json'), toSalesforceProjectJson(prunedDefinition), {spaces: 4});
-
-    this.sink?.pruneComplete({
-      prunedFiles: 1,
+    this.sink?.createComplete({
+      codeCoverage: result.CodeCoverage ?? undefined,
+      createdDate: result.CreatedDate ?? undefined,
+      hasMetadataRemoved: result.HasMetadataRemoved ?? undefined,
+      hasPassedCodeCoverageCheck: result.HasPassedCodeCoverageCheck ?? undefined,
+      packageId: result.Package2Id ?? '',
+      packageVersionCreateRequestId: result.Id,
+      packageVersionId: result.SubscriberPackageVersionId ?? '',
+      status: result.Status,
+      subscriberPackageVersionId: result.SubscriberPackageVersionId ?? '',
+      totalNumberOfMetadataFiles: result.TotalNumberOfMetadataFiles ?? undefined,
+      totalSizeOfMetadataFiles: result.TotalSizeOfMetadataFiles ?? undefined,
+      versionNumber: result.VersionNumber || this.sfpmPackage.version || '',
     });
   }
 

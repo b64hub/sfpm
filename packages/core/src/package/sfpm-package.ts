@@ -8,7 +8,6 @@ import path from 'node:path';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type Logger from '../types/logger.js';
 
-import {DIST_DIR, FORCE_APP_DIR} from '../types/artifact.js';
 import {
   MetadataFile,
   PackageType,
@@ -17,7 +16,6 @@ import {
   VersionFormat,
 } from '../types/package.js';
 import {OrgAliasConfig, PackageDefinition} from '../types/project.js';
-import {type ValidationState} from '../types/validation.js';
 import {extractScope, joinPackageName, stripScope} from '../utils/scope-utils.js';
 import {toVersionFormat} from '../utils/version-utils.js';
 import {AnalyzerRegistry} from './analyzers/analyzer-registry.js';
@@ -61,10 +59,10 @@ const PROFILE_SUPPORTED_METADATA_TYPES = new Set([
 
 export default abstract class SfpmPackage {
   protected _packageDefinition?: PackageDefinition;
-  public projectDirectory: string;
+  /** Project root — internal path anchor; use the provider for external path resolution. */
+  protected readonly projectDirectory: string;
   public readonly scope: string | undefined;
   public sourceHash?: string;
-  public workingDirectory: string | undefined;
   private _apiVersion?: string;
   private _packageName: string;
   private _packageType!: Omit<PackageType, 'managed'>;
@@ -95,16 +93,6 @@ export default abstract class SfpmPackage {
   /** Full npm-scoped name from workspace package.json (e.g., "@myorg/core-package") */
   get name(): string {
     return joinPackageName(this.packageName, this.scope);
-  }
-
-  get packageBuildDirectory(): string | undefined {
-    if (this.packageDirectory) return path.join(this.packageDirectory, DIST_DIR);
-    return undefined;
-  }
-
-  get packageBuiltSourceDirectory(): string | undefined {
-    if (this.packageBuildDirectory) return path.join(this.packageBuildDirectory, FORCE_APP_DIR);
-    return undefined;
   }
 
   get packageDefinition(): PackageDefinition | undefined {
@@ -177,20 +165,6 @@ export default abstract class SfpmPackage {
     return toVersionFormat(raw, format, {includeBuildNumber: options?.includeBuildNumber});
   }
 
-  /**
-   * Resolve the absolute path to the package source directory,
-   * using either the working directory (staging) or project root.
-   */
-  public resolveSourcePackagePath(): string {
-    const root = this.workingDirectory ?? this.projectDirectory;
-    const pkgPath = this.packageDefinition?.path;
-    if (!pkgPath) {
-      throw new Error(`Package '${this.packageName}' has no path defined`);
-    }
-
-    return path.join(root, pkgPath);
-  }
-
   public setBuildNumber(buildNumber: string): void {
     if (!buildNumber) {
       return;
@@ -220,7 +194,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
   public testLevel?: TestLevel;
   private _analyzed = false;
   private _customFields?: SourceComponent[];
-  private _validationState?: ValidationState;
 
   constructor(packageName: string, projectDirectory: string) {
     super(packageName, projectDirectory);
@@ -373,14 +346,6 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     .filter(c => c.type.id === 'apextrigger');
   }
 
-  get validationState(): undefined | ValidationState {
-    return this._validationState;
-  }
-
-  set validationState(state: ValidationState) {
-    this._validationState = state;
-  }
-
   /** Alias for the version property, satisfying the SourceDeployable interface. */
   get versionNumber(): string | undefined {
     return this.version;
@@ -413,7 +378,7 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
     const resolvedPath = sourcePath ?? this.packageDirectory;
 
     if (!resolvedPath) {
-      throw new Error('Package must have a working directory and a defined path');
+      throw new Error('Package must have a metadata source directory and a defined path');
     }
 
     if (!this._componentSet || sourcePath) {
@@ -449,6 +414,14 @@ export abstract class SfpmMetadataPackage extends SfpmPackage implements SourceD
       metadataCount: components.toArray().length,
       testCoverage: this.testCoverage,
     };
+  }
+
+  /**
+   * Set the component set for this package.
+   * Called by the build pipeline after staging to initialise from the staged source.
+   */
+  public setComponentSet(componentSet: ComponentSet): void {
+    this._componentSet = componentSet;
   }
 
   public setFhtFields(names: string[]): void {
@@ -558,24 +531,6 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
     this.type = PackageType.Data;
   }
 
-  /**
-   * Absolute path to the data directory.
-   * Before staging: resolves from project source.
-   * After staging: resolves from the staging area.
-   */
-  get dataDirectory(): string {
-    const packagePath = this.packageDefinition?.path;
-    if (!packagePath) {
-      throw new Error('Data package must have a path defined in packageDefinition');
-    }
-
-    if (this.workingDirectory) {
-      return path.join(this.workingDirectory, packagePath);
-    }
-
-    return path.join(this.projectDirectory, packagePath);
-  }
-
   /** Alias for the version property, satisfying the DataDeployable interface. */
   get versionNumber(): string | undefined {
     return this.version;
@@ -583,8 +538,10 @@ export class SfpmDataPackage extends SfpmPackage implements DataDeployable {
 
   /** Returns the number of data files in the package. */
   public async componentCount(): Promise<number> {
+    const dataDir = this.packageDirectory;
+    if (!dataDir) throw new Error('Package directory not set');
     const files = await fg(['**/*'], {
-      cwd: this.dataDirectory,
+      cwd: dataDir,
       dot: false,
       onlyFiles: true,
     });
@@ -675,7 +632,7 @@ export class SfpmSourcePackage extends SfpmMetadataPackage implements OrgAliasab
   }
 
   public getAnalysisSourcePath(): string {
-    const basePath = this.resolveSourcePackagePath();
+    const basePath = this.packageDirectory!;
     if (!this.isOrgAliased) {
       return basePath;
     }
@@ -688,7 +645,7 @@ export class SfpmSourcePackage extends SfpmMetadataPackage implements OrgAliasab
       throw new Error(`Package '${this.packageName}' is not org-aliased`);
     }
 
-    const packagePath = this.resolveSourcePackagePath();
+    const packagePath = this.packageDirectory!;
     const resolver = new OrgAliasResolver(logger);
     const resolution = await resolver.resolve(
       packagePath,
@@ -713,7 +670,7 @@ export class PackageFactory {
 
   createAll(): SfpmPackage[] {
     const allPackages = this.provider.getAllPackageDefinitions();
-    return allPackages.map(definition => this.createFromDefinition(definition)).filter(Boolean);
+    return allPackages.map(definition => this.createFromDefinition(definition)).filter((p): p is SfpmPackage => p !== undefined);
   }
 
   createFromDefinition(packageDefinition: PackageDefinition): SfpmPackage | undefined {
@@ -747,6 +704,8 @@ export class PackageFactory {
       if (packageDefinition.packageVersionId) {
         sfpmPackage.packageVersionId = packageDefinition.packageVersionId;
       }
+
+      sfpmPackage.isOrgDependent = packageDefinition.isOrgDependent ?? false;
     }
 
     return sfpmPackage;
