@@ -66,7 +66,7 @@ export class OrchestrationListrManager {
   private readonly operationLabel: string;
   private packageDeferreds = new Map<string, Deferred>();
   private packageTasks = new Map<string, any>();
-  private rootListr?: Listr;
+  private rootListr?: Listr<any, any, any>;
   private validationQueued = new Set<string>();
 
   constructor(options?: {operationLabel?: string}) {
@@ -160,19 +160,18 @@ export class OrchestrationListrManager {
    * @param levels - ordered array of levels, each containing its package names.
    *   Derived from the orchestration plan so the full tree is known upfront.
    */
-  public start(levels: string[][]): void {
-    // Pre-create a gate for every level so onLevelStart can resolve them.
+  public async start(levels: string[][]): Promise<{ctx: any; success: boolean;}> {
     for (let i = 0; i < levels.length; i++) {
       this.levelGates.set(i, createDeferred());
     }
 
-    this.rootListr = new Listr(
+    const ctx: any = {}; // whatever you actually seed
+
+    const rootListr = new Listr(
       levels.map((packageNames, levelIndex) => ({
         exitOnError: false,
-        task: async (_ctx: any, levelTask: any): Promise<Listr> => {
-          // Wait for the orchestrator to signal this level is ready
+        task: async (_ctx, levelTask): Promise<Listr> => {
           await this.levelGates.get(levelIndex)!.promise;
-
           return levelTask.newListr(
             packageNames.map(name => this.createPackageTask(name)),
             {concurrent: true, exitOnError: false},
@@ -188,14 +187,20 @@ export class OrchestrationListrManager {
           collapseErrors: false,
           collapseSkips: true,
           collapseSubtasks: true,
-          icon: {
-            SKIPPED_WITH_COLLAPSE: rawSym.skip,
-          },
+          icon: {SKIPPED_WITH_COLLAPSE: rawSym.skip},
         },
       },
     );
+    this.rootListr = rootListr;
 
-    this.rootListr.run().catch(() => {});
+    try {
+      await rootListr.run(ctx);
+      return {ctx, success: true};
+    } catch {
+      return {ctx, success: false};
+    } finally {
+      this.rootListr = undefined; // drop the reference now that it's settled
+    }
   }
 
   public startHooks(packageName: string, hookNames: string[], timing: string, operation: string): void {
