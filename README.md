@@ -4,6 +4,8 @@
 [![tests](https://github.com/b64hub/sfpm/actions/workflows/test.yml/badge.svg)](https://github.com/b64hub/sfpm/actions/workflows/test.yml)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
+*[sfpm.dev](https://sfpm.dev)** · **[Documentation](https://sfpm.dev/docs)**
+
 > **Status:** early beta (v0.1.0). APIs and commands may change without notice.
 
 ## Why SFPM
