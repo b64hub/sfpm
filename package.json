@@ -1,5 +1,5 @@
 {
-  "name": "sfpm",
+  "name": "@b64hub/sfpm",
   "version": "0.1.0",
   "description": "Salesforce Package Manager",
   "lint-staged": {
