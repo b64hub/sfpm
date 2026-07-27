@@ -25,7 +25,6 @@ export interface PackageDependency {
 export interface PackageDirectory {
   default?: boolean;
   dependencies?: PackageDependency[];
-  namespace?: string;
   package: string;
   path: string;
   seedMetadata?: {path: string};
@@ -35,6 +34,7 @@ export interface PackageDirectory {
 }
 
 export interface SalesforceProjectJson {
+  namespace?: string;
   packageAliases?: Record<string, string>;
   packageDirectories: PackageDirectory[];
   sfdcLoginUrl?: string;
@@ -108,10 +108,6 @@ export function toSalesforceProjectJson(definition: ProjectDefinition, options?:
       sfPkg.versionDescription = pkgDef.description;
     }
 
-    if (pkgDef.namespace) {
-      sfPkg.namespace = pkgDef.namespace;
-    }
-
     // Build SF dependencies array from workspace deps + managed deps
     const sfDeps: PackageDependency[] = [];
 
@@ -168,11 +164,17 @@ export function toSalesforceProjectJson(definition: ProjectDefinition, options?:
     }
   }
 
+  let namespace: string | undefined;
+  if (definition.packages.length === 1 && definition.packages[0].namespace)  {
+    namespace = definition.packages[0].namespace;
+  }
+
   const result: SalesforceProjectJson = {
     packageDirectories,
     ...(definition.sfdcLoginUrl ? {sfdcLoginUrl: definition.sfdcLoginUrl} : {}),
     ...(definition.sourceApiVersion ? {sourceApiVersion: definition.sourceApiVersion} : {}),
     ...(definition.sourceBehaviorOptions?.length ? {sourceBehaviorOptions: definition.sourceBehaviorOptions} : {}),
+    ...(namespace ? {namespace} : {}),
   };
 
   if (Object.keys(packageAliases).length > 0) {
@@ -220,6 +222,7 @@ export function fromSalesforceProjectJson(projectJson: Record<string, unknown>):
   .map(dir => {
     const sfName = dir.package as string;
     const sfVersion = dir.versionNumber as string;
+    const namespace = projectJson.namspace as string;
 
     // Convert SF 4-part version to semver
     const versionParts = sfVersion.split('.');
@@ -245,12 +248,12 @@ export function fromSalesforceProjectJson(projectJson: Record<string, unknown>):
       pkgDef.description = dir.versionDescription as string;
     }
 
-    if (dir.namespace) {
-      pkgDef.namespace = dir.namespace as string;
-    }
-
     if (dir.packageOptions) {
       pkgDef.packageOptions = {...pkgDef.packageOptions, ...dir.packageOptions as Record<string, unknown>};
+    }
+
+    if (namespace) {
+      pkgDef.namespace = namespace;
     }
 
     // Look up packageId from packageAliases

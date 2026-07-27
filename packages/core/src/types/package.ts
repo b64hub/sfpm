@@ -190,7 +190,6 @@ export interface SfpmDataPackageContent {
  */
 export interface SfpmPackageMetadataBase {
   [key: string]: any;
-  apiVersion?: string;
   // package name without npm scope. This is used for user-facing messages and Salesforce operations, but should not be used as a unique identifier since it is not guaranteed to be unique across scopes.
   packageName: string;
   packageType: Omit<PackageType, 'managed'>;

@@ -553,6 +553,7 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage implements VersionI
   /** SF packaging tag (label for the package version, set at build time) */
   public tag?: string;
   private _isOrgDependent = false;
+  private _namespace?: string;
   private _packageId?: string;
   private _packageVersionId?: string;
 
@@ -567,6 +568,21 @@ export class SfpmUnlockedPackage extends SfpmMetadataPackage implements VersionI
 
   set isOrgDependent(val: boolean) {
     this._isOrgDependent = val;
+  }
+
+  get namespace(): string | undefined {
+    return this._namespace;
+  }
+
+  /**
+   * set package namespace
+   */
+  set namespace(val: string) {
+    if (this.namespace) {
+      return;
+    }
+
+    this._namespace = val;
   }
 
   get packageId(): string {
