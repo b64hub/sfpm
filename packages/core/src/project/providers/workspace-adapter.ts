@@ -57,6 +57,10 @@ export function toPackageDefinition(
     definition.isOrgDependent = sfpm.isOrgDependent;
   }
 
+  if (sfpm.namespace) {
+    definition.namespace = sfpm.namespace;
+  }
+
   // Build dependencies record from workspace: deps
   const dependencies = buildDependenciesRecord(pkgJson, workspaceVersions);
   if (Object.keys(dependencies).length > 0) {
