@@ -39,6 +39,7 @@ import type {PackageOptions} from '../../../types/project.js';
  * ```
  */
 export interface SfpmPackageConfig {
+  apiVersion?: string;
   default?: boolean;
   /** Whether this is an org-dependent unlocked package. */
   isOrgDependent?: boolean;
@@ -50,6 +51,7 @@ export interface SfpmPackageConfig {
     seed?: string;
     unpackaged?: string;
   };
+  namespace?: string;
   /** Salesforce package ID (0Ho prefix) */
   packageId?: string;
   /** Per-package build, deploy, and hook configuration */
