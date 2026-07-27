@@ -47,6 +47,7 @@ export interface Package2Version {
   IsReleased: boolean;
   MajorVersion: number;
   MinorVersion: number;
+  NamespacePrefix: string;
   Package2: Package2;
   Package2Id: string;
   PatchVersion: number;
@@ -81,6 +82,7 @@ export default class PackageService {
     'IsReleased',
     'MajorVersion',
     'MinorVersion',
+    'NamespacePrefix',
     'PatchVersion',
     'BuildNumber',
     'CodeCoverage',

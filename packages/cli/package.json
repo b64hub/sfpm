@@ -72,7 +72,7 @@
     "topicSeparator": " ",
     "topics": {
       "install": {
-        "Install and deploy packages to environments"
+        "description": "Install and deploy packages to environments"
       },
       "build": {
         "description": "Build packages and manage async validation"

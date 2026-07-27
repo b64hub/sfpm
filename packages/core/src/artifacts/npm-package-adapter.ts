@@ -155,6 +155,7 @@ function buildMetadataFromPackage(pkg: SfpmPackage, baseVersion: string): Record
     if (pkg.isOrgDependent) base.isOrgDependent = pkg.isOrgDependent;
     if (pkg.packageId) base.packageId = pkg.packageId;
     if (pkg.packageVersionId) base.packageVersionId = pkg.packageVersionId;
+    if (pkg.namespace) base.namespace = pkg.namespace;
   }
 
   // Data packages: add data-specific content
@@ -234,6 +235,7 @@ export function hydrateFromNpmPackageJson(pkg: SfpmPackage, packageJson: NpmPack
     if (sfpm.packageId) pkg.packageId = sfpm.packageId;
     if (sfpm.packageVersionId) pkg.packageVersionId = sfpm.packageVersionId;
     if (sfpm.isOrgDependent !== undefined) pkg.isOrgDependent = sfpm.isOrgDependent;
+    if (sfpm.namespace !== undefined) pkg.namespace = sfpm.namespace;
   }
 }
 

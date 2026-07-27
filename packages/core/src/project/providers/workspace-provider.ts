@@ -331,6 +331,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       sfdcLoginUrl: definition.sfdcLoginUrl,
       ...(definition.sourceApiVersion ? {sourceApiVersion: definition.sourceApiVersion} : {}),
       ...(definition.sourceBehaviorOptions?.length ? {sourceBehaviorOptions: definition.sourceBehaviorOptions} : {}),
+      ...(pkg.namespace ? {namespace: pkg.namespace} : {}),
     };
   }
 
