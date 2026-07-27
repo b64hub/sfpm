@@ -1,7 +1,6 @@
 {
   "name": "sfpm",
-  "version": "1.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Salesforce Package Manager",
   "lint-staged": {
     "packages/*/src/**/*.ts": [
