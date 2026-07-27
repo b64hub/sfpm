@@ -71,11 +71,11 @@
     ],
     "topicSeparator": " ",
     "topics": {
+      "install": {
+        "Install and deploy packages to environments"
+      },
       "build": {
         "description": "Build packages and manage async validation"
-      },
-      "hello": {
-        "description": "Say hello to the world and others"
       },
       "pool": {
         "description": "Manage scratch org pools"
