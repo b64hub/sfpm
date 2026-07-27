@@ -1,12 +1,12 @@
-sfp
+sfpm
 =================
 
-sfp is the devops tool Salesforce engineers have been waiting for
+sfpm is the devops tool Salesforce engineers have been waiting for
 
 
 [![oclif](https://img.shields.io/badge/cli-oclif-brightgreen.svg)](https://oclif.io)
-[![Version](https://img.shields.io/npm/v/sfp.svg)](https://npmjs.org/package/sfp)
-[![Downloads/week](https://img.shields.io/npm/dw/sfp.svg)](https://npmjs.org/package/sfp)
+[![Version](https://img.shields.io/npm/v/sfp.svg)](https://npmjs.org/package/sfpm)
+[![Downloads/week](https://img.shields.io/npm/dw/sfp.svg)](https://npmjs.org/package/sfpm)
 
 
 <!-- toc -->
