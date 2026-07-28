@@ -1,16 +1,20 @@
-export type NodeStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped';
+export type NodeStatus = 'failed' | 'pending' | 'running' | 'skipped' | 'success';
 
 export interface TreeNode {
+  children: TreeNode[];
+  detail?: string;
+  /** Set when status transitions to a terminal state. Ms elapsed since startedAt. */
+  duration?: number;
   id: string;
   label: string;
+  /** Set when status transitions to 'running'. */
+  startedAt?: number;
   status: NodeStatus;
-  detail?: string;
-  children: TreeNode[];
 }
 
 export interface AppState {
-  phase: 'idle' | 'building' | 'validating' | 'done';
   levels: TreeNode[];
-  validation: TreeNode[];
+  phase: 'building' | 'done' | 'idle' | 'validating';
   startedAt?: number;
+  validation: TreeNode[];
 }

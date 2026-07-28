@@ -1,14 +1,18 @@
 import type {AppState, NodeStatus, TreeNode} from './types.js';
 
-type Action = {type: string} & Record<string, unknown>;
+type Action = Record<string, unknown> & {type: string};
+
+type NodePatch = {detail?: string; duration?: number; startedAt?: number; status?: NodeStatus;};
+
+const TERMINAL = new Set<NodeStatus>(['failed', 'skipped', 'success']);
 
 export function initialState(): AppState {
-  return {phase: 'idle', levels: [], validation: []};
+  return {levels: [], phase: 'idle', validation: []};
 }
 
 // ---- tree helpers ----
 
-function updateNode(root: TreeNode, id: string, patch: {status?: NodeStatus; detail?: string}): TreeNode {
+function updateNode(root: TreeNode, id: string, patch: NodePatch): TreeNode {
   if (root.id === id) return {...root, ...patch};
   const children = root.children.map(c => updateNode(c, id, patch));
   return children === root.children ? root : {...root, children};
@@ -25,22 +29,41 @@ function nodeExists(root: TreeNode, id: string): boolean {
   return root.children.some(c => nodeExists(c, id));
 }
 
-function updatePackage(state: AppState, packageName: string, patch: {status?: NodeStatus; detail?: string}): AppState {
+/** Finds a package node directly inside level children (O(packages)). */
+function findPkg(levels: AppState['levels'], packageName: string): TreeNode | undefined {
   const id = `pkg:${packageName}`;
-  return {...state, levels: state.levels.map(l => updateNode(l, id, patch))};
+  for (const level of levels) {
+    const found = level.children.find(p => p.id === id);
+    if (found) return found;
+  }
 }
 
-function upsertStep(state: AppState, packageName: string, step: string, patch: {status: NodeStatus; detail?: string}): AppState {
+function updatePackage(state: AppState, packageName: string, status: NodeStatus, detail?: string): AppState {
+  const id = `pkg:${packageName}`;
+  const existing = findPkg(state.levels, packageName);
+  const timingPatch: NodePatch
+    = status === 'running'
+      ? {startedAt: Date.now()}
+      : TERMINAL.has(status) && existing?.startedAt
+        ? {duration: Date.now() - existing.startedAt, startedAt: undefined}
+        : {};
+  return {...state, levels: state.levels.map(l => updateNode(l, id, {detail, status, ...timingPatch}))};
+}
+
+function upsertStep(state: AppState, packageName: string, step: string, patch: {detail?: string; status: NodeStatus;}): AppState {
   const stepId = `pkg:${packageName}/step:${step}`;
   const exists = state.levels.some(l => nodeExists(l, stepId));
   if (exists) {
     return {...state, levels: state.levels.map(l => updateNode(l, stepId, patch))};
   }
-  const newStep: TreeNode = {id: stepId, label: step, ...patch, children: []};
+
+  const newStep: TreeNode = {
+    id: stepId, label: step, ...patch, children: [],
+  };
   return {...state, levels: state.levels.map(l => addChildToNode(l, `pkg:${packageName}`, newStep))};
 }
 
-function updateValidation(state: AppState, packageName: string, patch: {status?: NodeStatus; detail?: string}): AppState {
+function updateValidation(state: AppState, packageName: string, patch: {detail?: string; status?: NodeStatus;}): AppState {
   const id = `validate:${packageName}`;
   return {...state, validation: state.validation.map(n => (n.id === id ? {...n, ...patch} : n))};
 }
@@ -49,62 +72,69 @@ function updateValidation(state: AppState, packageName: string, patch: {status?:
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case 'build:start': {
-      const levels = action['levels'] as string[][];
-      return {
-        ...state,
-        phase: 'building',
-        startedAt: Date.now(),
-        levels: levels.map((pkgs, i) => ({
-          id: `level:${i}`,
-          label: `Level ${i}`,
-          status: 'pending' as NodeStatus,
-          children: pkgs.map(pkg => ({
-            id: `pkg:${pkg}`,
-            label: pkg,
-            status: 'pending' as NodeStatus,
-            children: [],
-          })),
-        })),
-      };
-    }
+  case 'build:complete': {
+    return action.success ? {...state, phase: 'done'} : state;
+  }
 
-    case 'build:package:status':
-      return updatePackage(state, action['packageName'] as string, {
-        status: action['status'] as NodeStatus,
-        detail: action['detail'] as string | undefined,
-      });
+  case 'build:package:status': {
+    return updatePackage(
+      state,
+      action.packageName as string,
+      action.status as NodeStatus,
+      action.detail as string | undefined,
+    );
+  }
 
-    case 'build:package:step':
-      return upsertStep(state, action['packageName'] as string, action['step'] as string, {
-        status: action['status'] as NodeStatus,
-        detail: action['detail'] as string | undefined,
-      });
+  case 'build:package:step': {
+    return upsertStep(state, action.packageName as string, action.step as string, {
+      detail: action.detail as string | undefined,
+      status: action.status as NodeStatus,
+    });
+  }
 
-    case 'build:complete':
-      return action['success'] ? {...state, phase: 'done'} : state;
-
-    case 'validation:start': {
-      const packages = action['packages'] as string[];
-      return {
-        ...state,
-        phase: 'validating',
-        validation: packages.map(pkg => ({
-          id: `validate:${pkg}`,
+  case 'build:start': {
+    const levels = action.levels as string[][];
+    return {
+      ...state,
+      levels: levels.map((pkgs, i) => ({
+        children: pkgs.map(pkg => ({
+          children: [],
+          id: `pkg:${pkg}`,
           label: pkg,
           status: 'pending' as NodeStatus,
-          children: [],
         })),
-      };
-    }
+        id: `level:${i}`,
+        label: `Level ${i}`,
+        status: 'pending' as NodeStatus,
+      })),
+      phase: 'building',
+      startedAt: Date.now(),
+    };
+  }
 
-    case 'validation:status':
-      return updateValidation(state, action['packageName'] as string, {
-        status: action['status'] as NodeStatus,
-        detail: action['detail'] as string | undefined,
-      });
+  case 'validation:start': {
+    const packages = action.packages as string[];
+    return {
+      ...state,
+      phase: 'validating',
+      validation: packages.map(pkg => ({
+        children: [],
+        id: `validate:${pkg}`,
+        label: pkg,
+        status: 'pending' as NodeStatus,
+      })),
+    };
+  }
 
-    default:
-      return state;
+  case 'validation:status': {
+    return updateValidation(state, action.packageName as string, {
+      detail: action.detail as string | undefined,
+      status: action.status as NodeStatus,
+    });
+  }
+
+  default: {
+    return state;
+  }
   }
 }

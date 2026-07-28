@@ -4,16 +4,16 @@ import {expect} from 'chai';
 
 import {StatusIcon} from '../../src/ui/components/StatusIcon.js';
 import {PackageRow} from '../../src/ui/components/PackageRow.js';
-import {LevelRow} from '../../src/ui/components/LevelRow.js';
-import {LevelsView} from '../../src/ui/components/LevelsView.js';
+import {toPackageRowProps} from '../../src/ui/state/selectors.js';
+import {OrchestrationView} from '../../src/ui/components/OrchestrationView.js';
 import {ValidationView} from '../../src/ui/components/ValidationView.js';
 import {Footer} from '../../src/ui/components/Footer.js';
 import type {TreeNode} from '../../src/ui/state/types.js';
 
 // ---- helpers ----
 
-function pkg(label: string, status: TreeNode['status'] = 'pending', children: TreeNode[] = []): TreeNode {
-  return {id: `pkg:${label}`, label, status, children};
+function pkg(label: string, status: TreeNode['status'] = 'pending', detail?: string, children: TreeNode[] = []): TreeNode {
+  return {id: `pkg:${label}`, label, status, detail, children};
 }
 
 function level(index: number, packages: TreeNode[]): TreeNode {
@@ -29,8 +29,9 @@ describe('StatusIcon', () => {
   it('renders failed icon', () => {
     expect(renderToString(<StatusIcon status="failed" />)).to.include('✖');
   });
-  it('renders running icon', () => {
-    expect(renderToString(<StatusIcon status="running" />)).to.include('●');
+  it('renders running spinner', () => {
+    // renderToString is synchronous — spinner always shows frame 0
+    expect(renderToString(<StatusIcon status="running" />)).to.include('⠋');
   });
   it('renders pending icon', () => {
     expect(renderToString(<StatusIcon status="pending" />)).to.include('○');
@@ -44,71 +45,90 @@ describe('StatusIcon', () => {
 
 describe('PackageRow', () => {
   it('shows the package label', () => {
-    const out = renderToString(<PackageRow node={pkg('core-utils', 'success')} />);
+    const out = renderToString(<PackageRow props={toPackageRowProps(pkg('core-utils', 'success'))} />);
     expect(out).to.include('core-utils');
   });
 
-  it('shows detail when present', () => {
-    const node = {...pkg('ui-kit', 'failed'), detail: 'TS2307'};
-    expect(renderToString(<PackageRow node={node} />)).to.include('TS2307');
+  it('shows "done" status label for success', () => {
+    const out = renderToString(<PackageRow props={toPackageRowProps(pkg('core-utils', 'success'))} />);
+    expect(out).to.include('done');
   });
 
-  it('renders step children', () => {
-    const stepNode: TreeNode = {id: 'pkg:core-utils/step:stage', label: 'stage', status: 'success', children: []};
-    const node = {...pkg('core-utils', 'running'), children: [stepNode]};
-    const out = renderToString(<PackageRow node={node} />);
+  it('shows "queued" status label for pending', () => {
+    const out = renderToString(<PackageRow props={toPackageRowProps(pkg('app-shell', 'pending'))} />);
+    expect(out).to.include('queued');
+  });
+
+  it('shows inline detail when present', () => {
+    const out = renderToString(<PackageRow props={toPackageRowProps(pkg('ui-kit', 'failed', 'TS2307'))} />);
+    expect(out).to.include('TS2307');
+  });
+
+  it('is collapsed when success — children not shown', () => {
+    const step: TreeNode = {id: 'step:stage', label: 'stage', status: 'success', children: []};
+    const out = renderToString(<PackageRow props={toPackageRowProps({...pkg('core-utils', 'success'), children: [step]})} />);
+    expect(out).not.to.include('stage');
+  });
+
+  it('is expanded when running — shows step children', () => {
+    const step: TreeNode = {id: 'step:stage', label: 'stage', status: 'running', children: []};
+    const out = renderToString(<PackageRow props={toPackageRowProps({...pkg('core-utils', 'running'), children: [step]})} />);
     expect(out).to.include('stage');
-    expect(out).to.include('✔'); // step success icon
+  });
+
+  it('is expanded when failed — shows step children with connector', () => {
+    const step: TreeNode = {id: 'step:stage', label: 'stage', status: 'failed', detail: 'exit 1', children: []};
+    const out = renderToString(<PackageRow props={toPackageRowProps({...pkg('ui-kit', 'failed'), children: [step]})} />);
+    expect(out).to.include('stage');
+    expect(out).to.include('exit 1');
+    expect(out).to.include('└');
+  });
+
+  it('shows running step label as inline hint', () => {
+    const step: TreeNode = {id: 'step:compile', label: 'compile', status: 'running', children: []};
+    const out = renderToString(<PackageRow props={toPackageRowProps({...pkg('core-utils', 'running'), children: [step]})} />);
+    expect(out).to.include('compile');
+  });
+
+  it('caller can force-collapse regardless of status', () => {
+    // step label becomes the inline hint, so check that step-child-specific output is absent
+    const step: TreeNode = {id: 'step:compile', label: 'compile', status: 'running', detail: 'unique-step-detail', children: []};
+    const rowProps = {...toPackageRowProps({...pkg('core-utils', 'running'), children: [step]}), collapsed: true};
+    const out = renderToString(<PackageRow props={rowProps} />);
+    expect(out).not.to.include('unique-step-detail'); // step child detail never shown
+    expect(out).not.to.include('└');                    // no connector when collapsed
   });
 });
 
-// ---- LevelRow ----
+// ---- OrchestrationView ----
 
-describe('LevelRow', () => {
-  it('renders level label and child packages', () => {
-    const node = level(0, [pkg('pkg-a', 'success'), pkg('pkg-b', 'running')]);
-    const out = renderToString(<LevelRow node={node} />);
-    expect(out).to.include('Level 0');
-    expect(out).to.include('pkg-a');
-    expect(out).to.include('pkg-b');
-  });
-
-  it('derives running status when any child is running', () => {
-    const node = level(0, [pkg('pkg-a', 'success'), pkg('pkg-b', 'running')]);
-    const out = renderToString(<LevelRow node={node} />);
-    expect(out).to.include('●'); // running icon
-  });
-
-  it('derives success status when all children succeed', () => {
-    const node = level(0, [pkg('pkg-a', 'success'), pkg('pkg-b', 'success')]);
-    const out = renderToString(<LevelRow node={node} />);
-    expect(out).to.include('✔'); // derived success icon for the level
-  });
-
-  it('derives failed status when any child fails', () => {
-    const node = level(0, [pkg('pkg-a', 'failed'), pkg('pkg-b', 'success')]);
-    const out = renderToString(<LevelRow node={node} />);
-    expect(out).to.include('✖');
-  });
-});
-
-// ---- LevelsView ----
-
-describe('LevelsView', () => {
-  it('renders all levels', () => {
+describe('OrchestrationView', () => {
+  it('renders summary header with package and level counts', () => {
     const levels = [
       level(0, [pkg('core-utils', 'success')]),
       level(1, [pkg('app-shell', 'running')]),
     ];
-    const out = renderToString(<LevelsView levels={levels} />);
-    expect(out).to.include('Level 0');
-    expect(out).to.include('Level 1');
+    const out = renderToString(<OrchestrationView levels={levels} />);
+    expect(out).to.include('2 packages');
+    expect(out).to.include('2 levels');
+  });
+
+  it('renders package names', () => {
+    const levels = [level(0, [pkg('core-utils', 'success'), pkg('app-shell', 'running')])];
+    const out = renderToString(<OrchestrationView levels={levels} />);
     expect(out).to.include('core-utils');
     expect(out).to.include('app-shell');
   });
 
-  it('renders nothing for empty levels', () => {
-    expect(renderToString(<LevelsView levels={[]} />)).to.equal('');
+  it('shows truncation when queued packages exceed limit', () => {
+    const pkgs = Array.from({length: 6}, (_, i) => pkg(`pkg-${i}`, 'pending'));
+    const out = renderToString(<OrchestrationView levels={[level(0, pkgs)]} />);
+    expect(out).to.include('more queued');
+  });
+
+  it('renders nothing extra for empty levels', () => {
+    const out = renderToString(<OrchestrationView levels={[]} />);
+    expect(out).to.include('0 packages');
   });
 });
 
@@ -130,12 +150,10 @@ describe('ValidationView', () => {
 // ---- Footer ----
 
 describe('Footer', () => {
-  it('shows phase and counts', () => {
-    const levels = [level(0, [pkg('a', 'success'), pkg('b', 'failed'), pkg('c', 'running')])];
+  it('shows done and queued counts', () => {
+    const levels = [level(0, [pkg('a', 'success'), pkg('b', 'failed'), pkg('c', 'pending')])];
     const out = renderToString(<Footer levels={levels} phase="building" />);
-    expect(out).to.include('building');
-    expect(out).to.include('1 ✔');
-    expect(out).to.include('1 ✖');
-    expect(out).to.include('1 ●');
+    expect(out).to.include('done');
+    expect(out).to.include('queued');
   });
 });

@@ -1,4 +1,4 @@
-import {Args} from '@oclif/core';
+import {Args, Flags} from '@oclif/core';
 import EventEmitter from 'node:events';
 
 import SfpmCommand from '../../sfpm-command.js';
@@ -19,11 +19,17 @@ export default class DevReplay extends SfpmCommand {
   };
   static override description = 'Replay a UI fixture through the Ink build UI (dev only)';
   static override enableJsonFlag = false;
-  static override flags = {};
+  static override flags = {
+    speed: Flags.integer({
+      default: 120,
+      description: 'Milliseconds between events',
+      min: 0,
+    }),
+  };
   static override hidden = true;
 
   public async execute(): Promise<void> {
-    const {args} = await this.parse(DevReplay);
+    const {args, flags} = await this.parse(DevReplay);
     const events = FIXTURES[args.fixture];
     if (!events) {
       this.error(`Unknown fixture "${args.fixture}". Available: ${Object.keys(FIXTURES).join(', ')}`);
@@ -39,7 +45,7 @@ export default class DevReplay extends SfpmCommand {
     // Chain events sequentially — intentionally serial, each waits before emitting
     let chain = Promise.resolve();
     for (const {type, ...payload} of events) {
-      chain = chain.then(() => delay(120)).then(() => {
+      chain = chain.then(() => delay(flags.speed)).then(() => {
         bus.emit(type, payload);
       });
     }
