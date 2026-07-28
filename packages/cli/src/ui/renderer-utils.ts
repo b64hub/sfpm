@@ -14,8 +14,10 @@ import chalk from 'chalk';
  */
 export const rawSym = {
   fail: '✖',
+  pending: '○',   // not started
   progress: '●',
-  skip: '○',
+  skip: '○',      // deprecated alias — use pending; will align with skipped once old renderers are gone
+  skipped: '–',   // intentionally bypassed
   success: '✔',
   warn: '⚠',
 } as const;

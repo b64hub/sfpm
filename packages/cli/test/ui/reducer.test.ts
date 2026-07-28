@@ -1,7 +1,7 @@
 import {expect} from 'chai';
 
-import {happyPathEvents} from './fixtures/happy-path.js';
-import {partialFailureEvents} from './fixtures/partial-failure.js';
+import {happyPathEvents} from '../../src/ui/fixtures/happy-path.js';
+import {partialFailureEvents} from '../../src/ui/fixtures/partial-failure.js';
 import {ScenarioPlayer} from './scenario-player.js';
 
 describe('reducer', () => {

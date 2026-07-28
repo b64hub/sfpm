@@ -42,6 +42,7 @@
     "@types/node": "^18",
     "@types/node-notifier": "^8.0.5",
     "@types/pino-pretty": "^5.0.0",
+    "@types/react": "^19.2.17",
     "chai": "^4",
     "mocha": "^10",
     "oclif": "^4",
