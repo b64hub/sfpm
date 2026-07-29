@@ -144,7 +144,7 @@ export default abstract class SfpmCommand extends Command {
   }
 
   private logHeader(): void {
-    const sfpmGradient = gradient(['#0000FF', '#FF0000'], {interpolation: 'hsv'});
+    const sfpmGradient = gradient(['#3d7fff', '#ff3366'], {interpolation: 'hsv'});
 
     const header
       = sfpmGradient('sfpm')
