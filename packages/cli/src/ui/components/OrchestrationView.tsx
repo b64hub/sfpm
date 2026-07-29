@@ -8,7 +8,7 @@ import type {TreeNode} from '../state/types.js';
 import {deriveStatus} from '../state/selectors.js';
 import {toRowProps} from '../state/adapters.js';
 import {Divider} from './base/Divider.js';
-import {COL_TIME, PackageRow} from './PackageRow.js';
+import {COL_TRAILING, PackageRow} from './PackageRow.js';
 import {ValidationView} from './ValidationView.js';
 
 // ---- types ----
@@ -106,7 +106,7 @@ export function OrchestrationView({
                   <Text dimColor>{item.totalPackages} packages · {item.totalLevels} levels</Text>
                   <Box flexShrink={0} gap={1}>
                     {headerColumns}
-                    <Box width={COL_TIME}><Text dimColor>time</Text></Box>
+                    <Box width={COL_TRAILING}><Text dimColor>time</Text></Box>
                   </Box>
                 </Box>
                 <Divider />

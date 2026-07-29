@@ -4,12 +4,24 @@ import type {Dispatch} from 'react';
 import {useEffect} from 'react';
 
 const EVENT_NAMES = [
-  'build:start', 'build:package:status', 'build:package:step', 'build:complete',
-  'validation:start', 'validation:status',
-  'install:start', 'install:progress', 'install:complete',
+  // Orchestration lifecycle
+  'orchestration:init',
+  'orchestration:complete',
+  // Per-package
+  'package:running',
+  'package:complete',
+  // Per-step within a package
+  'step:start',
+  'step:complete',
+  'step:update',
+  // Validation sidebar
+  'validation:init',
+  'validation:update',
+  // Logs
+  'log:append',
 ] as const;
 
-type UiAction = {type: string} & Record<string, unknown>;
+type UiAction = Record<string, unknown> & {type: string};
 
 export function useEventBusWiring(bus: EventEmitter, dispatch: Dispatch<UiAction>): void {
   useEffect(() => {
@@ -18,6 +30,8 @@ export function useEventBusWiring(bus: EventEmitter, dispatch: Dispatch<UiAction
       bus.on(name, handler);
       return [name, handler] as const;
     });
-    return () => handlers.forEach(([name, handler]) => bus.off(name, handler));
+    return () => {
+      for (const [name, handler] of handlers) bus.off(name, handler)
+    };
   }, [bus, dispatch]);
 }

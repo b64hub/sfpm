@@ -74,7 +74,7 @@ export function ElapsedTime({
 // ---- sub-components ----
 
 export const COL_META = 9;
-export const COL_TIME = 6;
+export const COL_TRAILING = 6;
 
 /** Default secondary slot: dim truncating text. */
 function Secondary({children}: {children: ReactNode}) {
@@ -94,7 +94,7 @@ function Trailing({duration, startedAt}: RowTrailingProps) {
     return <Text dimColor>—</Text>;
   })();
 
-  return <Box width={COL_TIME}>{timeNode}</Box>;
+  return <Box width={COL_TRAILING}>{timeNode}</Box>;
 }
 
 // Keep the standalone export for callers that import RowTrailing by name.

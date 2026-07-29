@@ -1,5 +1,13 @@
 export type NodeStatus = 'failed' | 'pending' | 'running' | 'skipped' | 'success';
 
+/** A single pino log record forwarded through the pino bridge. */
+export interface LogRecord {
+  [key: string]: unknown;
+  level: number;
+  msg: string;
+  time?: number;
+}
+
 export interface TreeNode {
   children: TreeNode[];
   detail?: string;
@@ -16,7 +24,9 @@ export interface TreeNode {
 
 export interface AppState {
   levels: TreeNode[];
-  phase: 'building' | 'done' | 'idle' | 'validating';
+  /** Ring-buffered pino log records (last 200), fed by the pino bridge. */
+  logs: LogRecord[];
+  phase: 'done' | 'idle' | 'running' | 'validating';
   startedAt?: number;
   validation: TreeNode[];
 }

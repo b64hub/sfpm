@@ -21,11 +21,17 @@ import {ConfigAggregator, Org} from '@salesforce/core'
 // Register SFDMU data builder (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 import chalk from 'chalk'
+import EventEmitter from 'node:events'
 import path from 'node:path'
 import ora from 'ora'
+import pino from 'pino'
 
+import {CliLogger} from '../../logger.js'
 import SfpmCommand from '../../sfpm-command.js'
+import {attachBuildBridge} from '../../ui/build-event-bridge.js'
 import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
+import {createPinoBridge} from '../../ui/pino-bridge.js'
+import {renderApp} from '../../ui/run.js'
 import {ValidationProgressRenderer} from '../../ui/validation-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
 import {forkWatcher, validationRunnerScript} from '../../utils/watcher.js'
@@ -141,23 +147,39 @@ export default class Build extends SfpmCommand {
       buildOrg.buildOrg = await Org.create({aliasOrUsername: resolved.buildOrgUsername})
     }
 
+    // Ink path: create event bus + pino bridge before orchestrator so we can
+    // pass a bridged logger instead of the stderr-writing one.
+    const isInk = resolved.mode === 'interactive';
+    const uiBus = isInk ? new EventEmitter() : undefined;
+    const pinoLogger = isInk
+      ? new CliLogger(pino({level: 'debug'}, createPinoBridge(uiBus!)))
+      : this.sfpmLogger;
+
     const orchestrator = new BuildOrchestrator(
       projectConfig,
       projectGraph,
       buildOrg,
       {...resolved.buildOptions, includeDependencies: !resolved.noDependencies},
-      this.sfpmLogger,
+      pinoLogger,
       resolved.dependencyAnalyzer,
     )
 
-    const renderer = new BuildProgressRenderer({
-      logger: {
-        error: (msgOrError: Error | string) => this.error(msgOrError),
-        log: (msg: string) => this.log(msg),
-      },
-      mode: resolved.mode,
-    });
-    renderer.attachTo(orchestrator.buildBus, orchestrator.orchestrationBus)
+    let renderer: BuildProgressRenderer | undefined;
+    let inkInstance: ReturnType<typeof renderApp> | undefined;
+
+    if (uiBus) {
+      attachBuildBridge(orchestrator.buildBus, orchestrator.orchestrationBus, uiBus);
+      inkInstance = renderApp(uiBus);
+    } else {
+      renderer = new BuildProgressRenderer({
+        logger: {
+          error: (msgOrError: Error | string) => this.error(msgOrError),
+          log: (msg: string) => this.log(msg),
+        },
+        mode: resolved.mode,
+      });
+      renderer.attachTo(orchestrator.buildBus, orchestrator.orchestrationBus)
+    }
 
     const tracer = createTracer({serviceName: 'sfpm-cli'})
     tracer.subscribe({build: orchestrator.buildBus, orchestration: orchestrator.orchestrationBus})
@@ -165,6 +187,10 @@ export default class Build extends SfpmCommand {
     try {
       const result = await orchestrator.buildAll(resolved.resolvedPackages)
       await tracer.shutdown()
+
+      // Unmount ink before any subsequent terminal output or validation UI
+      inkInstance?.unmount();
+      inkInstance = undefined;
 
       if (resolved.mode === 'json') {
         this.logJson(result)
@@ -181,9 +207,10 @@ export default class Build extends SfpmCommand {
 
       await this.handleValidationResults(pendingValidations, resolved)
     } catch (error) {
-      renderer.handleError(error as Error)
-
+      renderer?.handleError(error as Error)
       throw error
+    } finally {
+      inkInstance?.unmount();
     }
   }
 

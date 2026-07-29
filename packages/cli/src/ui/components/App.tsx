@@ -35,7 +35,7 @@ export function App({bus}: {bus: EventEmitter}) {
       )}
       <Footer
         counts={counts}
-        progressBar={state.phase === 'building'}
+        progressBar={state.phase === 'running'}
         activeSlot={<Footer.Active counts={counts} />}
         resultsSlot={<Footer.Results counts={counts} />}
         timeSlot={state.startedAt !== undefined

@@ -1,4 +1,6 @@
-import type {AppState, NodeStatus, TreeNode} from './types.js';
+import type {
+  AppState, LogRecord, NodeStatus, TreeNode,
+} from './types.js';
 
 type Action = Record<string, unknown> & {type: string};
 
@@ -7,7 +9,9 @@ type NodePatch = {detail?: string; duration?: number; meta?: Record<string, stri
 const TERMINAL = new Set<NodeStatus>(['failed', 'skipped', 'success']);
 
 export function initialState(): AppState {
-  return {levels: [], phase: 'idle', validation: []};
+  return {
+    levels: [], logs: [], phase: 'idle', validation: [],
+  };
 }
 
 // ---- tree helpers ----
@@ -76,28 +80,21 @@ function updateValidation(state: AppState, packageName: string, patch: {detail?:
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
-  case 'build:complete': {
+  // ── Orchestration lifecycle ──────────────────────────────────────────────
+
+  case 'log:append': {
+    return {...state, logs: [...state.logs.slice(-199), action as unknown as LogRecord]};
+  }
+
+  case 'orchestration:complete': {
+    // Stay in 'running' on failure so the partial-failure state remains visible
+    // until the ink instance unmounts.
     return action.success ? {...state, phase: 'done'} : state;
   }
 
-  case 'build:package:status': {
-    return updatePackage(
-      state,
-      action.packageName as string,
-      action.status as NodeStatus,
-      action.detail as string | undefined,
-      action.meta as Record<string, string> | undefined,
-    );
-  }
+  // ── Per-package status ───────────────────────────────────────────────────
 
-  case 'build:package:step': {
-    return upsertStep(state, action.packageName as string, action.step as string, {
-      detail: action.detail as string | undefined,
-      status: action.status as NodeStatus,
-    });
-  }
-
-  case 'build:start': {
+  case 'orchestration:init': {
     const levels = action.levels as string[][];
     return {
       ...state,
@@ -112,12 +109,50 @@ export function reducer(state: AppState, action: Action): AppState {
         label: `Level ${i}`,
         status: 'pending' as NodeStatus,
       })),
-      phase: 'building',
+      phase: 'running',
       startedAt: Date.now(),
     };
   }
 
-  case 'validation:start': {
+  case 'package:complete': {
+    return updatePackage(
+      state,
+      action.packageName as string,
+      action.status as NodeStatus,
+      action.detail as string | undefined,
+      action.meta as Record<string, string> | undefined,
+    );
+  }
+
+  // ── Per-step within a package ────────────────────────────────────────────
+
+  case 'package:running': {
+    return updatePackage(state, action.packageName as string, 'running');
+  }
+
+  case 'step:complete': {
+    return upsertStep(state, action.packageName as string, action.step as string, {
+      detail: action.detail as string | undefined,
+      status: action.status as NodeStatus,
+    });
+  }
+
+  case 'step:start': {
+    return upsertStep(state, action.packageName as string, action.step as string, {
+      detail: action.detail as string | undefined,
+      status: 'running',
+    });
+  }
+
+  // ── Validation sidebar ───────────────────────────────────────────────────
+
+  case 'step:update': {
+    // Rolling label change on a running step — status unchanged.
+    const stepId = `pkg:${action.packageName as string}/step:${action.step as string}`;
+    return {...state, levels: state.levels.map(l => updateNode(l, stepId, {detail: action.detail as string}))};
+  }
+
+  case 'validation:init': {
     const packages = action.packages as string[];
     return {
       ...state,
@@ -131,7 +166,9 @@ export function reducer(state: AppState, action: Action): AppState {
     };
   }
 
-  case 'validation:status': {
+  // ── Logs ─────────────────────────────────────────────────────────────────
+
+  case 'validation:update': {
     return updateValidation(state, action.packageName as string, {
       detail: action.detail as string | undefined,
       status: action.status as NodeStatus,
