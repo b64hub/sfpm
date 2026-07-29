@@ -1,4 +1,5 @@
 import {SfProject} from '@salesforce/core';
+import path from 'node:path';
 
 import type {SfpmConfig} from '../types/config.js';
 import type {BuildOptions, InstallOptions, PackageType} from '../types/package.js';
@@ -8,7 +9,7 @@ import type {
   ResolveForPackageOptions,
 } from './providers/project-definition-provider.js';
 
-import {loadSfpmConfig} from './config-loader.js';
+import {loadSfpmConfig, resolveConfigPath} from './config-loader.js';
 import ProjectGraph from './project-graph.js';
 import {SfdxProjectProvider} from './providers/sfdx-project-provider.js';
 import {WorkspaceProvider} from './providers/workspace-provider.js';
@@ -25,6 +26,30 @@ import {VersionManager} from './version-manager.js';
 function findProjectRoot(startDir: string): string | undefined {
   return WorkspaceProvider.findProjectRoot(startDir)
     ?? SfdxProjectProvider.findProjectRoot(startDir);
+}
+
+/**
+ * Walk up from `startDir` to find the sfpm project root.
+ *
+ * Priority order:
+ *   1. `sfpm.config.{ts,js,mjs}` — the canonical sfpm-native anchor
+ *   2. `pnpm-workspace.yaml/.yml` — workspace root
+ *   3. `sfdx-project.json` — legacy SFDX root
+ *
+ * Returns undefined only when none of the markers are found anywhere
+ * in the directory hierarchy (e.g. running outside any project).
+ *
+ * This is the single authoritative root resolver for all sfpm tooling.
+ */
+export function findSfpmRoot(startDir: string): string | undefined {
+  let dir = path.resolve(startDir);
+  const {root} = path.parse(dir);
+  while (dir !== root) {
+    if (resolveConfigPath(dir)) return dir;
+    dir = path.dirname(dir);
+  }
+
+  return findProjectRoot(startDir);
 }
 
 /**
@@ -73,7 +98,7 @@ export default class ProjectService {
    */
   public static async create(projectPath?: string, provider?: ProjectDefinitionProvider): Promise<ProjectService> {
     const resolvedPath = projectPath ?? process.cwd();
-    const projectRoot = findProjectRoot(resolvedPath) ?? resolvedPath;
+    const projectRoot = findSfpmRoot(resolvedPath) ?? resolvedPath;
     const sfpmConfig = await loadSfpmConfig(projectRoot);
 
     const definitionProvider = provider ?? await detectProvider(projectRoot, sfpmConfig);

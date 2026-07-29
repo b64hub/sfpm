@@ -3,8 +3,9 @@ import type EventEmitter from 'node:events';
 import type {Logger as PinoLogger} from 'pino';
 import type PinoPretty from 'pino-pretty';
 
+import {findSfpmRoot} from '@b64hub/sfpm-core';
 import {randomBytes} from 'node:crypto';
-import {existsSync, mkdirSync} from 'node:fs';
+import {mkdirSync} from 'node:fs';
 import path from 'node:path';
 import pino from 'pino';
 
@@ -170,22 +171,6 @@ export class CliLogger implements Logger {
 /** Map SFPM LogLevel names to pino level names. */
 function mapLevel(level: LogLevel): string {
   return level;
-}
-
-/**
- * Walk up from `startDir` looking for a sfpm.config.{ts,js,mjs} anchor file.
- * Returns the directory containing the config, or undefined if not found.
- */
-function findSfpmRoot(startDir: string): string | undefined {
-  const markers = ['sfpm.config.ts', 'sfpm.config.js', 'sfpm.config.mjs'];
-  let dir = path.resolve(startDir);
-  const {root} = path.parse(dir);
-  while (dir !== root) {
-    if (markers.some(m => existsSync(path.join(dir, m)))) return dir;
-    dir = path.dirname(dir);
-  }
-
-  return undefined;
 }
 
 /**
