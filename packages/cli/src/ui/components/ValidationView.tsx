@@ -3,18 +3,15 @@ import {Box, Text} from 'ink';
 import type {TreeNode} from '../state/types.js';
 
 import {Divider} from './Divider.js';
-import {StatusIcon} from './StatusIcon.js';
+import { PackageRow } from './PackageRow.js';
+import { toRowProps } from '../state/adapters.js';
 
 export function ValidationView({nodes}: {nodes: TreeNode[]}) {
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" marginTop={1}>
       <Divider label="Validating" />
       {nodes.map(n => (
-        <Box key={n.id} marginLeft={2} gap={1}>
-          <StatusIcon status={n.status} />
-          <Text>{n.label}</Text>
-          {n.detail && <Text dimColor>{n.detail}</Text>}
-        </Box>
+        <PackageRow props={(toRowProps(n))}></PackageRow>
       ))}
     </Box>
   );

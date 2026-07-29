@@ -1,47 +1,91 @@
+import type {ReactNode} from 'react';
+
 import {useAnimation} from 'ink';
 import {Box, Text} from 'ink';
 
-import type {PackageRowProps, StepProps} from '../state/selectors.js';
+import {formatTime} from '../state/selectors.js';
 
-import {formatTime, isExpanded} from '../state/selectors.js';
-import {StatusIcon} from './StatusIcon.js';
+// ---- types ----
 
-// ---- column widths (shared with OrchestrationView header) ----
+export interface RowStep {
+  id: string;
+  /** Pre-rendered icon character (caller supplies from rawSym or similar). */
+  icon: string;
+  primary: string;
+  secondary?: string;
+  isLast: boolean;
+}
+
+/**
+ * Agnostic row interface — no domain types.
+ *
+ * The caller (e.g. OrchestrationView) is responsible for mapping domain data
+ * (TreeNode, NodeStatus, timing) into these three display slots:
+ *   icon      — pre-constructed ReactNode (StatusIcon, plain char, anything)
+ *   primary   — main label (left side)
+ *   secondary — dim inline hint (middle)
+ *   trailing  — right-side content; ReactNode so it can include animated elements
+ *
+ * Collapse is a prop, not internal state. If undefined, steps are hidden.
+ * When interactive toggle lands, add `onToggle?: () => void` here and manage
+ * a `collapsedIds: Set<string>` in AppState — the row stays pure either way.
+ */
+export interface PackageRowProps {
+  id: string;
+  icon: ReactNode;
+  primary: string;
+  secondary?: string;
+  trailing?: ReactNode;
+  steps?: RowStep[];
+  expanded?: boolean;
+  indent?: number;
+}
+
+// ---- utilities (generic, domain-free) ----
+
 export const COL_STATUS = 9;
 export const COL_TIME   = 6;
 
-// ---- status labels ----
-
-const STATUS_LABELS: Record<PackageRowProps['status'], string> = {
-  failed:  'failed',
-  pending: 'queued',
-  running: 'running',
-  skipped: 'skipped',
-  success: 'done',
-};
-
-// ---- time cells ----
-
-function LiveTime({startedAt}: {startedAt: number}) {
+/**
+ * Animates elapsed time since `startedAt`. Re-renders every second via
+ * ink's shared animation timer. Import this from OrchestrationView to
+ * build the `trailing` prop for running packages.
+ */
+export function LiveTime({startedAt, format}: {startedAt: number; format: (ms: number) => string}) {
   useAnimation({interval: 1000});
-  return <Text color="yellow">{formatTime(Date.now() - startedAt)}</Text>;
+  return <Text color="yellow">{format(Date.now() - startedAt)}</Text>;
 }
 
-function TimeCell({props}: {props: PackageRowProps}) {
-  if (props.duration !== undefined) return <Text dimColor>{formatTime(props.duration)}</Text>;
-  if (props.status === 'running' && props.startedAt !== undefined) return <LiveTime startedAt={props.startedAt} />;
-  return <Text dimColor>—</Text>;
+export interface RowTrailingProps {
+  statusLabel: string;
+  duration?: number;
+  startedAt?: number;
+}
+
+export function RowTrailing({statusLabel, duration, startedAt}: RowTrailingProps) {
+  const timeNode: ReactNode = (() => {
+    if (duration !== undefined) return <Text dimColor>{formatTime(duration)}</Text>;
+    if (startedAt !== undefined) return <LiveTime startedAt={startedAt} format={formatTime} />;
+    return <Text dimColor>—</Text>;
+  })();
+
+  return (
+    <Box gap={1}>
+      <Box width={COL_STATUS}><Text dimColor>{statusLabel}</Text></Box>
+      <Box width={COL_TIME}>{timeNode}</Box>
+    </Box>
+  );
 }
 
 // ---- step row ----
 
-function StepRow({step}: {step: StepProps}) {
+function StepRow({step}: {step: RowStep}) {
   return (
     <Box marginLeft={3} gap={1}>
       <Text dimColor>{step.isLast ? '└' : '├'}</Text>
-      <StatusIcon status={step.status} />
-      <Text dimColor>{step.name}</Text>
-      {step.detail && <Text dimColor>{step.detail}</Text>}
+      <Text dimColor>{step.icon}</Text>
+      <Text dimColor>{step.primary}</Text>
+      {step.secondary && <Text dimColor>{step.secondary}</Text>}
     </Box>
   );
 }
@@ -49,38 +93,26 @@ function StepRow({step}: {step: StepProps}) {
 // ---- PackageRow ----
 
 /**
- * Pure function of {@link PackageRowProps} — no domain types imported.
- * Mapping from TreeNode → PackageRowProps lives in {@link toPackageRowProps}.
- *
- * Collapse behaviour:
- *   running → expanded (step children + inline running-step hint)
- *   failed  → expanded (step children below with └/├ connectors)
- *   others  → collapsed (children hidden)
- *   Caller can override via the `collapsed` prop.
+ * @param width - Outer row width in columns. Pass `stdout.columns` from the
+ *   parent so the row spans the terminal even inside `<Static>` (where
+ *   `flexGrow` has no container width to expand into).
  */
-export function PackageRow({props}: {props: PackageRowProps}) {
-  const expanded = isExpanded(props);
-
+export function PackageRow({props, width = 80}: {props: PackageRowProps; width?: number}) {
   return (
     <Box flexDirection="column">
-      {/* Main row */}
-      <Box>
-        <StatusIcon status={props.status} />
-        <Text> </Text>
-        <Box flexGrow={1}>
-          <Text>{props.name}</Text>
+      <Box width={width} justifyContent="space-between">
+        {/* Left side: icon + primary + secondary */}
+        <Box gap={1} flexShrink={1} minWidth={0} marginLeft={props.indent ? props.indent : 0}>
+          {props.icon}
+          <Text wrap="truncate">{props.primary}</Text>
+          {props.secondary && <Text dimColor wrap="truncate">{props.secondary}</Text>}
         </Box>
-        {props.detail && (
-          <Box flexShrink={1} marginRight={1}>
-            <Text dimColor>{props.detail}</Text>
-          </Box>
-        )}
-        <Box width={COL_STATUS}><Text dimColor>{STATUS_LABELS[props.status]}</Text></Box>
-        <Box width={COL_TIME}><TimeCell props={props} /></Box>
+        {/* Right side: trailing (status + time, or anything else) */}
+        {props.trailing && <Box flexShrink={0}>{props.trailing}</Box>}
       </Box>
 
-      {/* Expanded step children */}
-      {expanded && props.steps.map(step => (
+      {/* Step children — shown only when expanded */}
+      {props.expanded && props.steps?.map(step => (
         <StepRow key={step.id} step={step} />
       ))}
     </Box>

@@ -7,6 +7,7 @@ import {renderApp} from '../../ui/run.js';
 // Built-in fixtures — same arrays the unit tests use.
 const FIXTURES: Record<string, Array<Record<string, unknown> & {type: string}>> = {
   'happy-path': (await import('../../ui/fixtures/happy-path.js')).happyPathEvents,
+  'large-scale': (await import('../../ui/fixtures/large-scale.js')).largeBuildEvents,
   'partial-failure': (await import('../../ui/fixtures/partial-failure.js')).partialFailureEvents,
 };
 
