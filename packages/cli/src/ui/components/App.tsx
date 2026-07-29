@@ -1,6 +1,6 @@
 import type EventEmitter from 'node:events';
 
-import {Box} from 'ink';
+import {Box, useInput} from 'ink';
 import {useReducer} from 'react';
 
 import {useEventBusWiring} from '../hooks/use-event-bus-wiring.js';
@@ -17,9 +17,10 @@ const META_COLS: MetaColSpec[] = [
   {key: 'hash',       width: 8,  label: 'hash'},
 ];
 
-export function App({bus}: {bus: EventEmitter}) {
+export function App({bus, onAdvance}: {bus: EventEmitter; onAdvance?: (key: string) => void}) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   useEventBusWiring(bus, dispatch);
+  useInput((input, key) => { onAdvance?.(input || (key.escape ? '\x1b' : '')); }, {isActive: Boolean(onAdvance)});
 
   const counts = countPackages(state.levels);
 

@@ -7,11 +7,12 @@ import type {TreeNode} from '../state/types.js';
 
 import {deriveStatus} from '../state/selectors.js';
 import {toRowProps} from '../state/adapters.js';
+import {rawSym} from '../renderer-utils.js';
 import {Divider} from './base/Divider.js';
 import {COL_TRAILING, PackageRow} from './PackageRow.js';
 import {ValidationView} from './ValidationView.js';
 
-// ---- types ----
+// ---- types ------------------------------------------------------------------
 
 export interface OrchestrationViewProps {
   levels: TreeNode[];
@@ -31,11 +32,17 @@ export interface OrchestrationViewProps {
   headerColumns?: ReactNode;
 }
 
-// ---- domain constants ----
+// ---- constants --------------------------------------------------------------
 
-const TERMINAL = new Set(['success', 'failed', 'skipped']);
+const TERMINAL = new Set(['failed', 'skipped', 'success']);
 
-// ---- static item discriminated union ----
+/**
+ * Groups with more than this many packages are collapsed into a single rollup
+ * line. Keeps the live area focused on what's actively happening.
+ */
+const ROLLUP_AT = 3;
+
+// ---- static item discriminated union ----------------------------------------
 
 /**
  * Static renders items exactly once, in array order, permanently above the
@@ -44,64 +51,79 @@ const TERMINAL = new Set(['success', 'failed', 'skipped']);
  * components because Ink has no ordering guarantee between them.
  */
 type StaticItem =
-  | {kind: 'header'; totalPackages: number; totalLevels: number}
+  | {kind: 'header'; totalLevels: number; totalPackages: number}
   | {kind: 'pkg';    node: TreeNode};
 
-// ---- view constants ----
+// ---- sub-components ---------------------------------------------------------
 
-const QUEUE_VISIBLE = 3;
+interface StatusRollupProps {
+  color?: string;
+  icon: string;
+  label: string;
+  pkgs: TreeNode[];
+}
 
-// ---- component ----
+/**
+ * Compressed summary line for a group of packages that don't need individual
+ * rows in the live area (e.g. "✓ 5 packages done — core-utils, shared-types…").
+ */
+function StatusRollup({color, icon, label, pkgs}: StatusRollupProps) {
+  const names = pkgs.map(p => p.label).join(', ');
+  const count = pkgs.length;
+  return (
+    <Box gap={1} marginLeft={2}>
+      <Text color={color}>{icon}</Text>
+      <Text dimColor>
+        {count} {count === 1 ? 'package' : 'packages'} {label}{' \u2014 '}{names}
+      </Text>
+    </Box>
+  );
+}
+
+// ---- component --------------------------------------------------------------
 
 export function OrchestrationView({
-  levels,
-  validation,
-  showValidation = true,
   getColumns,
   headerColumns,
+  levels,
+  showValidation = true,
+  validation,
 }: OrchestrationViewProps) {
   const {stdout} = useStdout();
   const termWidth = stdout?.columns ?? 80;
 
   const totalPackages = levels.reduce((n, l) => n + l.children.length, 0);
+  const allPkgs = levels.flatMap(l => l.children);
 
-  const doneLevels   = levels.filter(l => TERMINAL.has(deriveStatus(l.children)));
-  const activeLevels = levels.filter(l => !TERMINAL.has(deriveStatus(l.children)));
-  const donePackages = doneLevels.flatMap(l => l.children);
+  // Deferred atomic flush: nothing goes to <Static> until every package is
+  // terminal. Guarantees scrollback shows packages in level order regardless
+  // of when async validation resolves for different levels.
+  const allTerminal = levels.length > 0 && levels.every(l => TERMINAL.has(deriveStatus(l.children)));
+  const donePackages = allTerminal ? allPkgs : [];
 
   const rowProps = (node: TreeNode) => toRowProps(node, getColumns);
 
-  // Header is always item 0; completed packages append after it.
-  // termWidth is captured from the closure when each item is first rendered —
-  // correct for the vast majority of cases (terminal resize during a build is
-  // an edge case Ink doesn't handle well regardless).
   const staticItems: StaticItem[] = [
-    {kind: 'header', totalPackages, totalLevels: levels.length},
+    {kind: 'header', totalLevels: levels.length, totalPackages},
     ...donePackages.map((node): StaticItem => ({kind: 'pkg', node})),
   ];
 
-  const currentIdx   = activeLevels.findIndex(l =>
-    l.children.some(p => p.status === 'running' || p.status === 'failed'),
-  );
-  const currentLevel = activeLevels[currentIdx >= 0 ? currentIdx : 0];
-  const futureLevels = activeLevels.slice((currentIdx >= 0 ? currentIdx : 0) + 1);
-
-  const currentPkgs   = currentLevel?.children ?? [];
-  const busy          = currentPkgs.filter(p => p.status !== 'pending');
-  const queued        = currentPkgs.filter(p => p.status === 'pending');
-  const visibleQueued = queued.slice(0, QUEUE_VISIBLE);
-  const hiddenCount   = queued.length - QUEUE_VISIBLE;
-  // Pre-skipped packages aren't waiting — they're already terminal.
-  const futureCount   = futureLevels.reduce((n, l) => n + l.children.filter(p => p.status !== 'skipped').length, 0);
+  // Live area groups — all empty when allTerminal (Static has taken over, no duplication).
+  // Order: done (history) → validating (async in-flight) → running (active) → failed (errors) → pending (future).
+  const failed    = allTerminal ? [] : allPkgs.filter(p => p.status === 'failed');
+  const validating = allTerminal ? [] : allPkgs.filter(p => p.status === 'validating');
+  const running   = allTerminal ? [] : allPkgs.filter(p => p.status === 'running');
+  const done      = allTerminal ? [] : allPkgs.filter(p => p.status === 'success' || p.status === 'skipped');
+  const pending   = allTerminal ? [] : allPkgs.filter(p => p.status === 'pending');
 
   return (
     <Box flexDirection="column">
-      {/* Header + completed packages — flushed together in order */}
+      {/* Completed packages — flushed atomically in level order when allTerminal */}
       <Static items={staticItems}>
         {item => {
           if (item.kind === 'header') {
             return (
-              <Box key="__header__" flexDirection="column" width={termWidth} marginTop={2}>
+              <Box key="__header__" flexDirection="column" marginTop={2} width={termWidth}>
                 <Box justifyContent="space-between">
                   <Text dimColor>{item.totalPackages} packages · {item.totalLevels} levels</Text>
                   <Box flexShrink={0} gap={1}>
@@ -117,27 +139,28 @@ export function OrchestrationView({
         }}
       </Static>
 
-      {/* Active packages (dynamic — refreshes every render) */}
-      {busy.map(pkg => <PackageRow key={pkg.id} props={rowProps(pkg)} width={termWidth} />)}
+      {/* Live area ─────────────────────────────────────────────────────────── */}
 
-      {visibleQueued.map(pkg => <PackageRow key={pkg.id} props={rowProps(pkg)} width={termWidth} />)}
-      {hiddenCount > 0 && (
-        <Box marginLeft={2}>
-          <Text dimColor>⋯ {hiddenCount} more queued</Text>
-        </Box>
-      )}
+      {/* done: roll up when many, otherwise show full rows */}
+      {done.length > ROLLUP_AT
+        ? <StatusRollup color="green" icon={rawSym.success} label="done" pkgs={done} />
+        : done.map(p => <PackageRow key={p.id} props={rowProps(p)} width={termWidth} />)}
 
-      {futureLevels.length > 0 && futureCount > 0 && (
-        <Box marginLeft={2} marginTop={1}>
-          <Text dimColor>
-            {futureLevels.length === 1
-              ? `Level ${doneLevels.length + (currentIdx >= 0 ? currentIdx : 0) + 1} — ${futureCount} waiting`
-              : `${futureLevels.length} levels — ${futureCount} packages waiting`}
-          </Text>
-        </Box>
-      )}
+      {/* validating: always full rows (spinner active) */}
+      {validating.map(p => <PackageRow key={p.id} props={rowProps(p)} width={termWidth} />)}
 
-      {/* Validation — shown below the build area when data is present */}
+      {/* running: always full rows */}
+      {running.map(p => <PackageRow key={p.id} props={rowProps(p)} width={termWidth} />)}
+
+      {/* failed: always full rows */}
+      {failed.map(p => <PackageRow key={p.id} props={rowProps(p)} width={termWidth} />)}
+
+      {/* pending: roll up when many, otherwise show full rows */}
+      {pending.length > ROLLUP_AT
+        ? <StatusRollup icon={rawSym.pending} label="waiting" pkgs={pending} />
+        : pending.map(p => <PackageRow key={p.id} props={rowProps(p)} width={termWidth} />)}
+
+      {/* Validation sidebar (separate post-build phase) */}
       {showValidation && validation && validation.length > 0 && (
         <ValidationView nodes={validation} />
       )}
