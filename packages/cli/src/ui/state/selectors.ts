@@ -8,6 +8,7 @@ export function deriveStatus(children: TreeNode[]): NodeStatus {
   if (children.length === 0) return 'pending';
   if (children.some(c => c.status === 'failed')) return 'failed';
   if (children.some(c => c.status === 'running')) return 'running';
+  if (children.some(c => c.status === 'validating')) return 'validating';
   if (children.every(c => c.status === 'success' || c.status === 'skipped')) return 'success';
   return 'pending';
 }
@@ -19,6 +20,7 @@ export interface PackageCounts {
   skipped: number;
   success: number;
   total: number;
+  validating: number;
 }
 
 export function formatTime(ms: number): string {
@@ -29,7 +31,7 @@ export function formatTime(ms: number): string {
 /** Aggregates per-package statuses across all levels. */
 export function countPackages(levels: TreeNode[]): PackageCounts {
   const counts: PackageCounts = {
-    failed: 0, pending: 0, running: 0, skipped: 0, success: 0, total: 0,
+    failed: 0, pending: 0, running: 0, skipped: 0, success: 0, total: 0, validating: 0,
   };
   for (const level of levels) {
     for (const pkg of level.children) {

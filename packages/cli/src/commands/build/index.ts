@@ -164,11 +164,16 @@ export default class Build extends SfpmCommand {
       resolved.dependencyAnalyzer,
     )
 
+    // For the ink path, create the ValidationEventBus here so the bridge can
+    // wire validation events before buildAll starts. The bus is passed to the
+    // resolver later if there are pending validations.
+    const validationBus = isInk ? new ValidationEventBus() : undefined;
+
     let renderer: BuildProgressRenderer | undefined;
     let inkInstance: ReturnType<typeof renderApp> | undefined;
 
     if (uiBus) {
-      attachBuildBridge(orchestrator.buildBus, orchestrator.orchestrationBus, uiBus);
+      attachBuildBridge(orchestrator.buildBus, orchestrator.orchestrationBus, uiBus, validationBus);
       inkInstance = renderApp(uiBus);
     } else {
       renderer = new BuildProgressRenderer({
@@ -188,10 +193,6 @@ export default class Build extends SfpmCommand {
       const result = await orchestrator.buildAll(resolved.resolvedPackages)
       await tracer.shutdown()
 
-      // Unmount ink before any subsequent terminal output or validation UI
-      inkInstance?.unmount();
-      inkInstance = undefined;
-
       if (resolved.mode === 'json') {
         this.logJson(result)
       }
@@ -205,7 +206,21 @@ export default class Build extends SfpmCommand {
       .map(r => r.result)
       .filter((r): r is PendingValidationDescriptor => r !== null && r !== undefined)
 
-      await this.handleValidationResults(pendingValidations, resolved)
+      if (isInk && validationBus && !resolved.async) {
+        // Ink path: validation runs while ink is still mounted.
+        // The bridge already wired validationBus → uiBus; just drive the resolver.
+        if (pendingValidations.length > 0) {
+          await this.resolveValidationsInline(pendingValidations, resolved, validationBus)
+        }
+
+        inkInstance?.unmount();
+        inkInstance = undefined;
+      } else {
+        // Non-ink path or async: unmount before handing off to the existing handler.
+        inkInstance?.unmount();
+        inkInstance = undefined;
+        await this.handleValidationResults(pendingValidations, resolved)
+      }
     } catch (error) {
       renderer?.handleError(error as Error)
       throw error
@@ -440,7 +455,32 @@ export default class Build extends SfpmCommand {
   private async resolveValidationsInline(
     descriptors: PendingValidationDescriptor[],
     resolved: ResolvedBuildFlags,
+    externalBus?: ValidationEventBus,
   ): Promise<void> {
+    const projectService = await ProjectService.getInstance(resolved.projectDir);
+
+    if (externalBus) {
+      // Ink path: the bus is already wired to uiBus by attachBuildBridge.
+      // Run the resolver silently — the App handles all display.
+      const resolver = new ValidationResolver(
+        projectService.getDefinitionProvider(),
+        projectService.getProjectGraph(),
+        noopLogger,
+        externalBus,
+      );
+      const results = await resolver.resolve(descriptors, {
+        maxWaitMs: resolved.waitMinutes * 60 * 1000,
+      });
+      const failures: string[] = [];
+      for (const [packageName, result] of results) {
+        if (result.status === 'failed') failures.push(`${packageName}: ${result.error}`);
+      }
+
+      if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1});
+      return;
+    }
+
+    // Plain / json path: Listr-based renderer with explicit begin/end lifecycle.
     const validationBus = new ValidationEventBus()
     const renderer = new ValidationProgressRenderer(resolved.mode, {
       error: msg => this.error(msg),
@@ -448,37 +488,29 @@ export default class Build extends SfpmCommand {
     })
     renderer.attachTo(validationBus)
 
-    const projectService = await ProjectService.getInstance(resolved.projectDir);
-    // In interactive mode the Listr renderer owns the terminal. The pino-backed
-    // sfpmLogger writes directly to the stderr fd (bypassing Listr's stdout hijack),
-    // which corrupts log-update's cursor tracking and prevents the spinner from
-    // rendering. Feed the resolver a noop logger so the Listr has exclusive control;
-    // results/errors still surface via the event bus (resolve:passed/failed -> spinner).
+    // In interactive mode the Listr renderer owns the terminal — pass noopLogger
+    // so pino doesn't write to stderr and corrupt the cursor state.
     const resolverLogger = resolved.mode === 'interactive' ? noopLogger : this.sfpmLogger;
-    const resolver = new ValidationResolver(projectService.getDefinitionProvider(), projectService.getProjectGraph(), resolverLogger, validationBus);
+    const resolver = new ValidationResolver(
+      projectService.getDefinitionProvider(),
+      projectService.getProjectGraph(),
+      resolverLogger,
+      validationBus,
+    );
 
-    // Start the UI and wait until the spinner is actually live BEFORE kicking
-    // off the (event-loop-heavy) validation work. Otherwise the work starves
-    // the Listr's async render setup and the spinner never appears.
+    // Wait for the spinner to be live BEFORE starting work — otherwise the
+    // event-loop-heavy resolver starves the Listr async render setup.
     await renderer.begin(descriptors.map(d => d.packageName));
-
     const results = await resolver.resolve(descriptors, {
       maxWaitMs: resolved.waitMinutes * 60 * 1000,
     });
-
-    // Paint the final task states + summary before we may process.exit() on
-    // failure below, otherwise the render is abandoned mid-paint.
     await renderer.end();
 
     const failures: string[] = [];
     for (const [packageName, result] of results) {
-      if (result.status === 'failed') {
-        failures.push(`${packageName}: ${result.error}`);
-      }
+      if (result.status === 'failed') failures.push(`${packageName}: ${result.error}`);
     }
 
-    if (failures.length > 0) {
-      this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1})
-    }
+    if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1});
   }
 }

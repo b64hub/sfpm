@@ -1,4 +1,4 @@
-export type NodeStatus = 'failed' | 'pending' | 'running' | 'skipped' | 'success';
+export type NodeStatus = 'failed' | 'pending' | 'running' | 'skipped' | 'success' | 'validating';
 
 /** A single pino log record forwarded through the pino bridge. */
 export interface LogRecord {

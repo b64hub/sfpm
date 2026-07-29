@@ -7,11 +7,12 @@ import { StatusIcon } from "../components/base/StatusIcon.js";
 import { rawSym } from "../renderer-utils.js";
 
 const STEP_ICON: Record<NodeStatus, string> = {
-  failed:  rawSym.fail,
-  pending: rawSym.pending,
-  running: rawSym.progress,
-  skipped: rawSym.skipped,
-  success: rawSym.success,
+  failed:    rawSym.fail,
+  pending:   rawSym.pending,
+  running:   rawSym.progress,
+  skipped:   rawSym.skipped,
+  success:   rawSym.success,
+  validating: rawSym.progress,
 };
 
 export function toRowProps(
@@ -21,7 +22,9 @@ export function toRowProps(
   const runningSteps = node.children.filter(c => c.status === 'running');
   const runningStep  = runningSteps[runningSteps.length - 1];
   const hint         =
-    node.status === 'running' ? (runningStep?.label ?? node.detail) : node.detail;
+    node.status === 'running' || node.status === 'validating'
+      ? (runningStep?.label ?? node.detail)
+      : node.detail;
 
   const steps: RowStep[] = node.children.map((c, i) => ({
     id:        c.id,
@@ -41,7 +44,7 @@ export function toRowProps(
     columns:   getColumns ? getColumns(node) : undefined,
     trailing:  <PackageRow.Trailing duration={node.duration} startedAt={node.startedAt} />,
     steps,
-    expanded:  node.status === 'running' || node.status === 'failed',
+    expanded:  node.status === 'running' || node.status === 'failed' || node.status === 'validating',
     indent:    2,
   };
 }

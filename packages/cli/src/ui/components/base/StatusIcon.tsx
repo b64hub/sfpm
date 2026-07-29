@@ -5,7 +5,7 @@ import type {NodeStatus} from '../../state/types.js';
 
 import {rawSym} from '../../renderer-utils.js';
 
-const ICONS: Record<Exclude<NodeStatus, 'running'>, {char: string; color: string}> = {
+const ICONS: Record<Exclude<NodeStatus, 'running' | 'validating'>, {char: string; color: string}> = {
   failed:  {char: rawSym.fail,    color: 'red'},
   pending: {char: rawSym.pending, color: 'gray'},
   skipped: {char: rawSym.skipped, color: 'gray'},
@@ -19,7 +19,7 @@ function RunningIcon() {
 }
 
 export function StatusIcon({status}: {status: NodeStatus}) {
-  if (status === 'running') return <RunningIcon />;
+  if (status === 'running' || status === 'validating') return <RunningIcon />;
   const {char, color} = ICONS[status];
   return <Text color={color}>{char}</Text>;
 }

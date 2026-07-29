@@ -3,7 +3,7 @@ import type EventEmitter from 'node:events';
 import {Box} from 'ink';
 import {useReducer} from 'react';
 
-import {useEventBusWiring} from '../hooks/useEventBusWiring.js';
+import {useEventBusWiring} from '../hooks/use-event-bus-wiring.js';
 import {initialState, reducer} from '../state/reducer.js';
 import {countPackages} from '../state/selectors.js';
 import {Footer} from './base/Footer.js';
