@@ -1,6 +1,6 @@
 import type EventEmitter from 'node:events';
 
-import {Box, useInput} from 'ink';
+import {Box, Text, useInput} from 'ink';
 import {useReducer} from 'react';
 
 import {useEventBusWiring} from '../hooks/use-event-bus-wiring.js';
@@ -17,7 +17,7 @@ const META_COLS: MetaColSpec[] = [
   {key: 'hash',       width: 8,  label: 'hash'},
 ];
 
-export function App({bus, onAdvance}: {bus: EventEmitter; onAdvance?: (key: string) => void}) {
+export function App({bus, logPath, onAdvance}: {bus: EventEmitter; logPath?: string; onAdvance?: (key: string) => void}) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   useEventBusWiring(bus, dispatch);
   useInput((input, key) => { onAdvance?.(input || (key.escape ? '\x1b' : '')); }, {isActive: Boolean(onAdvance)});
@@ -43,6 +43,9 @@ export function App({bus, onAdvance}: {bus: EventEmitter; onAdvance?: (key: stri
           ? <Footer.Elapsed startedAt={state.startedAt} dimColor />
           : undefined}
       />
+      {state.phase === 'failed' && logPath && (
+        <Text dimColor>Full logs: {logPath}</Text>
+      )}
     </Box>
   );
 }

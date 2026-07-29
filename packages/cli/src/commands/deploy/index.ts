@@ -5,15 +5,12 @@ import {
 import {Args, Flags} from '@oclif/core'
 import {ConfigAggregator, Org} from '@salesforce/core'
 import EventEmitter from 'node:events'
-import pino from 'pino'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
-import {CliLogger} from '../../logger.js'
 import SfpmCommand from '../../sfpm-command.js'
 import {attachInstallBridge} from '../../ui/install-event-bridge.js'
 import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
-import {createPinoBridge} from '../../ui/pino-bridge.js'
 import {renderApp} from '../../ui/run.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
 
@@ -73,9 +70,7 @@ export default class Deploy extends SfpmCommand {
 
     const isInk = mode === 'interactive';
     const uiBus = isInk ? new EventEmitter() : undefined;
-    const pinoLogger = isInk
-      ? new CliLogger(pino({level: 'debug'}, createPinoBridge(uiBus!)))
-      : logger;
+    const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
 
     const orchestrator = InstallOrchestrator.forSource(
       targetOrg,
@@ -92,7 +87,7 @@ export default class Deploy extends SfpmCommand {
 
     if (isInk) {
       attachInstallBridge(orchestrator.installBus, orchestrator.orchestrationBus, uiBus!);
-      return {inkInstance: renderApp(uiBus!), orchestrator};
+      return {inkInstance: renderApp(uiBus!, {logPath}), orchestrator};
     }
 
     const renderer = this.createRenderer(mode, flags['target-org'])
