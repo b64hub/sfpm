@@ -34,6 +34,9 @@ export interface PackageRowProps {
   icon: ReactNode;
   primary: string;
   secondary?: ReactNode;
+  /** Fixed-width metadata columns, right of secondary. Use PackageRow.MetaCols. */
+  columns?: ReactNode;
+  /** Rightmost slot — time only. Use PackageRow.Trailing. */
   trailing?: ReactNode;
   steps?: RowStep[];
   expanded?: boolean;
@@ -78,31 +81,59 @@ function Secondary({children}: {children: ReactNode}) {
   return <Text dimColor wrap="truncate">{children}</Text>;
 }
 
-/** Default trailing slot: optional metadata label + elapsed/duration time. */
+/** Rightmost trailing slot: time only. */
 export interface RowTrailingProps {
-  /** Optional context-specific metadata (e.g. "42 built", "87% cov"). Omit to hide the slot. */
-  meta?: string;
   duration?: number;
   startedAt?: number;
 }
 
-function Trailing({meta, duration, startedAt}: RowTrailingProps) {
+function Trailing({duration, startedAt}: RowTrailingProps) {
   const timeNode: ReactNode = (() => {
     if (duration !== undefined) return <Text dimColor>{formatTime(duration)}</Text>;
     if (startedAt !== undefined) return <ElapsedTime startedAt={startedAt} format={formatTime} color="yellow" />;
     return <Text dimColor>—</Text>;
   })();
 
-  return (
-    <Box gap={1}>
-      {meta !== undefined && <Box width={COL_META}><Text dimColor>{meta}</Text></Box>}
-      <Box width={COL_TIME}>{timeNode}</Box>
-    </Box>
-  );
+  return <Box width={COL_TIME}>{timeNode}</Box>;
 }
 
 // Keep the standalone export for callers that import RowTrailing by name.
 export { Trailing as RowTrailing };
+
+// ---- MetaCols ----
+
+/** Spec for one fixed-width metadata column in MetaCols. */
+export interface MetaColSpec {
+  key: string;
+  /** Fixed column width in characters. */
+  width: number;
+  /** Header label (defaults to key). */
+  label?: string;
+}
+
+export interface MetaColsProps {
+  cols: MetaColSpec[];
+  meta?: Record<string, string>;
+  /** Render as header row: shows column labels instead of values. */
+  header?: boolean;
+}
+
+/**
+ * Fixed-width metadata columns. Slots into PackageRowProps.columns.
+ * Use the same `cols` spec for both rows and the header.
+ * Missing keys render —. Time is handled separately by PackageRow.Trailing.
+ */
+function MetaCols({cols, meta, header = false}: MetaColsProps) {
+  return (
+    <Box gap={1}>
+      {cols.map(col => (
+        <Box key={col.key} width={col.width}>
+          <Text dimColor>{header ? (col.label ?? col.key) : (meta?.[col.key] ?? '—')}</Text>
+        </Box>
+      ))}
+    </Box>
+  );
+}
 
 // ---- step row ----
 
@@ -134,8 +165,11 @@ function PackageRowFn({props, width = 80}: {props: PackageRowProps; width?: numb
           <Text wrap="truncate">{props.primary}</Text>
           {props.secondary}
         </Box>
-        {/* Right side: trailing (meta + time, or anything else) */}
-        {props.trailing && <Box flexShrink={0}>{props.trailing}</Box>}
+        {/* Right side: columns + trailing, always together */}
+        <Box flexShrink={0} gap={1}>
+          {props.columns}
+          {props.trailing}
+        </Box>
       </Box>
 
       {/* Step children — shown only when expanded */}
@@ -162,8 +196,10 @@ function PackageRowFn({props, width = 80}: {props: PackageRowProps; width?: numb
 export const PackageRow = Object.assign(PackageRowFn, {
   /** Default secondary slot: dim truncating text. */
   Secondary,
-  /** Default trailing slot: meta label + elapsed/duration time. */
+  /** Default trailing slot: single meta label + elapsed/duration time. */
   Trailing,
+  /** Multi-column metadata trailing with fixed-width alignment. */
+  MetaCols,
   /** Animated elapsed time. Same component as Footer.Elapsed. */
   Elapsed: ElapsedTime,
 });

@@ -1,3 +1,5 @@
+import type {ReactNode} from 'react';
+
 import {Box, Static, Text} from 'ink';
 import {useStdout} from 'ink';
 
@@ -6,7 +8,7 @@ import type {TreeNode} from '../state/types.js';
 import {deriveStatus} from '../state/selectors.js';
 import {toRowProps} from '../state/adapters.js';
 import {Divider} from './base/Divider.js';
-import {COL_META, COL_TIME, PackageRow} from './PackageRow.js';
+import {COL_TIME, PackageRow} from './PackageRow.js';
 import {ValidationView} from './ValidationView.js';
 
 // ---- types ----
@@ -18,12 +20,15 @@ export interface OrchestrationViewProps {
   /** Show the validation section. Defaults to true when `validation` is non-empty. */
   showValidation?: boolean;
   /**
-   * Per-node metadata for the trailing column (e.g. "42 built", "87% cov").
-   * Omit entirely to hide the metadata column from both header and rows.
+   * Builds the columns slot for each row. Use `PackageRow.MetaCols`.
+   * Omit to show time only.
    */
-  getMeta?: (node: TreeNode) => string | undefined;
-  /** Column header label for the metadata slot. Only rendered when `getMeta` is provided. */
-  metaLabel?: string;
+  getColumns?: (node: TreeNode) => ReactNode;
+  /**
+   * Header for the columns slot. Pass `<PackageRow.MetaCols cols={...} header />`
+   * using the same spec as `getColumns`.
+   */
+  headerColumns?: ReactNode;
 }
 
 // ---- domain constants ----
@@ -52,8 +57,8 @@ export function OrchestrationView({
   levels,
   validation,
   showValidation = true,
-  getMeta,
-  metaLabel,
+  getColumns,
+  headerColumns,
 }: OrchestrationViewProps) {
   const {stdout} = useStdout();
   const termWidth = stdout?.columns ?? 80;
@@ -64,8 +69,7 @@ export function OrchestrationView({
   const activeLevels = levels.filter(l => !TERMINAL.has(deriveStatus(l.children)));
   const donePackages = doneLevels.flatMap(l => l.children);
 
-  // Helper so getMeta threads through consistently to every row.
-  const rowProps = (node: TreeNode) => toRowProps(node, getMeta);
+  const rowProps = (node: TreeNode) => toRowProps(node, getColumns);
 
   // Header is always item 0; completed packages append after it.
   // termWidth is captured from the closure when each item is first rendered —
@@ -100,10 +104,8 @@ export function OrchestrationView({
               <Box key="__header__" flexDirection="column" width={termWidth} marginTop={2}>
                 <Box justifyContent="space-between">
                   <Text dimColor>{item.totalPackages} packages · {item.totalLevels} levels</Text>
-                  <Box gap={1}>
-                    {getMeta !== undefined && (
-                      <Box width={COL_META}><Text dimColor>{metaLabel ?? ''}</Text></Box>
-                    )}
+                  <Box flexShrink={0} gap={1}>
+                    {headerColumns}
                     <Box width={COL_TIME}><Text dimColor>time</Text></Box>
                   </Box>
                 </Box>

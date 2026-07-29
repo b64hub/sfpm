@@ -1,3 +1,5 @@
+import type {ReactNode} from 'react';
+
 import type { TreeNode, NodeStatus } from "./types.js";
 import type { PackageRowProps, RowStep } from "../components/PackageRow.js";
 import { PackageRow } from "../components/PackageRow.js";
@@ -14,7 +16,7 @@ const STEP_ICON: Record<NodeStatus, string> = {
 
 export function toRowProps(
   node: TreeNode,
-  getMeta?: (node: TreeNode) => string | undefined,
+  getColumns?: (node: TreeNode) => ReactNode,
 ): PackageRowProps {
   const runningSteps = node.children.filter(c => c.status === 'running');
   const runningStep  = runningSteps[runningSteps.length - 1];
@@ -36,11 +38,8 @@ export function toRowProps(
     secondary: hint !== undefined
       ? <PackageRow.Secondary>{hint}</PackageRow.Secondary>
       : undefined,
-    trailing:  <PackageRow.Trailing
-                 meta={getMeta?.(node)}
-                 duration={node.duration}
-                 startedAt={node.startedAt}
-               />,
+    columns:   getColumns ? getColumns(node) : undefined,
+    trailing:  <PackageRow.Trailing duration={node.duration} startedAt={node.startedAt} />,
     steps,
     expanded:  node.status === 'running' || node.status === 'failed',
     indent:    2,

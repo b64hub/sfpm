@@ -3,17 +3,19 @@ import type EventEmitter from 'node:events';
 import {Box} from 'ink';
 import {useReducer} from 'react';
 
-import type {TreeNode} from '../state/types.js';
-
 import {useEventBusWiring} from '../hooks/useEventBusWiring.js';
 import {initialState, reducer} from '../state/reducer.js';
 import {countPackages} from '../state/selectors.js';
 import {Footer} from './base/Footer.js';
 import {OrchestrationView} from './OrchestrationView.js';
+import {PackageRow} from './PackageRow.js';
+import type {MetaColSpec} from './PackageRow.js';
 
-function getMeta(node: TreeNode): string | undefined {
-  return node.meta?.components ? `${node.meta.components} cmp` : undefined;
-}
+const META_COLS: MetaColSpec[] = [
+  {key: 'components', width: 5,  label: 'cmp'},
+  {key: 'version',    width: 7,  label: 'ver'},
+  {key: 'hash',       width: 8,  label: 'hash'},
+];
 
 export function App({bus}: {bus: EventEmitter}) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
@@ -27,8 +29,8 @@ export function App({bus}: {bus: EventEmitter}) {
         <OrchestrationView
           levels={state.levels}
           validation={state.validation}
-          getMeta={getMeta}
-          metaLabel="cmp"
+          getColumns={node => <PackageRow.MetaCols cols={META_COLS} meta={node.meta} />}
+          headerColumns={<PackageRow.MetaCols cols={META_COLS} header />}
         />
       )}
       <Footer

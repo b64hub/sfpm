@@ -65,7 +65,9 @@ export const largeBuildEvents: Event[] = [
   step('api-client', 'hooks:pre', 'running'),
   step('api-client', 'hooks:pre', 'success'),
   step('auth-lib',   'stage',     'success'),
-  done('auth-lib',   {components: '34',  hash: 'd4e5f6a'}),
+  done('auth-lib',   {
+    components: '34',  hash: 'd4e5f6a', packageVersionId: '04txxxxxxxxx', version: '4.9.0',
+  }),
 
   step('ui-kit', 'stage', 'failed', "Cannot resolve '@sfpm/tokens'"),
   fail('ui-kit', "Cannot resolve '@sfpm/tokens'"),
@@ -90,31 +92,39 @@ export const largeBuildEvents: Event[] = [
 
   step('app-shell',     'stage', 'running'),
   step('admin-console', 'stage', 'running'),
-  done('app-portal',     {components: '63',  hash: 'f6a7b8c'}),
+  done('app-portal',     {components: '63',  hash: 'f6a7b8c', version: '0.1.0'}),
   step('app-shell',     'stage', 'success'),
-  done('app-shell',      {components: '127', hash: 'a7b8c9d'}),
+  done('app-shell',      {
+    components: '127', hash: 'a7b8c9d', packageVersionId: '04txxxxxxxxx', version: '2.2.0',
+  }),
   step('admin-console', 'stage', 'success'),
-  done('admin-console',  {components: '89',  hash: 'b8c9d0e'}),
+  done('admin-console',  {
+    components: '89',  hash: 'b8c9d0e', packageVersionId: '04txxxxxxxxx', version: '1.2.0',
+  }),
 
   start('notification-svc'),
   start('analytics-svc'),
   start('reporting-svc'),
-  done('notification-svc', {components: '7',  hash: 'c9d0e1f'}),
+  done('notification-svc', {components: '7',  hash: 'c9d0e1f', version: '3.7.0'}),
   done('analytics-svc',    {components: '19', hash: 'd0e1f2a'}),
 
   start('audit-svc'),
   start('monitoring-svc'),
-  done('reporting-svc',  {components: '14', hash: 'e1f2a3b'}),
-  done('audit-svc',      {components: '9',  hash: 'f2a3b4c'}),
-  done('monitoring-svc', {components: '11', hash: 'a3b4c5d'}),
+  done('reporting-svc',  {
+    components: '14', hash: 'e1f2a3b', packageVersionId: '04txxxxxxxxx', version: '2.2.0',
+  }),
+  done('audit-svc',      {components: '9',  hash: 'f2a3b4c', version: '5.1.0'}),
+  done('monitoring-svc', {
+    components: '11', hash: 'a3b4c5d', packageVersionId: '04txxxxxxxxx', version: '0.1.0',
+  }),
 
   // ── Phase 5: Level 3 runs and completes ───────────────────────────────────
   start('integration-tests'),
   start('e2e-suite'),
   start('regression-suite'),
-  done('integration-tests', {components: '203', hash: 'b4c5d6e'}),
-  done('e2e-suite',         {components: '88',  hash: 'c5d6e7f'}),
-  done('regression-suite',  {components: '141', hash: 'd6e7f8a'}),
+  done('integration-tests', {components: '203', hash: 'b4c5d6e', version: '1.15.0'}),
+  done('e2e-suite',         {components: '88',  hash: 'c5d6e7f', version: '2.2.0'}),
+  done('regression-suite',  {components: '141', hash: 'd6e7f8a', version: '2.3.0'}),
 
   // ── Phase 6: build complete with failure ──────────────────────────────────
   {success: false, type: 'build:complete'},
