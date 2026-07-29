@@ -8,7 +8,7 @@ import type {TreeNode} from '../state/types.js';
 import {useEventBusWiring} from '../hooks/useEventBusWiring.js';
 import {initialState, reducer} from '../state/reducer.js';
 import {countPackages} from '../state/selectors.js';
-import {Footer} from './Footer.js';
+import {Footer} from './base/Footer.js';
 import {OrchestrationView} from './OrchestrationView.js';
 
 function getMeta(node: TreeNode): string | undefined {

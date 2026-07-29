@@ -1,9 +1,9 @@
 import {useSpinner} from '@inkjs/ui';
 import {Text} from 'ink';
 
-import type {NodeStatus} from '../state/types.js';
+import type {NodeStatus} from '../../state/types.js';
 
-import {rawSym} from '../renderer-utils.js';
+import {rawSym} from '../../renderer-utils.js';
 
 const ICONS: Record<Exclude<NodeStatus, 'running'>, {char: string; color: string}> = {
   failed:  {char: rawSym.fail,    color: 'red'},

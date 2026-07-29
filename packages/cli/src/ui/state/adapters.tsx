@@ -1,7 +1,7 @@
 import type { TreeNode, NodeStatus } from "./types.js";
 import type { PackageRowProps, RowStep } from "../components/PackageRow.js";
 import { PackageRow } from "../components/PackageRow.js";
-import { StatusIcon } from "../components/StatusIcon.js";
+import { StatusIcon } from "../components/base/StatusIcon.js";
 import { rawSym } from "../renderer-utils.js";
 
 const STEP_ICON: Record<NodeStatus, string> = {

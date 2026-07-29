@@ -3,28 +3,11 @@ import type {ReactNode} from 'react';
 import {useStdout} from 'ink';
 import {Box, Text} from 'ink';
 
-import type {PackageCounts} from '../state/selectors.js';
+import type {PackageCounts} from '../../state/selectors.js';
 
-import {rawSym} from '../renderer-utils.js';
-import {ElapsedTime} from './PackageRow.js';
-
-// ---- gradient progress bar ----
-
-/** Blue (#0000ff) → Red (#ff0000) gradient at half character height (▄). */
-function GradientBar({value, width}: {value: number; width: number}) {
-  const filled = Math.round((Math.min(100, Math.max(0, value)) / 100) * width);
-  return (
-    <Box>
-      {Array.from({length: width}, (_, i) => {
-        if (i >= filled) return <Text key={i} dimColor>░</Text>;
-        const t = width > 1 ? i / (width - 1) : 1;
-        const r = Math.round(t * 255).toString(16).padStart(2, '0');
-        const b = Math.round((1 - t) * 255).toString(16).padStart(2, '0');
-        return <Text key={i} color={`#${r}00${b}`}>█</Text>;
-      })}
-    </Box>
-  );
-}
+import {rawSym} from '../../renderer-utils.js';
+import {ElapsedTime} from '../PackageRow.js';
+import { GradientBar } from './GradientBar.js';
 
 // ---- composable column sub-components ----
 
@@ -77,6 +60,10 @@ export interface FooterProps {
   timeSlot?: ReactNode;
 }
 
+const gradient = {
+  start: {r: 61, g: 127, b: 255},  // rgb(61, 127, 255)
+  end: {r: 255, g: 51, b: 102},  // rgb(255, 51, 102)
+}
 // ---- component ----
 
 function FooterFn({
@@ -129,7 +116,7 @@ function FooterFn({
       {/* ── Progress row: bar capped at one column width + n/m label ── */}
       {progressBar && counts.total > 0 && (
         <Box gap={1} marginTop={1}>
-          <GradientBar value={barValue} width={colWidth} />
+          <GradientBar gradient={gradient} value={barValue} width={colWidth} />
           <Text dimColor>{progressLabel}</Text>
         </Box>
       )}

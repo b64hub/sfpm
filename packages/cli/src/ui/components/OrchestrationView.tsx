@@ -5,7 +5,7 @@ import type {TreeNode} from '../state/types.js';
 
 import {deriveStatus} from '../state/selectors.js';
 import {toRowProps} from '../state/adapters.js';
-import {Divider} from './Divider.js';
+import {Divider} from './base/Divider.js';
 import {COL_META, COL_TIME, PackageRow} from './PackageRow.js';
 import {ValidationView} from './ValidationView.js';
 
