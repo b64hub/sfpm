@@ -72,7 +72,9 @@ function StatusRollup({color, icon, label, pkgs}: StatusRollupProps) {
   const count = pkgs.length;
   return (
     <Box gap={1} marginLeft={2}>
-      <Text color={color}>{icon}</Text>
+      <Box marginRight={1}>
+        <Text color={color}>{icon}</Text>
+      </Box>
       <Text dimColor>
         {count} {count === 1 ? 'package' : 'packages'} {label}{' \u2014 '}{names}
       </Text>
@@ -159,11 +161,6 @@ export function OrchestrationView({
       {pending.length > ROLLUP_AT
         ? <StatusRollup icon={rawSym.pending} label="waiting" pkgs={pending} />
         : pending.map(p => <PackageRow key={p.id} props={rowProps(p)} width={termWidth} />)}
-
-      {/* Validation sidebar (separate post-build phase) */}
-      {showValidation && validation && validation.length > 0 && (
-        <ValidationView nodes={validation} />
-      )}
     </Box>
   );
 }
