@@ -93,10 +93,10 @@ function FooterFn({
   const {stdout} = useStdout();
   const termWidth = stdout?.columns ?? 80;
 
-  const completed = counts.success + counts.skipped + counts.failed;
-  const nmLabel   = `${completed}/${counts.total}`;
-  const barWidth  = Math.max(4, termWidth - nmLabel.length - 1);
-  const barValue  = counts.total > 0 ? Math.round((completed / counts.total) * 100) : 0;
+  const completed    = counts.success + counts.skipped + counts.failed;
+  const progressLabel = `${completed}/${counts.total}`;
+  const colWidth      = Math.floor((termWidth - 6) / 3); // 6 = two " │ " separators
+  const barValue      = counts.total > 0 ? Math.round((completed / counts.total) * 100) : 0;
 
   // Slots override show* flags. An empty column (show*=false, no slot) still
   // renders its flexGrow box so the │ separators never shift.
@@ -119,18 +119,18 @@ function FooterFn({
     >
       {/* ── Info row: three columns; boxes always render to keep │ separators fixed ── */}
       <Box width={termWidth}>
-        <Box flexGrow={1}>{leftContent}</Box>
+        <Box width={colWidth}>{leftContent}</Box>
         <Text dimColor> │ </Text>
-        <Box flexGrow={1} justifyContent="center">{middleContent}</Box>
+        <Box width={colWidth}>{middleContent}</Box>
         <Text dimColor> │ </Text>
-        <Box flexGrow={1} justifyContent="flex-end">{rightContent}</Box>
+        <Box width={colWidth} justifyContent="flex-end">{rightContent}</Box>
       </Box>
 
-      {/* ── Progress row: gradient bar + n/m count ── */}
+      {/* ── Progress row: bar capped at one column width + n/m label ── */}
       {progressBar && counts.total > 0 && (
-        <Box gap={1}>
-          <GradientBar value={barValue} width={barWidth} />
-          <Text dimColor>{nmLabel}</Text>
+        <Box gap={1} marginTop={1}>
+          <GradientBar value={barValue} width={colWidth} />
+          <Text dimColor>{progressLabel}</Text>
         </Box>
       )}
     </Box>
