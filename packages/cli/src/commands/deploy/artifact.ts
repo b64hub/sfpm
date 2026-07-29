@@ -3,8 +3,14 @@ import {
 } from '@b64hub/sfpm-core'
 import {Org} from '@salesforce/core'
 import {execSync} from 'node:child_process'
+import EventEmitter from 'node:events'
+import pino from 'pino'
 
+import {CliLogger} from '../../logger.js'
+import {attachInstallBridge} from '../../ui/install-event-bridge.js'
 import {InstallProgressRenderer} from '../../ui/install-progress-renderer.js'
+import {createPinoBridge} from '../../ui/pino-bridge.js'
+import {renderApp} from '../../ui/run.js'
 import Deploy, {ResolvedDeployFlags} from './index.js'
 
 export default class DeployArtifact extends Deploy {
@@ -13,8 +19,18 @@ export default class DeployArtifact extends Deploy {
     ...Deploy.flags,
   }
 
-  protected override async createOrchestrator(targetOrg: Org, resolvedFlags: ResolvedDeployFlags): Promise<{orchestrator: InstallOrchestrator; renderer: InstallProgressRenderer}> {
+  protected override async createOrchestrator(targetOrg: Org, resolvedFlags: ResolvedDeployFlags): Promise<{
+    inkInstance?: ReturnType<typeof renderApp>;
+    orchestrator: InstallOrchestrator;
+    renderer?: InstallProgressRenderer;
+  }> {
     const {flags, logger, mode, projectConfig, projectGraph} = resolvedFlags
+
+    const isInk = mode === 'interactive';
+    const uiBus = isInk ? new EventEmitter() : undefined;
+    const pinoLogger = isInk
+      ? new CliLogger(pino({level: 'debug'}, createPinoBridge(uiBus!)))
+      : logger;
 
     const orchestrator = InstallOrchestrator.forArtifact(
       targetOrg,
@@ -26,12 +42,16 @@ export default class DeployArtifact extends Deploy {
         regressionTest: flags['regression-test'],
         unlocked: {sourceOnly: true},
       },
-      logger,
+      pinoLogger,
     );
+
+    if (isInk) {
+      attachInstallBridge(orchestrator.installBus, orchestrator.orchestrationBus, uiBus!);
+      return {inkInstance: renderApp(uiBus!), orchestrator};
+    }
 
     const renderer = this.createRenderer(mode, flags['target-org']!)
     renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
-
     return {orchestrator, renderer}
   }
 

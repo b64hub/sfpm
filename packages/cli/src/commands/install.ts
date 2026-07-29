@@ -5,11 +5,17 @@ import {createTracer} from '@b64hub/sfpm-telemetry'
 import {Args, Flags} from '@oclif/core'
 import {Org} from '@salesforce/core'
 import {execSync} from 'node:child_process'
+import EventEmitter from 'node:events'
+import pino from 'pino'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
+import {CliLogger} from '../logger.js'
 import SfpmCommand from '../sfpm-command.js'
+import {attachInstallBridge} from '../ui/install-event-bridge.js'
 import {InstallProgressRenderer} from '../ui/install-progress-renderer.js'
+import {createPinoBridge} from '../ui/pino-bridge.js'
+import {renderApp} from '../ui/run.js'
 
 export default class Install extends SfpmCommand {
   static override args = {
@@ -102,27 +108,39 @@ export default class Install extends SfpmCommand {
       versionInstall: flags['installation-key'] ? {installationKeys: {'*': flags['installation-key']}} : undefined,
     }
 
-    const renderer = new InstallProgressRenderer({
-      logger: {
-        error: (msgOrError: Error | string) => this.error(msgOrError),
-        log: (msg: string) => this.log(msg),
-      },
-      mode,
-      targetOrg: flags['target-org'],
-    });
-
     const targetOrg = await Org.create({aliasOrUsername: flags['target-org']})
+
+    const isInk = mode === 'interactive';
+    const uiBus = isInk ? new EventEmitter() : undefined;
+    const pinoLogger = isInk
+      ? new CliLogger(pino({level: 'debug'}, createPinoBridge(uiBus!)))
+      : this.sfpmLogger;
 
     const orchestrator = InstallOrchestrator.forArtifact(
       targetOrg,
       projectConfig,
       projectGraph,
       {...installOptions, includeDependencies: !flags['no-dependencies'], regressionTest: flags['regression-test']},
-      this.sfpmLogger,
+      pinoLogger,
     )
 
-    // Attach renderer to orchestrator buses
-    renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
+    let renderer: InstallProgressRenderer | undefined;
+    let inkInstance: ReturnType<typeof renderApp> | undefined;
+
+    if (isInk) {
+      attachInstallBridge(orchestrator.installBus, orchestrator.orchestrationBus, uiBus!);
+      inkInstance = renderApp(uiBus!);
+    } else {
+      renderer = new InstallProgressRenderer({
+        logger: {
+          error: (msgOrError: Error | string) => this.error(msgOrError),
+          log: (msg: string) => this.log(msg),
+        },
+        mode,
+        targetOrg: flags['target-org'],
+      });
+      renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus);
+    }
 
     const tracer = createTracer({serviceName: 'sfpm-cli'})
     tracer.subscribe({install: orchestrator.installBus, orchestration: orchestrator.orchestrationBus})
@@ -139,13 +157,15 @@ export default class Install extends SfpmCommand {
 
       return result
     } catch (error) {
-      renderer.handleError(error as Error)
+      renderer?.handleError(error as Error)
 
       if (error instanceof Error) {
         this.error(error.message, {exit: 2})
       }
 
       throw error
+    } finally {
+      inkInstance?.unmount()
     }
   }
 }

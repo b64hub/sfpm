@@ -4,11 +4,17 @@ import {
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
 import {ConfigAggregator, Org} from '@salesforce/core'
+import EventEmitter from 'node:events'
+import pino from 'pino'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
+import {CliLogger} from '../../logger.js'
 import SfpmCommand from '../../sfpm-command.js'
+import {attachInstallBridge} from '../../ui/install-event-bridge.js'
 import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
+import {createPinoBridge} from '../../ui/pino-bridge.js'
+import {renderApp} from '../../ui/run.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
 
 export interface ResolvedDeployFlags {
@@ -58,8 +64,18 @@ export default class Deploy extends SfpmCommand {
   }
   static override strict = false
 
-  protected async createOrchestrator(targetOrg: Org, resolvedFlags: ResolvedDeployFlags): Promise<{orchestrator: InstallOrchestrator, renderer: InstallProgressRenderer}> {
+  protected async createOrchestrator(targetOrg: Org, resolvedFlags: ResolvedDeployFlags): Promise<{
+    inkInstance?: ReturnType<typeof renderApp>;
+    orchestrator: InstallOrchestrator;
+    renderer?: InstallProgressRenderer;
+  }> {
     const {flags, logger, mode, projectConfig, projectGraph} = resolvedFlags
+
+    const isInk = mode === 'interactive';
+    const uiBus = isInk ? new EventEmitter() : undefined;
+    const pinoLogger = isInk
+      ? new CliLogger(pino({level: 'debug'}, createPinoBridge(uiBus!)))
+      : logger;
 
     const orchestrator = InstallOrchestrator.forSource(
       targetOrg,
@@ -71,12 +87,16 @@ export default class Deploy extends SfpmCommand {
         regressionTest: flags['regression-test'],
         testLevel: flags['test-level'] as TestLevel | undefined,
       },
-      logger,
+      pinoLogger,
     );
+
+    if (isInk) {
+      attachInstallBridge(orchestrator.installBus, orchestrator.orchestrationBus, uiBus!);
+      return {inkInstance: renderApp(uiBus!), orchestrator};
+    }
 
     const renderer = this.createRenderer(mode, flags['target-org'])
     renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
-
     return {orchestrator, renderer}
   }
 
@@ -120,8 +140,8 @@ export default class Deploy extends SfpmCommand {
 
     const resolvedFlags = await this.resolveFlags(packages, flags);
     const targetOrg = await Org.create({aliasOrUsername: flags['target-org']});
-    const {orchestrator, renderer} = await this.createOrchestrator(targetOrg, resolvedFlags)
-    await this.runOrchestrator(orchestrator, resolvedFlags.resolvedPackages, renderer)
+    const {inkInstance, orchestrator, renderer} = await this.createOrchestrator(targetOrg, resolvedFlags)
+    await this.runOrchestrator(orchestrator, resolvedFlags.resolvedPackages, renderer, inkInstance)
   }
 
   protected async resolveFlags(packages: string[], flags: Record<string, any>): Promise<ResolvedDeployFlags> {
@@ -161,7 +181,8 @@ export default class Deploy extends SfpmCommand {
   protected async runOrchestrator(
     orchestrator: InstallOrchestrator,
     resolvedPackages: string[],
-    renderer: InstallProgressRenderer,
+    renderer: InstallProgressRenderer | undefined,
+    inkInstance?: ReturnType<typeof renderApp>,
   ): Promise<void> {
     try {
       const result = await orchestrator.installAll(resolvedPackages)
@@ -171,13 +192,15 @@ export default class Deploy extends SfpmCommand {
         this.error(`Deploy failed for: ${failedNames}`, {exit: 2})
       }
     } catch (error) {
-      renderer.handleError(error as Error)
+      renderer?.handleError(error as Error)
 
       if (error instanceof Error) {
         this.error(error.message, {exit: 2})
       }
 
       throw error
+    } finally {
+      inkInstance?.unmount()
     }
   }
 }
