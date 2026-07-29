@@ -3,8 +3,11 @@ import {
 } from '@b64hub/sfpm-core'
 import {Org} from '@salesforce/core'
 import {execSync} from 'node:child_process'
+import EventEmitter from 'node:events'
 
+import {attachInstallBridge} from '../../ui/install-event-bridge.js'
 import {InstallProgressRenderer} from '../../ui/install-progress-renderer.js'
+import {renderApp} from '../../ui/run.js'
 import Deploy, {ResolvedDeployFlags} from './index.js'
 
 export default class DeployArtifact extends Deploy {
@@ -13,7 +16,11 @@ export default class DeployArtifact extends Deploy {
     ...Deploy.flags,
   }
 
-  protected override async createOrchestrator(targetOrg: Org, resolvedFlags: ResolvedDeployFlags): Promise<{orchestrator: InstallOrchestrator; renderer: InstallProgressRenderer}> {
+  protected override async createOrchestrator(targetOrg: Org, resolvedFlags: ResolvedDeployFlags): Promise<{
+    inkInstance?: ReturnType<typeof renderApp>;
+    orchestrator: InstallOrchestrator;
+    renderer?: InstallProgressRenderer;
+  }> {
     const {flags, logger, mode, projectConfig, projectGraph} = resolvedFlags
 
     const orchestrator = InstallOrchestrator.forArtifact(
@@ -29,9 +36,14 @@ export default class DeployArtifact extends Deploy {
       logger,
     );
 
+    if (mode === 'interactive') {
+      const uiBus = new EventEmitter();
+      attachInstallBridge(orchestrator.installBus, orchestrator.orchestrationBus, uiBus);
+      return {inkInstance: renderApp(uiBus), orchestrator};
+    }
+
     const renderer = this.createRenderer(mode, flags['target-org']!)
     renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
-
     return {orchestrator, renderer}
   }
 
