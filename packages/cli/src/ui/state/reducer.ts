@@ -2,7 +2,7 @@ import type {AppState, NodeStatus, TreeNode} from './types.js';
 
 type Action = Record<string, unknown> & {type: string};
 
-type NodePatch = {detail?: string; duration?: number; startedAt?: number; status?: NodeStatus;};
+type NodePatch = {detail?: string; duration?: number; meta?: Record<string, string>; startedAt?: number; status?: NodeStatus;};
 
 const TERMINAL = new Set<NodeStatus>(['failed', 'skipped', 'success']);
 
@@ -38,7 +38,7 @@ function findPkg(levels: AppState['levels'], packageName: string): TreeNode | un
   }
 }
 
-function updatePackage(state: AppState, packageName: string, status: NodeStatus, detail?: string): AppState {
+function updatePackage(state: AppState, packageName: string, status: NodeStatus, detail?: string, meta?: Record<string, string>): AppState {
   const id = `pkg:${packageName}`;
   const existing = findPkg(state.levels, packageName);
   const timingPatch: NodePatch
@@ -47,7 +47,11 @@ function updatePackage(state: AppState, packageName: string, status: NodeStatus,
       : TERMINAL.has(status) && existing?.startedAt
         ? {duration: Date.now() - existing.startedAt, startedAt: undefined}
         : {};
-  return {...state, levels: state.levels.map(l => updateNode(l, id, {detail, status, ...timingPatch}))};
+  return {
+    ...state, levels: state.levels.map(l => updateNode(l, id, {
+      detail, meta, status, ...timingPatch,
+    })),
+  };
 }
 
 function upsertStep(state: AppState, packageName: string, step: string, patch: {detail?: string; status: NodeStatus;}): AppState {
@@ -82,6 +86,7 @@ export function reducer(state: AppState, action: Action): AppState {
       action.packageName as string,
       action.status as NodeStatus,
       action.detail as string | undefined,
+      action.meta as Record<string, string> | undefined,
     );
   }
 

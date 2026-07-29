@@ -43,7 +43,7 @@ export interface PackageRowProps {
 
 // ---- utilities (generic, domain-free) ----
 
-export const COL_STATUS = 9;
+export const COL_META = 9;
 export const COL_TIME   = 6;
 
 /**
@@ -57,12 +57,13 @@ export function LiveTime({startedAt, format}: {startedAt: number; format: (ms: n
 }
 
 export interface RowTrailingProps {
-  statusLabel: string;
+  /** Optional context-specific metadata (e.g. "42 built", "87% cov"). Omit to hide the slot. */
+  meta?: string;
   duration?: number;
   startedAt?: number;
 }
 
-export function RowTrailing({statusLabel, duration, startedAt}: RowTrailingProps) {
+export function RowTrailing({meta, duration, startedAt}: RowTrailingProps) {
   const timeNode: ReactNode = (() => {
     if (duration !== undefined) return <Text dimColor>{formatTime(duration)}</Text>;
     if (startedAt !== undefined) return <LiveTime startedAt={startedAt} format={formatTime} />;
@@ -71,7 +72,7 @@ export function RowTrailing({statusLabel, duration, startedAt}: RowTrailingProps
 
   return (
     <Box gap={1}>
-      <Box width={COL_STATUS}><Text dimColor>{statusLabel}</Text></Box>
+      {meta !== undefined && <Box width={COL_META}><Text dimColor>{meta}</Text></Box>}
       <Box width={COL_TIME}>{timeNode}</Box>
     </Box>
   );
@@ -82,7 +83,7 @@ export function RowTrailing({statusLabel, duration, startedAt}: RowTrailingProps
 function StepRow({step}: {step: RowStep}) {
   return (
     <Box marginLeft={3} gap={1}>
-      <Text dimColor>{step.isLast ? '└' : '├'}</Text>
+      <Text dimColor>{step.isLast ? '╰' : '├'}</Text>
       <Text dimColor>{step.icon}</Text>
       <Text dimColor>{step.primary}</Text>
       {step.secondary && <Text dimColor>{step.secondary}</Text>}

@@ -1,5 +1,3 @@
-import type {ReactNode} from 'react';
-
 import {Box, Static, Text} from 'ink';
 import {useStdout} from 'ink';
 
@@ -8,12 +6,29 @@ import type {TreeNode} from '../state/types.js';
 import {deriveStatus} from '../state/selectors.js';
 import {toRowProps} from '../state/adapters.js';
 import {Divider} from './Divider.js';
-import {COL_STATUS, COL_TIME, PackageRow} from './PackageRow.js';
+import {COL_META, COL_TIME, PackageRow} from './PackageRow.js';
+import {ValidationView} from './ValidationView.js';
 
-// ---- domain mapping ----
+// ---- types ----
+
+export interface OrchestrationViewProps {
+  levels: TreeNode[];
+  /** Validation-phase nodes. Rendered below the build area when present. */
+  validation?: TreeNode[];
+  /** Show the validation section. Defaults to true when `validation` is non-empty. */
+  showValidation?: boolean;
+  /**
+   * Per-node metadata for the trailing column (e.g. "42 built", "87% cov").
+   * Omit entirely to hide the metadata column from both header and rows.
+   */
+  getMeta?: (node: TreeNode) => string | undefined;
+  /** Column header label for the metadata slot. Only rendered when `getMeta` is provided. */
+  metaLabel?: string;
+}
+
+// ---- domain constants ----
 
 const TERMINAL = new Set(['success', 'failed', 'skipped']);
-
 
 // ---- static item discriminated union ----
 
@@ -33,7 +48,13 @@ const QUEUE_VISIBLE = 3;
 
 // ---- component ----
 
-export function OrchestrationView({levels}: {levels: TreeNode[]}) {
+export function OrchestrationView({
+  levels,
+  validation,
+  showValidation = true,
+  getMeta,
+  metaLabel,
+}: OrchestrationViewProps) {
   const {stdout} = useStdout();
   const termWidth = stdout?.columns ?? 80;
 
@@ -42,6 +63,9 @@ export function OrchestrationView({levels}: {levels: TreeNode[]}) {
   const doneLevels   = levels.filter(l => TERMINAL.has(deriveStatus(l.children)));
   const activeLevels = levels.filter(l => !TERMINAL.has(deriveStatus(l.children)));
   const donePackages = doneLevels.flatMap(l => l.children);
+
+  // Helper so getMeta threads through consistently to every row.
+  const rowProps = (node: TreeNode) => toRowProps(node, getMeta);
 
   // Header is always item 0; completed packages append after it.
   // termWidth is captured from the closure when each item is first rendered —
@@ -76,7 +100,9 @@ export function OrchestrationView({levels}: {levels: TreeNode[]}) {
                 <Box justifyContent="space-between">
                   <Text dimColor>{item.totalPackages} packages · {item.totalLevels} levels</Text>
                   <Box gap={1}>
-                    <Box width={COL_STATUS}><Text dimColor>status</Text></Box>
+                    {getMeta !== undefined && (
+                      <Box width={COL_META}><Text dimColor>{metaLabel ?? ''}</Text></Box>
+                    )}
                     <Box width={COL_TIME}><Text dimColor>time</Text></Box>
                   </Box>
                 </Box>
@@ -84,14 +110,14 @@ export function OrchestrationView({levels}: {levels: TreeNode[]}) {
               </Box>
             );
           }
-          return <PackageRow key={item.node.id} props={toRowProps(item.node)} width={termWidth} />;
+          return <PackageRow key={item.node.id} props={rowProps(item.node)} width={termWidth} />;
         }}
       </Static>
 
       {/* Active packages (dynamic — refreshes every render) */}
-      {busy.map(pkg => <PackageRow key={pkg.id} props={toRowProps(pkg)} width={termWidth} />)}
+      {busy.map(pkg => <PackageRow key={pkg.id} props={rowProps(pkg)} width={termWidth} />)}
 
-      {visibleQueued.map(pkg => <PackageRow key={pkg.id} props={toRowProps(pkg)} width={termWidth} />)}
+      {visibleQueued.map(pkg => <PackageRow key={pkg.id} props={rowProps(pkg)} width={termWidth} />)}
       {hiddenCount > 0 && (
         <Box marginLeft={2}>
           <Text dimColor>⋯ {hiddenCount} more queued</Text>
@@ -106,6 +132,11 @@ export function OrchestrationView({levels}: {levels: TreeNode[]}) {
               : `${futureLevels.length} levels — ${futureCount} packages waiting`}
           </Text>
         </Box>
+      )}
+
+      {/* Validation — shown below the build area when data is present */}
+      {showValidation && validation && validation.length > 0 && (
+        <ValidationView nodes={validation} />
       )}
     </Box>
   );

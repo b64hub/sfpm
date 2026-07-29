@@ -7,6 +7,8 @@ export interface TreeNode {
   duration?: number;
   id: string;
   label: string;
+  /** Arbitrary key/value metadata set by the build system on completion (e.g. components, hash). */
+  meta?: Record<string, string>;
   /** Set when status transitions to 'running'. */
   startedAt?: number;
   status: NodeStatus;

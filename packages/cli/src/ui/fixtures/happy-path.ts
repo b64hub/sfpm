@@ -14,10 +14,16 @@ export const happyPathEvents = [
   {
     packageName: 'core-utils', status: 'success', step: 'stage', type: 'build:package:step',
   },
-  {packageName: 'core-utils', status: 'success', type: 'build:package:status'},
-  {packageName: 'shared-types', status: 'success', type: 'build:package:status'},
-  {packageName: 'app-shell', status: 'running', type: 'build:package:status'},
-  {packageName: 'app-shell', status: 'success', type: 'build:package:status'},
+  {
+    meta: {components: '12', hash: 'a1b2c3d'},   packageName: 'core-utils', status: 'success', type: 'build:package:status',
+  },
+  {
+    meta: {components: '3',  hash: 'b2c3d4e'}, packageName: 'shared-types', status: 'success', type: 'build:package:status',
+  },
+  {packageName: 'app-shell',    status: 'running', type: 'build:package:status'},
+  {
+    meta: {components: '47', hash: 'c3d4e5f'},    packageName: 'app-shell', status: 'success', type: 'build:package:status',
+  },
   {success: true, type: 'build:complete'},
   {packages: ['core-utils', 'shared-types'], type: 'validation:start'},
   {packageName: 'core-utils', status: 'success', type: 'validation:status'},

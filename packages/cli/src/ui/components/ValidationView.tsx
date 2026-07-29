@@ -1,4 +1,4 @@
-import {Box, Text} from 'ink';
+import {Box} from 'ink';
 
 import type {TreeNode} from '../state/types.js';
 
@@ -11,7 +11,7 @@ export function ValidationView({nodes}: {nodes: TreeNode[]}) {
     <Box flexDirection="column" marginTop={1}>
       <Divider label="Validating" />
       {nodes.map(n => (
-        <PackageRow props={(toRowProps(n))}></PackageRow>
+        <PackageRow key={n.id} props={toRowProps(n)} />
       ))}
     </Box>
   );
