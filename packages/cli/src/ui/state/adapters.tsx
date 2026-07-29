@@ -1,6 +1,6 @@
 import type { TreeNode, NodeStatus } from "./types.js";
 import type { PackageRowProps, RowStep } from "../components/PackageRow.js";
-import { RowTrailing } from "../components/PackageRow.js";
+import { PackageRow } from "../components/PackageRow.js";
 import { StatusIcon } from "../components/StatusIcon.js";
 import { rawSym } from "../renderer-utils.js";
 
@@ -18,7 +18,7 @@ export function toRowProps(
 ): PackageRowProps {
   const runningSteps = node.children.filter(c => c.status === 'running');
   const runningStep  = runningSteps[runningSteps.length - 1];
-  const secondary    =
+  const hint         =
     node.status === 'running' ? (runningStep?.label ?? node.detail) : node.detail;
 
   const steps: RowStep[] = node.children.map((c, i) => ({
@@ -30,13 +30,19 @@ export function toRowProps(
   }));
 
   return {
-    id:       node.id,
-    icon:     <StatusIcon status={node.status} />,
-    primary:  node.label,
-    secondary,
-    trailing: <RowTrailing meta={getMeta?.(node)} duration={node.duration} startedAt={node.startedAt} />,
+    id:        node.id,
+    icon:      <StatusIcon status={node.status} />,
+    primary:   node.label,
+    secondary: hint !== undefined
+      ? <PackageRow.Secondary>{hint}</PackageRow.Secondary>
+      : undefined,
+    trailing:  <PackageRow.Trailing
+                 meta={getMeta?.(node)}
+                 duration={node.duration}
+                 startedAt={node.startedAt}
+               />,
     steps,
-    expanded: node.status === 'running' || node.status === 'failed',
-    indent: 2,
+    expanded:  node.status === 'running' || node.status === 'failed',
+    indent:    2,
   };
 }

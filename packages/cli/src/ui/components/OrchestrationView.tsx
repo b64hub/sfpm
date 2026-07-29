@@ -87,7 +87,8 @@ export function OrchestrationView({
   const queued        = currentPkgs.filter(p => p.status === 'pending');
   const visibleQueued = queued.slice(0, QUEUE_VISIBLE);
   const hiddenCount   = queued.length - QUEUE_VISIBLE;
-  const futureCount   = futureLevels.reduce((n, l) => n + l.children.length, 0);
+  // Pre-skipped packages aren't waiting — they're already terminal.
+  const futureCount   = futureLevels.reduce((n, l) => n + l.children.filter(p => p.status !== 'skipped').length, 0);
 
   return (
     <Box flexDirection="column">
