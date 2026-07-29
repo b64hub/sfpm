@@ -24,13 +24,10 @@ import chalk from 'chalk'
 import EventEmitter from 'node:events'
 import path from 'node:path'
 import ora from 'ora'
-import pino from 'pino'
 
-import {CliLogger} from '../../logger.js'
 import SfpmCommand from '../../sfpm-command.js'
 import {attachBuildBridge} from '../../ui/build-event-bridge.js'
 import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
-import {createPinoBridge} from '../../ui/pino-bridge.js'
 import {renderApp} from '../../ui/run.js'
 import {ValidationProgressRenderer} from '../../ui/validation-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
@@ -147,13 +144,9 @@ export default class Build extends SfpmCommand {
       buildOrg.buildOrg = await Org.create({aliasOrUsername: resolved.buildOrgUsername})
     }
 
-    // Ink path: create event bus + pino bridge before orchestrator so we can
-    // pass a bridged logger instead of the stderr-writing one.
     const isInk = resolved.mode === 'interactive';
     const uiBus = isInk ? new EventEmitter() : undefined;
-    const pinoLogger = isInk
-      ? new CliLogger(pino({level: 'debug'}, createPinoBridge(uiBus!)))
-      : this.sfpmLogger;
+    const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
 
     const orchestrator = new BuildOrchestrator(
       projectConfig,
@@ -174,7 +167,7 @@ export default class Build extends SfpmCommand {
 
     if (uiBus) {
       attachBuildBridge(orchestrator.buildBus, orchestrator.orchestrationBus, uiBus, validationBus);
-      inkInstance = renderApp(uiBus);
+      inkInstance = renderApp(uiBus, {logPath});
     } else {
       renderer = new BuildProgressRenderer({
         logger: {

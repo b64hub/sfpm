@@ -87,9 +87,7 @@ export function reducer(state: AppState, action: Action): AppState {
   }
 
   case 'orchestration:complete': {
-    // Stay in 'running' on failure so the partial-failure state remains visible
-    // until the ink instance unmounts.
-    return action.success ? {...state, phase: 'done'} : state;
+    return {...state, phase: action.success ? 'done' : 'failed'};
   }
 
   // ── Per-package status ───────────────────────────────────────────────────

@@ -26,7 +26,7 @@ export interface AppState {
   levels: TreeNode[];
   /** Ring-buffered pino log records (last 200), fed by the pino bridge. */
   logs: LogRecord[];
-  phase: 'done' | 'idle' | 'running' | 'validating';
+  phase: 'done' | 'failed' | 'idle' | 'running' | 'validating';
   startedAt?: number;
   validation: TreeNode[];
 }

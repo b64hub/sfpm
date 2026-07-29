@@ -1,4 +1,5 @@
 import type {LogLevel} from '@b64hub/sfpm-core';
+import type EventEmitter from 'node:events';
 
 import {Command, Flags} from '@oclif/core';
 import chalk from 'chalk';
@@ -68,6 +69,20 @@ export default abstract class SfpmCommand extends Command {
   protected sfpmLogger!: CliLogger;
 
   /**
+   * Create a run-scoped multistream logger for the orchestrator.
+   * Always writes full-fidelity JSON to `.sfpm/logs/<runId>.log`.
+   * Also routes to the ink UI when `inkBus` is provided, or to stderr otherwise.
+   * Returns the logger and the log file path (for display on failure).
+   */
+  protected createRunLogger(inkBus?: EventEmitter): {logger: CliLogger; logPath: string} {
+    return CliLoggerFactory.forRun({
+      command: this.id ?? 'sfpm',
+      level: this.sfpmLogger.pino.level as any,
+      uiBus: inkBus,
+    });
+  }
+
+  /**
    * Command implementation. Return a structured result for the JSON envelope,
    * or void for commands that don't produce a meaningful result.
    */
@@ -129,7 +144,7 @@ export default abstract class SfpmCommand extends Command {
   }
 
   private logHeader(): void {
-    const sfpmGradient = gradient(['#0000FF', '#FF0000'], {interpolation: 'hsv'});
+    const sfpmGradient = gradient(['#3d7fff', '#ff3366'], {interpolation: 'hsv'});
 
     const header
       = sfpmGradient('sfpm')
