@@ -9,8 +9,8 @@ export function OrgBadge({alias, username}: {alias: string, username?: string}) 
     <Box gap={1} margin={1}>
       <Text color="green">●</Text>
       <Text bold>{alias}</Text>
-      {username ? <Text dimColor> · {username}</Text> : ''}
-      <Text dimColor> - connected</Text>
+      {username ? <Text dimColor> · {username} </Text> : ''}
+      <Text dimColor>── connected</Text>
     </Box>
   );
 }
