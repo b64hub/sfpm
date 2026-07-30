@@ -27,14 +27,15 @@ interface OrgEntry {
 }
 
 interface PoolFillState {
+  creationFailed: number;
   devhubAlias: string;
   orgs: OrgEntry[];
   phase: 'done' | 'failed' | 'idle' | 'provisioning';
   startedAt: number;
   tag: string;
   /**
-   * Snapshot of all orgs in insertion order, populated atomically when pool:done fires.
-   * Empty during provisioning — Static only renders at the very end.
+   * Append-only list of orgs in terminal state, ordered by completion time.
+   * Kept separate from `orgs` so <Static> positions never shift.
    */
   terminalOrgs: OrgEntry[];
   total: number;
@@ -42,6 +43,7 @@ interface PoolFillState {
 
 function initialState(devhubAlias: string): PoolFillState {
   return {
+    creationFailed: 0,
     devhubAlias,
     orgs: [],
     phase: 'idle',
@@ -64,7 +66,7 @@ type Action =
   | {type: 'org:pkg:done';       packageName: string; success: boolean; username: string; version?: string}
   | {type: 'org:pkg:start';      packageName: string; total: number; username: string}
   | {type: 'org:prereqs';        username: string}
-  | {type: 'pool:creation:failed'; alias: string}
+  | {type: 'pool:creation:failed'}
   | {type: 'pool:done'}
   | {type: 'pool:start';         tag: string; total: number};
 
@@ -92,19 +94,7 @@ function reducer(state: PoolFillState, action: Action): PoolFillState {
     };
 
   case 'pool:creation:failed':
-    // Org failed before it was created — no username, use alias as the unique key.
-    return {
-      ...state,
-      orgs: [...state.orgs, {
-        alias: action.alias,
-        completedPackages: 0,
-        failedPackages: 0,
-        phase: 'failed',
-        startedAt: Date.now(),
-        totalPackages: 0,
-        username: action.alias,
-      }],
-    };
+    return {...state, creationFailed: state.creationFailed + 1};
 
   case 'org:prereqs':
     return {...state, orgs: patchOrg(state.orgs, action.username, {phase: 'prereqs'})};
@@ -138,18 +128,28 @@ function reducer(state: PoolFillState, action: Action): PoolFillState {
   case 'org:done': {
     const org = state.orgs.find(o => o.username === action.username);
     if (!org || TERMINAL.has(org.phase)) return state;
-    return {...state, orgs: patchOrg(state.orgs, action.username, {phase: org.failedPackages > 0 ? 'warning' : 'done'})};
+    const phase: OrgPhase = org.failedPackages > 0 ? 'warning' : 'done';
+    const updated = {...org, phase};
+    return {
+      ...state,
+      orgs: patchOrg(state.orgs, action.username, {phase}),
+      terminalOrgs: [...state.terminalOrgs, updated],
+    };
   }
 
   case 'org:failed': {
     const org = state.orgs.find(o => o.username === action.username);
     if (!org || TERMINAL.has(org.phase)) return state;
-    return {...state, orgs: patchOrg(state.orgs, action.username, {phase: 'failed'})};
+    const failed = {...org, phase: 'failed' as OrgPhase};
+    return {
+      ...state,
+      orgs: patchOrg(state.orgs, action.username, {phase: 'failed'}),
+      terminalOrgs: [...state.terminalOrgs, failed],
+    };
   }
 
   case 'pool:done':
-    // Snapshot orgs in insertion order for the atomic static flush.
-    return {...state, phase: 'done', terminalOrgs: [...state.orgs]};
+    return {...state, phase: 'done'};
 
   default:
     return state;
@@ -179,9 +179,42 @@ function useBusWiring(bus: EventEmitter, dispatch: React.Dispatch<Action>): void
 
 // ── Static items ─────────────────────────────────────────────────────────────
 
+const ALIAS_COL = 20;
+
 type StaticItem =
   | {kind: 'header'; devhubAlias: string; id: string; tag: string; total: number}
   | {kind: 'org';    id: string; org: OrgEntry};
+
+function StaticOrgRow({alias, completedPackages, failedPackages, phase, totalPackages}: OrgEntry) {
+  let icon: string;
+  let color: string;
+  let summary: string;
+
+  if (phase === 'done') {
+    icon    = rawSym.success;
+    color   = 'green';
+    summary = `${completedPackages}/${totalPackages} packages`;
+  } else if (phase === 'warning') {
+    icon    = rawSym.warn;
+    color   = 'yellow';
+    const installed = completedPackages - failedPackages;
+    summary = `${installed}/${totalPackages} packages · ${failedPackages} failed`;
+  } else {
+    icon    = rawSym.fail;
+    color   = 'red';
+    summary = totalPackages > 0
+      ? `failed · ${completedPackages}/${totalPackages} packages before failure`
+      : 'failed';
+  }
+
+  return (
+    <Box gap={1}>
+      <Text color={color}>{icon}</Text>
+      <Box width={ALIAS_COL}><Text wrap="truncate">{alias}</Text></Box>
+      <Text dimColor>{summary}</Text>
+    </Box>
+  );
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -204,12 +237,12 @@ export function PoolFillApp({bus, devhubAlias, onAdvance}: {bus: EventEmitter; d
     }
   }, [state.phase, exit]);
 
-  const activeOrgs  = state.orgs.filter(o => !TERMINAL.has(o.phase));
-  const doneOrgs    = state.orgs.filter(o => o.phase === 'done').length;
-  const warningOrgs = state.orgs.filter(o => o.phase === 'warning').length;
-  const totalFailed = state.orgs.filter(o => o.phase === 'failed').length;
-  const totalDone   = doneOrgs + warningOrgs;
-  const pending     = Math.max(0, state.total - state.orgs.length);
+  const activeOrgs    = state.orgs.filter(o => !TERMINAL.has(o.phase));
+  const doneOrgs      = state.terminalOrgs.filter(o => o.phase === 'done').length;
+  const warningOrgs   = state.terminalOrgs.filter(o => o.phase === 'warning').length;
+  const totalFailed   = state.terminalOrgs.filter(o => o.phase === 'failed').length + state.creationFailed;
+  const totalDone     = doneOrgs + warningOrgs;
+  const pending       = Math.max(0, state.total - state.orgs.length - state.creationFailed);
 
   const counts: PackageCounts = {
     failed:    totalFailed,
@@ -221,8 +254,8 @@ export function PoolFillApp({bus, devhubAlias, onAdvance}: {bus: EventEmitter; d
     validating: 0,
   };
 
-  // Header flushed once on pool:start. Org results flushed atomically on pool:done
-  // in insertion order, so the final list is stable and alphabetically ordered.
+  // Header is item 0 — appears once when pool:start fires.
+  // Terminal orgs accumulate after it as they finish.
   const staticItems: StaticItem[] = [
     ...(state.total > 0 ? [{
       devhubAlias: state.devhubAlias,
@@ -234,8 +267,8 @@ export function PoolFillApp({bus, devhubAlias, onAdvance}: {bus: EventEmitter; d
     ...state.terminalOrgs.map(org => ({id: org.username, kind: 'org' as const, org})),
   ];
 
-  const visibleOrgs = state.orgs.slice(0, MAX_ACTIVE_ROWS);
-  const hiddenCount = state.orgs.length - visibleOrgs.length;
+  const visibleActive = activeOrgs.slice(0, MAX_ACTIVE_ROWS);
+  const hiddenCount   = activeOrgs.length - visibleActive.length;
 
   return (
     <Box flexDirection="column">
@@ -244,7 +277,7 @@ export function PoolFillApp({bus, devhubAlias, onAdvance}: {bus: EventEmitter; d
       <Static items={staticItems}>
         {item => item.kind === 'header'
           ? (
-            <Box key={item.id} flexDirection="column" width={termWidth}>
+            <Box key={item.id} flexDirection="column">
               <OrgBadge alias={item.devhubAlias} />
               <Text bold>
                 Provisioning {item.total} org{item.total !== 1 ? 's' : ''}{item.tag ? ` · ${item.tag}` : ''}
@@ -252,21 +285,19 @@ export function PoolFillApp({bus, devhubAlias, onAdvance}: {bus: EventEmitter; d
               <Divider width={termWidth} />
             </Box>
           )
-          : <OrgRow key={item.id} {...item.org} />
+          : <StaticOrgRow key={item.id} {...item.org} />
         }
       </Static>
 
-      {/* Active org rows — hidden once Static has taken over at pool:done */}
-      {state.phase !== 'done' && (
-        <Box flexDirection="column" marginTop={1}>
-          {visibleOrgs.map(org => (
-            <OrgRow key={org.username} barWidth={barWidth} {...org} />
-          ))}
-          {hiddenCount > 0 && (
-            <Text dimColor>  · {hiddenCount} more...</Text>
-          )}
-        </Box>
-      )}
+      {/* Active org rows */}
+      <Box flexDirection="column" marginTop={1}>
+        {visibleActive.map(org => (
+          <OrgRow key={org.username} barWidth={barWidth} {...org} />
+        ))}
+        {hiddenCount > 0 && (
+          <Text dimColor>  · {hiddenCount} more provisioning...</Text>
+        )}
+      </Box>
 
       {/* Footer */}
       <Footer
