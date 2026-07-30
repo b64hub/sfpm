@@ -6,10 +6,10 @@ import {useReducer} from 'react';
 import {useEventBusWiring} from '../hooks/use-event-bus-wiring.js';
 import {initialState, reducer} from '../state/reducer.js';
 import {countPackages} from '../state/selectors.js';
-import {Footer} from './base/Footer.js';
-import {OrchestrationView} from './OrchestrationView.js';
-import {PackageRow} from './PackageRow.js';
-import type {MetaColSpec} from './PackageRow.js';
+import {Footer} from '../components/base/Footer.js';
+import {OrchestrationView} from '../components/OrchestrationView.js';
+import {PackageRow} from '../components/PackageRow.js';
+import type {MetaColSpec} from '../components/PackageRow.js';
 
 const META_COLS: MetaColSpec[] = [
   {key: 'components', width: 5,  label: 'cmp'},

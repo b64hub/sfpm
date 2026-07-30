@@ -3,7 +3,7 @@ import EventEmitter from 'node:events';
 import {render} from 'ink';
 
 import SfpmCommand from '../../sfpm-command.js';
-import {PoolFillApp} from '../../ui/components/pool/PoolFillApp.js';
+import {PoolFillApp} from '../../ui/apps/PoolFillApp.js';
 
 const FIXTURES: Record<string, Array<Record<string, unknown> & {type: string}>> = {
   'happy-path':      (await import('../../ui/fixtures/pool-happy-path.js')).poolHappyPathEvents,

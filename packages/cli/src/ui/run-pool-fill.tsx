@@ -5,7 +5,7 @@ import EventEmitter from 'node:events';
 import {render} from 'ink';
 
 import {attachPoolFillBridge} from './pool-fill-event-bridge.js';
-import {PoolFillApp} from './components/pool/PoolFillApp.js';
+import {PoolFillApp} from './apps/PoolFillApp.js';
 
 /**
  * Mount the pool fill Ink UI.

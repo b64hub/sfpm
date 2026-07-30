@@ -7,7 +7,9 @@ import chalk from 'chalk';
 import ora from 'ora';
 
 import SfpmCommand from '../../sfpm-command.js';
-import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
+import {successBox} from '../../ui/boxes.js';
+import {formatExpiry} from '../../ui/pool-utils.js';
+import {terminalLink} from '../../ui/renderer-utils.js';
 
 export default class PoolFetch extends SfpmCommand {
   static override description = 'fetch an org from a pool'
@@ -71,15 +73,6 @@ export default class PoolFetch extends SfpmCommand {
       });
       spinner?.succeed(`Connected to ${devhubAlias}`);
 
-      const renderer = new PoolProgressRenderer({
-        logger: {
-          error: (msg: Error | string) => this.error(msg),
-          log: (msg: string) => this.log(msg),
-        },
-        mode,
-      });
-      renderer.attachToFetcher(fetcher);
-
       const postClaimActions: Array<(org: any) => Promise<void>> = [];
 
       if (flags['send-to']) {
@@ -123,7 +116,18 @@ export default class PoolFetch extends SfpmCommand {
         return {data: {...org, frontDoorUrl}, success: true, tag: flags.tag};
       }
 
-      renderer.renderFetchedOrg(org, frontDoorUrl);
+      const loginUrl     = frontDoorUrl ?? org.auth.loginUrl;
+      const loginDisplay = loginUrl ? terminalLink('Open', loginUrl) : undefined;
+      this.log('');
+      this.log(successBox('Fetched Org', {
+        ...(org.auth.alias   ? {Alias: org.auth.alias}                   : {}),
+        ...(org.expiry       ? {Expires: formatExpiry(org.expiry)}       : {}),
+        ...(loginDisplay     ? {'Login URL': loginDisplay}               : {}),
+        ...(org.orgId        ? {'Org ID': org.orgId}                     : {}),
+        ...(org.auth.password ? {Password: org.auth.password}           : {}),
+        Type: org.orgType ?? 'scratch',
+        Username: org.auth.username ?? 'N/A',
+      }));
 
       if (flags['send-to']) {
         this.log(chalk.green(`Org details sent to ${flags['send-to']}`));
@@ -135,3 +139,4 @@ export default class PoolFetch extends SfpmCommand {
     }
   }
 }
+

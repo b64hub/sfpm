@@ -3,7 +3,7 @@ import type {Instance} from 'ink';
 
 import {render} from 'ink';
 
-import {App} from './components/App.js';
+import {App} from './apps/BuildApp.js';
 
 export interface RenderAppOptions {
   /** Path to the run log file, shown on failure in the final frame. */

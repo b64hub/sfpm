@@ -1,16 +1,16 @@
-import type {PackageCounts} from '../../state/selectors.js';
+import type {PackageCounts} from '../state/selectors.js';
 import type EventEmitter from 'node:events';
 
 import {Box, Static, Text, useApp, useInput} from 'ink';
 import React, {useEffect, useReducer} from 'react';
 
-import {ElapsedTime} from '../base/ElapsedTime.js';
-import {Footer} from '../base/Footer.js';
-import {OrgBadge} from '../base/OrgBadge.js';
-import {Divider} from '../base/Divider.js';
-import {type OrgPhase, OrgRow} from './OrgRow.js';
-import {colWidth, rawSym} from '../../renderer-utils.js';
-import {useTermWidth} from '../../hooks/use-term-width.js';
+import {ElapsedTime} from '../components/base/ElapsedTime.js';
+import {Footer} from '../components/base/Footer.js';
+import {OrgBadge} from '../components/base/OrgBadge.js';
+import {Divider} from '../components/base/Divider.js';
+import {type OrgPhase, OrgRow} from '../components/pool/OrgRow.js';
+import {colWidth, rawSym} from '../renderer-utils.js';
+import {useTermWidth} from '../hooks/use-term-width.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 

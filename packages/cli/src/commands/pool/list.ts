@@ -1,12 +1,12 @@
-import {createPoolServices, type PoolOrg} from '@b64hub/sfpm-orgs';
+import {createPoolServices} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {printTable} from '@oclif/table';
 import {ConfigAggregator, OrgTypes} from '@salesforce/core';
-import ora from 'ora';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
-import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
+import {formatExpiry, formatStage} from '../../ui/pool-utils.js';
+import {renderPoolList} from '../../ui/run-pool-list.js';
 
 export default class PoolList extends SfpmCommand {
   static override description = 'list orgs in a pool'
@@ -42,35 +42,50 @@ export default class PoolList extends SfpmCommand {
     const {flags} = await this.parse(PoolList);
     const mode = this.outputMode;
 
-    try {
-      const {devhub} = await connectDevHub({
-        alias: flags['target-dev-hub'],
-        mode,
-      });
+    const {alias, devhub} = await connectDevHub({
+      alias: flags['target-dev-hub'],
+      mode,
+    });
 
-      const {manager} = createPoolServices({
-        devhub,
-        poolType: flags.type as OrgTypes,
-      });
+    const {manager} = createPoolServices({
+      devhub,
+      poolType: flags.type as OrgTypes,
+    });
 
-      const querySpinner = mode === 'interactive' ? ora(`Fetching orgs${flags.tag ? ` for pool "${flags.tag}"` : ''}...`).start() : undefined;
-      const orgs = await manager.list(flags.tag, flags['my-pool']);
-      querySpinner?.succeed(`Found ${orgs.length} org(s) ${flags.tag ? `in pool "${flags.tag}"` : ''}`);
+    const orgs = await manager.list(flags.tag, flags['my-pool']);
 
-      if (mode !== 'json') {
-        const renderer = new PoolProgressRenderer({
-          logger: {error: (msg: Error | string) => this.error(msg), log: (msg: string) => this.log(msg)},
-          mode,
+    if (mode === 'interactive') {
+      const instance = renderPoolList(orgs, alias, flags.tag);
+      await instance.waitUntilExit();
+    } else if (mode !== 'json') {
+      // plain / quiet: printTable fallback
+      if (orgs.length === 0) {
+        this.log(`No orgs found${flags.tag ? ` in pool "${flags.tag}"` : ''}`);
+      } else {
+        printTable({
+          borderStyle: 'headers-only-with-underline',
+          columns: [
+            {key: 'tag',        name: 'Tag'},
+            {key: 'type',       name: 'Type'},
+            {key: 'username',   name: 'Username'},
+            {key: 'alias',      name: 'Alias'},
+            {key: 'stage',      name: 'Stage'},
+            {key: 'expiryDate', name: 'Expires'},
+          ],
+          data: orgs.map(org => ({
+            alias: org.auth.alias ?? '',
+            expiryDate: org.expiry ? formatExpiry(org.expiry) : '',
+            stage: formatStage(org.pool?.stage),
+            tag: org.pool?.tag ?? '',
+            type: org.orgType ?? '',
+            username: org.auth.username ?? '',
+          })),
         });
-        renderer.renderOrgList(orgs, flags.tag ?? 'all');
       }
-
-      return {
-        data: orgs, success: true, tag: flags.tag ?? 'all', total: orgs.length,
-      };
-    } catch (error) {
-      throw error;
     }
+
+    return {
+      data: orgs, success: true, tag: flags.tag ?? 'all', total: orgs.length,
+    };
   }
 }
-

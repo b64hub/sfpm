@@ -1,10 +1,10 @@
 import {createPoolServices} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {ConfigAggregator, OrgTypes} from '@salesforce/core';
+import ora from 'ora';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
-import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
 
 export default class PoolDelete extends SfpmCommand {
   static override description = 'delete orgs from a pool'
@@ -42,39 +42,26 @@ export default class PoolDelete extends SfpmCommand {
     const {flags} = await this.parse(PoolDelete);
     const mode = this.outputMode;
 
-    try {
-      const {devhub} = await connectDevHub({
-        alias: flags['target-dev-hub'],
-        mode,
-      });
+    const {devhub} = await connectDevHub({
+      alias: flags['target-dev-hub'],
+      mode,
+    });
 
-      const {manager} = createPoolServices({
-        devhub,
-        logger: this.sfpmLogger,
-        poolType: flags.type as OrgTypes,
-      });
+    const {manager} = createPoolServices({
+      devhub,
+      logger: this.sfpmLogger,
+      poolType: flags.type as OrgTypes,
+    });
 
-      const renderer = new PoolProgressRenderer({
-        logger: {
-          error: (msg: Error | string) => this.error(msg),
-          log: (msg: string) => this.log(msg),
-        },
-        mode,
-      });
-      renderer.attachToManager(manager);
+    const spinner = mode === 'interactive' ? ora(`Deleting orgs from pool "${flags.tag}"...`).start() : undefined;
 
-      const result = await manager.delete(flags.tag, {
-        inProgressOnly: flags['in-progress-only'],
-        myPool: flags['my-pool'],
-      });
+    const result = await manager.delete(flags.tag, {
+      inProgressOnly: flags['in-progress-only'],
+      myPool: flags['my-pool'],
+    });
 
-      return {
-        ...result,
-        events: renderer.getJsonOutput().events,
-        success: result.errors.length === 0,
-      };
-    } catch (error) {
-      throw error;
-    }
+    spinner?.succeed(`Deleted ${result.deleted.length} org(s) from pool "${flags.tag}"`);
+
+    return {...result, events: [], success: result.errors.length === 0};
   }
 }

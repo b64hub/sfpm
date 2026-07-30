@@ -8,7 +8,6 @@ import path from 'node:path';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
-import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
 import {renderPoolFill} from '../../ui/run-pool-fill.js';
 
 export default class PoolFill extends SfpmCommand {
@@ -97,21 +96,13 @@ export default class PoolFill extends SfpmCommand {
         throw error;
       }
     } else {
-      const renderer = new PoolProgressRenderer({
-        logger: {
-          error: (msg: Error | string) => this.error(msg),
-          log: (msg: string) => this.log(msg),
-        },
-        mode,
-      });
-      renderer.attachToManager(manager!);
       result = await manager!.provision(flags.tag as string, config);
 
       if (result.failed > 0 && result.succeeded.length === 0) {
         this.error(`Pool provisioning failed: ${result.errors.join(', ')}`, {exit: 1});
       }
 
-      return {...result, events: renderer.getJsonOutput().events, success: result.failed === 0};
+      return {...result, events: [], success: result.failed === 0};
     }
 
     if (result.failed > 0 && result.succeeded.length === 0) {
