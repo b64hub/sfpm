@@ -8,7 +8,8 @@ export type OrgPhase = 'creating' | 'deploying' | 'done' | 'failed' | 'prereqs' 
 
 export interface OrgRowProps {
   alias: string;
-  barWidth: number;
+  /** Required for active phases; omit for terminal phases (no bar rendered). */
+  barWidth?: number;
   completedPackages: number;
   currentPackage?: string;
   currentPackageVersion?: string;
@@ -28,15 +29,16 @@ function PhaseLabel({phase}: {phase: OrgPhase}) {
 }
 
 /**
- * Renders a single active org row (creating / prereqs / deploying).
- * Terminal phases (done / warning / failed) are flushed via <Static> in PoolFillApp.
+ * Single org row — used in both the live area (during provisioning) and the
+ * static flush (at the end). Handles all phases so both contexts share one renderer.
  */
 export function OrgRow({
   alias,
-  barWidth,
+  barWidth = 20,
   completedPackages,
   currentPackage,
   currentPackageVersion,
+  failedPackages,
   phase,
   totalPackages,
 }: OrgRowProps) {
@@ -48,9 +50,28 @@ export function OrgRow({
     </Box>
   );
 
+  // ── Terminal phases ───────────────────────────────────────────────────────
+  if (phase === 'done' || phase === 'warning' || phase === 'failed') {
+    const icon    = phase === 'done' ? rawSym.success : phase === 'warning' ? '⚠' : rawSym.fail;
+    const color   = phase === 'done' ? 'green' : phase === 'warning' ? 'yellow' : 'red';
+    const summary = phase === 'failed'
+      ? (totalPackages > 0 ? `failed · ${completedPackages}/${totalPackages} packages` : 'failed')
+      : failedPackages > 0
+        ? `${completedPackages - failedPackages}/${totalPackages} packages · ${failedPackages} failed`
+        : `${completedPackages}/${totalPackages} packages`;
+
+    return (
+      <Box gap={1}>
+        <Text color={color}>{icon}</Text>
+        {aliasNode}
+        <Text dimColor>{summary}</Text>
+      </Box>
+    );
+  }
+
+  // ── Active phases ─────────────────────────────────────────────────────────
   return (
     <Box gap={1}>
-      {/* Static dim indicator — progress bar provides the live visual */}
       <Text color="gray">{rawSym.pending}</Text>
       {aliasNode}
       {phase === 'deploying' && totalPackages > 0

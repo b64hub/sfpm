@@ -1,7 +1,7 @@
 import {Box, Text} from 'ink';
 
 /**
- * Static badge for a connected org or DevHub.
+ * Static badge for a connected org.
  * Shown once in the static header — no animation needed.
  */
 export function OrgBadge({alias, username}: {alias: string, username?: string}) {
@@ -10,6 +10,7 @@ export function OrgBadge({alias, username}: {alias: string, username?: string}) 
       <Text color="green">●</Text>
       <Text bold>{alias}</Text>
       {username ? <Text dimColor> · {username}</Text> : ''}
+      <Text dimColor> - connected</Text>
     </Box>
   );
 }

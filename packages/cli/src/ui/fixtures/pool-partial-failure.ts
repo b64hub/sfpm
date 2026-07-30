@@ -60,8 +60,8 @@ export const poolPartialFailureEvents: Event[] = [
   {alias: ORGS[0].alias, type: 'org:appeared', username: ORGS[0].username},
   {alias: ORGS[1].alias, type: 'org:appeared', username: ORGS[1].username},
 
-  // org-3 fails during creation — no row, just a counter bump
-  {type: 'pool:creation:failed'},
+  // org-3 fails during creation — alias known, no username
+  {alias: 'dev-pool-3', type: 'pool:creation:failed'},
 
   {alias: ORGS[2].alias, type: 'org:appeared', username: ORGS[2].username},
   {alias: ORGS[3].alias, type: 'org:appeared', username: ORGS[3].username},

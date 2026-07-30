@@ -6,7 +6,7 @@ import {Box, Text} from 'ink';
 import type {PackageCounts} from '../../state/selectors.js';
 
 import {rawSym} from '../../renderer-utils.js';
-import {ElapsedTime} from '../PackageRow.js';
+import {ElapsedTime} from './ElapsedTime.js';
 import { GradientBar } from './GradientBar.js';
 import {SFPM_GRADIENT} from '../../theme.js';
 

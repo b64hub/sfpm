@@ -16,9 +16,9 @@ export function attachPoolFillBridge(manager: PoolManager, uiBus: EventEmitter):
     uiBus.emit('org:appeared', {alias: p.alias, username: p.username});
   });
 
-  // Creation failure — no username, just bump the counter
-  manager.on('pool:org:failed', () => {
-    uiBus.emit('pool:creation:failed');
+  // Creation failure — org never provisioned, forward alias for display
+  manager.on('pool:org:failed', p => {
+    uiBus.emit('pool:creation:failed', {alias: p.alias});
   });
 
   manager.on('pool:task:start', p => {
