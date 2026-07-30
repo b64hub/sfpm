@@ -12,8 +12,8 @@ import {
   type WatcherState,
 } from '@b64hub/sfpm-core'
 import {ScratchOrgProvider} from '@b64hub/sfpm-orgs'
-import {MetadataDependencyService} from '@b64hub/sfpm-static-analyzer'
 import {createTracer} from '@b64hub/sfpm-telemetry'
+import {MetadataDependencyService} from '@b64hub/sfpm-validation'
 import {
   Args, Flags,
 } from '@oclif/core'

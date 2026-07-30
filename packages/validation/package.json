@@ -1,7 +1,7 @@
 {
-  "name": "@b64hub/sfpm-static-analyzer",
+  "name": "@b64hub/sfpm-validation",
   "version": "0.1.0",
-  "description": "Static metadata dependency analysis for SFPM",
+  "description": "Local metadata validation for SFPM",
   "type": "module",
   "scripts": {
     "build": "tsc -b",
@@ -10,8 +10,6 @@
   "keywords": [
     "sfpm",
     "salesforce",
-    "static-analysis",
-    "dependency-analysis",
     "apex",
     "typescript"
   ],
