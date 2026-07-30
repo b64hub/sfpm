@@ -739,7 +739,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
    * tasks are skipped.
    */
   private async runTasksOnSingleOrg(org: PoolOrg): Promise<OrgTaskSummary> {
-    const orgLogger = this.loggerFactory?.create(org) ?? this.logger;
+    const orgLogger = this.loggerFactory?.create(org) ?? this.logger?.child?.({org: org.auth.username!}) ?? this.logger;
     const results: Array<{error?: string; success: boolean; task: string}> = [];
     let aborted = false;
 

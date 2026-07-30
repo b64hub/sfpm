@@ -1,4 +1,6 @@
-import {LifecycleEngine, loadSfpmConfig, type Logger} from '@b64hub/sfpm-core';
+import {
+  findSfpmRoot, LifecycleEngine, loadSfpmConfig, type Logger,
+} from '@b64hub/sfpm-core';
 import {
   ArtifactPackageInstallTask, createPoolServices, DeploymentTask, type PoolConfig, type PoolOrgTask,
 } from '@b64hub/sfpm-orgs';
@@ -9,6 +11,8 @@ import path from 'node:path';
 import SfpmCommand from '../../sfpm-command.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
 import {renderPoolFill} from '../../ui/run-pool-fill.js';
+
+import '@b64hub/sfpm-sfdmu';
 
 export default class PoolFill extends SfpmCommand {
   static override description = 'fill a pool with orgs'
@@ -51,7 +55,12 @@ export default class PoolFill extends SfpmCommand {
 
     const orgConfig = await this.loadOrgConfig(this.sfpmLogger);
     const config = this.buildPoolConfig(flags, orgConfig);
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectDir = process.env.SFPM_PROJECT_DIR || findSfpmRoot(process.cwd());
+    const {logger: runLogger} = this.createRunLogger();
+
+    if (!projectDir) {
+      throw new Error('Unable to locate any project root files like sfpm.config.{ts,mjs,js}');
+    }
 
     let manager: Awaited<ReturnType<typeof createPoolServices>>['manager'];
     let deployTask: DeploymentTask | undefined;
@@ -67,7 +76,7 @@ export default class PoolFill extends SfpmCommand {
             deployTask = tasks.find((t): t is DeploymentTask => t instanceof DeploymentTask);
             const services = createPoolServices({
               devhub: hub,
-              logger: this.sfpmLogger,
+              logger: runLogger,
               poolType: config.type as OrgTypes,
               tasks,
             });
