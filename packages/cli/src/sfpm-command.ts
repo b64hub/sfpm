@@ -8,6 +8,7 @@ import gradient from 'gradient-string';
 import type {OutputMode} from './ui/renderer-utils.js';
 
 import {CliLogger, CliLoggerFactory} from './logger.js';
+import {suppressStderr} from './utils/suppress.js';
 
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error'] as const;
 
@@ -109,7 +110,11 @@ export default abstract class SfpmCommand extends Command {
     }
 
     try {
-      const result = await this.execute();
+      const cap = this.outputMode === 'interactive' ? suppressStderr() : null;
+      const result = await this.execute().finally(() => {
+        const captured = cap?.release() ?? '';
+        if (captured) process.stderr.write(captured);
+      });
 
       if (this.outputMode === 'json') {
         const envelope: JsonEnvelope = {
