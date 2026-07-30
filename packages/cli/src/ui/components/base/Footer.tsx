@@ -8,6 +8,7 @@ import type {PackageCounts} from '../../state/selectors.js';
 import {rawSym} from '../../renderer-utils.js';
 import {ElapsedTime} from '../PackageRow.js';
 import { GradientBar } from './GradientBar.js';
+import {SFPM_GRADIENT} from '../../theme.js';
 
 // ---- composable column sub-components ----
 
@@ -60,10 +61,7 @@ export interface FooterProps {
   timeSlot?: ReactNode;
 }
 
-const gradient = {
-  start: {r: 61, g: 127, b: 255},  // rgb(61, 127, 255)
-  end: {r: 255, g: 51, b: 102},  // rgb(255, 51, 102)
-}
+
 // ---- component ----
 
 function FooterFn({
@@ -116,7 +114,7 @@ function FooterFn({
       {/* ── Progress row: bar capped at one column width + n/m label ── */}
       {progressBar && counts.total > 0 && (
         <Box gap={1} marginTop={1}>
-          <GradientBar gradient={gradient} value={barValue} width={colWidth} />
+          <GradientBar gradient={SFPM_GRADIENT} value={barValue} width={colWidth} />
           <Text dimColor>{progressLabel}</Text>
         </Box>
       )}

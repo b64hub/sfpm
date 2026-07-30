@@ -11,6 +11,15 @@ import type {PoolOrg} from '../../org/pool-org.js';
 import type {PoolOrgTask, PoolOrgTaskResult} from '../types.js';
 
 /**
+ * Minimal interface for forwarding per-package progress events to the pool manager.
+ * Injected via `setPackageForwarder()` before task execution.
+ */
+export interface PoolPackageForwarder {
+  packageComplete(payload: {packageName: string; success: boolean; total: number; username: string; version?: string}): void;
+  packageStart(payload: {packageName: string; total: number; username: string}): void;
+}
+
+/**
  * Options for the deployment task.
  */
 export interface DeploymentTaskOptions {
@@ -42,6 +51,7 @@ export interface DeploymentTaskOptions {
 export class DeploymentTask implements PoolOrgTask {
   public readonly continueOnError: boolean;
   public readonly name = 'deploy-packages';
+  private forwarder?: PoolPackageForwarder;
   private readonly options: DeploymentTaskOptions;
 
   constructor(options: DeploymentTaskOptions) {
@@ -81,6 +91,32 @@ export class DeploymentTask implements PoolOrgTask {
       unlocked: {sourceOnly: true},
     }, logger);
 
+    if (this.forwarder) {
+      let total = 0;
+      const versionBuffer = new Map<string, string>();
+      const fw = this.forwarder;
+
+      orchestrator.orchestrationBus.on('start' as any, (e: any) => {
+        total = (e.levels as string[][]).flat().length;
+      });
+      orchestrator.installBus.on('start' as any, (e: any) => {
+        fw.packageStart({packageName: e.packageName as string, total, username: username!});
+      });
+      orchestrator.installBus.on('complete' as any, (e: any) => {
+        if (e.versionNumber) versionBuffer.set(e.packageName as string, e.versionNumber as string);
+      });
+      orchestrator.orchestrationBus.on('package:complete' as any, (e: any) => {
+        fw.packageComplete({
+          packageName: e.packageName as string,
+          success: !e.skipped && Boolean(e.success),
+          total,
+          username: username!,
+          version: versionBuffer.get(e.packageName as string),
+        });
+        versionBuffer.delete(e.packageName as string);
+      });
+    }
+
     const result = await orchestrator.installAll(packages);
 
     if (!result.success) {
@@ -89,6 +125,10 @@ export class DeploymentTask implements PoolOrgTask {
     }
 
     return {success: true};
+  }
+
+  public setPackageForwarder(forwarder: PoolPackageForwarder): void {
+    this.forwarder = forwarder;
   }
 
   /**

@@ -95,11 +95,13 @@ export interface PoolManagerEvents {
   'pool:allocation:computed': [payload: {currentAllocation: number; remaining: number; tag: string; toAllocate: number}];
   'pool:delete:complete': [payload: PoolDeleteResult];
   'pool:delete:start': [payload: {count: number; tag: string; timestamp: Date}];
-  'pool:org:created': [payload: {alias: string; index: number; timestamp: Date; total: number}];
+  'pool:org:created': [payload: {alias: string; index: number; timestamp: Date; total: number; username: string}];
   'pool:org:deleted': [payload: {timestamp: Date; username: string}];
   'pool:org:discarded': [payload: {reason: string; timestamp: Date; username: string}];
   'pool:org:failed': [payload: {alias: string; error: string; index: number; timedOut: boolean; timestamp: Date}];
   'pool:org:validated': [payload: {timestamp: Date; username: string}];
+  'pool:package:complete': [payload: {packageName: string; success: boolean; timestamp: Date; total: number; username: string; version?: string}];
+  'pool:package:start': [payload: {packageName: string; timestamp: Date; total: number; username: string}];
   'pool:provision:complete': [payload: PoolProvisionResult];
   'pool:provision:start': [payload: {tag: string; timestamp: Date; toAllocate: number}];
   'pool:task:complete': [payload: {success: boolean; task: string; timestamp: Date; username: string}];
@@ -561,6 +563,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
         index: index + 1,
         timestamp: new Date(),
         total,
+        username: org.auth.username!,
       });
 
       return {org};

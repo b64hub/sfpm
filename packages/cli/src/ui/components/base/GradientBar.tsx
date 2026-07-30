@@ -1,18 +1,8 @@
 import { Text, Box } from "ink";
-
-export type RGB = {
-    r: number,
-    g: number,
-    b: number,
-}
-
-export type Gradient = {
-    start: RGB,
-    end: RGB
-}
+import {Gradient, SFPM_GRADIENT} from '../../theme.js'
 
 /** Gradient progress bar */
-export function GradientBar({gradient, value, width}: {gradient: Gradient, value: number; width: number}) {
+export function GradientBar({gradient = SFPM_GRADIENT, value, width}: {gradient: Gradient, value: number; width: number}) {
   const filled = Math.round((Math.min(100, Math.max(0, value)) / 100) * width);
   const lerp = (a: number, b: number, t: number) =>
     Math.round(a + (b - a) * t);
