@@ -58,7 +58,7 @@ export default class PoolFill extends SfpmCommand {
 
     const {alias} = await connectDevHub({
       alias: flags['target-dev-hub'],
-      mode,
+      showSpinner: false,
       validate: [
         {
           label: 'Validating prerequisites...',

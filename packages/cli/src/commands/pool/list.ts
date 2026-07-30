@@ -44,7 +44,7 @@ export default class PoolList extends SfpmCommand {
 
     const {alias, devhub} = await connectDevHub({
       alias: flags['target-dev-hub'],
-      mode,
+      showSpinner: false,
     });
 
     const {manager} = createPoolServices({

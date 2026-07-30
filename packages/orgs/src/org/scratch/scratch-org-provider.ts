@@ -31,12 +31,12 @@ export interface ActiveScratchOrgRecord {
 }
 
 export const SCRATCH_ORG_INFO_FIELDS: (keyof ScratchOrgInfoRecord)[] = [
-  'Stage__c',
   'CreatedDate',
   'ExpirationDate',
   'Id',
   'LoginUrl',
   'Tag__c',
+  'Stage__c',
   'ScratchOrg',
   'Auth_Url__c',
   'AuthCode',

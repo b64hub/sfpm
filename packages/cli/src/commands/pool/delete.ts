@@ -44,7 +44,7 @@ export default class PoolDelete extends SfpmCommand {
 
     const {devhub} = await connectDevHub({
       alias: flags['target-dev-hub'],
-      mode,
+      showSpinner: mode === 'interactive',
     });
 
     const {manager} = createPoolServices({
