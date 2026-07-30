@@ -109,7 +109,7 @@ export default class Bootstrap extends SfpmCommand {
     try {
       const {devhub: org} = await connectDevHub({
         alias: ctx.targetOrg,
-        mode: ctx.mode,
+        showSpinner: ctx.mode === 'interactive',
         validate: [
           {
             label: 'Verifying DevHub status...',

@@ -5,6 +5,18 @@ import chalk from 'chalk';
 // ============================================================================
 
 // ============================================================================
+// Layout
+// ============================================================================
+
+/**
+ * Width of one column in the standard three-column footer / progress-bar layout.
+ * Mirrors the formula used by Footer.tsx so every app renders bars at the same scale.
+ */
+export function colWidth(termWidth: number): number {
+  return Math.floor((termWidth - 6) / 3); // 6 = two " │ " separators
+}
+
+// ============================================================================
 // Symbols
 // ============================================================================
 

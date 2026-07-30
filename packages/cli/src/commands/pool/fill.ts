@@ -1,4 +1,6 @@
-import {LifecycleEngine, loadSfpmConfig, type Logger} from '@b64hub/sfpm-core';
+import {
+  findSfpmRoot, LifecycleEngine, loadSfpmConfig, type Logger,
+} from '@b64hub/sfpm-core';
 import {
   ArtifactPackageInstallTask, createPoolServices, DeploymentTask, type PoolConfig, type PoolOrgTask,
 } from '@b64hub/sfpm-orgs';
@@ -8,7 +10,9 @@ import path from 'node:path';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
-import {PoolProgressRenderer} from '../../ui/pool-progress-renderer.js';
+import {renderPoolFill} from '../../ui/run-pool-fill.js';
+
+import '@b64hub/sfpm-sfdmu';
 
 export default class PoolFill extends SfpmCommand {
   static override description = 'fill a pool with orgs'
@@ -51,21 +55,28 @@ export default class PoolFill extends SfpmCommand {
 
     const orgConfig = await this.loadOrgConfig(this.sfpmLogger);
     const config = this.buildPoolConfig(flags, orgConfig);
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectDir = process.env.SFPM_PROJECT_DIR || findSfpmRoot(process.cwd());
+    const {logger: runLogger} = this.createRunLogger();
+
+    if (!projectDir) {
+      throw new Error('Unable to locate any project root files like sfpm.config.{ts,mjs,js}');
+    }
 
     let manager: Awaited<ReturnType<typeof createPoolServices>>['manager'];
+    let deployTask: DeploymentTask | undefined;
 
-    const {devhub} = await connectDevHub({
+    const {alias} = await connectDevHub({
       alias: flags['target-dev-hub'],
-      mode,
+      showSpinner: false,
       validate: [
         {
           label: 'Validating prerequisites...',
           run: async hub => {
             const tasks = this.buildTasks(config, hub, projectDir, flags['use-local-source']);
+            deployTask = tasks.find((t): t is DeploymentTask => t instanceof DeploymentTask);
             const services = createPoolServices({
               devhub: hub,
-              logger: this.sfpmLogger,
+              logger: runLogger,
               poolType: config.type as OrgTypes,
               tasks,
             });
@@ -76,22 +87,38 @@ export default class PoolFill extends SfpmCommand {
       ],
     });
 
-    const renderer = new PoolProgressRenderer({
-      logger: {
-        error: (msg: Error | string) => this.error(msg),
-        log: (msg: string) => this.log(msg),
-      },
-      mode,
-    });
-    renderer.attachToManager(manager!);
+    let result: Awaited<ReturnType<typeof manager.provision>>;
 
-    const result = await manager!.provision(flags.tag as string, config);
+    if (mode === 'interactive') {
+      // Wire per-package events from DeploymentTask through the pool manager
+      deployTask?.setPackageForwarder({
+        packageComplete: p => manager!.emit('pool:package:complete', {...p, timestamp: new Date()}),
+        packageStart: p => manager!.emit('pool:package:start',    {...p, timestamp: new Date()}),
+      });
+
+      const inkInstance = renderPoolFill(manager!, alias);
+      try {
+        result = await manager!.provision(flags.tag as string, config);
+        await inkInstance.waitUntilExit();
+      } catch (error) {
+        inkInstance.unmount();
+        throw error;
+      }
+    } else {
+      result = await manager!.provision(flags.tag as string, config);
+
+      if (result.failed > 0 && result.succeeded.length === 0) {
+        this.error(`Pool provisioning failed: ${result.errors.join(', ')}`, {exit: 1});
+      }
+
+      return {...result, events: [], success: result.failed === 0};
+    }
 
     if (result.failed > 0 && result.succeeded.length === 0) {
       this.error(`Pool provisioning failed: ${result.errors.join(', ')}`, {exit: 1});
     }
 
-    return {...result, events: renderer.getJsonOutput().events, success: result.failed === 0};
+    return {...result, events: [], success: result.failed === 0};
   }
 
   private buildPoolConfig(flags: Record<string, any>, orgConfig?: {[tag: string]: PoolConfig}): PoolConfig {

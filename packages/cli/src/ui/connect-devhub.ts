@@ -2,8 +2,6 @@ import {ConfigAggregator, Org} from '@salesforce/core';
 import chalk from 'chalk';
 import ora, {type Ora} from 'ora';
 
-import type {OutputMode} from './renderer-utils.js';
-
 /**
  * Options for `connectDevHub()`.
  */
@@ -11,7 +9,7 @@ export interface ConnectDevHubOptions {
   /** The alias/username passed via --target-dev-hub flag */
   alias?: string;
   /** Output mode — spinner only shown in 'interactive' */
-  mode: OutputMode;
+  showSpinner: boolean;
   /**
    * Optional validation steps to run after connecting.
    * Each step updates the spinner text and runs an async check.
@@ -43,7 +41,7 @@ export interface ConnectDevHubResult {
  * @throws Error if no alias is resolved or connection/validation fails
  */
 export async function connectDevHub(options: ConnectDevHubOptions): Promise<ConnectDevHubResult> {
-  const {mode, validate} = options;
+  const {showSpinner, validate} = options;
 
   // 1. Resolve alias
   let {alias} = options;
@@ -57,7 +55,7 @@ export async function connectDevHub(options: ConnectDevHubOptions): Promise<Conn
   }
 
   // 2. Spinner
-  const spinner: Ora | undefined = mode === 'interactive'
+  const spinner: Ora | undefined = showSpinner
     ? ora(`Connecting to ${chalk.cyan(alias)}...`).start()
     : undefined;
 
