@@ -1,0 +1,47 @@
+{
+  "custom_metadata_type": "Feature_Toggle__mdt",
+  "detail": "4 record(s)",
+  "file": "",
+  "handlers": null,
+  "limits": [
+    "Custom metadata edges are heuristic on the outbound side: a record field value naming a class is read as a dispatch target, which can over-claim (a value that coincidentally matches a class name) and under-claim (indirection the reading cannot follow).",
+    "Handlers are classes named by record field values; the dispatches observed through Type.forName come from the last coverage run, attributed through the classes that query this type — a dispatch on a path that run did not execute is not here, and one recorded before the code changed may no longer happen.",
+    "Queriers are the classes reading this type in Apex; anything reaching those classes appears as a transitive dependent, not as a querier. A query built as a string and run through Database.query is not read."
+  ],
+  "observed_dispatches": null,
+  "queriers": [
+    "FeatureToggle",
+    "FeatureToggleController",
+    "FeatureToggleControllerTest",
+    "FeatureToggleScanner",
+    "FeatureToggleService",
+    "FeatureToggleServiceTest",
+    "FeatureToggleTest"
+  ],
+  "test_dependents": [
+    "AdminSubscriptionOrderControllerTest",
+    "CvcProductSearchServiceTest",
+    "FeatureToggleActionTest",
+    "FeatureToggleControllerTest",
+    "FeatureToggleScannerTest",
+    "FeatureToggleServiceTest",
+    "FeatureToggleTest"
+  ],
+  "transitive_dependents": [
+    "AdminSubscriptionOrderController",
+    "AdminSubscriptionOrderControllerTest",
+    "CvcProductSearchSchedule",
+    "CvcProductSearchService",
+    "CvcProductSearchServiceTest",
+    "FeatureToggle",
+    "FeatureToggleAction",
+    "FeatureToggleActionTest",
+    "FeatureToggleController",
+    "FeatureToggleControllerTest",
+    "FeatureToggleScanner",
+    "FeatureToggleScannerTest",
+    "FeatureToggleService",
+    "FeatureToggleServiceTest",
+    "FeatureToggleTest"
+  ]
+}

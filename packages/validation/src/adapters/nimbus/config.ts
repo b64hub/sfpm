@@ -1,6 +1,6 @@
 import type {Logger} from '@b64hub/sfpm-core'
 
-import type {ValidationEventBus} from '../../ports/validation-event-bus.js';
+import type {ValidationEventBus} from '../../types/validation-event-bus.js';
 
 export interface NimbusDaemonConfig {
   autoStart: boolean;

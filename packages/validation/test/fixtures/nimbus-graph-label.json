@@ -1,0 +1,15 @@
+{
+  "detail": "Tilbudet er underlagt den til enhver tid gjeldende produktavtale og tilhørende v…",
+  "file": "",
+  "label": "Capacity_Disclaimer",
+  "limits": [
+    "Label edges cover Apex only — references from Flows, LWC, Aura and formulas are not read, so an unreferenced label means unreferenced from Apex, not safe to delete.",
+    "Dynamic reads (System.Label.get with a computed name) come from the last coverage run: a read on a path that run did not execute is not here, and one recorded before the code changed may no longer happen.",
+    "Readers are the classes naming the label; anything reaching those classes appears as a transitive dependent, not as a reader."
+  ],
+  "observed_only": null,
+  "observed_readers": null,
+  "readers": null,
+  "test_dependents": null,
+  "transitive_dependents": null
+}

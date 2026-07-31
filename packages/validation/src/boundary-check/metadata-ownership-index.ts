@@ -2,8 +2,8 @@ import {ComponentSet} from '@salesforce/source-deploy-retrieve';
 
 export interface PackageManifest {
   declaredDependencies: Set<string>;  // packageIds
-  ownedFiles: Set<string>;            // absolute paths
   packageId: string;
+  packagePath: string;            // absolute path
 }
 
 export interface MetadataOwnership {

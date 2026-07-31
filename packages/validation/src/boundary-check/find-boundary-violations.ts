@@ -1,11 +1,11 @@
-import type {DependencyGraphProvider} from '../ports/dependency-graph.js';
-import type {ValidationContext} from '../ports/validation-context.js';
+import type {DependencyGraphProvider} from '../types/dependency-graph.js';
+import type {ValidationContext} from '../types/validation-context.js';
 import type {MetadataOwnership, PackageManifest} from './metadata-ownership-index.js';
 
 export interface BoundaryViolation {
-  fromClass: string;
+  fromMetadata: string;
   fromPackage: string;
-  toClass: string;
+  toMetadata: string;
   toPackage: string;
 }
 
@@ -51,9 +51,9 @@ export async function findPackageBoundaryViolations(
         if (dep.packageId === pkg.packageId) continue;
         if (!pkg.declaredDependencies.has(dep.packageId)) {
           violations.push({
-            fromClass: owned.metadataName,
+            fromMetadata: owned.metadataName,
             fromPackage: pkg.packageId,
-            toClass: depLower,
+            toMetadata: depLower,
             toPackage: dep.packageId,
           });
         }
