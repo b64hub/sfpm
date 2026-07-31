@@ -1,4 +1,4 @@
-import {basename, extname} from 'node:path';
+import {ComponentSet} from '@salesforce/source-deploy-retrieve';
 
 export interface PackageManifest {
   declaredDependencies: Set<string>;  // packageIds
@@ -7,33 +7,24 @@ export interface PackageManifest {
 }
 
 export interface MetadataOwnership {
+  fileName: string;
   filePath: string;
   metadataName: string;
-  metadataType: 'apexclass' | 'apextrigger' | 'customfield' | 'customobject' | string;
+  metadataType: string;
   packageId: string;
 }
-
-/** Maps file extension → metadata type. Add an entry here to support a new type. */
-const EXTENSION_TO_TYPE = new Map<string, MetadataOwnership['metadataType']>([
-  ['.cls', 'apexclass'],
-  ['.field-meta.xml', 'customfield'],
-  ['.object-meta.xml', 'customobject'],
-  ['.trigger', 'apextrigger'],
-]);
 
 export function buildOwnershipIndex(manifests: PackageManifest[]): Map<string, MetadataOwnership> {
   const index = new Map<string, MetadataOwnership>();
   for (const manifest of manifests) {
-    for (const filePath of manifest.ownedFiles) {
-      const ext = extname(filePath);
-      const metadataType = EXTENSION_TO_TYPE.get(ext);
-      if (!metadataType) continue;
-
-      const metadataName = basename(filePath, ext).toLowerCase();
+    const cs = ComponentSet.fromSource([...manifest.ownedFiles]);
+    for (const component of cs.getSourceComponents()) {
+      const metadataName = component.fullName.toLowerCase();
       index.set(metadataName, {
-        filePath,
+        fileName: component.fullName,
+        filePath: component.xml ?? component.walkContent()[0] ?? '',
         metadataName,
-        metadataType,
+        metadataType: component.type.id,
         packageId: manifest.packageId,
       });
     }

@@ -10,7 +10,7 @@ export {default as ApexService} from './adapters/ast-serializer/apex-service.js'
 export type * as jorje from './adapters/ast-serializer/types/jorje.js';
 // ─── Nimbus adapter ──────────────────────────────────────────────────────────
 export type {NimbusAdapterConfig, NimbusDaemonConfig} from './adapters/nimbus/config.js';
-export {createNimbusGraphProvider} from './adapters/nimbus/nimbus-graph-provider.js';
+export {NimbusGraphProvider} from './adapters/nimbus/nimbus-graph-provider.js';
 export {withNimbusDaemon} from './adapters/nimbus/nimbus-session.js';
 
 export {createNimbusValidator} from './adapters/nimbus/nimbus-validator.js';
@@ -20,10 +20,18 @@ export type {BoundaryCheckResult, BoundaryViolation} from './boundary-check/find
 export {buildOwnershipIndex} from './boundary-check/metadata-ownership-index.js';
 
 export type {MetadataOwnership, PackageManifest} from './boundary-check/metadata-ownership-index.js';
-export type {DependencyGraphProvider, NimbusClassGraph} from './contracts/dependency-graph.js';
-export type {ValidationContext} from './contracts/validation-context.js';
+export {ApexReferenceExtractor} from './dependency/apex-reference-extractor.js';
+export type {ApexTypeReference} from './dependency/apex-reference-extractor.js';
+// Dependency analysis
+export {MetadataDependencyService} from './dependency/metadata-dependency-service.js';
+export {SymbolRegistry} from './dependency/symbol-registry.js';
+
+export type {AnalyzablePackage} from './dependency/symbol-registry.js';
+
+export type {DependencyGraphProvider, NimbusClassGraph} from './ports/dependency-graph.js';
+export type {ValidationContext} from './ports/validation-context.js';
 // ─── Nimbus validation contracts ────────────────────────────────────────────
-export {NimbusValidationEventBus, ScopedValidationSink} from './contracts/validation-event-bus.js';
+export {NimbusValidationEventBus, ScopedValidationSink} from './ports/validation-event-bus.js';
 export type {
   NimbusDaemonUnavailablePayload,
   NimbusValidationEvents,
@@ -34,19 +42,11 @@ export type {
   ValidatorErrorPayload,
   ValidatorProgressPayload,
   ValidatorStartPayload,
-} from './contracts/validation-event-bus.js';
-
+} from './ports/validation-event-bus.js';
 export type {
   AvailabilityResult,
   Diagnostic,
   ValidationCapability,
   ValidationResult,
   Validator,
-} from './contracts/validator.js';
-
-export {ApexReferenceExtractor} from './dependency/apex-reference-extractor.js';
-export type {ApexTypeReference} from './dependency/apex-reference-extractor.js';
-// Dependency analysis
-export {MetadataDependencyService} from './dependency/metadata-dependency-service.js';
-export {SymbolRegistry} from './dependency/symbol-registry.js';
-export type {AnalyzablePackage} from './dependency/symbol-registry.js';
+} from './ports/validator.js';
