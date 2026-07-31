@@ -1,5 +1,5 @@
-import type {DependencyGraphProvider, NimbusClassGraph} from '../../contracts/dependency-graph.js';
-import type {ValidationContext} from '../../contracts/validation-context.js';
+import type {DependencyGraphProvider, NimbusClassGraph} from '../../ports/dependency-graph.js';
+import type {ValidationContext} from '../../ports/validation-context.js';
 import type {NimbusAdapterDeps} from './config.js';
 
 import {INSTALL_HINT, resolveNimbusBinary} from './nimbus-binary.js';

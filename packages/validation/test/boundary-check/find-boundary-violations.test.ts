@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { NimbusClassGraph } from '../../src/contracts/dependency-graph.js';
+import type { NimbusClassGraph } from '../../src/ports/dependency-graph.js';
 import type { PackageManifest } from '../../src/boundary-check/metadata-ownership-index.js';
 import { buildOwnershipIndex } from '../../src/boundary-check/metadata-ownership-index.js';
 import { findPackageBoundaryViolations } from '../../src/boundary-check/find-boundary-violations.js';

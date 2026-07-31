@@ -1,5 +1,5 @@
-import type {DependencyGraphProvider} from '../contracts/dependency-graph.js';
-import type {ValidationContext} from '../contracts/validation-context.js';
+import type {DependencyGraphProvider} from '../ports/dependency-graph.js';
+import type {ValidationContext} from '../ports/validation-context.js';
 import type {MetadataOwnership, PackageManifest} from './metadata-ownership-index.js';
 
 export interface BoundaryViolation {
