@@ -1,0 +1,15 @@
+{
+  "files": [
+    {
+      "file": "OrderService.cls",
+      "valid": false,
+      "errors": [
+        { "line": 27, "column": 18, "message": "missing ';' at 'CloseBrace'" }
+      ]
+    },
+    { "file": "OrderServiceHelper.cls", "valid": true }
+  ],
+  "totalFiles": 2,
+  "validFiles": 1,
+  "errorFiles": 1
+}

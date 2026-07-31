@@ -5,7 +5,7 @@ import type {
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import {ApexAstSerializer} from '../apex/apex-ast-serializer.js';
+import {ApexAstSerializer} from '../adapters/ast-serializer/apex-ast-serializer.js';
 import {ApexReferenceExtractor, ApexTypeReference} from './apex-reference-extractor.js';
 import {SymbolRegistry} from './symbol-registry.js';
 

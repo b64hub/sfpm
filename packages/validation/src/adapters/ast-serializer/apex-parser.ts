@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 
-import type * as jorje from '../types/jorje.js';
+import type * as jorje from './types/jorje.js';
 
 import {ApexAstSerializer} from './apex-ast-serializer.js';
 

@@ -1,0 +1,8 @@
+{
+  "class": "orderservice",
+  "dependencies": ["stringformatutility", "orderrepository"],
+  "direct_dependents": ["orderservicetest"],
+  "test_dependents": ["orderservicetest"],
+  "transitive_dependents": [],
+  "limits": []
+}
