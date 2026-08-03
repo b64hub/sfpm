@@ -12,7 +12,7 @@ export default class Add extends SfpmCommand {
       required: true,
     }),
   }
-  static override description = 'add one or more sfpm packages as dependencies'
+  static override description = 'add packages as dependencies'
   static override examples = [
     '<%= config.bin %> <%= command.id %> @myorg/my-package',
     '<%= config.bin %> <%= command.id %> @myorg/package-a @myorg/package-b',

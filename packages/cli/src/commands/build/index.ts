@@ -2,18 +2,16 @@ import {
   BuildOrchestrator,
   type BuildOrchestratorOptions, type BuildOrg,
   type BuildWatcherPayload,
-  type DependencyAnalyzer,
   LifecycleEngine,
   noopLogger,
   type OrchestrationResult,
-  PackageFactory,
   PackageType,
   type PendingValidationDescriptor, ProjectService, ValidationEventBus, ValidationResolver,
   type WatcherState,
 } from '@b64hub/sfpm-core'
 import {ScratchOrgProvider} from '@b64hub/sfpm-orgs'
 import {createTracer} from '@b64hub/sfpm-telemetry'
-import {MetadataDependencyService} from '@b64hub/sfpm-validation'
+import {NimbusLocalValidator, NimbusValidationEventBus} from '@b64hub/sfpm-validation'
 import {
   Args, Flags,
 } from '@oclif/core'
@@ -38,7 +36,6 @@ interface ResolvedBuildFlags {
   autoCreatedBuildOrg?: {devhub: Org; username: string};
   buildOptions: BuildOrchestratorOptions;
   buildOrgUsername?: string;
-  dependencyAnalyzer?: DependencyAnalyzer;
   devhubUsername?: string;
   mode: OutputMode;
   noDependencies: boolean;
@@ -56,7 +53,7 @@ export default class Build extends SfpmCommand {
       required: true,
     }),
   }
-  static override description = 'build one or more packages'
+  static override description = 'build packages'
   /**
    * Lifecycle stage: **build**
    *
@@ -148,13 +145,36 @@ export default class Build extends SfpmCommand {
     const uiBus = isInk ? new EventEmitter() : undefined;
     const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
 
+    // Build local validator for compile + dependency checks (all modes except 'none').
+    // Created here so it shares the run logger.
+    let localValidator: NimbusLocalValidator | undefined;
+    if (resolved.buildOptions.validation !== 'none') {
+      const manifests = projectConfig.getAllPackageDefinitions().map(def => ({
+        declaredDependencies: new Set(projectConfig.getDependencies(def.name).map(d => d.name)),
+        packageId: def.name,
+        packagePath: path.join(projectConfig.projectDir, def.path),
+      }));
+      localValidator = new NimbusLocalValidator(
+        {
+          config: {
+            daemon: {autoStart: false, autoStop: true, enabled: false},
+            // ponytail: expose via sfpmConfig.nimbus.supportedVersionRange when pinning a version
+            supportedVersionRange: resolved.sfpmConfig.nimbus?.supportedVersionRange ?? '*',
+          },
+          eventBus: new NimbusValidationEventBus(),
+          logger: pinoLogger,
+        },
+        manifests,
+      );
+    }
+
     const orchestrator = new BuildOrchestrator(
       projectConfig,
       projectGraph,
       buildOrg,
       {...resolved.buildOptions, includeDependencies: !resolved.noDependencies},
       pinoLogger,
-      resolved.dependencyAnalyzer,
+      localValidator,
     )
 
     // For the ink path, create the ValidationEventBus here so the bridge can
@@ -411,16 +431,6 @@ export default class Build extends SfpmCommand {
 
     const mode = this.outputMode;
 
-    // Initialize dependency analyzer for cross-package reference validation
-    // Only when validation level includes analysis (full, local, org)
-    let dependencyAnalyzer: DependencyAnalyzer | undefined;
-    if (validation !== 'none') {
-      const analyzer = new MetadataDependencyService(projectDir);
-      const factory = new PackageFactory(projectConfig);
-      await analyzer.initialize(factory.createAll());
-      dependencyAnalyzer = analyzer;
-    }
-
     const buildOptions: BuildOrchestratorOptions = {
       buildNumber: flags['build-number'],
       force: flags.force,
@@ -433,7 +443,6 @@ export default class Build extends SfpmCommand {
       async: flags.async ?? false,
       buildOptions,
       buildOrgUsername: flags['build-org'],
-      dependencyAnalyzer,
       devhubUsername,
       mode,
       noDependencies: flags['no-dependencies'],

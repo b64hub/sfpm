@@ -30,7 +30,7 @@ export default class Deploy extends SfpmCommand {
       required: true,
     }),
   }
-  static override description = 'deploy one or more packages from local project source'
+  static override description = 'deploy packages from local project source'
   /**
    * Lifecycle stage: **deploy**
    *

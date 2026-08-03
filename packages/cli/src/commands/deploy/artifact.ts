@@ -11,7 +11,7 @@ import {renderApp} from '../../ui/run.js'
 import Deploy, {ResolvedDeployFlags} from './index.js'
 
 export default class DeployArtifact extends Deploy {
-  static override description = 'deploy one or more packages from built artifacts using source-deploy'
+  static override description = 'deploy packages from built artifacts using source-deploy'
   static override flags = {
     ...Deploy.flags,
   }

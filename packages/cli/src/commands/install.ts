@@ -21,7 +21,7 @@ export default class Install extends SfpmCommand {
       required: true,
     }),
   }
-  static override description = 'install one or more packages'
+  static override description = 'install packages'
   /**
    * Lifecycle stage: **install**
    *
