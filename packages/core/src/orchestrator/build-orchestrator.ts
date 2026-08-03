@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
-import type {DependencyAnalyzer} from '../types/dependency-analysis.js';
+import type {LocalValidator} from '../types/local-validator.js';
 import type {BuildOptions, BuildOrg} from '../types/package.js';
 import type {PendingValidationDescriptor} from '../types/validation.js';
 
@@ -32,7 +32,7 @@ export type BuildOrchestratorOptions = BuildOptions & OrchestratorOptions;
 export class BuildOrchestrationTask implements OrchestrationTask<PendingValidationDescriptor> {
   private readonly buildBus: BuildEventBus;
   private readonly buildOrg?: BuildOrg;
-  private readonly dependencyAnalyzer?: DependencyAnalyzer;
+  private readonly localValidator?: LocalValidator;
   private readonly logger?: Logger;
   private readonly options: BuildOrchestratorOptions;
   private readonly provider: ProjectDefinitionProvider;
@@ -42,12 +42,12 @@ export class BuildOrchestrationTask implements OrchestrationTask<PendingValidati
     buildOrg: BuildOrg | undefined,
     options: BuildOrchestratorOptions,
     logger?: Logger,
-    dependencyAnalyzer?: DependencyAnalyzer,
+    localValidator?: LocalValidator,
     buildBus?: BuildEventBus,
   ) {
     this.provider = provider;
     this.buildOrg = buildOrg;
-    this.dependencyAnalyzer = dependencyAnalyzer;
+    this.localValidator = localValidator;
     this.options = options;
     this.logger = logger;
     this.buildBus = buildBus ?? new BuildEventBus();
@@ -78,7 +78,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<PendingValidati
       this.buildOrg,
       this.options,
       pkgLogger,
-      this.dependencyAnalyzer,
+      this.localValidator,
       this.buildBus,
     );
 
@@ -135,11 +135,11 @@ export class BuildOrchestrator {
     buildOrg: BuildOrg,
     options: BuildOrchestratorOptions,
     logger?: Logger,
-    dependencyAnalyzer?: DependencyAnalyzer,
+    localValidator?: LocalValidator,
   ) {
     this.buildBus = new BuildEventBus();
     this.orchestrationBus = new OrchestrationEventBus(randomUUID());
-    const task = new BuildOrchestrationTask(provider, buildOrg, options, logger, dependencyAnalyzer, this.buildBus);
+    const task = new BuildOrchestrationTask(provider, buildOrg, options, logger, localValidator, this.buildBus);
     this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: false}, task, logger, this.orchestrationBus);
   }
 

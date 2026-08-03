@@ -2,8 +2,8 @@ import {Org} from '@salesforce/core';
 import {ComponentSet} from '@salesforce/source-deploy-retrieve';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
-import type {DependencyAnalyzer} from '../types/dependency-analysis.js';
 import type {HookContext, HookTiming} from '../types/lifecycle.js';
+import type {LocalValidator} from '../types/local-validator.js';
 import type {PendingValidationDescriptor, ValidationLevel} from '../types/validation.js';
 
 import {ArtifactRepository} from '../artifacts/artifact-repository.js';
@@ -19,6 +19,7 @@ import {
   Builder, builderFactory, BuilderResult,
   BuildTaskContext, BuildTaskResult,
 } from './builders/builder-registry.js';
+import {compileValidationTask} from './builders/tasks/compile-validation-task.js';
 import {dependencyAnalysisTask} from './builders/tasks/dependency-analysis-task.js';
 import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
 
@@ -28,6 +29,11 @@ import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.j
 interface ModeConfig {
   /** Whether and how to run dependency analysis (cross-package reference validation) */
   dependencyAnalysis: 'error' | 'warn' | false;
+  /**
+   * Whether to run local compile validation. Always warn-only (best-effort) —
+   * the org is the authoritative compiler. Skipped when orgValidation handles it.
+   */
+  localCompile: boolean;
   /** Whether to connect to and validate against an org */
   orgValidation: boolean;
 }
@@ -35,18 +41,22 @@ interface ModeConfig {
 const VALIDATION_CONFIGS: Record<ValidationLevel, ModeConfig> = {
   full: {
     dependencyAnalysis: 'error',
+    localCompile: true,   // best-effort compile check; org is authoritative
     orgValidation: true,
   },
   local: {
     dependencyAnalysis: 'warn',
+    localCompile: true,   // sole compile signal when no org
     orgValidation: false,
   },
   none: {
     dependencyAnalysis: false,
+    localCompile: false,
     orgValidation: false,
   },
   org: {
     dependencyAnalysis: 'warn',
+    localCompile: false,  // org compiler is authoritative; skip local check
     orgValidation: true,
   },
 };
@@ -70,7 +80,7 @@ export {PackageBuilder};
 export default class PackageBuilder {
   private buildOrg?: BuildOrg;
   private bus?: BuildEventBus;
-  private dependencyAnalyzer?: DependencyAnalyzer;
+  private localValidator?: LocalValidator;
   private logger?: Logger;
   private options: BuildOptions;
   private provider: ProjectDefinitionProvider;
@@ -81,12 +91,12 @@ export default class PackageBuilder {
     buildOrg?: BuildOrg,
     options?: BuildOptions,
     logger?: Logger,
-    dependencyAnalyzer?: DependencyAnalyzer,
+    localValidator?: LocalValidator,
     bus?: BuildEventBus,
   ) {
     this.buildOrg = buildOrg;
     this.bus = bus;
-    this.dependencyAnalyzer = dependencyAnalyzer;
+    this.localValidator = localValidator;
     this.logger = logger;
     this.options = options || {};
     this.provider = provider;
@@ -378,11 +388,22 @@ export default class PackageBuilder {
 
     const builderInstance = builderFactory(this.provider, sfpmPackage, this.options, this.logger, this.sink, buildAs as PackageType);
 
-    // Register dependency analysis as a pre-build task when analyzer is provided
-    if (this.dependencyAnalyzer && modeConfig.dependencyAnalysis) {
+    // Register local compile check as a pre-build task (best-effort, always warn-only)
+    if (this.localValidator && modeConfig.localCompile) {
+      builderInstance.tasks.push({
+        factory: compileValidationTask({
+          validator: this.localValidator,
+          warnOnly: true,
+        }),
+        phase: 'pre',
+      });
+    }
+
+    // Register dependency analysis as a pre-build task
+    if (this.localValidator && modeConfig.dependencyAnalysis) {
       builderInstance.tasks.push({
         factory: dependencyAnalysisTask({
-          analyzer: this.dependencyAnalyzer,
+          validator: this.localValidator,
           warnOnly: modeConfig.dependencyAnalysis === 'warn',
         }),
         phase: 'pre',
