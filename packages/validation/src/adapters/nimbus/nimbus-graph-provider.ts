@@ -213,7 +213,7 @@ export class NimbusGraphProvider implements DependencyGraphProvider {
 
     const {exitCode, stderr, stdout} = await runNimbus(
       binary,
-      ['graph', arg, '--json'],
+      ['graph', arg, '--format', 'json', '--depth', '1'],
       context.projectRoot,
       {logger},
     );

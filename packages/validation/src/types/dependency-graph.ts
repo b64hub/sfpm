@@ -93,10 +93,6 @@ export interface CoverageProvenance {
 
 // ============================================================================
 // Caveats
-//
-// The Nimbus `limits` prose is a property of the analysis method, not of the
-// node — the same three paragraphs ship with every custom metadata response.
-// Emit stable codes and resolve display text in the presentation layer.
 // ============================================================================
 
 export type CaveatCode
@@ -116,11 +112,6 @@ export interface Caveat {
 
 // ============================================================================
 // Type-specific detail
-//
-// Everything that is genuinely not an edge. Note that Nimbus `detail` is a
-// display string whose meaning changes per type ("4 record(s)" for custom
-// metadata, a truncated label body for labels); it is split into real fields
-// here.
 // ============================================================================
 
 export interface ApexClassDetails {

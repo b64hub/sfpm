@@ -70,7 +70,7 @@ describe('NimbusGraphProvider', () => {
       mockNimbus(loadFixture('nimbus-graph-orderservice.json'));
       await new NimbusGraphProvider(makeDeps()).getMetadataDependencies({ name: 'OrderService', type: 'ApexClass' }, CTX);
       expect(runNimbus).toHaveBeenCalledWith(
-        '/usr/bin/nimbus', ['graph', 'OrderService', '--json'], '/project', expect.any(Object),
+        '/usr/bin/nimbus', ['graph', 'OrderService', '--format', 'json', '--depth', '1'], '/project', expect.any(Object),
       );
     });
 
@@ -157,7 +157,7 @@ describe('NimbusGraphProvider', () => {
       mockNimbus(loadFixture('nimbus-graph-sobject.json'));
       await new NimbusGraphProvider(makeDeps()).getMetadataDependencies({ name: 'Account', type: 'SObject' }, CTX);
       expect(runNimbus).toHaveBeenCalledWith(
-        '/usr/bin/nimbus', ['graph', 'SObject.Account', '--json'], '/project', expect.any(Object),
+        '/usr/bin/nimbus', ['graph', 'SObject.Account', '--format', 'json', '--depth', '1'], '/project', expect.any(Object),
       );
     });
 
@@ -210,7 +210,7 @@ describe('NimbusGraphProvider', () => {
         { name: 'Feature_Toggle__mdt', type: 'CustomMetadataType' }, CTX,
       );
       expect(runNimbus).toHaveBeenCalledWith(
-        '/usr/bin/nimbus', ['graph', 'Feature_Toggle__mdt', '--json'], '/project', expect.any(Object),
+        '/usr/bin/nimbus', ['graph', 'Feature_Toggle__mdt', '--format', 'json', '--depth', '1'], '/project', expect.any(Object),
       );
     });
 
@@ -253,7 +253,7 @@ describe('NimbusGraphProvider', () => {
         { name: 'Create_Quote', type: 'Flow' }, CTX,
       );
       expect(runNimbus).toHaveBeenCalledWith(
-        '/usr/bin/nimbus', ['graph', 'Flow.Create_Quote', '--json'], '/project', expect.any(Object),
+        '/usr/bin/nimbus', ['graph', 'Flow.Create_Quote', '--format', 'json', '--depth', '1'], '/project', expect.any(Object),
       );
     });
 
@@ -307,7 +307,7 @@ describe('NimbusGraphProvider', () => {
         { name: 'Capacity_Disclaimer', type: 'CustomLabel' }, CTX,
       );
       expect(runNimbus).toHaveBeenCalledWith(
-        '/usr/bin/nimbus', ['graph', 'Label.Capacity_Disclaimer', '--json'], '/project', expect.any(Object),
+        '/usr/bin/nimbus', ['graph', 'Label.Capacity_Disclaimer', '--format', 'json', '--depth', '1'], '/project', expect.any(Object),
       );
     });
 

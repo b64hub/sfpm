@@ -1,6 +1,8 @@
-import type {DependencyGraphProvider} from '../types/dependency-graph.js';
+import type {CaveatCode, DependencyGraphProvider} from '../types/dependency-graph.js';
 import type {ValidationContext} from '../types/validation-context.js';
 import type {MetadataOwnership, PackageManifest} from './metadata-ownership-index.js';
+
+import {directDependencies} from '../types/dependency-graph.js';
 
 export interface BoundaryViolation {
   fromMetadata: string;
@@ -10,7 +12,7 @@ export interface BoundaryViolation {
 }
 
 export interface BoundaryCheckResult {
-  caveats: string[];
+  caveats: CaveatCode[];
   unresolved: string[];
   violations: BoundaryViolation[];
 }
@@ -24,7 +26,7 @@ export async function findPackageBoundaryViolations(
 ): Promise<BoundaryCheckResult> {
   const ownedMetadata = [...ownershipIndex.values()].filter(o => o.packageId === pkg.packageId);
   const violations: BoundaryViolation[] = [];
-  const caveats = new Set<string>();
+  const caveatCodes = new Set<CaveatCode>();
   const unresolved = new Set<string>();
 
   const queue = [...ownedMetadata];
@@ -33,27 +35,27 @@ export async function findPackageBoundaryViolations(
       const owned = queue.shift();
       if (!owned) break;
       // eslint-disable-next-line no-await-in-loop
-      const graph = await graphProvider.getMetadataDependencies(owned.metadataName, owned.metadataType, context);
-      for (const limit of graph.limits) caveats.add(limit);
+      const node = await graphProvider.getMetadataDependencies(
+        {name: owned.fileName, type: owned.metadataType},
+        context,
+      );
 
-      // Only Apex classes carry a static `dependencies` list — SObject and
-      // Flow graphs express cross-boundary access differently. Skip non-class
-      // types here until boundary checking is extended to cover them.
-      if (!('dependencies' in graph)) continue;
+      for (const caveat of node.caveats) caveatCodes.add(caveat.code);
 
-      for (const depLower of graph.dependencies) {
-        const dep = ownershipIndex.get(depLower);
+      for (const edge of directDependencies(node)) {
+        const depKey = edge.target.name.toLowerCase();
+        const dep = ownershipIndex.get(depKey);
         if (!dep) {
-          unresolved.add(depLower);
+          unresolved.add(depKey);
           continue;
         }
 
         if (dep.packageId === pkg.packageId) continue;
         if (!pkg.declaredDependencies.has(dep.packageId)) {
           violations.push({
-            fromMetadata: owned.metadataName,
+            fromMetadata: node.metadataName,
             fromPackage: pkg.packageId,
-            toMetadata: depLower,
+            toMetadata: dep.fileName,
             toPackage: dep.packageId,
           });
         }
@@ -61,5 +63,5 @@ export async function findPackageBoundaryViolations(
     }
   }));
 
-  return {caveats: [...caveats], unresolved: [...unresolved], violations};
+  return {caveats: [...caveatCodes], unresolved: [...unresolved], violations};
 }

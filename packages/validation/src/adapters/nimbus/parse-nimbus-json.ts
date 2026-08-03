@@ -1,4 +1,4 @@
-import type {Diagnostic, ValidationResult} from '../../contracts/validator.js';
+import type {Diagnostic, ValidationResult} from '../../types/validator.js';
 
 interface NimbusValidateFile {
   errors?: {column: number; line: number; message: string}[];
