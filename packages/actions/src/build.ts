@@ -119,17 +119,15 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   const orchestrator = new BuildOrchestrator(
     projectConfig,
     projectGraph,
+    {},
     {
       buildNumber: options.buildNumber,
-      devhubUsername: options.devhubUsername,
       force: options.force,
-      ignoreFilesConfig: sfpmConfig.ignoreFiles,
       includeDependencies: options.includeDependencies,
-      installationKey: options.installationKey,
+      unlocked: options.installationKey ? {installationKey: options.installationKey} : undefined,
       validation: 'full',
     },
     logger,
-    projectDir,
   );
 
   // Collect creation request IDs from create:complete events
@@ -160,7 +158,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   // ------------------------------------------------------------------
   const packageStates: PackageBuildState[] = orchResult.results.map(r => {
     const pkgDef = projectConfig.getPackageDefinition(r.packageName);
-    const pkgType = pkgDef.type as string;
+    const pkgType = (pkgDef?.type ?? '') as string;
     const isUnlocked = pkgType === 'Unlocked';
     const createInfo = createRequestIds.get(r.packageName);
     const needsValidation = isUnlocked && r.success && !r.skipped && Boolean(createInfo);

@@ -129,18 +129,17 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
     lifecycle.use(hooks);
   }
 
+  const scratchOrg = await Org.create({aliasOrUsername: connection.username});
   const orchestrator = new BuildOrchestrator(
     projectConfig,
     projectGraph,
+    {buildOrg: scratchOrg},
     {
-      buildOrg: connection.username,
       continueOnError: true,
-      devhubUsername: options.devhubUsername,
       includeDependencies: true,
       validation: 'local',
     },
     logger,
-    projectDir,
   );
 
   const renderer = new ActionsProgressRenderer(logger);
