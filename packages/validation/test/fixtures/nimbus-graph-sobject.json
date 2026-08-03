@@ -1,262 +1,1020 @@
 {
-  "detail": "",
-  "flows_fired": null,
+  "schema": "nimbus.graph/v1",
+  "nodes": [
+    {
+      "id": "accmanagementsyncbillingaccountsjob",
+      "name": "AccManagementSyncBillingAccountsJob",
+      "kind": "class",
+      "file": "src/core/integrations/account-management/dist/force-app/classes/infra/routines/AccManagementSyncBillingAccountsJob.cls",
+      "is_test": false,
+      "dependents": 2
+    },
+    {
+      "id": "accountmanagementroutinestest",
+      "name": "AccountManagementRoutinesTest",
+      "kind": "class",
+      "file": "src/core/integrations/account-management/dist/force-app/classes/tests/AccountManagementRoutinesTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "accountmanagementservicetest",
+      "name": "AccountManagementServiceTest",
+      "kind": "class",
+      "file": "src/core/integrations/account-management/dist/force-app/classes/tests/AccountManagementServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "accountselectortest",
+      "name": "AccountSelectorTest",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/selector/tests/AccountSelectorTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "adminsubscriptionordercontrollertest",
+      "name": "AdminSubscriptionOrderControllerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/AdminSubscriptionOrderControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "adminsubscriptionorderservicetest",
+      "name": "AdminSubscriptionOrderServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/services/AdminSubscriptionOrderServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "alfatroubleticketeventhandlertest",
+      "name": "AlfaTroubleTicketEventHandlerTest",
+      "kind": "class",
+      "file": "src/core/integrations/alfa/dist/force-app/classes/tests/AlfaTroubleTicketEventHandlerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "assetcustomercontrollertest",
+      "name": "AssetCustomerControllerTest",
+      "kind": "class",
+      "file": "src/portal/wholesale/components/page/dist/force-app/classes/test/AssetCustomerControllerTest.cls",
+      "is_test": true,
+      "dependents": 1
+    },
+    {
+      "id": "billingaccountemailresolvertest",
+      "name": "BillingAccountEmailResolverTest",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/tests/BillingAccountEmailResolverTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "billingaccountrepotest",
+      "name": "BillingAccountRepoTest",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/tests/infra/BillingAccountRepoTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "billingaccountservicetest",
+      "name": "BillingAccountServiceTest",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/tests/BillingAccountServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "capacitychangeordercontrollertest",
+      "name": "CapacityChangeOrderControllerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/CapacityChangeOrderControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "capacitychangeorderservicetest",
+      "name": "CapacityChangeOrderServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/services/CapacityChangeOrderServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "changeordercontrollertest",
+      "name": "ChangeOrderControllerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/classes/tests/ChangeOrderControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "changeorderservicetest",
+      "name": "ChangeOrderServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/classes/tests/services/ChangeOrderServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "consentservicetest",
+      "name": "ConsentServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/consent/tests/ConsentServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "contactrepotest",
+      "name": "ContactRepoTest",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/tests/ContactRepoTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "contactsearchcontrollertest",
+      "name": "ContactSearchControllerTest",
+      "kind": "class",
+      "file": "src/sales/contact-search/dist/force-app/classes/test/ContactSearchControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "contractproductcontrollertest",
+      "name": "ContractProductControllerTest",
+      "kind": "class",
+      "file": "src/sales/contracts/dist/force-app/classes/tests/ContractProductControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "contractrepotest",
+      "name": "ContractRepoTest",
+      "kind": "class",
+      "file": "src/sales/contracts/dist/force-app/classes/tests/ContractRepoTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "contracttaskservicetest",
+      "name": "ContractTaskServiceTest",
+      "kind": "class",
+      "file": "src/sales/contracts/dist/force-app/classes/tests/ContractTaskServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "cpqcontrollertest",
+      "name": "CPQControllerTest",
+      "kind": "class",
+      "file": "src/sales/cpq/dist/force-app/classes/tests/controllers/CPQControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "cpqrepotest",
+      "name": "CPQRepoTest",
+      "kind": "class",
+      "file": "src/sales/cpq/dist/force-app/classes/tests/infra/CPQRepoTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "dmltest",
+      "name": "DMLTest",
+      "kind": "class",
+      "file": "src/core/apex/utils/dist/force-app/classes/tests/DMLTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "emailchanneltest",
+      "name": "EmailChannelTest",
+      "kind": "class",
+      "file": "src/core/platform-features/notification-engine/dist/force-app/classes/tests/EmailChannelTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "emailrecipienttargetresolver",
+      "name": "EmailRecipientTargetResolver",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/services/EmailRecipientTargetResolver.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "emailrecipienttargetresolvertest",
+      "name": "EmailRecipientTargetResolverTest",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/tests/EmailRecipientTargetResolverTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "fileservicetest",
+      "name": "FileServiceTest",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/tests/FileServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "flow:subscriptionorder_capacity_subscription_termination",
+      "name": "SubscriptionOrder_Capacity_Subscription_Termination",
+      "kind": "flow",
+      "file": "src/sales/order-management/flows/SubscriptionOrder_Capacity_Subscription_Termination.flow-meta.xml",
+      "is_test": false,
+      "dependents": 0,
+      "detail": "Active"
+    },
+    {
+      "id": "flow:subscriptionorder_new_subscription_entrypoint",
+      "name": "SubscriptionOrder_New_Subscription_Entrypoint",
+      "kind": "flow",
+      "file": "src/sales/cpq/flows/SubscriptionOrder_New_Subscription_Entrypoint.flow-meta.xml",
+      "is_test": false,
+      "dependents": 0,
+      "detail": "Active"
+    },
+    {
+      "id": "flow:subscriptionorder_new_vula_subscription",
+      "name": "SubscriptionOrder_New_Vula_Subscription",
+      "kind": "flow",
+      "file": "src/sales/cpq/flows/SubscriptionOrder_New_Vula_Subscription.flow-meta.xml",
+      "is_test": false,
+      "dependents": 1,
+      "detail": "Active"
+    },
+    {
+      "id": "flow:subscriptionorder_vula_subscription_change",
+      "name": "SubscriptionOrder_Vula_Subscription_Change",
+      "kind": "flow",
+      "file": "src/sales/order-management/flows/SubscriptionOrder_Vula_Subscription_Change.flow-meta.xml",
+      "is_test": false,
+      "dependents": 0,
+      "detail": "Active"
+    },
+    {
+      "id": "flow:subscriptionorder_vula_subscription_management_feasibility",
+      "name": "SubscriptionOrder_Vula_Subscription_Management_Feasibility",
+      "kind": "flow",
+      "file": "src/sales/order-management/flows/SubscriptionOrder_Vula_Subscription_Management_Feasibility.flow-meta.xml",
+      "is_test": false,
+      "dependents": 2,
+      "detail": "Active"
+    },
+    {
+      "id": "flow:subscriptionorder_vula_subscription_termination",
+      "name": "SubscriptionOrder_Vula_Subscription_Termination",
+      "kind": "flow",
+      "file": "src/sales/order-management/flows/SubscriptionOrder_Vula_Subscription_Termination.flow-meta.xml",
+      "is_test": false,
+      "dependents": 0,
+      "detail": "Active"
+    },
+    {
+      "id": "inappchannel",
+      "name": "InAppChannel",
+      "kind": "class",
+      "file": "src/core/platform-features/notification-engine/dist/force-app/classes/channels/InAppChannel.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "inappchanneltest",
+      "name": "InAppChannelTest",
+      "kind": "class",
+      "file": "src/core/platform-features/notification-engine/dist/force-app/classes/tests/InAppChannelTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "newsubscriptionordercontrollertest",
+      "name": "NewSubscriptionOrderControllerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/NewSubscriptionOrderControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "obj:account",
+      "name": "Account",
+      "kind": "sobject",
+      "is_test": false,
+      "dependents": 64
+    },
+    {
+      "id": "orderauthorizationpolicytest",
+      "name": "OrderAuthorizationPolicyTest",
+      "kind": "class",
+      "file": "src/sales/order-management/classes/tests/domain/OrderAuthorizationPolicyTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "ordercompletionservicetest",
+      "name": "OrderCompletionServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/services/OrderCompletionServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderitemselectortest",
+      "name": "OrderItemSelectorTest",
+      "kind": "class",
+      "file": "src/sales/order-management/classes/tests/infra/OrderItemSelectorTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderlookupservicetest",
+      "name": "OrderLookupServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/services/OrderLookupServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "ordernotificationservicetest",
+      "name": "OrderNotificationServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/services/OrderNotificationServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderrepotest",
+      "name": "OrderRepoTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/OrderRepoTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderselectortest",
+      "name": "OrderSelectorTest",
+      "kind": "class",
+      "file": "src/sales/order-management/classes/tests/infra/OrderSelectorTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderservicetest",
+      "name": "OrderServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/services/OrderServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "ordertrackingrepotest",
+      "name": "OrderTrackingRepoTest",
+      "kind": "class",
+      "file": "src/sales/order-management/classes/tests/infra/OrderTrackingRepoTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "ordertrackingservicetest",
+      "name": "OrderTrackingServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/services/OrderTrackingServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "portalhomenotificationscontrollertest",
+      "name": "PortalHomeNotificationsControllerTest",
+      "kind": "class",
+      "file": "src/portal/wholesale/components/page/dist/force-app/classes/test/PortalHomeNotificationsControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "pricerulerepotest",
+      "name": "PriceRuleRepoTest",
+      "kind": "class",
+      "file": "src/sales/cpq/dist/force-app/classes/tests/infra/PriceRuleRepoTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "relatedlistcontrollertest",
+      "name": "RelatedListControllerTest",
+      "kind": "class",
+      "file": "src/portal/wholesale/components/page/dist/force-app/classes/test/RelatedListControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "restrictemaildomainhandlertest",
+      "name": "RestrictEmailDomainHandlerTest",
+      "kind": "class",
+      "file": "src/core/platform-features/domain-validation/dist/force-app/classes/tests/RestrictEmailDomainHandlerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "sobjectselectortest",
+      "name": "SObjectSelectorTest",
+      "kind": "class",
+      "file": "src/core/apex/utils/dist/force-app/classes/tests/SObjectSelectorTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "subscriptioncontrollertest",
+      "name": "SubscriptionControllerTest",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/tests/controllers/SubscriptionControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "subscriptioncustomercontrollertest",
+      "name": "SubscriptionCustomerControllerTest",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/tests/controllers/SubscriptionCustomerControllerTest.cls",
+      "is_test": true,
+      "dependents": 1
+    },
+    {
+      "id": "subscriptionorderbuildertest",
+      "name": "SubscriptionOrderBuilderTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/domain/SubscriptionOrderBuilderTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "subscriptionordercontrollertest",
+      "name": "SubscriptionOrderControllerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/SubscriptionOrderControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "subscriptionorderitemmappingtest",
+      "name": "SubscriptionOrderItemMappingTest",
+      "kind": "class",
+      "file": "src/sales/order-management/classes/tests/infra/SubscriptionOrderItemMappingTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "subscriptionrepotest",
+      "name": "SubscriptionRepoTest",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/tests/SubscriptionRepoTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "ta_case_troubleticketcreatetest",
+      "name": "TA_Case_TroubleTicketCreateTest",
+      "kind": "class",
+      "file": "src/service/trouble-tickets/dist/force-app/classes/tests/trigger-actions/TA_Case_TroubleTicketCreateTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "ta_case_troubleticketpublishtest",
+      "name": "TA_Case_TroubleTicketPublishTest",
+      "kind": "class",
+      "file": "src/service/trouble-tickets/dist/force-app/classes/tests/trigger-actions/TA_Case_TroubleTicketPublishTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "ta_case_troubleticketunflagtest",
+      "name": "TA_Case_TroubleTicketUnflagTest",
+      "kind": "class",
+      "file": "src/service/trouble-tickets/dist/force-app/classes/tests/trigger-actions/TA_Case_TroubleTicketUnflagTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "ta_contentdocumentlink_createtaskstest",
+      "name": "TA_ContentDocumentLink_CreateTasksTest",
+      "kind": "class",
+      "file": "src/sales/contracts/dist/force-app/classes/tests/TA_ContentDocumentLink_CreateTasksTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "ta_ordertrackingevent_preventupdatetest",
+      "name": "TA_OrderTrackingEvent_PreventUpdateTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/TA_OrderTrackingEvent_PreventUpdateTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "troubleticketrepotest",
+      "name": "TroubleTicketRepoTest",
+      "kind": "class",
+      "file": "src/service/trouble-tickets/dist/force-app/classes/tests/repos/TroubleTicketRepoTest.cls",
+      "is_test": true,
+      "dependents": 0
+    }
+  ],
+  "edges": [
+    {
+      "from": "accmanagementsyncbillingaccountsjob",
+      "to": "accmanagementsyncbillingaccountsjob",
+      "provenance": "static"
+    },
+    {
+      "from": "accmanagementsyncbillingaccountsjob",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "accountmanagementroutinestest",
+      "to": "accmanagementsyncbillingaccountsjob",
+      "provenance": "static"
+    },
+    {
+      "from": "accountmanagementroutinestest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "accountmanagementservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "accountselectortest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "adminsubscriptionordercontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "adminsubscriptionorderservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "alfatroubleticketeventhandlertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "assetcustomercontrollertest",
+      "to": "assetcustomercontrollertest",
+      "provenance": "static"
+    },
+    {
+      "from": "assetcustomercontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "billingaccountemailresolvertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "billingaccountrepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "billingaccountservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "billingaccountservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "capacitychangeordercontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "capacitychangeorderservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "changeordercontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "changeorderservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "consentservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "contactrepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "contactsearchcontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "contractproductcontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "contractrepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "contracttaskservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "cpqcontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "cpqrepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "dmltest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "emailchanneltest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "emailrecipienttargetresolver",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "emailrecipienttargetresolvertest",
+      "to": "emailrecipienttargetresolver",
+      "provenance": "static"
+    },
+    {
+      "from": "emailrecipienttargetresolvertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "fileservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "flow:subscriptionorder_capacity_subscription_termination",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "flow:subscriptionorder_new_subscription_entrypoint",
+      "to": "flow:subscriptionorder_new_vula_subscription",
+      "provenance": "static"
+    },
+    {
+      "from": "flow:subscriptionorder_new_subscription_entrypoint",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "flow:subscriptionorder_new_vula_subscription",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "flow:subscriptionorder_vula_subscription_change",
+      "to": "flow:subscriptionorder_vula_subscription_management_feasibility",
+      "provenance": "static"
+    },
+    {
+      "from": "flow:subscriptionorder_vula_subscription_change",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "flow:subscriptionorder_vula_subscription_management_feasibility",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "flow:subscriptionorder_vula_subscription_termination",
+      "to": "flow:subscriptionorder_vula_subscription_management_feasibility",
+      "provenance": "static"
+    },
+    {
+      "from": "flow:subscriptionorder_vula_subscription_termination",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "inappchannel",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "inappchanneltest",
+      "to": "inappchannel",
+      "provenance": "static"
+    },
+    {
+      "from": "inappchanneltest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "newsubscriptionordercontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "orderauthorizationpolicytest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "ordercompletionservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "orderitemselectortest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "orderlookupservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "ordernotificationservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "orderrepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "orderselectortest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "orderselectortest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "ordertrackingrepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "ordertrackingservicetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "portalhomenotificationscontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "pricerulerepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "relatedlistcontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "relatedlistcontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "restrictemaildomainhandlertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "sobjectselectortest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "subscriptioncontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "subscriptioncustomercontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "subscriptioncustomercontrollertest",
+      "to": "subscriptioncustomercontrollertest",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionorderbuildertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "subscriptionordercontrollertest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "subscriptionorderitemmappingtest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "subscriptionrepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "subscriptionrepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "ta_case_troubleticketcreatetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "ta_case_troubleticketpublishtest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "ta_case_troubleticketunflagtest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "ta_contentdocumentlink_createtaskstest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "ta_ordertrackingevent_preventupdatetest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "troubleticketrepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "troubleticketrepotest",
+      "to": "obj:account",
+      "provenance": "static",
+      "op": "query"
+    }
+  ],
+  "stats": {
+    "node_count": 65,
+    "edge_count": 78,
+    "cycle_count": 0,
+    "observed_edges": 0,
+    "trigger_count": 0,
+    "label_count": 0,
+    "unreferenced_labels": 0,
+    "custom_metadata_count": 0,
+    "sobject_count": 1,
+    "custom_permission_count": 0,
+    "unchecked_custom_permissions": 0,
+    "static_resource_count": 0,
+    "unread_static_resources": 0,
+    "flow_count": 6
+  },
+  "scope": {
+    "root": "Account",
+    "depth": 1,
+    "truncated": true
+  },
   "limits": [
-    "Readers and writers cover Apex only — LWC, Aura, process automation and integrations touch objects without appearing here, and a flow appears only through its own edges.",
-    "Dynamic access — Database.query with a computed string, DML on a generic SObject or a List\u003cSObject\u003e — comes from the last coverage run: access on a path that run did not execute is not here, and one recorded before the code changed may no longer happen.",
-    "Triggers fired are every trigger this project declares on the object, which is certain rather than inferred: any write reaches them. Record-triggered flows are not drawn.",
-    "Readers and writers are the classes naming this object; anything reaching those classes appears as a transitive dependent, not as a reader or writer."
-  ],
-  "observed_readers": null,
-  "observed_writers": null,
-  "readers": [
-    "AccManagementSyncBillingAccountsJob",
-    "BillingAccountServiceTest",
-    "ContractProductControllerTest",
-    "DMLTest",
-    "EmailRecipientTargetResolver",
-    "InAppChannel",
-    "OrderSelectorTest",
-    "PortalHomeNotificationsControllerTest",
-    "RelatedListControllerTest",
-    "SubscriptionOrder_Capacity_Subscription_Termination",
-    "SubscriptionOrder_New_Subscription_Entrypoint",
-    "SubscriptionOrder_New_Vula_Subscription",
-    "SubscriptionOrder_Vula_Subscription_Change",
-    "SubscriptionOrder_Vula_Subscription_Management_Feasibility",
-    "SubscriptionOrder_Vula_Subscription_Termination",
-    "SubscriptionRepoTest",
-    "TroubleTicketRepoTest"
-  ],
-  "sobject": "Account",
-  "test_dependents": [
-    "AccountManagementRoutinesTest",
-    "AccountManagementServiceTest",
-    "AccountSelectorTest",
-    "AdminSubscriptionOrderControllerTest",
-    "AdminSubscriptionOrderServiceTest",
-    "AlfaTroubleTicketEventHandlerTest",
-    "AssetCustomerControllerTest",
-    "BillingAccountEmailResolverTest",
-    "BillingAccountRepoTest",
-    "BillingAccountServiceTest",
-    "CPQControllerTest",
-    "CPQRepoTest",
-    "CapacityChangeOrderControllerTest",
-    "CapacityChangeOrderServiceTest",
-    "ChangeOrderControllerTest",
-    "ChangeOrderServiceTest",
-    "ConsentServiceTest",
-    "ContactRepoTest",
-    "ContactSearchControllerTest",
-    "ContractProductControllerTest",
-    "ContractRepoTest",
-    "ContractTaskServiceTest",
-    "CvcOrderEventHandlerTest",
-    "DMLTest",
-    "EmailChannelTest",
-    "EmailRecipientTargetResolverTest",
-    "FileServiceTest",
-    "InAppChannelTest",
-    "NewSubscriptionOrderControllerTest",
-    "NotificationBuilderTest",
-    "NotificationChannelRegistryTest",
-    "NotificationDispatcherTest",
-    "NotificationPreferenceControllerTest",
-    "NotificationPreferenceServiceTest",
-    "NotificationQueueServiceTest",
-    "NotificationRetryPolicyTest",
-    "NotificationRoutePlanTest",
-    "NotificationSchedulerTest",
-    "NotificationTemplateControllerTest",
-    "NotificationTest",
-    "NotificationTopicPolicyTest",
-    "OrderAuthorizationPolicyTest",
-    "OrderCompletionServiceTest",
-    "OrderItemSelectorTest",
-    "OrderLookupServiceTest",
-    "OrderNotificationServiceTest",
-    "OrderRepoTest",
-    "OrderSelectorTest",
-    "OrderServiceTest",
-    "OrderTrackingEmailServiceTest",
-    "OrderTrackingRepoTest",
-    "OrderTrackingServiceTest",
-    "PortalHomeNotificationsControllerTest",
-    "PriceRuleRepoTest",
-    "RelatedListControllerTest",
-    "RestrictEmailDomainHandlerTest",
-    "SObjectSelectorTest",
-    "SubscriptionControllerTest",
-    "SubscriptionCustomerControllerTest",
-    "SubscriptionOrderBuilderTest",
-    "SubscriptionOrderControllerTest",
-    "SubscriptionOrderItemMappingTest",
-    "SubscriptionRepoTest",
-    "TA_Case_TroubleTicketCreateTest",
-    "TA_Case_TroubleTicketPublishTest",
-    "TA_Case_TroubleTicketUnflagTest",
-    "TA_ContentDocumentLink_CreateTasksTest",
-    "TA_OrderTrackingEvent_PreventUpdateTest",
-    "TA_OrderTrackingEvent_SendEmailTest",
-    "TroubleTicketRepoTest"
-  ],
-  "transitive_dependents": [
-    "AccManagementSyncBillingAccountsJob",
-    "AccountManagementRoutinesTest",
-    "AccountManagementServiceTest",
-    "AccountSelectorTest",
-    "AdminSubscriptionOrderControllerTest",
-    "AdminSubscriptionOrderServiceTest",
-    "AlfaTroubleTicketEventHandlerTest",
-    "AssetCustomerControllerTest",
-    "BillingAccountEmailResolverTest",
-    "BillingAccountRepoTest",
-    "BillingAccountServiceTest",
-    "CPQControllerTest",
-    "CPQRepoTest",
-    "CapacityChangeOrderControllerTest",
-    "CapacityChangeOrderServiceTest",
-    "ChangeOrderControllerTest",
-    "ChangeOrderServiceTest",
-    "ConsentServiceTest",
-    "ContactRepoTest",
-    "ContactSearchControllerTest",
-    "ContractProductControllerTest",
-    "ContractRepoTest",
-    "ContractTaskServiceTest",
-    "CvcOrderEventHandler",
-    "CvcOrderEventHandlerTest",
-    "DMLTest",
-    "EmailChannelTest",
-    "EmailRecipientTargetResolver",
-    "EmailRecipientTargetResolverTest",
-    "FileServiceTest",
-    "InAppChannel",
-    "InAppChannelTest",
-    "NewSubscriptionOrderControllerTest",
-    "Notification",
-    "NotificationAction",
-    "NotificationBuilderTest",
-    "NotificationChannelRegistry",
-    "NotificationChannelRegistryTest",
-    "NotificationDispatcher",
-    "NotificationDispatcherTest",
-    "NotificationPreferenceController",
-    "NotificationPreferenceControllerTest",
-    "NotificationPreferenceService",
-    "NotificationPreferenceServiceTest",
-    "NotificationQueueService",
-    "NotificationQueueServiceTest",
-    "NotificationQueueable",
-    "NotificationRetryPolicy",
-    "NotificationRetryPolicyTest",
-    "NotificationRoutePlan",
-    "NotificationRoutePlanTest",
-    "NotificationScheduler",
-    "NotificationSchedulerTest",
-    "NotificationTemplateController",
-    "NotificationTemplateControllerTest",
-    "NotificationTest",
-    "NotificationTopicConfigRepo",
-    "NotificationTopicPolicy",
-    "NotificationTopicPolicyTest",
-    "Notification_Channel__mdt",
-    "OrderAuthorizationPolicyTest",
-    "OrderCompletionServiceTest",
-    "OrderItemSelectorTest",
-    "OrderLookupServiceTest",
-    "OrderNotificationService",
-    "OrderNotificationServiceTest",
-    "OrderRepoTest",
-    "OrderSelectorTest",
-    "OrderServiceTest",
-    "OrderTrackingEmailService",
-    "OrderTrackingEmailServiceTest",
-    "OrderTrackingRepoTest",
-    "OrderTrackingServiceTest",
-    "PortalHomeNotificationsControllerTest",
-    "PriceRuleRepoTest",
-    "RelatedListControllerTest",
-    "RestrictEmailDomainHandlerTest",
-    "SObjectSelectorTest",
-    "SubscriptionControllerTest",
-    "SubscriptionCustomerControllerTest",
-    "SubscriptionOrderBuilderTest",
-    "SubscriptionOrderControllerTest",
-    "SubscriptionOrderItemMappingTest",
-    "SubscriptionOrder_Capacity_Subscription_Termination",
-    "SubscriptionOrder_New_Subscription_Entrypoint",
-    "SubscriptionOrder_New_Vula_Subscription",
-    "SubscriptionOrder_Subscription_Change_Entrypoint",
-    "SubscriptionOrder_Subscription_Termination_Entrypoint",
-    "SubscriptionOrder_Vula_Subscription_Change",
-    "SubscriptionOrder_Vula_Subscription_Management_Feasibility",
-    "SubscriptionOrder_Vula_Subscription_Termination",
-    "SubscriptionRepoTest",
-    "TA_Case_TroubleTicketCreateTest",
-    "TA_Case_TroubleTicketPublishTest",
-    "TA_Case_TroubleTicketUnflagTest",
-    "TA_ContentDocumentLink_CreateTasksTest",
-    "TA_OrderTrackingEvent_PreventUpdateTest",
-    "TA_OrderTrackingEvent_SendEmail",
-    "TA_OrderTrackingEvent_SendEmailTest",
-    "Trigger_Action__mdt",
-    "TroubleTicketRepoTest"
-  ],
-  "triggers_fired": null,
-  "writers": [
-    "AccountManagementRoutinesTest",
-    "AccountManagementServiceTest",
-    "AccountSelectorTest",
-    "AdminSubscriptionOrderControllerTest",
-    "AdminSubscriptionOrderServiceTest",
-    "AlfaTroubleTicketEventHandlerTest",
-    "AssetCustomerControllerTest",
-    "BillingAccountEmailResolverTest",
-    "BillingAccountRepoTest",
-    "BillingAccountServiceTest",
-    "CPQControllerTest",
-    "CPQRepoTest",
-    "CapacityChangeOrderControllerTest",
-    "CapacityChangeOrderServiceTest",
-    "ChangeOrderControllerTest",
-    "ChangeOrderServiceTest",
-    "ConsentServiceTest",
-    "ContactRepoTest",
-    "ContactSearchControllerTest",
-    "ContractRepoTest",
-    "ContractTaskServiceTest",
-    "EmailChannelTest",
-    "EmailRecipientTargetResolverTest",
-    "FileServiceTest",
-    "InAppChannelTest",
-    "NewSubscriptionOrderControllerTest",
-    "OrderAuthorizationPolicyTest",
-    "OrderCompletionServiceTest",
-    "OrderItemSelectorTest",
-    "OrderLookupServiceTest",
-    "OrderNotificationServiceTest",
-    "OrderRepoTest",
-    "OrderSelectorTest",
-    "OrderServiceTest",
-    "OrderTrackingRepoTest",
-    "OrderTrackingServiceTest",
-    "PriceRuleRepoTest",
-    "RelatedListControllerTest",
-    "RestrictEmailDomainHandlerTest",
-    "SObjectSelectorTest",
-    "SubscriptionControllerTest",
-    "SubscriptionCustomerControllerTest",
-    "SubscriptionOrderBuilderTest",
-    "SubscriptionOrderControllerTest",
-    "SubscriptionOrderItemMappingTest",
-    "SubscriptionRepoTest",
-    "TA_Case_TroubleTicketCreateTest",
-    "TA_Case_TroubleTicketPublishTest",
-    "TA_Case_TroubleTicketUnflagTest",
-    "TA_ContentDocumentLink_CreateTasksTest",
-    "TA_OrderTrackingEvent_PreventUpdateTest",
-    "TroubleTicketRepoTest"
+    "Edges are syntactic references. A trigger dispatching through custom metadata (TDTM and similar) reaches its handler with no reference to follow, so those edges are absent unless a coverage run revealed them.",
+    "This is reachability, not test selection. It must not be used to decide which tests to skip.",
+    "A coverage map was found, but it revealed no edges beyond the syntactic ones — either the dispatch gap is genuinely empty here, or the map is stale. Refresh it with `nimbus test \"*\" --coverage`.",
+    "SObject nodes exist only for objects this code touches or a trigger runs on — this is not the org's schema. The edges read object names Apex spells out, so dynamic SOQL, DML on a generic SObject, and access from Flows or LWC are absent until a coverage run records them.",
+    "Flow edges are read from flow metadata: the object a flow is triggered on, the Apex actions and subflows it names, and the objects its record elements touch. An action called through a dynamically built name, and anything a flow reaches through a screen or a component, are not read.",
+    "Scoped to Account at depth 1 — this is a neighbourhood, not the whole project. Further dependencies exist beyond the shown depth."
   ]
 }

@@ -1,47 +1,189 @@
 {
-  "custom_metadata_type": "Feature_Toggle__mdt",
-  "detail": "4 record(s)",
-  "file": "",
-  "handlers": null,
+  "schema": "nimbus.graph/v1",
+  "nodes": [
+    {
+      "id": "featuretoggle",
+      "name": "FeatureToggle",
+      "kind": "class",
+      "file": "src/core/platform-features/feature-toggle/dist/force-app/classes/FeatureToggle.cls",
+      "is_test": false,
+      "dependents": 3
+    },
+    {
+      "id": "featuretogglecontroller",
+      "name": "FeatureToggleController",
+      "kind": "class",
+      "file": "src/core/platform-features/feature-toggle/dist/force-app/classes/FeatureToggleController.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "featuretogglecontrollertest",
+      "name": "FeatureToggleControllerTest",
+      "kind": "class",
+      "file": "src/core/platform-features/feature-toggle/dist/force-app/classes/tests/FeatureToggleControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "featuretogglescanner",
+      "name": "FeatureToggleScanner",
+      "kind": "class",
+      "file": "src/core/platform-features/feature-toggle/dist/force-app/classes/FeatureToggleScanner.cls",
+      "is_test": false,
+      "dependents": 2
+    },
+    {
+      "id": "featuretoggleservice",
+      "name": "FeatureToggleService",
+      "kind": "class",
+      "file": "src/core/platform-features/feature-toggle/dist/force-app/classes/FeatureToggleService.cls",
+      "is_test": false,
+      "dependents": 6
+    },
+    {
+      "id": "featuretoggleservicetest",
+      "name": "FeatureToggleServiceTest",
+      "kind": "class",
+      "file": "src/core/platform-features/feature-toggle/dist/force-app/classes/tests/FeatureToggleServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "featuretoggletest",
+      "name": "FeatureToggleTest",
+      "kind": "class",
+      "file": "src/core/platform-features/feature-toggle/dist/force-app/classes/tests/FeatureToggleTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "mdt:feature_toggle__mdt",
+      "name": "Feature_Toggle__mdt",
+      "kind": "custommetadata",
+      "is_test": false,
+      "dependents": 7,
+      "detail": "4 record(s)"
+    }
+  ],
+  "edges": [
+    {
+      "from": "featuretoggle",
+      "to": "featuretoggleservice",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretoggle",
+      "to": "mdt:feature_toggle__mdt",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretogglecontroller",
+      "to": "featuretoggle",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretogglecontroller",
+      "to": "featuretogglescanner",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretogglecontroller",
+      "to": "featuretoggleservice",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretogglecontroller",
+      "to": "mdt:feature_toggle__mdt",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretogglecontrollertest",
+      "to": "featuretoggle",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretogglecontrollertest",
+      "to": "featuretogglecontroller",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretogglecontrollertest",
+      "to": "featuretoggleservice",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretogglecontrollertest",
+      "to": "mdt:feature_toggle__mdt",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretogglescanner",
+      "to": "featuretoggleservice",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretogglescanner",
+      "to": "mdt:feature_toggle__mdt",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretoggleservice",
+      "to": "mdt:feature_toggle__mdt",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretoggleservicetest",
+      "to": "featuretoggleservice",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretoggleservicetest",
+      "to": "mdt:feature_toggle__mdt",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretoggletest",
+      "to": "featuretoggle",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretoggletest",
+      "to": "featuretoggleservice",
+      "provenance": "static"
+    },
+    {
+      "from": "featuretoggletest",
+      "to": "mdt:feature_toggle__mdt",
+      "provenance": "static"
+    }
+  ],
+  "stats": {
+    "node_count": 8,
+    "edge_count": 18,
+    "cycle_count": 0,
+    "observed_edges": 0,
+    "trigger_count": 0,
+    "label_count": 0,
+    "unreferenced_labels": 0,
+    "custom_metadata_count": 1,
+    "sobject_count": 0,
+    "custom_permission_count": 0,
+    "unchecked_custom_permissions": 0,
+    "static_resource_count": 0,
+    "unread_static_resources": 0,
+    "flow_count": 0
+  },
+  "scope": {
+    "root": "Feature_Toggle__mdt",
+    "depth": 1,
+    "truncated": true
+  },
   "limits": [
+    "Edges are syntactic references. A trigger dispatching through custom metadata (TDTM and similar) reaches its handler with no reference to follow, so those edges are absent unless a coverage run revealed them.",
+    "This is reachability, not test selection. It must not be used to decide which tests to skip.",
+    "A coverage map was found, but it revealed no edges beyond the syntactic ones — either the dispatch gap is genuinely empty here, or the map is stale. Refresh it with `nimbus test \"*\" --coverage`.",
     "Custom metadata edges are heuristic on the outbound side: a record field value naming a class is read as a dispatch target, which can over-claim (a value that coincidentally matches a class name) and under-claim (indirection the reading cannot follow).",
-    "Handlers are classes named by record field values; the dispatches observed through Type.forName come from the last coverage run, attributed through the classes that query this type — a dispatch on a path that run did not execute is not here, and one recorded before the code changed may no longer happen.",
-    "Queriers are the classes reading this type in Apex; anything reaching those classes appears as a transitive dependent, not as a querier. A query built as a string and run through Database.query is not read."
-  ],
-  "observed_dispatches": null,
-  "queriers": [
-    "FeatureToggle",
-    "FeatureToggleController",
-    "FeatureToggleControllerTest",
-    "FeatureToggleScanner",
-    "FeatureToggleService",
-    "FeatureToggleServiceTest",
-    "FeatureToggleTest"
-  ],
-  "test_dependents": [
-    "AdminSubscriptionOrderControllerTest",
-    "CvcProductSearchServiceTest",
-    "FeatureToggleActionTest",
-    "FeatureToggleControllerTest",
-    "FeatureToggleScannerTest",
-    "FeatureToggleServiceTest",
-    "FeatureToggleTest"
-  ],
-  "transitive_dependents": [
-    "AdminSubscriptionOrderController",
-    "AdminSubscriptionOrderControllerTest",
-    "CvcProductSearchSchedule",
-    "CvcProductSearchService",
-    "CvcProductSearchServiceTest",
-    "FeatureToggle",
-    "FeatureToggleAction",
-    "FeatureToggleActionTest",
-    "FeatureToggleController",
-    "FeatureToggleControllerTest",
-    "FeatureToggleScanner",
-    "FeatureToggleScannerTest",
-    "FeatureToggleService",
-    "FeatureToggleServiceTest",
-    "FeatureToggleTest"
+    "Scoped to Feature_Toggle__mdt at depth 1 — this is a neighbourhood, not the whole project. Further dependencies exist beyond the shown depth."
   ]
 }

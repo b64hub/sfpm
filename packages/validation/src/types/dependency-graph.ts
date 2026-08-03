@@ -20,12 +20,11 @@ export interface MetadataRef {
 // ============================================================================
 // Edges
 //
-// Every list in the Nimbus payload — dependencies, direct_dependents, readers,
-// writers, observed_writers, triggers_fired, queriers, handlers,
-// observed_dispatches, calls, calls_flows, called_by_flows, objects_read,
-// objects_written, test_dependents, transitive_dependents — is the same thing
-// described four different ways: a relationship to another metadata item, with
-// a direction, a kind, and a degree of trust. Model that once.
+// The Nimbus graph payload is a uniform nodes + edges structure. Every entry
+// in edges[] — regardless of whether its endpoints are classes, triggers,
+// SObjects, flows, custom metadata types, or labels — is the same thing seen
+// from different angles: a relationship to another metadata item, with a
+// direction, a kind, and a degree of trust. Model that once.
 // ============================================================================
 
 export type EdgeDirection = 'inbound' | 'outbound';
@@ -79,9 +78,9 @@ export interface DependencyEdge {
 // ============================================================================
 // Provenance
 //
-// Replaces `null`-as-sentinel on every observed_* field. One place says "no
-// coverage run has been recorded" instead of the consumer inferring it from a
-// null and guessing whether null meant "none found" or "never computed".
+// Derived from the graph's edge provenance. One place says "no coverage run
+// has been recorded" rather than leaving the consumer to infer it from
+// absent observed edges.
 // ============================================================================
 
 export interface CoverageProvenance {
@@ -187,8 +186,7 @@ export interface DependencyGraphNode {
   /** Discriminated on metadataType; always matches the node's metadataType. */
   readonly details: MetadataDetails;
   readonly edges: readonly DependencyEdge[];
-  /** Absolute path. Null when the item is not file-backed. Was the '' sentinel. */
-  readonly fileName: null | string;
+  readonly fileName?: string;
   readonly metadataName: string;
   readonly metadataType: MetadataType;
 }

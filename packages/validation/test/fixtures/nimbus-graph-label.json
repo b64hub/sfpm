@@ -1,15 +1,42 @@
 {
-  "detail": "Tilbudet er underlagt den til enhver tid gjeldende produktavtale og tilhørende v…",
-  "file": "",
-  "label": "Capacity_Disclaimer",
-  "limits": [
-    "Label edges cover Apex only — references from Flows, LWC, Aura and formulas are not read, so an unreferenced label means unreferenced from Apex, not safe to delete.",
-    "Dynamic reads (System.Label.get with a computed name) come from the last coverage run: a read on a path that run did not execute is not here, and one recorded before the code changed may no longer happen.",
-    "Readers are the classes naming the label; anything reaching those classes appears as a transitive dependent, not as a reader."
+  "schema": "nimbus.graph/v1",
+  "nodes": [
+    {
+      "id": "label:capacity_disclaimer",
+      "name": "Capacity_Disclaimer",
+      "kind": "label",
+      "is_test": false,
+      "dependents": 0,
+      "detail": "Tilbudet er underlagt den til enhver tid gjeldende produktavtale og tilhørende v…"
+    }
   ],
-  "observed_only": null,
-  "observed_readers": null,
-  "readers": null,
-  "test_dependents": null,
-  "transitive_dependents": null
+  "edges": null,
+  "stats": {
+    "node_count": 1,
+    "edge_count": 0,
+    "cycle_count": 0,
+    "observed_edges": 0,
+    "trigger_count": 0,
+    "label_count": 1,
+    "unreferenced_labels": 1,
+    "custom_metadata_count": 0,
+    "sobject_count": 0,
+    "custom_permission_count": 0,
+    "unchecked_custom_permissions": 0,
+    "static_resource_count": 0,
+    "unread_static_resources": 0,
+    "flow_count": 0
+  },
+  "scope": {
+    "root": "Capacity_Disclaimer",
+    "depth": 1,
+    "truncated": false
+  },
+  "limits": [
+    "Edges are syntactic references. A trigger dispatching through custom metadata (TDTM and similar) reaches its handler with no reference to follow, so those edges are absent unless a coverage run revealed them.",
+    "This is reachability, not test selection. It must not be used to decide which tests to skip.",
+    "A coverage map was found, but it revealed no edges beyond the syntactic ones — either the dispatch gap is genuinely empty here, or the map is stale. Refresh it with `nimbus test \"*\" --coverage`.",
+    "Label edges cover Apex only — references from Flows, LWC, Aura and formulas are not read, so an unreferenced label means unreferenced from Apex, not safe to delete.",
+    "Scoped to Capacity_Disclaimer at depth 1 — this is a neighbourhood, not the whole project."
+  ]
 }
