@@ -1,9 +1,9 @@
 import {satisfies} from 'semver';
 
-import type {ValidationContext} from '../../contracts/validation-context.js';
+import type {ValidationContext} from '../../types/validation-context.js';
 import type {
   AvailabilityResult, ValidationCapability, ValidationResult, Validator,
-} from '../../contracts/validator.js';
+} from '../../types/validator.js';
 import type {NimbusAdapterDeps} from './config.js';
 
 import {INSTALL_HINT, resolveNimbusBinary} from './nimbus-binary.js';
