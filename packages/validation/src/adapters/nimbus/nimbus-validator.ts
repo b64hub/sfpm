@@ -28,7 +28,7 @@ export function createNimbusValidator(deps: NimbusAdapterDeps): Validator {
     }
 
     const versionOutput = await runNimbus(path, ['--version'], process.cwd(), {logger});
-    const version = versionOutput.stdout.trim().replace(/^nimbus\s+/i, '');
+    const version = versionOutput.stdout.trim().replace(/^nimbus\s+version\s+/i, '');
     const range = config.supportedVersionRange ?? NIMBUS_SUPPORTED_VERSION_RANGE;
     const compatible = satisfies(version, range);
     const result: AvailabilityResult = {
