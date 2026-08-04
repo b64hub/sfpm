@@ -186,6 +186,9 @@ export default class Deploy extends SfpmCommand {
         const failedNames = result.failedPackages.join(', ')
         this.error(`Deploy failed for: ${failedNames}`, {exit: 2})
       }
+
+      // Let the app self-exit after rendering its terminal state.
+      if (inkInstance) await inkInstance.waitUntilExit();
     } catch (error) {
       renderer?.handleError(error as Error)
 

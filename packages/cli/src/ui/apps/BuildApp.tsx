@@ -1,7 +1,7 @@
 import type EventEmitter from 'node:events';
 
-import {Box, Text, useInput} from 'ink';
-import {useReducer} from 'react';
+import {Box, Text, useApp, useInput} from 'ink';
+import {useEffect, useReducer} from 'react';
 
 import {useEventBusWiring} from '../hooks/use-event-bus-wiring.js';
 import {initialState, reducer} from '../state/reducer.js';
@@ -19,8 +19,16 @@ const META_COLS: MetaColSpec[] = [
 
 export function App({bus, logPath, onAdvance}: {bus: EventEmitter; logPath?: string; onAdvance?: (key: string) => void}) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
+  const {exit} = useApp();
   useEventBusWiring(bus, dispatch);
   useInput((input, key) => { onAdvance?.(input || (key.escape ? '\x1b' : '')); }, {isActive: Boolean(onAdvance)});
+
+  useEffect(() => {
+    if (state.phase === 'done' || state.phase === 'failed') {
+      const t = setTimeout(exit, 80);
+      return () => clearTimeout(t);
+    }
+  }, [state.phase, exit]);
 
   const counts = countPackages(state.levels);
 

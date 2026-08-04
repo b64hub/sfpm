@@ -150,6 +150,9 @@ export default class Install extends SfpmCommand {
         this.error(`Install failed for: ${failedNames}`, {exit: 2})
       }
 
+      // Let the app self-exit after rendering its terminal state.
+      // Calling unmount() immediately races React's async render.
+      if (inkInstance) await inkInstance.waitUntilExit();
       return result
     } catch (error) {
       renderer?.handleError(error as Error)

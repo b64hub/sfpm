@@ -222,9 +222,15 @@ export default class Build extends SfpmCommand {
         // The bridge already wired validationBus → uiBus; just drive the resolver.
         if (pendingValidations.length > 0) {
           await this.resolveValidationsInline(pendingValidations, resolved, validationBus)
+          // Validation is async enough that React has rendered all events by now.
+          inkInstance?.unmount();
+        } else {
+          // No validation: let the app self-exit after rendering its terminal state.
+          // Calling unmount() immediately would race React's async render and drop
+          // the final package:complete update from the screen.
+          await inkInstance?.waitUntilExit();
         }
 
-        inkInstance?.unmount();
         inkInstance = undefined;
       } else {
         // Non-ink path or async: unmount before handing off to the existing handler.
