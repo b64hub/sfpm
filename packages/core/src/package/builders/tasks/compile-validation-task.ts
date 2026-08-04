@@ -1,5 +1,6 @@
+import type {ErrorDetail} from '../../../events/orchestration-event-bus.js';
 import type {LocalValidator, ValidationResult} from '../../../types/local-validator.js';
-import type {BuildTask, BuildTaskContext} from '../builder-registry.js';
+import type {BuildTask, BuildTaskContext, BuildTaskResult} from '../builder-registry.js';
 
 import {BuildError} from '../../../types/errors.js';
 import {SfpmMetadataPackage} from '../../sfpm-package.js';
@@ -36,7 +37,7 @@ class CompileValidationTask implements BuildTask {
     return this.ctx.sfpmPackage instanceof SfpmMetadataPackage && this.ctx.sfpmPackage.hasApex;
   }
 
-  async exec(): Promise<void> {
+  async exec(): Promise<BuildTaskResult | void> {
     const {validator, warnOnly = true} = this.options;
     const packageId = this.ctx.sfpmPackage.packageName;
     const projectRoot = this.ctx.provider.projectDir;
@@ -46,13 +47,19 @@ class CompileValidationTask implements BuildTask {
 
     this.logDiagnostics(packageId, result);
 
-    if (result.status === 'passed' || result.status === 'skipped') return;
+    if (result.status === 'passed') return;
+
+    if (result.status === 'skipped') {
+      const reason = result.diagnostics[0]?.message ?? 'local compile validation unavailable';
+      this.ctx.logger?.warn(`Compile validation skipped for '${packageId}': ${reason}`);
+      return {warnings: [{label: packageId, message: `Local compile validation skipped — ${reason}`}]};
+    }
 
     const message = `Compile validation ${result.status} for '${packageId}' — ${result.diagnostics.length} diagnostic(s)`;
 
     if (warnOnly) {
       this.ctx.logger?.warn(message);
-      return;
+      return {warnings: this.toWarnings(packageId, result)};
     }
 
     throw new BuildError(packageId, message, {buildStep: this.name});
@@ -72,6 +79,13 @@ class CompileValidationTask implements BuildTask {
         this.ctx.logger?.info(msg);
       }
     }
+  }
+
+  private toWarnings(packageId: string, result: ValidationResult): ErrorDetail[] {
+    return result.diagnostics.map(d => {
+      const location = d.filePath ? `${d.filePath}${d.line === undefined ? '' : `:${d.line}`}` : packageId;
+      return {label: location, message: d.message};
+    });
   }
 }
 

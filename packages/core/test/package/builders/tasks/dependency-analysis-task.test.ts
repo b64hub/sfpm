@@ -91,6 +91,14 @@ describe('DependencyAnalysisTask', () => {
     await expect(task.exec()).rejects.toThrow(BuildError);
   });
 
+  it('logs warning instead of throwing on status error when warnOnly is true', async () => {
+    const task = createTask(makeResult({status: 'error'}), true);
+    await expect(task.exec()).resolves.toEqual({
+      warnings: [{label: 'pkg-a', message: 'Dependency check errored for pkg-a'}],
+    });
+    expect(logger.warn).toHaveBeenCalledWith('Dependency check errored for pkg-a');
+  });
+
   it('throws BuildError with formatted message when violations found and warnOnly is false', async () => {
     const task = createTask(makeResult({
       status: 'failed',
@@ -121,7 +129,9 @@ describe('DependencyAnalysisTask', () => {
       ],
     }), true);
 
-    await expect(task.exec()).resolves.toBeUndefined();
+    await expect(task.exec()).resolves.toEqual({
+      warnings: [{label: 'pkg-a → pkg-utils', message: 'OrderService → StringFormatUtility'}],
+    });
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('→ pkg-utils (1 violation(s))'));
   });
 

@@ -99,10 +99,12 @@ describe('CompileValidationTask', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('returns void when compile is skipped (validator unavailable)', async () => {
+  it('returns a warning when compile is skipped (validator unavailable)', async () => {
     const task = createTask(makeResult({status: 'skipped'}));
-    await expect(task.exec()).resolves.toBeUndefined();
-    expect(logger.warn).not.toHaveBeenCalled();
+    await expect(task.exec()).resolves.toEqual({
+      warnings: [{label: 'pkg-a', message: 'Local compile validation skipped — local compile validation unavailable'}],
+    });
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Compile validation skipped'));
   });
 
   it('logs each diagnostic with severity mapping', async () => {
@@ -128,7 +130,9 @@ describe('CompileValidationTask', () => {
       diagnostics: [{message: 'Compile error', severity: 'error'}],
     }), true);
 
-    await expect(task.exec()).resolves.toBeUndefined();
+    await expect(task.exec()).resolves.toEqual({
+      warnings: [{label: 'pkg-a', message: 'Compile error'}],
+    });
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("Compile validation failed for 'pkg-a'"));
   });
 

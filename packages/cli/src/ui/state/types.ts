@@ -24,6 +24,8 @@ export interface TreeNode {
   /** Set when status transitions to 'running'. */
   startedAt?: number;
   status: NodeStatus;
+  /** Best-effort findings that didn't fail the build (e.g. local validation diagnostics). Additive across pre-build tasks. */
+  warnings?: ErrorDetail[];
 }
 
 export interface AppState {

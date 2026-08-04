@@ -1,4 +1,5 @@
 import type {ReactNode} from 'react';
+import {Text} from 'ink';
 
 import type { TreeNode, NodeStatus } from "./types.js";
 import type { PackageRowProps, RowStep } from "../components/PackageRow.js";
@@ -43,6 +44,16 @@ export function toRowProps(
     ? node.errorDetails?.map(d => `${d.label}: ${d.message}`)
     : undefined;
 
+  // Warnings are additive on top of a successful/skipped status — never
+  // shown for a failed package, whose own error is already the whole story.
+  const warningCount = !isFailed ? node.warnings?.length : undefined;
+  const warningNode = warningCount
+    ? <Text color="yellow">{`${rawSym.warn} ${warningCount} warning${warningCount === 1 ? '' : 's'}`}</Text>
+    : undefined;
+  const warningLines = warningCount
+    ? node.warnings?.map(w => `${w.label}: ${w.message}`)
+    : undefined;
+
   return {
     id:        node.id,
     icon:      <StatusIcon status={node.status} />,
@@ -52,6 +63,8 @@ export function toRowProps(
     secondary: isFailed ? undefined : hintNode,
     error:     isFailed ? hintNode : undefined,
     errorLines,
+    warning:   warningNode,
+    warningLines,
     columns:   getColumns ? getColumns(node) : undefined,
     trailing:  <PackageRow.Trailing duration={node.duration} startedAt={node.startedAt} />,
     steps,

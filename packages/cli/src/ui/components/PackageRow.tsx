@@ -49,6 +49,16 @@ export interface PackageRowProps {
    * always still reaches the run log regardless of what's capped here.
    */
   errorLines?: string[];
+  /**
+   * Best-effort warning badge — shown next to `primary` when the package
+   * did not fail (e.g. "\u26a0 2 warnings"). Ignored when `error` is set.
+   */
+  warning?: ReactNode;
+  /**
+   * Structured breakdown of `warning`, same rendering as {@link errorLines}
+   * (capped list + "+N more"). Shown regardless of expanded/collapsed state.
+   */
+  warningLines?: string[];
   /** Fixed-width metadata columns, right of secondary. Use PackageRow.MetaCols. */
   columns?: ReactNode;
   /** Rightmost slot — time only. Use PackageRow.Trailing. */
@@ -174,7 +184,7 @@ function PackageRowFn({props, width = 80}: {props: PackageRowProps; width?: numb
         <Box gap={1} flexShrink={1} minWidth={0} marginLeft={props.indent ?? 0}>
           {props.icon}
           <Text wrap="truncate">{props.primary}</Text>
-          {props.error ?? props.secondary}
+          {props.error ? props.error : (props.warning ?? props.secondary)}
         </Box>
         {/* Right side: columns + trailing, always together */}
         <Box flexShrink={0} gap={1}>
@@ -193,6 +203,11 @@ function PackageRowFn({props, width = 80}: {props: PackageRowProps; width?: numb
       {/* Structured error breakdown — capped, independent of steps. */}
       {props.errorLines && props.errorLines.length > 0 && (
         <ErrorLines lines={props.errorLines} />
+      )}
+
+      {/* Structured warning breakdown — capped, same treatment as errorLines. */}
+      {props.warningLines && props.warningLines.length > 0 && (
+        <ErrorLines lines={props.warningLines} />
       )}
     </Box>
   );

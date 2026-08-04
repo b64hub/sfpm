@@ -5,7 +5,7 @@ import type {
 type Action = Record<string, unknown> & {type: string};
 
 type NodePatch = {
-  detail?: string; duration?: number; errorDetails?: ErrorDetail[]; meta?: Record<string, string>; startedAt?: number; status?: NodeStatus;
+  detail?: string; duration?: number; errorDetails?: ErrorDetail[]; meta?: Record<string, string>; startedAt?: number; status?: NodeStatus; warnings?: ErrorDetail[];
 };
 
 const TERMINAL = new Set<NodeStatus>(['failed', 'skipped', 'success']);
@@ -133,10 +133,17 @@ export function reducer(state: AppState, action: Action): AppState {
     );
   }
 
-  // ── Per-step within a package ────────────────────────────────────────────
-
   case 'package:running': {
     return updatePackage(state, action.packageName as string, 'running');
+  }
+
+  // ── Per-step within a package ────────────────────────────────────────────
+
+  case 'package:warn': {
+    const id = `pkg:${action.packageName as string}`;
+    const existing = findPkg(state.levels, action.packageName as string);
+    const merged = [...(existing?.warnings ?? []), ...(action.warnings as ErrorDetail[])];
+    return {...state, levels: state.levels.map(l => updateNode(l, id, {warnings: merged}))};
   }
 
   case 'step:complete': {

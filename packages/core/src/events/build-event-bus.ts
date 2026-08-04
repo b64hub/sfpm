@@ -1,4 +1,5 @@
 import type {EventSink} from './event-sink.js';
+import type {ErrorDetail} from './orchestration-event-bus.js';
 import type {
   BaseEvent,
   ConnectionCompletePayload,
@@ -166,6 +167,8 @@ export interface TaskCompletePayload {
   success: boolean;
   taskName: string;
   taskType: 'post-build' | 'pre-build';
+  /** Best-effort findings that didn't fail the build (warn-only task results). */
+  warnings?: ErrorDetail[];
 }
 
 export interface TaskSkippedPayload {

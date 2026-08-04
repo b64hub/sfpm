@@ -2,6 +2,7 @@ import {
   BuildOrchestrator,
   type BuildOrchestratorOptions, type BuildOrg,
   type BuildWatcherPayload,
+  findSfpmRoot,
   LifecycleEngine,
   noopLogger,
   type OrchestrationResult,
@@ -148,7 +149,7 @@ export default class Build extends SfpmCommand {
     // Build local validator for compile + dependency checks (all modes except 'none').
     // Created here so it shares the run logger.
     let localValidator: NimbusLocalValidator | undefined;
-    if (resolved.buildOptions.validation !== 'none') {
+    if (resolved.buildOptions.validation === 'local' || resolved.buildOptions.validation === 'full') {
       const manifests = projectConfig.getAllPackageDefinitions().map(def => ({
         declaredDependencies: new Set(projectConfig.getDependencies(def.name).map(d => d.name)),
         packageId: def.name,
@@ -418,7 +419,11 @@ export default class Build extends SfpmCommand {
       flags['no-dependencies'] = true
     }
 
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectDir = process.env.SFPM_PROJECT_DIR || findSfpmRoot(process.cwd());
+    if (!projectDir) {
+      this.error('Unable to locate any project root files like sfpm.config.{ts,mjs,js}', {exit: 1})
+    }
+
     const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getDefinitionProvider();
     const sfpmConfig = projectService.getSfpmConfig();

@@ -1,6 +1,7 @@
 import type {Org} from '@salesforce/core';
 
 import type {BuildEventSink} from '../../events/build-event-bus.js';
+import type {ErrorDetail} from '../../events/orchestration-event-bus.js';
 import type {ProjectDefinitionProvider} from '../../project/providers/project-definition-provider.js';
 
 import Logger from '../../types/logger.js';
@@ -36,9 +37,13 @@ export interface BuildTaskEnrichments {
  * Structured result from task execution.
  *
  * - `enrichments` — data the pipeline should apply to the package
+ * - `warnings` — best-effort findings that don't fail the build (e.g. local
+ *   compile diagnostics, dependency boundary violations, unavailable
+ *   validation tooling). Surfaced to the UI as a badge on the package row.
  */
 export interface BuildTaskResult {
   enrichments?: BuildTaskEnrichments;
+  warnings?: ErrorDetail[];
 }
 
 /**

@@ -1,5 +1,6 @@
+import type {ErrorDetail} from '../../../events/orchestration-event-bus.js';
 import type {BoundaryViolation, DependencyResult, LocalValidator} from '../../../types/local-validator.js';
-import type {BuildTask, BuildTaskContext} from '../builder-registry.js';
+import type {BuildTask, BuildTaskContext, BuildTaskResult} from '../builder-registry.js';
 
 import {BuildError} from '../../../types/errors.js';
 
@@ -24,7 +25,7 @@ class DependencyAnalysisTask implements BuildTask {
     this.options = options;
   }
 
-  public async exec(): Promise<void> {
+  public async exec(): Promise<BuildTaskResult | void> {
     const {validator, warnOnly} = this.options;
     const packageId = this.ctx.sfpmPackage.packageName;
 
@@ -41,9 +42,14 @@ class DependencyAnalysisTask implements BuildTask {
     }
 
     if (result.status === 'error') {
-      throw new BuildError(packageId, `Dependency check errored for ${packageId}`, {
-        buildStep: this.name,
-      });
+      const message = `Dependency check errored for ${packageId}`;
+
+      if (warnOnly) {
+        this.ctx.logger?.warn(message);
+        return {warnings: [{label: packageId, message}]};
+      }
+
+      throw new BuildError(packageId, message, {buildStep: this.name});
     }
 
     if (result.violations.length === 0) {
@@ -55,7 +61,7 @@ class DependencyAnalysisTask implements BuildTask {
 
     if (warnOnly) {
       this.ctx.logger?.warn(message);
-      return;
+      return {warnings: this.toWarnings(packageId, result)};
     }
 
     throw new BuildError(packageId, message, {buildStep: this.name});
@@ -81,6 +87,13 @@ class DependencyAnalysisTask implements BuildTask {
     }
 
     return lines.join('\n');
+  }
+
+  private toWarnings(packageId: string, result: DependencyResult): ErrorDetail[] {
+    return result.violations.map(v => ({
+      label: `${packageId} → ${v.toPackage}`,
+      message: `${v.fromMetadata} → ${v.toMetadata}`,
+    }));
   }
 }
 

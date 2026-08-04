@@ -565,6 +565,13 @@ export default class PackageBuilder {
         if (result?.enrichments) {
           this.applyEnrichments(sfpmPackage, result.enrichments);
         }
+
+        this.sink?.taskComplete({
+          success: true,
+          taskName,
+          taskType,
+          warnings: result?.warnings,
+        });
       } catch (error) {
         this.sink?.taskComplete({
           success: false,
@@ -574,12 +581,6 @@ export default class PackageBuilder {
 
         throw error;
       }
-
-      this.sink?.taskComplete({
-        success: true,
-        taskName,
-        taskType,
-      });
     }
   }
 

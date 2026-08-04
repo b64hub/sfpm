@@ -118,6 +118,13 @@ export function attachBuildBridge(
     uiBus.emit('step:complete', {packageName: e.packageName, status: 'success', step: `${e.timing}-hooks`});
   });
 
+  // Best-effort task findings (local compile/dependency checks) — never
+  // affect status, just accumulate onto the package row as a warning badge.
+  buildBus.on('task:complete' as any, (e: any) => {
+    if (!e.warnings?.length) return;
+    uiBus.emit('package:warn', {packageName: e.packageName, warnings: e.warnings});
+  });
+
   // ── Validation (ink path only) ─────────────────────────────────────────────
   // These handlers resolve packages that are in 'validating' status to their
   // final terminal state. The version buffer carries through from the build.
