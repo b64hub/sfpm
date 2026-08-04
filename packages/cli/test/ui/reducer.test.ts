@@ -422,11 +422,11 @@ describe('ui: reducer', () => {
       expect(p.currentState().phase).to.equal('running');
     });
 
-    it('a step still running when the package fails is flipped to failed', () => {
-      // Regression: a step whose own completion event only fires on success
-      // (e.g. deploy) never reaches a terminal state itself. Without this,
-      // it renders as a permanently spinning/checked step next to a failed
-      // package.
+    it('does not mutate a still-running step when the package fails', () => {
+      // A step whose own completion event only fires on success (e.g. deploy)
+      // never reaches a terminal state on its own. The reducer leaves it as-is
+      // now — hiding stale/incomplete step status on a failed package is
+      // PackageRow's job (via the `error` prop), not the reducer's.
       const p = new ScenarioPlayer();
       p.play([
         init([['pkg-a']]),
@@ -435,21 +435,7 @@ describe('ui: reducer', () => {
         complete('pkg-a', 'failed', {detail: 'Source deployment failed'}),
       ]);
       expect(p.pkg('pkg-a')?.status).to.equal('failed');
-      expect(p.stepOf('pkg-a', 'deploy')?.status).to.equal('failed');
-    });
-
-    it('a step already terminal when the package fails keeps its own status', () => {
-      const p = new ScenarioPlayer();
-      p.play([
-        init([['pkg-a']]),
-        running('pkg-a'),
-        stepStart('pkg-a', 'connect'),
-        stepComplete('pkg-a', 'connect', 'success'),
-        stepStart('pkg-a', 'deploy'),
-        complete('pkg-a', 'failed'),
-      ]);
-      expect(p.stepOf('pkg-a', 'connect')?.status).to.equal('success');
-      expect(p.stepOf('pkg-a', 'deploy')?.status).to.equal('failed');
+      expect(p.stepOf('pkg-a', 'deploy')?.status).to.equal('running');
     });
   });
 

@@ -24,6 +24,7 @@ export interface RowStep {
  *   icon      — pre-constructed ReactNode (StatusIcon, plain char, anything)
  *   primary   — main label string
  *   secondary — dim inline hint; use PackageRow.Secondary for the default style
+ *   error     — terminal failure detail; replaces secondary and suppresses steps
  *   trailing  — right-side content; use PackageRow.Trailing for the default (meta + time)
  *
  * Collapse is a prop, not internal state. If steps/expanded are undefined, steps are hidden.
@@ -33,6 +34,14 @@ export interface PackageRowProps {
   icon: ReactNode;
   primary: string;
   secondary?: ReactNode;
+  /**
+   * Terminal failure detail. When set, it is shown in place of `secondary`
+   * and step children are suppressed entirely — a failed package's own
+   * message is the whole story; per-step status may be incomplete or stale
+   * (a step whose own completion event only fires on success never reaches
+   * a terminal state on its own).
+   */
+  error?: ReactNode;
   /** Fixed-width metadata columns, right of secondary. Use PackageRow.MetaCols. */
   columns?: ReactNode;
   /** Rightmost slot — time only. Use PackageRow.Trailing. */
@@ -130,11 +139,11 @@ function PackageRowFn({props, width = 80}: {props: PackageRowProps; width?: numb
   return (
     <Box flexDirection="column">
       <Box width={width} justifyContent="space-between">
-        {/* Left side: icon + primary + secondary */}
+        {/* Left side: icon + primary + (error, if set, else secondary) */}
         <Box gap={1} flexShrink={1} minWidth={0} marginLeft={props.indent ?? 0}>
           {props.icon}
           <Text wrap="truncate">{props.primary}</Text>
-          {props.secondary}
+          {props.error ?? props.secondary}
         </Box>
         {/* Right side: columns + trailing, always together */}
         <Box flexShrink={0} gap={1}>
@@ -143,8 +152,10 @@ function PackageRowFn({props, width = 80}: {props: PackageRowProps; width?: numb
         </Box>
       </Box>
 
-      {/* Step children — shown only when expanded */}
-      {props.expanded && props.steps?.map(step => (
+      {/* Step children — shown only when expanded, and never alongside an
+          error: a failed package shows only its own message, not per-step
+          status. */}
+      {!props.error && props.expanded && props.steps?.map(step => (
         <StepRow key={step.id} step={step} />
       ))}
     </Box>
