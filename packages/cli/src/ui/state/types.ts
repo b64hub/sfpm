@@ -1,3 +1,5 @@
+import type {ErrorDetail} from '@b64hub/sfpm-core';
+
 export type NodeStatus = 'failed' | 'pending' | 'running' | 'skipped' | 'success' | 'validating';
 
 /** A single pino log record forwarded through the pino bridge. */
@@ -13,6 +15,8 @@ export interface TreeNode {
   detail?: string;
   /** Set when status transitions to a terminal state. Ms elapsed since startedAt. */
   duration?: number;
+  /** Structured per-item failure breakdown, when the failure has more than one part. */
+  errorDetails?: ErrorDetail[];
   id: string;
   label: string;
   /** Arbitrary key/value metadata set by the build system on completion (e.g. components, hash). */
@@ -30,3 +34,5 @@ export interface AppState {
   startedAt?: number;
   validation: TreeNode[];
 }
+
+export {type ErrorDetail} from '@b64hub/sfpm-core';

@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 
 import {
+  extractErrorDetails,
   OrchestrationEventBus,
   OrchestrationResult,
   PackageResult,
@@ -223,6 +224,7 @@ export class Orchestrator<TResult> {
         tracker.results.push({
           duration: 0,
           error: errorMessage,
+          errorDetails: extractErrorDetails(outcome.reason),
           packageName: pkgName,
           skipped: false,
           success: false,
@@ -309,6 +311,7 @@ export class Orchestrator<TResult> {
       result = {
         duration: 0,
         error: errorMessage,
+        errorDetails: extractErrorDetails(error_),
         packageName,
         skipped: false,
         success: false,
@@ -318,6 +321,7 @@ export class Orchestrator<TResult> {
     this.bus.packageComplete({
       duration: result.duration,
       error: result.error,
+      errorDetails: result.errorDetails,
       level,
       packageName,
       skipped: result.skipped,

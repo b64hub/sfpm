@@ -43,4 +43,33 @@ describe('ui: adapters — toRowProps', () => {
     expect(props.steps).to.have.length(1);
     expect(props.steps?.[0].icon).to.not.be.undefined; // still reflects the step's real (non-terminal) status
   });
+
+  it('formats a failed package\'s errorDetails into `${label}: ${message}` lines — only here, not upstream', () => {
+    const props = toRowProps(node({
+      detail: 'Source deployment failed (2 components)',
+      errorDetails: [
+        {label: 'Foo__c', message: 'Field is required'},
+        {label: 'Bar__c', message: 'Variable does not exist'},
+      ],
+      status: 'failed',
+    }));
+
+    expect(props.errorLines).to.deep.equal([
+      'Foo__c: Field is required',
+      'Bar__c: Variable does not exist',
+    ]);
+  });
+
+  it('leaves errorLines undefined when there are no errorDetails', () => {
+    const props = toRowProps(node({detail: 'boom', status: 'failed'}));
+    expect(props.errorLines).to.be.undefined;
+  });
+
+  it('ignores errorDetails on a non-failed node', () => {
+    const props = toRowProps(node({
+      errorDetails: [{label: 'Foo__c', message: 'Field is required'}],
+      status: 'success',
+    }));
+    expect(props.errorLines).to.be.undefined;
+  });
 });

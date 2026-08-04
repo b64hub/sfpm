@@ -157,6 +157,20 @@ describe('ui: reducer', () => {
       expect(pkg?.meta?.version).to.equal('1.0.0');
     });
 
+    it('stores errorDetails unchanged — structured, not pre-joined into a string', () => {
+      const p = new ScenarioPlayer();
+      const errorDetails = [
+        {label: 'Foo__c', message: 'Field is required'},
+        {label: 'Bar__c', message: 'Variable does not exist'},
+      ];
+      p.play([
+        init([['pkg-a']]),
+        running('pkg-a'),
+        complete('pkg-a', 'failed', {detail: 'Source deployment failed (2 components)', errorDetails}),
+      ]);
+      expect(p.pkg('pkg-a')?.errorDetails).to.deep.equal(errorDetails);
+    });
+
     it("'validating' is non-terminal — startedAt is preserved", () => {
       const p = new ScenarioPlayer();
       p.play([init([['pkg-a']]), running('pkg-a'), complete('pkg-a', 'validating')]);

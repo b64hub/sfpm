@@ -1,6 +1,7 @@
 import {Org} from '@salesforce/core';
 
 import type {InstallEventSink} from '../../events/install-event-bus.js';
+import type {ErrorDetail} from '../../events/orchestration-event-bus.js';
 
 import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
 import Logger from '../../types/logger.js';
@@ -85,8 +86,18 @@ export default class SourcePackageInstaller implements Installer {
     });
 
     if (!result.success) {
-      const errorMessages = result.formatErrors() || 'Unknown deployment error';
-      throw new Error(`Source deployment failed:\n${errorMessages}`);
+      if (result.errors.length === 0) {
+        throw new Error('Unknown deployment error');
+      }
+
+      // Carry the per-component breakdown structured, not pre-joined into one
+      // string — metadata-deploy-service.ts already gives us the rich
+      // {fullName, problem} shape; AggregateError is just the transport for
+      // getting it up through several layers of try/catch. Formatting into
+      // a display string happens once, at the UI edge, not here.
+      const details: ErrorDetail[] = result.errors.map(e => ({label: e.fullName, message: e.problem}));
+      const count = result.errors.length;
+      throw new AggregateError(details, `Source deployment failed (${count} component${count === 1 ? '' : 's'})`);
     }
 
     this.sink?.deployComplete({targetOrg: username});

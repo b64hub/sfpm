@@ -3,6 +3,7 @@ import {Org} from '@salesforce/core';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {InstallEventBus, InstallEventSink} from '../events/install-event-bus.js';
+import {extractErrorDetails} from '../events/orchestration-event-bus.js';
 import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
 import Logger from '../types/logger.js';
@@ -246,6 +247,12 @@ export default class PackageInstaller {
         targetOrg: this.targetOrg.getUsername()!,
       });
       this.logger?.error(`Failed to install managed package ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
+      // One log line per item when the failure has a structured breakdown —
+      // grep-able individually, instead of one giant joined-string entry.
+      for (const detail of extractErrorDetails(error) ?? []) {
+        this.logger?.error(`${detail.label}: ${detail.message}`);
+      }
+
       throw error;
     }
   }
@@ -376,6 +383,12 @@ export default class PackageInstaller {
         versionNumber: sfpmPackage.version,
       });
       this.logger?.error(`Failed to install ${sfpmPackage.name}: ${error instanceof Error ? error.message : String(error)}`);
+      // One log line per item when the failure has a structured breakdown —
+      // grep-able individually, instead of one giant joined-string entry.
+      for (const detail of extractErrorDetails(error) ?? []) {
+        this.logger?.error(`${detail.label}: ${detail.message}`);
+      }
+
       throw error;
     }
   }

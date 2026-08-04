@@ -36,6 +36,13 @@ export function toRowProps(
     isLast:    i === node.children.length - 1,
   }));
 
+  // Structured breakdown (e.g. one line per failing deploy component).
+  // Formatting `${label}: ${message}` into a plain string happens here —
+  // the one place that actually needs a string — not upstream.
+  const errorLines = isFailed
+    ? node.errorDetails?.map(d => `${d.label}: ${d.message}`)
+    : undefined;
+
   return {
     id:        node.id,
     icon:      <StatusIcon status={node.status} />,
@@ -44,6 +51,7 @@ export function toRowProps(
     // suppresses step children in PackageRow — not `secondary`.
     secondary: isFailed ? undefined : hintNode,
     error:     isFailed ? hintNode : undefined,
+    errorLines,
     columns:   getColumns ? getColumns(node) : undefined,
     trailing:  <PackageRow.Trailing duration={node.duration} startedAt={node.startedAt} />,
     steps,

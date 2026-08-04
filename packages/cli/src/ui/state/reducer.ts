@@ -1,10 +1,12 @@
 import type {
-  AppState, LogRecord, NodeStatus, TreeNode,
+  AppState, ErrorDetail, LogRecord, NodeStatus, TreeNode,
 } from './types.js';
 
 type Action = Record<string, unknown> & {type: string};
 
-type NodePatch = {detail?: string; duration?: number; meta?: Record<string, string>; startedAt?: number; status?: NodeStatus;};
+type NodePatch = {
+  detail?: string; duration?: number; errorDetails?: ErrorDetail[]; meta?: Record<string, string>; startedAt?: number; status?: NodeStatus;
+};
 
 const TERMINAL = new Set<NodeStatus>(['failed', 'skipped', 'success']);
 
@@ -42,7 +44,14 @@ function findPkg(levels: AppState['levels'], packageName: string): TreeNode | un
   }
 }
 
-function updatePackage(state: AppState, packageName: string, status: NodeStatus, detail?: string, meta?: Record<string, string>): AppState {
+function updatePackage(
+  state: AppState,
+  packageName: string,
+  status: NodeStatus,
+  detail?: string,
+  meta?: Record<string, string>,
+  errorDetails?: ErrorDetail[],
+): AppState {
   const id = `pkg:${packageName}`;
   const existing = findPkg(state.levels, packageName);
   const timingPatch: NodePatch
@@ -54,7 +63,7 @@ function updatePackage(state: AppState, packageName: string, status: NodeStatus,
   return {
     ...state,
     levels: state.levels.map(l => updateNode(l, id, {
-      detail, meta, status, ...timingPatch,
+      detail, errorDetails, meta, status, ...timingPatch,
     })),
   };
 }
@@ -120,6 +129,7 @@ export function reducer(state: AppState, action: Action): AppState {
       action.status as NodeStatus,
       action.detail as string | undefined,
       action.meta as Record<string, string> | undefined,
+      action.errorDetails as ErrorDetail[] | undefined,
     );
   }
 

@@ -19,10 +19,39 @@ export interface OrchestrationBaseEvent {
 // Package Result
 // ============================================================================
 
+/**
+ * One item in a structured failure breakdown (e.g. one failing deploy
+ * component, one failed hook). Kept generic — not deploy-specific — since
+ * any {@link OrchestrationTask} may want to report more than one thing
+ * wrong with a single package.
+ */
+export interface ErrorDetail {
+  /** Short identifying label — e.g. component fullName, hook name. */
+  label: string;
+  /** The actual problem for that item. */
+  message: string;
+}
+
+/**
+ * Extracts a structured per-item breakdown from a caught error, if it is an
+ * {@link AggregateError}. Producers that have more than one thing wrong with
+ * a single package (e.g. several failing deploy components) throw
+ * `new AggregateError(details, summaryMessage)` where `details` is an
+ * {@link ErrorDetail}`[]` — `AggregateError.errors` is typed `any[]`, so
+ * plain data objects are as valid there as `Error` instances (this mirrors
+ * how `Promise.any()` itself never guarantees its rejection reasons are
+ * `Error`s either).
+ */
+export function extractErrorDetails(error: unknown): ErrorDetail[] | undefined {
+  return error instanceof AggregateError ? error.errors as ErrorDetail[] : undefined;
+}
+
 /** Result of a single package build/install within an orchestration run. */
 export interface PackageResult<TResult> {
   duration: number;
   error?: string;
+  /** Structured per-item breakdown, when the failure has more than one part. */
+  errorDetails?: ErrorDetail[];
   packageName: string;
   result?: TResult;
   skipped: boolean;
@@ -59,6 +88,7 @@ export interface OrchestrationLevelStartPayload {
 export interface OrchestrationPackageCompletePayload {
   duration: number;
   error?: string;
+  errorDetails?: ErrorDetail[];
   level: number;
   packageName: string;
   skipped: boolean;

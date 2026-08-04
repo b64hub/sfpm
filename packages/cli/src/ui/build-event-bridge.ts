@@ -59,6 +59,7 @@ export function attachBuildBridge(
       versionBuffer.delete(e.packageName);
       uiBus.emit('package:complete', {
         detail: e.error,
+        errorDetails: e.errorDetails,
         meta: version ? {version} : undefined,
         packageName: e.packageName,
         status,

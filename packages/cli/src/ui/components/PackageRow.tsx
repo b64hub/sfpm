@@ -42,6 +42,13 @@ export interface PackageRowProps {
    * a terminal state on its own).
    */
   error?: ReactNode;
+  /**
+   * Structured breakdown of `error`, one line per item (e.g. one failing
+   * deploy component). Rendered below the header row, capped at
+   * {@link ERROR_LINES_MAX} lines with a "+N more" trailer — the full list
+   * always still reaches the run log regardless of what's capped here.
+   */
+  errorLines?: string[];
   /** Fixed-width metadata columns, right of secondary. Use PackageRow.MetaCols. */
   columns?: ReactNode;
   /** Rightmost slot — time only. Use PackageRow.Trailing. */
@@ -55,6 +62,13 @@ export interface PackageRowProps {
 
 export const COL_META = 9;
 export const COL_TRAILING = 6;
+
+/**
+ * Cap on how many `errorLines` render inline. Mirrors OrchestrationView's
+ * `ROLLUP_AT` — same problem (an unbounded list would spam the live area
+ * and the final scrollback), same fix (show a bounded sample + a count).
+ */
+const ERROR_LINES_MAX = 5;
 
 /** Default secondary slot: dim truncating text. */
 function Secondary({children}: {children: ReactNode}) {
@@ -128,6 +142,23 @@ function StepRow({step}: {step: RowStep}) {
   );
 }
 
+// ---- error detail lines ----
+
+export function ErrorLines({lines}: {lines: string[]}) {
+  const shown = lines.slice(0, ERROR_LINES_MAX);
+  const remaining = lines.length - shown.length;
+  return (
+    <Box flexDirection="column" marginLeft={3}>
+      {shown.map((line, i) => (
+        <Text key={i} dimColor wrap="truncate">{line}</Text>
+      ))}
+      {remaining > 0 && (
+        <Text dimColor>+{remaining} more — see full logs</Text>
+      )}
+    </Box>
+  );
+}
+
 // ---- PackageRow ----
 
 /**
@@ -158,6 +189,11 @@ function PackageRowFn({props, width = 80}: {props: PackageRowProps; width?: numb
       {!props.error && props.expanded && props.steps?.map(step => (
         <StepRow key={step.id} step={step} />
       ))}
+
+      {/* Structured error breakdown — capped, independent of steps. */}
+      {props.errorLines && props.errorLines.length > 0 && (
+        <ErrorLines lines={props.errorLines} />
+      )}
     </Box>
   );
 }
