@@ -6,6 +6,7 @@ import type {
 } from '../../types/validator.js';
 import type {NimbusAdapterDeps} from './config.js';
 
+import {NIMBUS_SUPPORTED_VERSION_RANGE} from './config.js';
 import {INSTALL_HINT, resolveNimbusBinary} from './nimbus-binary.js';
 import {runNimbus} from './nimbus-process.js';
 import {parseNimbusTestJson, parseNimbusValidateJson} from './parse-nimbus-json.js';
@@ -28,13 +29,14 @@ export function createNimbusValidator(deps: NimbusAdapterDeps): Validator {
 
     const versionOutput = await runNimbus(path, ['--version'], process.cwd(), {logger});
     const version = versionOutput.stdout.trim().replace(/^nimbus\s+/i, '');
-    const compatible = satisfies(version, config.supportedVersionRange);
+    const range = config.supportedVersionRange ?? NIMBUS_SUPPORTED_VERSION_RANGE;
+    const compatible = satisfies(version, range);
     const result: AvailabilityResult = {
       available: true,
       compatible,
       reason: compatible
         ? undefined
-        : `nimbus ${version} outside supported range ${config.supportedVersionRange}`,
+        : `nimbus ${version} outside supported range ${range}`,
       version,
     };
     eventBus.emit('validator:availability', {availability: result, packageId, validator: 'nimbus'});

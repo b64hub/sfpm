@@ -9,10 +9,14 @@ export interface NimbusDaemonConfig {
   idleTimeoutMs?: number;
 }
 
+/** Nimbus binary versions sfpm is tested and compatible with. Update when integrating a new nimbus release. */
+export const NIMBUS_SUPPORTED_VERSION_RANGE = '^1.16.1';
+
 export interface NimbusAdapterConfig {
   binaryPathOverride?: string;
   daemon: NimbusDaemonConfig;
-  supportedVersionRange: string;
+  /** @default NIMBUS_SUPPORTED_VERSION_RANGE */
+  supportedVersionRange?: string;
 }
 
 export interface NimbusAdapterDeps {

@@ -158,8 +158,6 @@ export default class Build extends SfpmCommand {
         {
           config: {
             daemon: {autoStart: false, autoStop: true, enabled: false},
-            // ponytail: expose via sfpmConfig.nimbus.supportedVersionRange when pinning a version
-            supportedVersionRange: resolved.sfpmConfig.nimbus?.supportedVersionRange ?? '*',
           },
           eventBus: new NimbusValidationEventBus(),
           logger: pinoLogger,
