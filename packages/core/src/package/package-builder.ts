@@ -8,7 +8,9 @@ import type {PendingValidationDescriptor, ValidationLevel} from '../types/valida
 
 import {ArtifactRepository} from '../artifacts/artifact-repository.js';
 import {BuildEventBus, BuildEventSink} from '../events/build-event-bus.js';
+import {extractErrorDetails} from '../events/orchestration-event-bus.js';
 import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
+import {BuildError} from '../types/errors.js';
 import Logger from '../types/logger.js';
 import {BuildOptions, type BuildOrg, PackageType} from '../types/package.js';
 import {getPipelineRunId} from '../utils/pipeline.js';
@@ -184,7 +186,21 @@ export default class PackageBuilder {
         error,
         phase: 'analysis',
       });
-      throw error;
+      // One log line per item when the failure has a structured breakdown —
+      // grep-able individually, instead of one giant joined-string entry.
+      for (const detail of extractErrorDetails(error) ?? []) {
+        this.logger?.error(`${detail.label}: ${detail.message}`);
+      }
+
+      // Single choke point: every error escaping build() is guaranteed to be
+      // a BuildError from here on — the original is preserved as `.cause`
+      // (extractErrorDetails looks there).
+      if (error instanceof BuildError) throw error;
+      throw new BuildError(
+        sfpmPackage.name,
+        error instanceof Error ? error.message : String(error),
+        {buildStep: 'analysis', cause: error instanceof Error ? error : new Error(String(error))},
+      );
     }
   }
 
@@ -464,7 +480,16 @@ export default class PackageBuilder {
         error,
         phase: 'build',
       });
-      throw error;
+      for (const detail of extractErrorDetails(error) ?? []) {
+        this.logger?.error(`${detail.label}: ${detail.message}`);
+      }
+
+      if (error instanceof BuildError) throw error;
+      throw new BuildError(
+        sfpmPackage.name,
+        error instanceof Error ? error.message : String(error),
+        {buildStep: 'build', cause: error instanceof Error ? error : new Error(String(error))},
+      );
     }
   }
 
@@ -593,7 +618,16 @@ export default class PackageBuilder {
         error,
         phase: 'staging',
       });
-      throw error;
+      for (const detail of extractErrorDetails(error) ?? []) {
+        this.logger?.error(`${detail.label}: ${detail.message}`);
+      }
+
+      if (error instanceof BuildError) throw error;
+      throw new BuildError(
+        sfpmPackage.name,
+        error instanceof Error ? error.message : String(error),
+        {buildStep: 'staging', cause: error instanceof Error ? error : new Error(String(error))},
+      );
     }
   }
 }

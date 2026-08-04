@@ -33,9 +33,12 @@ export interface ErrorDetail {
 }
 
 /**
- * Extracts a structured per-item breakdown from a caught error, if it is an
- * {@link AggregateError}. Producers that have more than one thing wrong with
- * a single package (e.g. several failing deploy components) throw
+ * Extracts a structured per-item breakdown from a caught error, checking
+ * both the error itself and one level of `.cause` (domain errors like
+ * {@link BuildError}/{@link InstallationError} wrap the original failure as
+ * `.cause`, so unwrapping once keeps this working after they wrap it).
+ * Producers that have more than one thing wrong with a single package
+ * (e.g. several failing deploy components) throw
  * `new AggregateError(details, summaryMessage)` where `details` is an
  * {@link ErrorDetail}`[]` — `AggregateError.errors` is typed `any[]`, so
  * plain data objects are as valid there as `Error` instances (this mirrors
@@ -43,7 +46,12 @@ export interface ErrorDetail {
  * `Error`s either).
  */
 export function extractErrorDetails(error: unknown): ErrorDetail[] | undefined {
-  return error instanceof AggregateError ? error.errors as ErrorDetail[] : undefined;
+  if (error instanceof AggregateError) return error.errors as ErrorDetail[];
+  // Domain errors (BuildError, InstallationError) wrap the original failure
+  // as `.cause` — look one level deeper before giving up, so wrapping never
+  // silently drops the structured breakdown.
+  if (error instanceof Error && error.cause instanceof AggregateError) return error.cause.errors as ErrorDetail[];
+  return undefined;
 }
 
 /** Result of a single package build/install within an orchestration run. */
