@@ -209,6 +209,15 @@ export default class Build extends SfpmCommand {
       }
 
       if (!result.success) {
+        // Let the app self-exit after rendering its failed terminal state.
+        // this.error() below throws (and eventually exits the process), so it
+        // must run after ink has rendered, not before: doing this check first
+        // would race React's async render and freeze the screen mid-step.
+        if (inkInstance) {
+          await inkInstance.waitUntilExit();
+          inkInstance = undefined;
+        }
+
         const failedNames = result.failedPackages.join(', ')
         this.error(`Build failed for: ${failedNames}`, {exit: 1})
       }

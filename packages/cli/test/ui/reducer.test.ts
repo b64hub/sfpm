@@ -421,6 +421,36 @@ describe('ui: reducer', () => {
       p.play(partialFailureEvents);
       expect(p.currentState().phase).to.equal('running');
     });
+
+    it('a step still running when the package fails is flipped to failed', () => {
+      // Regression: a step whose own completion event only fires on success
+      // (e.g. deploy) never reaches a terminal state itself. Without this,
+      // it renders as a permanently spinning/checked step next to a failed
+      // package.
+      const p = new ScenarioPlayer();
+      p.play([
+        init([['pkg-a']]),
+        running('pkg-a'),
+        stepStart('pkg-a', 'deploy'),
+        complete('pkg-a', 'failed', {detail: 'Source deployment failed'}),
+      ]);
+      expect(p.pkg('pkg-a')?.status).to.equal('failed');
+      expect(p.stepOf('pkg-a', 'deploy')?.status).to.equal('failed');
+    });
+
+    it('a step already terminal when the package fails keeps its own status', () => {
+      const p = new ScenarioPlayer();
+      p.play([
+        init([['pkg-a']]),
+        running('pkg-a'),
+        stepStart('pkg-a', 'connect'),
+        stepComplete('pkg-a', 'connect', 'success'),
+        stepStart('pkg-a', 'deploy'),
+        complete('pkg-a', 'failed'),
+      ]);
+      expect(p.stepOf('pkg-a', 'connect')?.status).to.equal('success');
+      expect(p.stepOf('pkg-a', 'deploy')?.status).to.equal('failed');
+    });
   });
 
   describe('large scale', () => {

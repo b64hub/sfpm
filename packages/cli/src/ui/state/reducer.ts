@@ -42,6 +42,25 @@ function findPkg(levels: AppState['levels'], packageName: string): TreeNode | un
   }
 }
 
+/**
+ * When a package fails, any step still mid-flight (running/pending) never got
+ * its own terminal event — e.g. a deploy step whose completion event only
+ * fires on success. Left alone it shows a stale checkmark or frozen spinner
+ * next to a failed package. Flip it to failed so the tree reflects reality.
+ */
+function failIncompleteChildren(root: TreeNode, id: string): TreeNode {
+  if (root.id === id) {
+    if (root.children.length === 0) return root;
+    return {
+      ...root,
+      children: root.children.map(c => (TERMINAL.has(c.status) ? c : {...c, status: 'failed' as NodeStatus})),
+    };
+  }
+
+  const children = root.children.map(c => failIncompleteChildren(c, id));
+  return children === root.children ? root : {...root, children};
+}
+
 function updatePackage(state: AppState, packageName: string, status: NodeStatus, detail?: string, meta?: Record<string, string>): AppState {
   const id = `pkg:${packageName}`;
   const existing = findPkg(state.levels, packageName);
@@ -52,9 +71,13 @@ function updatePackage(state: AppState, packageName: string, status: NodeStatus,
         ? {duration: Date.now() - existing.startedAt, startedAt: undefined}
         : {};
   return {
-    ...state, levels: state.levels.map(l => updateNode(l, id, {
-      detail, meta, status, ...timingPatch,
-    })),
+    ...state,
+    levels: state.levels.map(l => {
+      const updated = updateNode(l, id, {
+        detail, meta, status, ...timingPatch,
+      });
+      return status === 'failed' ? failIncompleteChildren(updated, id) : updated;
+    }),
   };
 }
 

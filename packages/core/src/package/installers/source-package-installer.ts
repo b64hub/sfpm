@@ -86,7 +86,6 @@ export default class SourcePackageInstaller implements Installer {
 
     if (!result.success) {
       const errorMessages = result.formatErrors() || 'Unknown deployment error';
-      this.sink?.deployComplete({targetOrg: username});
       throw new Error(`Source deployment failed:\n${errorMessages}`);
     }
 

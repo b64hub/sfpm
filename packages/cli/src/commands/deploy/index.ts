@@ -182,13 +182,20 @@ export default class Deploy extends SfpmCommand {
     try {
       const result = await orchestrator.installAll(resolvedPackages)
 
+      // Let the app self-exit after rendering its terminal state — on success
+      // AND on failure. this.error() below throws (and eventually exits the
+      // process), so it must run after ink has rendered, not before: doing
+      // this check first would race React's async render and freeze the
+      // screen mid-step.
+      if (inkInstance) {
+        await inkInstance.waitUntilExit();
+        inkInstance = undefined;
+      }
+
       if (!result.success) {
         const failedNames = result.failedPackages.join(', ')
         this.error(`Deploy failed for: ${failedNames}`, {exit: 2})
       }
-
-      // Let the app self-exit after rendering its terminal state.
-      if (inkInstance) await inkInstance.waitUntilExit();
     } catch (error) {
       renderer?.handleError(error as Error)
 
