@@ -1,7 +1,7 @@
 {
-  "name": "@b64hub/sfpm-static-analyzer",
+  "name": "@b64hub/sfpm-validation",
   "version": "0.1.0",
-  "description": "Static metadata dependency analysis for SFPM",
+  "description": "Local metadata validation for SFPM",
   "type": "module",
   "scripts": {
     "build": "tsc -b",
@@ -10,14 +10,13 @@
   "keywords": [
     "sfpm",
     "salesforce",
-    "static-analysis",
-    "dependency-analysis",
     "apex",
     "typescript"
   ],
   "author": "b64",
   "license": "MIT",
   "dependencies": {
+    "semver": "^7.7.3",
     "@b64hub/sfpm-core": "workspace:^0.1.0",
     "@salesforce/source-deploy-retrieve": "^12.31.7",
     "fs-extra": "^11.3.3"
@@ -36,6 +35,7 @@
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
+    "@types/semver": "^7.7.1",
     "vitest": "^4.0.17"
   },
   "optionalDependencies": {

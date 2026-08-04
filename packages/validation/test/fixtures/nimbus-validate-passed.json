@@ -1,0 +1,9 @@
+{
+  "files": [
+    { "file": "OrderService.cls", "valid": true },
+    { "file": "OrderServiceHelper.cls", "valid": true }
+  ],
+  "totalFiles": 2,
+  "validFiles": 2,
+  "errorFiles": 0
+}

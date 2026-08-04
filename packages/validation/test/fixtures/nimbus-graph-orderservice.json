@@ -1,0 +1,1071 @@
+{
+  "schema": "nimbus.graph/v1",
+  "nodes": [
+    {
+      "id": "adminsubscriptionordercontroller",
+      "name": "AdminSubscriptionOrderController",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/controllers/AdminSubscriptionOrderController.cls",
+      "is_test": false,
+      "dependents": 0
+    },
+    {
+      "id": "adminsubscriptionorderservice",
+      "name": "AdminSubscriptionOrderService",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/services/AdminSubscriptionOrderService.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "capacitychangeordercontroller",
+      "name": "CapacityChangeOrderController",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/controllers/CapacityChangeOrderController.cls",
+      "is_test": false,
+      "dependents": 0
+    },
+    {
+      "id": "changeordercontroller",
+      "name": "ChangeOrderController",
+      "kind": "class",
+      "file": "src/sales/order-management/classes/controllers/ChangeOrderController.cls",
+      "is_test": false,
+      "dependents": 0
+    },
+    {
+      "id": "changeorderservice",
+      "name": "ChangeOrderService",
+      "kind": "class",
+      "file": "src/sales/order-management/classes/services/ChangeOrderService.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "changesubscriptionorder",
+      "name": "ChangeSubscriptionOrder",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/domain/model/ChangeSubscriptionOrder.cls",
+      "is_test": false,
+      "dependents": 29
+    },
+    {
+      "id": "compositesaveresult",
+      "name": "CompositeSaveResult",
+      "kind": "class",
+      "file": "src/core/crm/classes/domain/results/CompositeSaveResult.cls",
+      "is_test": false,
+      "dependents": 29
+    },
+    {
+      "id": "cvcordereventhandler",
+      "name": "CvcOrderEventHandler",
+      "kind": "class",
+      "file": "src/core/integrations/cvc/dist/force-app/classes/orderevent/handlers/CvcOrderEventHandler.cls",
+      "is_test": false,
+      "dependents": 2
+    },
+    {
+      "id": "cvcordereventhandlertest",
+      "name": "CvcOrderEventHandlerTest",
+      "kind": "class",
+      "file": "src/core/integrations/cvc/dist/force-app/classes/orderevent/tests/CvcOrderEventHandlerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "dml",
+      "name": "DML",
+      "kind": "class",
+      "file": "src/core/apex/utils/dist/force-app/classes/DML.cls",
+      "is_test": false,
+      "dependents": 29
+    },
+    {
+      "id": "externalorderservicefactory",
+      "name": "ExternalOrderServiceFactory",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/domain/factories/ExternalOrderServiceFactory.cls",
+      "is_test": false,
+      "dependents": 28
+    },
+    {
+      "id": "logger",
+      "name": "Logger",
+      "kind": "class",
+      "file": "stubs/nebula/Logger.cls",
+      "is_test": false,
+      "dependents": 32
+    },
+    {
+      "id": "newsubscriptionordercontroller",
+      "name": "NewSubscriptionOrderController",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/controllers/NewSubscriptionOrderController.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "newsubscriptionordercontrollertest",
+      "name": "NewSubscriptionOrderControllerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/NewSubscriptionOrderControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "obj:order",
+      "name": "Order",
+      "kind": "sobject",
+      "is_test": false,
+      "dependents": 28
+    },
+    {
+      "id": "ordereventhandler",
+      "name": "OrderEventHandler",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/handlers/OrderEventHandler.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "ordereventhandlertest",
+      "name": "OrderEventHandlerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/OrderEventHandlerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderlifecycleservice",
+      "name": "OrderLifecycleService",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/services/OrderLifecycleService.cls",
+      "is_test": false,
+      "dependents": 29
+    },
+    {
+      "id": "ordernotificationservice",
+      "name": "OrderNotificationService",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/services/OrderNotificationService.cls",
+      "is_test": false,
+      "dependents": 3
+    },
+    {
+      "id": "ordernotificationservicetest",
+      "name": "OrderNotificationServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/services/OrderNotificationServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderproductscontroller",
+      "name": "OrderProductsController",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/controllers/OrderProductsController.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "orderproductscontrollertest",
+      "name": "OrderProductsControllerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/OrderProductsControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderrelatedcontroller",
+      "name": "OrderRelatedController",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/controllers/OrderRelatedController.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "orderrelatedcontrollertest",
+      "name": "OrderRelatedControllerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/OrderRelatedControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderremarkcontroller",
+      "name": "OrderRemarkController",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/controllers/OrderRemarkController.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "orderremarkcontrollertest",
+      "name": "OrderRemarkControllerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/OrderRemarkControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderservice",
+      "name": "OrderService",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/services/OrderService.cls",
+      "is_test": false,
+      "dependents": 27
+    },
+    {
+      "id": "orderservicetest",
+      "name": "OrderServiceTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/services/OrderServiceTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "orderstatusqueueable",
+      "name": "OrderStatusQueueable",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/queueable/OrderStatusQueueable.cls",
+      "is_test": false,
+      "dependents": 28
+    },
+    {
+      "id": "ordersummarycontroller",
+      "name": "OrderSummaryController",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/controllers/OrderSummaryController.cls",
+      "is_test": false,
+      "dependents": 0
+    },
+    {
+      "id": "ordersyncservice",
+      "name": "OrderSyncService",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/services/OrderSyncService.cls",
+      "is_test": false,
+      "dependents": 3
+    },
+    {
+      "id": "stringformatutility",
+      "name": "StringFormatUtility",
+      "kind": "class",
+      "file": "src/core/apex/utils/dist/force-app/classes/StringFormatUtility.cls",
+      "is_test": false,
+      "dependents": 28
+    },
+    {
+      "id": "subscriptionorder",
+      "name": "SubscriptionOrder",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/domain/model/SubscriptionOrder.cls",
+      "is_test": false,
+      "dependents": 35
+    },
+    {
+      "id": "subscriptionorderbuilder",
+      "name": "SubscriptionOrderBuilder",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/domain/factories/SubscriptionOrderBuilder.cls",
+      "is_test": false,
+      "dependents": 29
+    },
+    {
+      "id": "subscriptionordercontroller",
+      "name": "SubscriptionOrderController",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/controllers/SubscriptionOrderController.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "subscriptionordercontrollertest",
+      "name": "SubscriptionOrderControllerTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/SubscriptionOrderControllerTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "subscriptionorderitem",
+      "name": "SubscriptionOrderItem",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/domain/model/SubscriptionOrderItem.cls",
+      "is_test": false,
+      "dependents": 35
+    },
+    {
+      "id": "subscriptionservice",
+      "name": "SubscriptionService",
+      "kind": "class",
+      "file": "src/core/crm/dist/force-app/classes/services/SubscriptionService.cls",
+      "is_test": false,
+      "dependents": 29
+    },
+    {
+      "id": "ta_order_submit",
+      "name": "TA_Order_Submit",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/trigger-actions/TA_Order_Submit.cls",
+      "is_test": false,
+      "dependents": 0
+    },
+    {
+      "id": "ta_order_validate",
+      "name": "TA_Order_Validate",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/trigger-actions/TA_Order_Validate.cls",
+      "is_test": false,
+      "dependents": 1
+    },
+    {
+      "id": "ta_order_validatetest",
+      "name": "TA_Order_ValidateTest",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/tests/TA_Order_ValidateTest.cls",
+      "is_test": true,
+      "dependents": 0
+    },
+    {
+      "id": "terminatesubscriptionorder",
+      "name": "TerminateSubscriptionOrder",
+      "kind": "class",
+      "file": "src/sales/order-management/dist/force-app/classes/domain/model/TerminateSubscriptionOrder.cls",
+      "is_test": false,
+      "dependents": 29
+    },
+    {
+      "id": "typefactory",
+      "name": "TypeFactory",
+      "kind": "class",
+      "file": "src/core/apex/type-factory/dist/force-app/classes/TypeFactory.cls",
+      "is_test": false,
+      "dependents": 33
+    }
+  ],
+  "edges": [
+    {
+      "from": "adminsubscriptionordercontroller",
+      "to": "adminsubscriptionorderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "adminsubscriptionordercontroller",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "adminsubscriptionordercontroller",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "adminsubscriptionorderservice",
+      "to": "dml",
+      "provenance": "static"
+    },
+    {
+      "from": "adminsubscriptionorderservice",
+      "to": "logger",
+      "provenance": "static"
+    },
+    {
+      "from": "adminsubscriptionorderservice",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "adminsubscriptionorderservice",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "adminsubscriptionorderservice",
+      "to": "subscriptionorderbuilder",
+      "provenance": "static"
+    },
+    {
+      "from": "adminsubscriptionorderservice",
+      "to": "subscriptionorderitem",
+      "provenance": "static"
+    },
+    {
+      "from": "adminsubscriptionorderservice",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "capacitychangeordercontroller",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "capacitychangeordercontroller",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "changeordercontroller",
+      "to": "changeorderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "changeordercontroller",
+      "to": "changesubscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "changeordercontroller",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "changeordercontroller",
+      "to": "subscriptionservice",
+      "provenance": "static"
+    },
+    {
+      "from": "changeorderservice",
+      "to": "changesubscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "changeorderservice",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "changeorderservice",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "changeorderservice",
+      "to": "subscriptionorderbuilder",
+      "provenance": "static"
+    },
+    {
+      "from": "changeorderservice",
+      "to": "subscriptionorderitem",
+      "provenance": "static"
+    },
+    {
+      "from": "changeorderservice",
+      "to": "subscriptionservice",
+      "provenance": "static"
+    },
+    {
+      "from": "changeorderservice",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "changesubscriptionorder",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "changesubscriptionorder",
+      "to": "subscriptionorderitem",
+      "provenance": "static"
+    },
+    {
+      "from": "compositesaveresult",
+      "to": "compositesaveresult",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandler",
+      "to": "compositesaveresult",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandler",
+      "to": "cvcordereventhandler",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandler",
+      "to": "logger",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandler",
+      "to": "ordernotificationservice",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandler",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandler",
+      "to": "ordersyncservice",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandler",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandlertest",
+      "to": "compositesaveresult",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandlertest",
+      "to": "cvcordereventhandler",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandlertest",
+      "to": "ordernotificationservice",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandlertest",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandlertest",
+      "to": "ordersyncservice",
+      "provenance": "static"
+    },
+    {
+      "from": "cvcordereventhandlertest",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "dml",
+      "to": "dml",
+      "provenance": "static"
+    },
+    {
+      "from": "dml",
+      "to": "logger",
+      "provenance": "static"
+    },
+    {
+      "from": "externalorderservicefactory",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "externalorderservicefactory",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "newsubscriptionordercontroller",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "newsubscriptionordercontrollertest",
+      "to": "newsubscriptionordercontroller",
+      "provenance": "static"
+    },
+    {
+      "from": "newsubscriptionordercontrollertest",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ordereventhandler",
+      "to": "logger",
+      "provenance": "static"
+    },
+    {
+      "from": "ordereventhandler",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ordereventhandler",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "ordereventhandlertest",
+      "to": "ordereventhandler",
+      "provenance": "static"
+    },
+    {
+      "from": "ordereventhandlertest",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ordereventhandlertest",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "orderlifecycleservice",
+      "to": "logger",
+      "provenance": "static"
+    },
+    {
+      "from": "orderlifecycleservice",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderlifecycleservice",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "ordernotificationservice",
+      "to": "logger",
+      "provenance": "static"
+    },
+    {
+      "from": "ordernotificationservice",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ordernotificationservice",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "ordernotificationservicetest",
+      "to": "ordernotificationservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ordernotificationservicetest",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ordernotificationservicetest",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "orderproductscontroller",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderproductscontroller",
+      "to": "subscriptionorderitem",
+      "provenance": "static"
+    },
+    {
+      "from": "orderproductscontrollertest",
+      "to": "orderproductscontroller",
+      "provenance": "static"
+    },
+    {
+      "from": "orderproductscontrollertest",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderproductscontrollertest",
+      "to": "subscriptionorderitem",
+      "provenance": "static"
+    },
+    {
+      "from": "orderrelatedcontroller",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderrelatedcontroller",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderrelatedcontrollertest",
+      "to": "orderrelatedcontroller",
+      "provenance": "static"
+    },
+    {
+      "from": "orderrelatedcontrollertest",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderrelatedcontrollertest",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderremarkcontroller",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderremarkcontrollertest",
+      "to": "orderremarkcontroller",
+      "provenance": "static"
+    },
+    {
+      "from": "orderremarkcontrollertest",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "changesubscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "compositesaveresult",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "dml",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "externalorderservicefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "logger",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "obj:order",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "orderservice",
+      "to": "orderlifecycleservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "orderstatusqueueable",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "stringformatutility",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "subscriptionorderbuilder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "subscriptionorderitem",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "subscriptionservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "terminatesubscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservice",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "changesubscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "compositesaveresult",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "dml",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "externalorderservicefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "obj:order",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "obj:order",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "subscriptionorderbuilder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "subscriptionorderitem",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "subscriptionservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "terminatesubscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderservicetest",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "orderstatusqueueable",
+      "to": "logger",
+      "provenance": "static"
+    },
+    {
+      "from": "orderstatusqueueable",
+      "to": "orderlifecycleservice",
+      "provenance": "static"
+    },
+    {
+      "from": "orderstatusqueueable",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "orderstatusqueueable",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "ordersummarycontroller",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ordersummarycontroller",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "ordersummarycontroller",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "ordersyncservice",
+      "to": "externalorderservicefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "ordersyncservice",
+      "to": "logger",
+      "provenance": "static"
+    },
+    {
+      "from": "ordersyncservice",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ordersyncservice",
+      "to": "ordersyncservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ordersyncservice",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "ordersyncservice",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionorder",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionorder",
+      "to": "subscriptionorderitem",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionorderbuilder",
+      "to": "changesubscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionorderbuilder",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionorderbuilder",
+      "to": "subscriptionorderbuilder",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionorderbuilder",
+      "to": "subscriptionorderitem",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionorderbuilder",
+      "to": "terminatesubscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionordercontroller",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionordercontroller",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionordercontrollertest",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionordercontrollertest",
+      "to": "subscriptionordercontroller",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionservice",
+      "to": "logger",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionservice",
+      "to": "subscriptionservice",
+      "provenance": "static"
+    },
+    {
+      "from": "subscriptionservice",
+      "to": "typefactory",
+      "provenance": "static"
+    },
+    {
+      "from": "ta_order_submit",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ta_order_submit",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "ta_order_validate",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ta_order_validate",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "ta_order_validatetest",
+      "to": "orderservice",
+      "provenance": "static"
+    },
+    {
+      "from": "ta_order_validatetest",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "ta_order_validatetest",
+      "to": "ta_order_validate",
+      "provenance": "static"
+    },
+    {
+      "from": "terminatesubscriptionorder",
+      "to": "subscriptionorder",
+      "provenance": "static"
+    },
+    {
+      "from": "typefactory",
+      "to": "typefactory",
+      "provenance": "static"
+    }
+  ],
+  "stats": {
+    "node_count": 43,
+    "edge_count": 138,
+    "cycle_count": 0,
+    "observed_edges": 0,
+    "trigger_count": 0,
+    "label_count": 0,
+    "unreferenced_labels": 0,
+    "custom_metadata_count": 0,
+    "sobject_count": 1,
+    "custom_permission_count": 0,
+    "unchecked_custom_permissions": 0,
+    "static_resource_count": 0,
+    "unread_static_resources": 0,
+    "flow_count": 0
+  },
+  "scope": {
+    "root": "OrderService",
+    "depth": 1,
+    "truncated": true
+  },
+  "limits": [
+    "Edges are syntactic references. A trigger dispatching through custom metadata (TDTM and similar) reaches its handler with no reference to follow, so those edges are absent unless a coverage run revealed them.",
+    "This is reachability, not test selection. It must not be used to decide which tests to skip.",
+    "A coverage map was found, but it revealed no edges beyond the syntactic ones — either the dispatch gap is genuinely empty here, or the map is stale. Refresh it with `nimbus test \"*\" --coverage`.",
+    "SObject nodes exist only for objects this code touches or a trigger runs on — this is not the org's schema. The edges read object names Apex spells out, so dynamic SOQL, DML on a generic SObject, and access from Flows or LWC are absent until a coverage run records them.",
+    "Scoped to OrderService at depth 1 — this is a neighbourhood, not the whole project. Further dependencies exist beyond the shown depth."
+  ]
+}

@@ -59,6 +59,7 @@ export function attachBuildBridge(
       versionBuffer.delete(e.packageName);
       uiBus.emit('package:complete', {
         detail: e.error,
+        errorDetails: e.errorDetails,
         meta: version ? {version} : undefined,
         packageName: e.packageName,
         status,
@@ -115,6 +116,13 @@ export function attachBuildBridge(
   buildBus.on('hooks:complete' as any, (e: any) => {
     if (e.completedCount === 0) return;
     uiBus.emit('step:complete', {packageName: e.packageName, status: 'success', step: `${e.timing}-hooks`});
+  });
+
+  // Best-effort task findings (local compile/dependency checks) — never
+  // affect status, just accumulate onto the package row as a warning badge.
+  buildBus.on('task:complete' as any, (e: any) => {
+    if (!e.warnings?.length) return;
+    uiBus.emit('package:warn', {packageName: e.packageName, warnings: e.warnings});
   });
 
   // ── Validation (ink path only) ─────────────────────────────────────────────

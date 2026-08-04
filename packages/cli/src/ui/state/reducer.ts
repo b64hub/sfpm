@@ -1,10 +1,12 @@
 import type {
-  AppState, LogRecord, NodeStatus, TreeNode,
+  AppState, ErrorDetail, LogRecord, NodeStatus, TreeNode,
 } from './types.js';
 
 type Action = Record<string, unknown> & {type: string};
 
-type NodePatch = {detail?: string; duration?: number; meta?: Record<string, string>; startedAt?: number; status?: NodeStatus;};
+type NodePatch = {
+  detail?: string; duration?: number; errorDetails?: ErrorDetail[]; meta?: Record<string, string>; startedAt?: number; status?: NodeStatus; warnings?: ErrorDetail[];
+};
 
 const TERMINAL = new Set<NodeStatus>(['failed', 'skipped', 'success']);
 
@@ -42,7 +44,14 @@ function findPkg(levels: AppState['levels'], packageName: string): TreeNode | un
   }
 }
 
-function updatePackage(state: AppState, packageName: string, status: NodeStatus, detail?: string, meta?: Record<string, string>): AppState {
+function updatePackage(
+  state: AppState,
+  packageName: string,
+  status: NodeStatus,
+  detail?: string,
+  meta?: Record<string, string>,
+  errorDetails?: ErrorDetail[],
+): AppState {
   const id = `pkg:${packageName}`;
   const existing = findPkg(state.levels, packageName);
   const timingPatch: NodePatch
@@ -52,8 +61,9 @@ function updatePackage(state: AppState, packageName: string, status: NodeStatus,
         ? {duration: Date.now() - existing.startedAt, startedAt: undefined}
         : {};
   return {
-    ...state, levels: state.levels.map(l => updateNode(l, id, {
-      detail, meta, status, ...timingPatch,
+    ...state,
+    levels: state.levels.map(l => updateNode(l, id, {
+      detail, errorDetails, meta, status, ...timingPatch,
     })),
   };
 }
@@ -119,13 +129,21 @@ export function reducer(state: AppState, action: Action): AppState {
       action.status as NodeStatus,
       action.detail as string | undefined,
       action.meta as Record<string, string> | undefined,
+      action.errorDetails as ErrorDetail[] | undefined,
     );
+  }
+
+  case 'package:running': {
+    return updatePackage(state, action.packageName as string, 'running');
   }
 
   // ── Per-step within a package ────────────────────────────────────────────
 
-  case 'package:running': {
-    return updatePackage(state, action.packageName as string, 'running');
+  case 'package:warn': {
+    const id = `pkg:${action.packageName as string}`;
+    const existing = findPkg(state.levels, action.packageName as string);
+    const merged = [...(existing?.warnings ?? []), ...(action.warnings as ErrorDetail[])];
+    return {...state, levels: state.levels.map(l => updateNode(l, id, {warnings: merged}))};
   }
 
   case 'step:complete': {

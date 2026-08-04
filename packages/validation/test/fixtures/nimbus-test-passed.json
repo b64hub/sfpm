@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "summary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "duration_ms": 3542
+  },
+  "tests": [
+    { "class": "OrderServiceTest", "method": "testCreateOrder", "status": "passed", "duration_ms": 1200 },
+    { "class": "OrderServiceTest", "method": "testUpdateOrder", "status": "passed", "duration_ms": 900 },
+    { "class": "OrderServiceTest", "method": "testDeleteOrder", "status": "passed", "duration_ms": 1442 }
+  ],
+  "warnings": [],
+  "parse_errors": []
+}

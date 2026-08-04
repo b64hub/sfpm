@@ -1,4 +1,4 @@
-import type * as jorje from '../types/jorje.js';
+import type * as jorje from './types/jorje.js';
 
 /**
  * A type reference extracted from an Apex AST.

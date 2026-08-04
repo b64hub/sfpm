@@ -100,9 +100,9 @@ export {
   type LocalValidationResult,
 } from './types/build-state.js';
 export * from './types/config.js';
-export * from './types/dependency-analysis.js';
 export * from './types/errors.js';
 export * from './types/lifecycle.js';
+export * from './types/local-validator.js';
 export {default as Logger} from './types/logger.js';
 export * from './types/logger.js';
 export * from './types/npm.js';

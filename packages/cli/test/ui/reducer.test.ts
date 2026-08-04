@@ -157,6 +157,20 @@ describe('ui: reducer', () => {
       expect(pkg?.meta?.version).to.equal('1.0.0');
     });
 
+    it('stores errorDetails unchanged — structured, not pre-joined into a string', () => {
+      const p = new ScenarioPlayer();
+      const errorDetails = [
+        {label: 'Foo__c', message: 'Field is required'},
+        {label: 'Bar__c', message: 'Variable does not exist'},
+      ];
+      p.play([
+        init([['pkg-a']]),
+        running('pkg-a'),
+        complete('pkg-a', 'failed', {detail: 'Source deployment failed (2 components)', errorDetails}),
+      ]);
+      expect(p.pkg('pkg-a')?.errorDetails).to.deep.equal(errorDetails);
+    });
+
     it("'validating' is non-terminal — startedAt is preserved", () => {
       const p = new ScenarioPlayer();
       p.play([init([['pkg-a']]), running('pkg-a'), complete('pkg-a', 'validating')]);
@@ -420,6 +434,22 @@ describe('ui: reducer', () => {
       const p = new ScenarioPlayer();
       p.play(partialFailureEvents);
       expect(p.currentState().phase).to.equal('running');
+    });
+
+    it('does not mutate a still-running step when the package fails', () => {
+      // A step whose own completion event only fires on success (e.g. deploy)
+      // never reaches a terminal state on its own. The reducer leaves it as-is
+      // now — hiding stale/incomplete step status on a failed package is
+      // PackageRow's job (via the `error` prop), not the reducer's.
+      const p = new ScenarioPlayer();
+      p.play([
+        init([['pkg-a']]),
+        running('pkg-a'),
+        stepStart('pkg-a', 'deploy'),
+        complete('pkg-a', 'failed', {detail: 'Source deployment failed'}),
+      ]);
+      expect(p.pkg('pkg-a')?.status).to.equal('failed');
+      expect(p.stepOf('pkg-a', 'deploy')?.status).to.equal('running');
     });
   });
 

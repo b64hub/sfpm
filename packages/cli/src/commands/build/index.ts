@@ -2,18 +2,17 @@ import {
   BuildOrchestrator,
   type BuildOrchestratorOptions, type BuildOrg,
   type BuildWatcherPayload,
-  type DependencyAnalyzer,
+  findSfpmRoot,
   LifecycleEngine,
   noopLogger,
   type OrchestrationResult,
-  PackageFactory,
   PackageType,
   type PendingValidationDescriptor, ProjectService, ValidationEventBus, ValidationResolver,
   type WatcherState,
 } from '@b64hub/sfpm-core'
 import {ScratchOrgProvider} from '@b64hub/sfpm-orgs'
-import {MetadataDependencyService} from '@b64hub/sfpm-static-analyzer'
 import {createTracer} from '@b64hub/sfpm-telemetry'
+import {NimbusLocalValidator, NimbusValidationEventBus} from '@b64hub/sfpm-validation'
 import {
   Args, Flags,
 } from '@oclif/core'
@@ -38,7 +37,6 @@ interface ResolvedBuildFlags {
   autoCreatedBuildOrg?: {devhub: Org; username: string};
   buildOptions: BuildOrchestratorOptions;
   buildOrgUsername?: string;
-  dependencyAnalyzer?: DependencyAnalyzer;
   devhubUsername?: string;
   mode: OutputMode;
   noDependencies: boolean;
@@ -56,7 +54,7 @@ export default class Build extends SfpmCommand {
       required: true,
     }),
   }
-  static override description = 'build one or more packages'
+  static override description = 'build packages'
   /**
    * Lifecycle stage: **build**
    *
@@ -148,13 +146,34 @@ export default class Build extends SfpmCommand {
     const uiBus = isInk ? new EventEmitter() : undefined;
     const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
 
+    // Build local validator for compile + dependency checks (all modes except 'none').
+    // Created here so it shares the run logger.
+    let localValidator: NimbusLocalValidator | undefined;
+    if (resolved.buildOptions.validation === 'local' || resolved.buildOptions.validation === 'full') {
+      const manifests = projectConfig.getAllPackageDefinitions().map(def => ({
+        declaredDependencies: new Set(projectConfig.getDependencies(def.name).map(d => d.name)),
+        packageId: def.name,
+        packagePath: path.join(projectConfig.projectDir, def.path),
+      }));
+      localValidator = new NimbusLocalValidator(
+        {
+          config: {
+            daemon: {autoStart: false, autoStop: true, enabled: false},
+          },
+          eventBus: new NimbusValidationEventBus(),
+          logger: pinoLogger,
+        },
+        manifests,
+      );
+    }
+
     const orchestrator = new BuildOrchestrator(
       projectConfig,
       projectGraph,
       buildOrg,
       {...resolved.buildOptions, includeDependencies: !resolved.noDependencies},
       pinoLogger,
-      resolved.dependencyAnalyzer,
+      localValidator,
     )
 
     // For the ink path, create the ValidationEventBus here so the bridge can
@@ -191,6 +210,15 @@ export default class Build extends SfpmCommand {
       }
 
       if (!result.success) {
+        // Let the app self-exit after rendering its failed terminal state.
+        // this.error() below throws (and eventually exits the process), so it
+        // must run after ink has rendered, not before: doing this check first
+        // would race React's async render and freeze the screen mid-step.
+        if (inkInstance) {
+          await inkInstance.waitUntilExit();
+          inkInstance = undefined;
+        }
+
         const failedNames = result.failedPackages.join(', ')
         this.error(`Build failed for: ${failedNames}`, {exit: 1})
       }
@@ -204,9 +232,15 @@ export default class Build extends SfpmCommand {
         // The bridge already wired validationBus → uiBus; just drive the resolver.
         if (pendingValidations.length > 0) {
           await this.resolveValidationsInline(pendingValidations, resolved, validationBus)
+          // Validation is async enough that React has rendered all events by now.
+          inkInstance?.unmount();
+        } else {
+          // No validation: let the app self-exit after rendering its terminal state.
+          // Calling unmount() immediately would race React's async render and drop
+          // the final package:complete update from the screen.
+          await inkInstance?.waitUntilExit();
         }
 
-        inkInstance?.unmount();
         inkInstance = undefined;
       } else {
         // Non-ink path or async: unmount before handing off to the existing handler.
@@ -385,7 +419,11 @@ export default class Build extends SfpmCommand {
       flags['no-dependencies'] = true
     }
 
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectDir = process.env.SFPM_PROJECT_DIR || findSfpmRoot(process.cwd());
+    if (!projectDir) {
+      this.error('Unable to locate any project root files like sfpm.config.{ts,mjs,js}', {exit: 1})
+    }
+
     const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getDefinitionProvider();
     const sfpmConfig = projectService.getSfpmConfig();
@@ -411,16 +449,6 @@ export default class Build extends SfpmCommand {
 
     const mode = this.outputMode;
 
-    // Initialize dependency analyzer for cross-package reference validation
-    // Only when validation level includes analysis (full, local, org)
-    let dependencyAnalyzer: DependencyAnalyzer | undefined;
-    if (validation !== 'none') {
-      const analyzer = new MetadataDependencyService(projectDir);
-      const factory = new PackageFactory(projectConfig);
-      await analyzer.initialize(factory.createAll());
-      dependencyAnalyzer = analyzer;
-    }
-
     const buildOptions: BuildOrchestratorOptions = {
       buildNumber: flags['build-number'],
       force: flags.force,
@@ -433,7 +461,6 @@ export default class Build extends SfpmCommand {
       async: flags.async ?? false,
       buildOptions,
       buildOrgUsername: flags['build-org'],
-      dependencyAnalyzer,
       devhubUsername,
       mode,
       noDependencies: flags['no-dependencies'],

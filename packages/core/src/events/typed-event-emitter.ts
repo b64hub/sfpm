@@ -11,6 +11,20 @@ import EventEmitter from 'node:events';
  *               tuples of the payload type: `{ 'start': [StartEvent] }`
  */
 export class TypedEventEmitter<T extends {[K in keyof T]: unknown[]}> extends EventEmitter {
+  constructor() {
+    super();
+    // Node's EventEmitter throws synchronously when 'error' is emitted with
+    // no listener attached, and (since our error payloads are plain objects,
+    // not Error instances) replaces the real error with a generic "Unhandled
+    // error. ({...})" — masking whatever error producers actually reported
+    // via sink.error(). Nothing currently subscribes to 'error' in production,
+    // so without this every sink.error() call would crash and swallow its
+    // own message. This no-op listener neutralizes that; real listeners
+    // added later (e.g. in tests) still receive the event normally, since
+    // EventEmitter invokes every registered listener.
+    super.on('error', () => {});
+  }
+
   /**
    * Emit a typed event. The payload is enriched with `{ timestamp }` before
    * being forwarded to listeners.

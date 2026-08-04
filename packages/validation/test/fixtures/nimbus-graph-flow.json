@@ -1,0 +1,124 @@
+{
+  "schema": "nimbus.graph/v1",
+  "nodes": [
+    {
+      "id": "flow:create_opportunity",
+      "name": "Create_Opportunity",
+      "kind": "flow",
+      "file": "src/sales/cpq/flows/Create_Opportunity.flow-meta.xml",
+      "is_test": false,
+      "dependents": 0,
+      "detail": "Active"
+    },
+    {
+      "id": "flow:create_quote",
+      "name": "Create_Quote",
+      "kind": "flow",
+      "file": "src/sales/cpq/flows/Create_Quote.flow-meta.xml",
+      "is_test": false,
+      "dependents": 1,
+      "detail": "Active"
+    },
+    {
+      "id": "flow:create_quote_line_item",
+      "name": "Create_Quote_Line_Item",
+      "kind": "flow",
+      "file": "src/sales/cpq/flows/Create_Quote_Line_Item.flow-meta.xml",
+      "is_test": false,
+      "dependents": 2,
+      "detail": "Active"
+    },
+    {
+      "id": "obj:opportunity",
+      "name": "Opportunity",
+      "kind": "sobject",
+      "is_test": false,
+      "dependents": 2
+    },
+    {
+      "id": "obj:pricebook2",
+      "name": "Pricebook2",
+      "kind": "sobject",
+      "is_test": false,
+      "dependents": 2
+    },
+    {
+      "id": "obj:quote",
+      "name": "Quote",
+      "kind": "sobject",
+      "is_test": false,
+      "dependents": 3
+    }
+  ],
+  "edges": [
+    {
+      "from": "flow:create_opportunity",
+      "to": "flow:create_quote",
+      "provenance": "static"
+    },
+    {
+      "from": "flow:create_quote",
+      "to": "flow:create_quote_line_item",
+      "provenance": "static"
+    },
+    {
+      "from": "flow:create_quote",
+      "to": "obj:opportunity",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "flow:create_quote",
+      "to": "obj:pricebook2",
+      "provenance": "static",
+      "op": "query"
+    },
+    {
+      "from": "flow:create_quote",
+      "to": "obj:quote",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "flow:create_quote_line_item",
+      "to": "obj:quote",
+      "provenance": "static",
+      "op": "dml"
+    },
+    {
+      "from": "flow:create_quote_line_item",
+      "to": "obj:quote",
+      "provenance": "static",
+      "op": "query"
+    }
+  ],
+  "stats": {
+    "node_count": 6,
+    "edge_count": 7,
+    "cycle_count": 0,
+    "observed_edges": 0,
+    "trigger_count": 0,
+    "label_count": 0,
+    "unreferenced_labels": 0,
+    "custom_metadata_count": 0,
+    "sobject_count": 3,
+    "custom_permission_count": 0,
+    "unchecked_custom_permissions": 0,
+    "static_resource_count": 0,
+    "unread_static_resources": 0,
+    "flow_count": 3
+  },
+  "scope": {
+    "root": "Create_Quote",
+    "depth": 1,
+    "truncated": true
+  },
+  "limits": [
+    "Edges are syntactic references. A trigger dispatching through custom metadata (TDTM and similar) reaches its handler with no reference to follow, so those edges are absent unless a coverage run revealed them.",
+    "This is reachability, not test selection. It must not be used to decide which tests to skip.",
+    "A coverage map was found, but it revealed no edges beyond the syntactic ones — either the dispatch gap is genuinely empty here, or the map is stale. Refresh it with `nimbus test \"*\" --coverage`.",
+    "SObject nodes exist only for objects this code touches or a trigger runs on — this is not the org's schema. The edges read object names Apex spells out, so dynamic SOQL, DML on a generic SObject, and access from Flows or LWC are absent until a coverage run records them.",
+    "Flow edges are read from flow metadata: the object a flow is triggered on, the Apex actions and subflows it names, and the objects its record elements touch. An action called through a dynamically built name, and anything a flow reaches through a screen or a component, are not read.",
+    "Scoped to Create_Quote at depth 1 — this is a neighbourhood, not the whole project. Further dependencies exist beyond the shown depth."
+  ]
+}

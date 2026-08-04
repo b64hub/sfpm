@@ -7,6 +7,8 @@ import {ApexTestService, type TestRunResult} from '../apex/apex-test-service.js'
 import {ArtifactRepository} from '../artifacts/artifact-repository.js';
 import {InstallEventBus} from '../events/install-event-bus.js';
 import {
+  type ErrorDetail,
+  extractErrorDetails,
   OrchestrationEventBus,
   OrchestrationResult,
   PackageResult,
@@ -106,6 +108,7 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
     let success = true;
     let skipped = false;
     let error: string | undefined;
+    let errorDetails: ErrorDetail[] | undefined;
     let result: InstallResult | undefined;
 
     try {
@@ -116,11 +119,12 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
     } catch (error_) {
       success = false;
       error = error_ instanceof Error ? error_.message : String(error_);
+      errorDetails = extractErrorDetails(error_);
     }
 
     const duration = Date.now() - start;
     return {
-      duration, error, packageName, result, skipped, success,
+      duration, error, errorDetails, packageName, result, skipped, success,
     };
   }
 }

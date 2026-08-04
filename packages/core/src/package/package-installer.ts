@@ -3,7 +3,9 @@ import {Org} from '@salesforce/core';
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 
 import {InstallEventBus, InstallEventSink} from '../events/install-event-bus.js';
+import {extractErrorDetails} from '../events/orchestration-event-bus.js';
 import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
+import {InstallationError} from '../types/errors.js';
 import {HookContext, HookTiming} from '../types/lifecycle.js';
 import Logger from '../types/logger.js';
 import {
@@ -116,11 +118,13 @@ export default class PackageInstaller {
       throw new Error('Target org not connected. Call connect() before installing packages.');
     }
 
+    const targetOrg = this.targetOrg.getUsername()!;
+
     // Managed packages: skip artifact resolution, go straight to version install
     if (factory.isManagedPackage(packageName)) {
       const managedRef = factory.createManagedRef(packageName);
       if (!managedRef) {
-        throw new Error(`Managed package ${packageName} could not be resolved from project aliases`);
+        throw new InstallationError(packageName, targetOrg, `Managed package ${packageName} could not be resolved from project aliases`);
       }
 
       return this.installManagedPackage(managedRef);
@@ -129,7 +133,7 @@ export default class PackageInstaller {
     const sfpmPackage = factory.createFromName(packageName);
 
     if (!sfpmPackage) {
-      throw new Error(`Package ${packageName} not found in project configuration`);
+      throw new InstallationError(packageName, targetOrg, `Package ${packageName} not found in project configuration`);
     }
 
     try {
@@ -141,7 +145,17 @@ export default class PackageInstaller {
       return await this.installArtifact(sfpmPackage);
     } catch (error) {
       this.logger?.error(`Failed to install ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
-      throw error;
+      // Single choke point: every error escaping install() is guaranteed to be
+      // an InstallationError from here on, whatever it started as (a bare
+      // Error, an AggregateError with per-component detail, etc.) — the
+      // original is preserved as `.cause` (extractErrorDetails looks there).
+      if (error instanceof InstallationError) throw error;
+      throw new InstallationError(
+        packageName,
+        targetOrg,
+        error instanceof Error ? error.message : String(error),
+        {cause: error instanceof Error ? error : new Error(String(error))},
+      );
     }
   }
 
@@ -246,7 +260,22 @@ export default class PackageInstaller {
         targetOrg: this.targetOrg.getUsername()!,
       });
       this.logger?.error(`Failed to install managed package ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
-      throw error;
+      // One log line per item when the failure has a structured breakdown —
+      // grep-able individually, instead of one giant joined-string entry.
+      for (const detail of extractErrorDetails(error) ?? []) {
+        this.logger?.error(`${detail.label}: ${detail.message}`);
+      }
+
+      // Separate boundary from install() — managed packages are returned
+      // directly from install(), bypassing its try/catch, so this needs its
+      // own wrap to keep the "always InstallationError" guarantee.
+      if (error instanceof InstallationError) throw error;
+      throw new InstallationError(
+        packageName,
+        this.targetOrg.getUsername()!,
+        error instanceof Error ? error.message : String(error),
+        {cause: error instanceof Error ? error : new Error(String(error))},
+      );
     }
   }
 
@@ -376,6 +405,12 @@ export default class PackageInstaller {
         versionNumber: sfpmPackage.version,
       });
       this.logger?.error(`Failed to install ${sfpmPackage.name}: ${error instanceof Error ? error.message : String(error)}`);
+      // One log line per item when the failure has a structured breakdown —
+      // grep-able individually, instead of one giant joined-string entry.
+      for (const detail of extractErrorDetails(error) ?? []) {
+        this.logger?.error(`${detail.label}: ${detail.message}`);
+      }
+
       throw error;
     }
   }

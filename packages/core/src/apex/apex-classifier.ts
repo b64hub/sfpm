@@ -16,9 +16,6 @@ export type ApexClassInfo = {
  *
  * Triggers, enums, and interfaces are separate metadata types
  * and don't need regex detection — SDR handles them.
- *
- * For full AST analysis (type reference extraction), use the
- * `@b64hub/sfpm-static-analyzer` package instead.
  */
 export class ApexClassifier {
   /**

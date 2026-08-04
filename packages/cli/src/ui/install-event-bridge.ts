@@ -41,7 +41,7 @@ export function attachInstallBridge(
       ? {...(version ? {version} : {}), ...(components ? {components: String(components)} : {})}
       : undefined;
     uiBus.emit('package:complete', {
-      detail: e.error, meta, packageName: e.packageName, status,
+      detail: e.error, errorDetails: e.errorDetails, meta, packageName: e.packageName, status,
     });
   });
 

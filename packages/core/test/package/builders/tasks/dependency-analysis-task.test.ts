@@ -2,12 +2,12 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {dependencyAnalysisTask} from '../../../../src/package/builders/tasks/dependency-analysis-task.js';
 import {BuildError} from '../../../../src/types/errors.js';
-import type {DependencyAnalyzer, DependencyReport} from '../../../../src/types/dependency-analysis.js';
+import type {DependencyResult, LocalValidator} from '../../../../src/types/local-validator.js';
 import type {BuildTaskContext} from '../../../../src/package/builders/builder-registry.js';
 
 describe('DependencyAnalysisTask', () => {
-  let analyzer: DependencyAnalyzer;
-  let analyzeMock: ReturnType<typeof vi.fn>;
+  let validator: LocalValidator;
+  let checkDependenciesMock: ReturnType<typeof vi.fn>;
   let ctx: BuildTaskContext;
   let logger: {
     debug: ReturnType<typeof vi.fn>;
@@ -20,10 +20,12 @@ describe('DependencyAnalysisTask', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    analyzeMock = vi.fn<DependencyAnalyzer['analyze']>();
-    analyzer = {
-      analyze: analyzeMock,
-      initialize: vi.fn(),
+    checkDependenciesMock = vi.fn<LocalValidator['checkDependencies']>();
+    validator = {
+      checkAvailability: vi.fn(),
+      checkDependencies: checkDependenciesMock,
+      compile: vi.fn(),
+      test: vi.fn(),
     };
 
     logger = {
@@ -36,108 +38,114 @@ describe('DependencyAnalysisTask', () => {
 
     ctx = {
       logger,
-      projectDirectory: '/workspace',
+      provider: {
+        projectDir: '/workspace',
+        getPackageBuildDirectory: vi.fn().mockReturnValue('/workspace/pkg-a/dist'),
+      } as any,
       sfpmPackage: {packageName: 'pkg-a'} as any,
     };
   });
 
-  function createTask(report: DependencyReport, warnOnly = false) {
-    analyzeMock.mockResolvedValue(report);
-    return dependencyAnalysisTask({analyzer, warnOnly})(ctx);
+  function makeResult(overrides: Partial<DependencyResult> = {}): DependencyResult {
+    return {
+      caveats: [],
+      durationMs: 10,
+      status: 'passed',
+      unresolved: [],
+      violations: [],
+      ...overrides,
+    };
   }
 
-  it('returns void when no missing dependencies are found', async () => {
-    const task = createTask({
-      packageName: 'pkg-a',
-      missingDependencies: [],
-    });
+  function createTask(result: DependencyResult, warnOnly = false) {
+    checkDependenciesMock.mockResolvedValue(result);
+    return dependencyAnalysisTask({validator, warnOnly})(ctx);
+  }
 
-    await expect(task.exec()).resolves.toBeUndefined();
-    expect(analyzeMock).toHaveBeenCalledWith(ctx.sfpmPackage);
-  });
-
-  it('logs an info message for clean packages', async () => {
-    const task = createTask({
-      packageName: 'pkg-a',
-      missingDependencies: [],
-    });
-
+  it('calls checkDependencies with context resolved from provider', async () => {
+    const task = createTask(makeResult());
     await task.exec();
 
-    expect(logger.info).toHaveBeenCalledWith('No missing dependencies found for pkg-a');
-    expect(logger.warn).not.toHaveBeenCalled();
-  });
-
-  it('throws BuildError when missing dependencies are found and warnOnly is false', async () => {
-    const task = createTask({
-      packageName: 'pkg-a',
-      missingDependencies: [
-        {
-          packageName: 'pkg-b',
-          references: [{referenceType: 'ApexClass', sourceFile: 'classes/MyClass.cls', symbol: 'SharedService'}],
-        },
-      ],
+    expect(checkDependenciesMock).toHaveBeenCalledWith({
+      packageId: 'pkg-a',
+      packagePath: '/workspace/pkg-a/dist',
+      projectRoot: '/workspace',
     });
-
-    await expect(task.exec()).rejects.toThrow(BuildError);
-    expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('logs a warning instead of throwing when warnOnly is true', async () => {
-    const task = createTask({
-      packageName: 'pkg-a',
-      missingDependencies: [
-        {
-          packageName: 'pkg-b',
-          references: [{referenceType: 'ApexClass', sourceFile: 'classes/MyClass.cls', symbol: 'SharedService'}],
-        },
-      ],
-    }, true);
-
+  it('logs info and returns when no violations found', async () => {
+    const task = createTask(makeResult());
     await expect(task.exec()).resolves.toBeUndefined();
-
-    expect(logger.warn).toHaveBeenCalledWith([
-      "Package 'pkg-a' has undeclared dependencies:",
-      '  → pkg-b (referenced by 1 symbol(s))',
-      '      SharedService in classes/MyClass.cls',
-    ].join('\n'));
+    expect(logger.info).toHaveBeenCalledWith('No boundary violations found for pkg-a');
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('includes the formatted report in the BuildError message', async () => {
-    const task = createTask({
-      packageName: 'pkg-a',
-      missingDependencies: [
-        {
-          packageName: 'pkg-b',
-          references: [
-            {referenceType: 'ApexClass', sourceFile: 'classes/MyClass.cls', symbol: 'SharedService'},
-            {referenceType: 'ApexInterface', sourceFile: 'classes/OtherClass.cls', symbol: 'ISharedContract'},
-          ],
-        },
-        {
-          packageName: 'pkg-c',
-          references: [{referenceType: 'CustomObject', sourceFile: 'objects/Invoice__c.object-meta.xml', symbol: 'Invoice__c'}],
-        },
-      ],
+  it('logs info and returns when status is skipped', async () => {
+    const task = createTask(makeResult({status: 'skipped'}));
+    await expect(task.exec()).resolves.toBeUndefined();
+    expect(logger.info).toHaveBeenCalledWith('Dependency check skipped for pkg-a');
+  });
+
+  it('throws BuildError on status error', async () => {
+    const task = createTask(makeResult({status: 'error'}));
+    await expect(task.exec()).rejects.toThrow(BuildError);
+  });
+
+  it('logs warning instead of throwing on status error when warnOnly is true', async () => {
+    const task = createTask(makeResult({status: 'error'}), true);
+    await expect(task.exec()).resolves.toEqual({
+      warnings: [{label: 'pkg-a', message: 'Dependency check errored for pkg-a'}],
     });
+    expect(logger.warn).toHaveBeenCalledWith('Dependency check errored for pkg-a');
+  });
+
+  it('throws BuildError with formatted message when violations found and warnOnly is false', async () => {
+    const task = createTask(makeResult({
+      status: 'failed',
+      violations: [
+        {fromMetadata: 'OrderService', fromPackage: 'pkg-a', toMetadata: 'StringFormatUtility', toPackage: 'pkg-utils'},
+        {fromMetadata: 'OrderService', fromPackage: 'pkg-a', toMetadata: 'TypeFactory', toPackage: 'pkg-utils'},
+        {fromMetadata: 'OrderService', fromPackage: 'pkg-a', toMetadata: 'Logger', toPackage: 'pkg-core'},
+      ],
+    }));
 
     try {
       await task.exec();
       expect.unreachable('Expected task to throw');
     } catch (error) {
       expect(error).toBeInstanceOf(BuildError);
-      expect(error).toMatchObject({
-        buildStep: 'dependency-analysis',
-        packageName: 'pkg-a',
-      });
       expect((error as BuildError).message).toContain("Package 'pkg-a' has undeclared dependencies:");
-      expect((error as BuildError).message).toContain('  → pkg-b (referenced by 2 symbol(s))');
-      expect((error as BuildError).message).toContain('      SharedService in classes/MyClass.cls');
-      expect((error as BuildError).message).toContain('      ISharedContract in classes/OtherClass.cls');
-      expect((error as BuildError).message).toContain('  → pkg-c (referenced by 1 symbol(s))');
-      expect((error as BuildError).message).toContain(
-        '      Invoice__c in objects/Invoice__c.object-meta.xml',
-      );
+      expect((error as BuildError).message).toContain('→ pkg-utils (2 violation(s))');
+      expect((error as BuildError).message).toContain('      OrderService → StringFormatUtility');
+      expect((error as BuildError).message).toContain('→ pkg-core (1 violation(s))');
+    }
+  });
+
+  it('logs warning instead of throwing when warnOnly is true', async () => {
+    const task = createTask(makeResult({
+      status: 'failed',
+      violations: [
+        {fromMetadata: 'OrderService', fromPackage: 'pkg-a', toMetadata: 'StringFormatUtility', toPackage: 'pkg-utils'},
+      ],
+    }), true);
+
+    await expect(task.exec()).resolves.toEqual({
+      warnings: [{label: 'pkg-a → pkg-utils', message: 'OrderService → StringFormatUtility'}],
+    });
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('→ pkg-utils (1 violation(s))'));
+  });
+
+  it('includes unresolved count in the report when present', async () => {
+    const task = createTask(makeResult({
+      status: 'failed',
+      violations: [{fromMetadata: 'A', fromPackage: 'pkg-a', toMetadata: 'B', toPackage: 'pkg-b'}],
+      unresolved: ['System.Database', 'Schema.SObjectType'],
+    }));
+
+    try {
+      await task.exec();
+    } catch (error) {
+      expect((error as BuildError).message).toContain('2 unresolved reference(s)');
     }
   });
 });

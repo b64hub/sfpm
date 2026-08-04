@@ -21,7 +21,7 @@ export default class Install extends SfpmCommand {
       required: true,
     }),
   }
-  static override description = 'install one or more packages'
+  static override description = 'install packages'
   /**
    * Lifecycle stage: **install**
    *
@@ -144,6 +144,16 @@ export default class Install extends SfpmCommand {
       const result = await orchestrator.installAll(resolvedPackages)
 
       await tracer.shutdown()
+
+      // Let the app self-exit after rendering its terminal state — on success
+      // AND on failure. this.error() below throws (and eventually exits the
+      // process), so it must run after ink has rendered, not before: doing
+      // this check first would race React's async render and freeze the
+      // screen mid-step.
+      if (inkInstance) {
+        await inkInstance.waitUntilExit();
+        inkInstance = undefined;
+      }
 
       if (!result.success) {
         const failedNames = result.failedPackages.join(', ')

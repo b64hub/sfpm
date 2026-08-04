@@ -3,7 +3,7 @@ import {existsSync} from 'node:fs';
 import path from 'node:path';
 
 // Import the official types from your local copy
-import type * as jorje from '../types/jorje.js';
+import type * as jorje from './types/jorje.js';
 
 /**
  * The internal engine returns a JSON with a very specific, long string as the key.

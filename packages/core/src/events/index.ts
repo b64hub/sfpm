@@ -50,8 +50,9 @@ export type {
   VersionProgressEvent, VersionProgressPayload,
   VersionStartEvent, VersionStartPayload,
 } from './install-event-bus.js';
-export {OrchestrationEventBus} from './orchestration-event-bus.js';
+export {extractErrorDetails, OrchestrationEventBus} from './orchestration-event-bus.js';
 export type {
+  ErrorDetail,
   OrchestrationBaseEvent,
   OrchestrationCompleteEvent, OrchestrationCompletePayload,
   OrchestrationErrorEvent, OrchestrationErrorPayload,

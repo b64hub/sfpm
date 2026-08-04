@@ -4,7 +4,7 @@ import {
 
 import type {OrchestrationStartEvent} from '../../src/events/orchestration-event-bus.js';
 
-import {OrchestrationEventBus} from '../../src/events/orchestration-event-bus.js';
+import {extractErrorDetails, OrchestrationEventBus} from '../../src/events/orchestration-event-bus.js';
 
 describe('OrchestrationEventBus', () => {
   it('should auto-inject orchestrationId into every emitted event', () => {
@@ -93,5 +93,22 @@ describe('OrchestrationEventBus', () => {
     expect(levelStartHandler.mock.calls[0][0].orchestrationId).toBe('level-test');
     expect(levelStartHandler.mock.calls[0][0].level).toBe(1);
     expect(levelCompleteHandler.mock.calls[0][0].succeeded).toEqual(['a']);
+  });
+});
+
+describe('extractErrorDetails', () => {
+  it('returns the structured breakdown from an AggregateError', () => {
+    const details = [{label: 'Foo__c', message: 'bad thing'}, {label: 'Bar__c', message: 'also bad'}];
+    const error = new AggregateError(details, 'Deploy failed (2 components)');
+
+    expect(extractErrorDetails(error)).toEqual(details);
+  });
+
+  it('returns undefined for a plain Error', () => {
+    expect(extractErrorDetails(new Error('boom'))).toBeUndefined();
+  });
+
+  it('returns undefined for a non-Error thrown value', () => {
+    expect(extractErrorDetails('boom')).toBeUndefined();
   });
 });

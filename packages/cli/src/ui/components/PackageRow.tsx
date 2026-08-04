@@ -24,6 +24,7 @@ export interface RowStep {
  *   icon      — pre-constructed ReactNode (StatusIcon, plain char, anything)
  *   primary   — main label string
  *   secondary — dim inline hint; use PackageRow.Secondary for the default style
+ *   error     — terminal failure detail; replaces secondary and suppresses steps
  *   trailing  — right-side content; use PackageRow.Trailing for the default (meta + time)
  *
  * Collapse is a prop, not internal state. If steps/expanded are undefined, steps are hidden.
@@ -33,6 +34,31 @@ export interface PackageRowProps {
   icon: ReactNode;
   primary: string;
   secondary?: ReactNode;
+  /**
+   * Terminal failure detail. When set, it is shown in place of `secondary`
+   * and step children are suppressed entirely — a failed package's own
+   * message is the whole story; per-step status may be incomplete or stale
+   * (a step whose own completion event only fires on success never reaches
+   * a terminal state on its own).
+   */
+  error?: ReactNode;
+  /**
+   * Structured breakdown of `error`, one line per item (e.g. one failing
+   * deploy component). Rendered below the header row, capped at
+   * {@link ERROR_LINES_MAX} lines with a "+N more" trailer — the full list
+   * always still reaches the run log regardless of what's capped here.
+   */
+  errorLines?: string[];
+  /**
+   * Best-effort warning badge — shown next to `primary` when the package
+   * did not fail (e.g. "\u26a0 2 warnings"). Ignored when `error` is set.
+   */
+  warning?: ReactNode;
+  /**
+   * Structured breakdown of `warning`, same rendering as {@link errorLines}
+   * (capped list + "+N more"). Shown regardless of expanded/collapsed state.
+   */
+  warningLines?: string[];
   /** Fixed-width metadata columns, right of secondary. Use PackageRow.MetaCols. */
   columns?: ReactNode;
   /** Rightmost slot — time only. Use PackageRow.Trailing. */
@@ -46,6 +72,13 @@ export interface PackageRowProps {
 
 export const COL_META = 9;
 export const COL_TRAILING = 6;
+
+/**
+ * Cap on how many `errorLines` render inline. Mirrors OrchestrationView's
+ * `ROLLUP_AT` — same problem (an unbounded list would spam the live area
+ * and the final scrollback), same fix (show a bounded sample + a count).
+ */
+const ERROR_LINES_MAX = 5;
 
 /** Default secondary slot: dim truncating text. */
 function Secondary({children}: {children: ReactNode}) {
@@ -119,6 +152,23 @@ function StepRow({step}: {step: RowStep}) {
   );
 }
 
+// ---- error detail lines ----
+
+export function ErrorLines({lines}: {lines: string[]}) {
+  const shown = lines.slice(0, ERROR_LINES_MAX);
+  const remaining = lines.length - shown.length;
+  return (
+    <Box flexDirection="column" marginLeft={3}>
+      {shown.map((line, i) => (
+        <Text key={i} dimColor wrap="truncate">{line}</Text>
+      ))}
+      {remaining > 0 && (
+        <Text dimColor>+{remaining} more — see full logs</Text>
+      )}
+    </Box>
+  );
+}
+
 // ---- PackageRow ----
 
 /**
@@ -130,11 +180,11 @@ function PackageRowFn({props, width = 80}: {props: PackageRowProps; width?: numb
   return (
     <Box flexDirection="column">
       <Box width={width} justifyContent="space-between">
-        {/* Left side: icon + primary + secondary */}
+        {/* Left side: icon + primary + (error, if set, else secondary) */}
         <Box gap={1} flexShrink={1} minWidth={0} marginLeft={props.indent ?? 0}>
           {props.icon}
           <Text wrap="truncate">{props.primary}</Text>
-          {props.secondary}
+          {props.error ? props.error : (props.warning ?? props.secondary)}
         </Box>
         {/* Right side: columns + trailing, always together */}
         <Box flexShrink={0} gap={1}>
@@ -143,10 +193,22 @@ function PackageRowFn({props, width = 80}: {props: PackageRowProps; width?: numb
         </Box>
       </Box>
 
-      {/* Step children — shown only when expanded */}
-      {props.expanded && props.steps?.map(step => (
+      {/* Step children — shown only when expanded, and never alongside an
+          error: a failed package shows only its own message, not per-step
+          status. */}
+      {!props.error && props.expanded && props.steps?.map(step => (
         <StepRow key={step.id} step={step} />
       ))}
+
+      {/* Structured error breakdown — capped, independent of steps. */}
+      {props.errorLines && props.errorLines.length > 0 && (
+        <ErrorLines lines={props.errorLines} />
+      )}
+
+      {/* Structured warning breakdown — capped, same treatment as errorLines. */}
+      {props.warningLines && props.warningLines.length > 0 && (
+        <ErrorLines lines={props.warningLines} />
+      )}
     </Box>
   );
 }
