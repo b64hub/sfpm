@@ -62,7 +62,7 @@ vi.mock('../src/org-cache.js', () => ({
 import {OrgCacheService} from '../src/org-cache.js';
 
 describe('validatePr', () => {
-  let mockBuildOrchestrator: EventEmitter & {buildAll: ReturnType<typeof vi.fn>};
+  let mockBuildOrchestrator: {buildAll: ReturnType<typeof vi.fn>; buildBus: EventEmitter; orchestrationBus: EventEmitter};
   let mockOrgCache: {restore: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn>; setOutputs: ReturnType<typeof vi.fn>};
 
   const defaultOptions = {
@@ -85,8 +85,8 @@ describe('validatePr', () => {
       getSfpmConfig: () => ({hooks: []}),
     } as any);
 
-    // Mock BuildOrchestrator — use a real EventEmitter for event wiring
-    mockBuildOrchestrator = Object.assign(new EventEmitter(), {
+    // Mock BuildOrchestrator — real EventEmitters for buildBus/orchestrationBus event wiring
+    mockBuildOrchestrator = {
       buildAll: vi.fn().mockResolvedValue({
         failedPackages: [],
         results: [
@@ -96,7 +96,9 @@ describe('validatePr', () => {
         skippedPackages: [],
         success: true,
       }),
-    });
+      buildBus: new EventEmitter(),
+      orchestrationBus: new EventEmitter(),
+    };
 
     vi.mocked(BuildOrchestrator).mockImplementation(function () { return mockBuildOrchestrator; } as any);
 
@@ -139,14 +141,13 @@ describe('validatePr', () => {
     expect(BuildOrchestrator).toHaveBeenCalledWith(
       expect.anything(), // provider
       expect.anything(), // graph
+      expect.objectContaining({buildOrg: expect.anything()}),
       expect.objectContaining({
-        buildOrg: 'test@scratch.org',
         continueOnError: true,
-        devhubUsername: 'devhub@test.com',
-        mode: 'validate',
+        includeDependencies: true,
+        validation: 'local',
       }),
       expect.anything(), // logger
-      '/test/project',
     );
   });
 
@@ -177,14 +178,14 @@ describe('validatePr', () => {
     }));
   });
 
-  it('should capture coverage data from task:validation:complete events', async () => {
+  it('should capture coverage data from task:validate:complete events', async () => {
     // Override buildAll to emit coverage events during execution
     mockBuildOrchestrator.buildAll.mockImplementation(async () => {
-      mockBuildOrchestrator.emit('task:validation:complete', {
+      mockBuildOrchestrator.buildBus.emit('task:validate:complete', {
         coveragePercentage: 82.5,
         packageName: 'pkg-a',
       });
-      mockBuildOrchestrator.emit('task:validation:complete', {
+      mockBuildOrchestrator.buildBus.emit('task:validate:complete', {
         coveragePercentage: 91.0,
         packageName: 'pkg-b',
       });
@@ -237,13 +238,13 @@ describe('validatePr', () => {
     await validatePr(defaultOptions);
 
     expect(BuildOrchestrator).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
+      expect.anything(), // provider
+      expect.anything(), // graph
+      expect.anything(), // buildOrg opts
       expect.objectContaining({
         includeDependencies: true,
       }),
-      expect.anything(),
-      expect.anything(),
+      expect.anything(), // logger
     );
   });
 });

@@ -33,10 +33,11 @@ describe('ActionsProgressRenderer', () => {
 
     describe('attachToInstaller', () => {
         it('should log orchestration start immediately', () => {
-            const emitter = new EventEmitter();
-            renderer.attachToInstaller(emitter);
+            const installBus = new EventEmitter();
+            const orchestrationBus = new EventEmitter();
+            renderer.attachToInstaller(installBus as any, orchestrationBus as any);
 
-            emitter.emit('orchestration:start', {totalPackages: 3});
+            orchestrationBus.emit('start', {totalPackages: 3});
 
             expect(core.info).toHaveBeenCalledWith(
                 expect.stringContaining('3 package(s)'),
@@ -44,10 +45,11 @@ describe('ActionsProgressRenderer', () => {
         });
 
         it('should log level heartbeat immediately', () => {
-            const emitter = new EventEmitter();
-            renderer.attachToInstaller(emitter);
+            const installBus = new EventEmitter();
+            const orchestrationBus = new EventEmitter();
+            renderer.attachToInstaller(installBus as any, orchestrationBus as any);
 
-            emitter.emit('orchestration:level:start', {level: 0, packages: ['pkg-a', 'pkg-b']});
+            orchestrationBus.emit('level:start', {level: 0, packages: ['pkg-a', 'pkg-b']});
 
             expect(core.info).toHaveBeenCalledWith(
                 expect.stringContaining('Level 0: pkg-a, pkg-b'),
@@ -55,21 +57,21 @@ describe('ActionsProgressRenderer', () => {
         });
 
         it('should buffer install events and flush as group on package complete', () => {
-            const emitter = new EventEmitter();
-            renderer.attachToInstaller(emitter);
+            const installBus = new EventEmitter();
+            const orchestrationBus = new EventEmitter();
+            renderer.attachToInstaller(installBus as any, orchestrationBus as any);
 
             // Buffer events for a package
-            emitter.emit('orchestration:package:start', {packageName: 'my-package'});
-            emitter.emit('install:start', {packageName: 'my-package', packageType: 'source'});
-            emitter.emit('deployment:start', {packageName: 'my-package'});
-            emitter.emit('deployment:complete', {componentCount: 42, packageName: 'my-package'});
-            emitter.emit('install:complete', {packageName: 'my-package', version: '1.0.0'});
+            installBus.emit('start', {packageName: 'my-package', packageType: 'source'});
+            installBus.emit('deploy:start', {packageName: 'my-package'});
+            installBus.emit('deploy:complete', {numberComponentsDeployed: 42, packageName: 'my-package'});
+            installBus.emit('complete', {packageName: 'my-package', versionNumber: '1.0.0'});
 
             // Nothing should be written to output yet (only orchestration:start is immediate)
             expect(core.startGroup).not.toHaveBeenCalled();
 
             // Complete triggers flush
-            emitter.emit('orchestration:package:complete', {
+            orchestrationBus.emit('package:complete', {
                 duration: 5000,
                 packageName: 'my-package',
                 skipped: false,
@@ -89,11 +91,11 @@ describe('ActionsProgressRenderer', () => {
         });
 
         it('should show skipped packages as one-liner without group', () => {
-            const emitter = new EventEmitter();
-            renderer.attachToInstaller(emitter);
+            const installBus = new EventEmitter();
+            const orchestrationBus = new EventEmitter();
+            renderer.attachToInstaller(installBus as any, orchestrationBus as any);
 
-            emitter.emit('orchestration:package:start', {packageName: 'my-pkg'});
-            emitter.emit('orchestration:package:complete', {
+            orchestrationBus.emit('package:complete', {
                 duration: 0,
                 error: 'dependency failed',
                 packageName: 'my-pkg',
@@ -109,12 +111,12 @@ describe('ActionsProgressRenderer', () => {
         });
 
         it('should show failed packages with error icon in group header', () => {
-            const emitter = new EventEmitter();
-            renderer.attachToInstaller(emitter);
+            const installBus = new EventEmitter();
+            const orchestrationBus = new EventEmitter();
+            renderer.attachToInstaller(installBus as any, orchestrationBus as any);
 
-            emitter.emit('orchestration:package:start', {packageName: 'fail-pkg'});
-            emitter.emit('install:error', {error: 'Deploy failed', packageName: 'fail-pkg'});
-            emitter.emit('orchestration:package:complete', {
+            installBus.emit('error', {error: 'Deploy failed', packageName: 'fail-pkg'});
+            orchestrationBus.emit('package:complete', {
                 duration: 3000,
                 error: 'Deploy failed',
                 packageName: 'fail-pkg',
@@ -128,11 +130,11 @@ describe('ActionsProgressRenderer', () => {
         });
 
         it('should include duration in group header', () => {
-            const emitter = new EventEmitter();
-            renderer.attachToInstaller(emitter);
+            const installBus = new EventEmitter();
+            const orchestrationBus = new EventEmitter();
+            renderer.attachToInstaller(installBus as any, orchestrationBus as any);
 
-            emitter.emit('orchestration:package:start', {packageName: 'pkg'});
-            emitter.emit('orchestration:package:complete', {
+            orchestrationBus.emit('package:complete', {
                 duration: 12000,
                 packageName: 'pkg',
                 skipped: false,
@@ -145,19 +147,18 @@ describe('ActionsProgressRenderer', () => {
         });
 
         it('should buffer child logger output alongside event messages', () => {
-            const emitter = new EventEmitter();
-            renderer.attachToInstaller(emitter);
+            const installBus = new EventEmitter();
+            const orchestrationBus = new EventEmitter();
+            renderer.attachToInstaller(installBus as any, orchestrationBus as any);
 
             // Simulate what the orchestrator does: get a child logger
             const childLogger = logger.child({package: 'my-pkg'});
-
-            emitter.emit('orchestration:package:start', {packageName: 'my-pkg'});
 
             // Core services write to the child logger
             childLogger.info('Resolving dependencies...');
             childLogger.debug('Found 3 dependencies');
 
-            emitter.emit('orchestration:package:complete', {
+            orchestrationBus.emit('package:complete', {
                 duration: 2000,
                 packageName: 'my-pkg',
                 skipped: false,
@@ -172,13 +173,14 @@ describe('ActionsProgressRenderer', () => {
 
     describe('attachToBuildOrchestrator', () => {
         it('should buffer build events and flush on package complete', () => {
-            const emitter = new EventEmitter();
-            renderer.attachToBuildOrchestrator(emitter);
+            const buildBus = new EventEmitter();
+            const orchestrationBus = new EventEmitter();
+            renderer.attachToBuildOrchestrator(buildBus as any, orchestrationBus as any);
 
-            emitter.emit('orchestration:start', {totalPackages: 1});
-            emitter.emit('build:start', {packageName: 'core-lib', packageType: 'source'});
-            emitter.emit('build:complete', {packageName: 'core-lib', version: '2.0.0'});
-            emitter.emit('orchestration:package:complete', {
+            orchestrationBus.emit('start', {totalPackages: 1});
+            buildBus.emit('start', {packageName: 'core-lib', packageType: 'source'});
+            buildBus.emit('complete', {packageName: 'core-lib', version: '2.0.0'});
+            orchestrationBus.emit('package:complete', {
                 duration: 8000,
                 packageName: 'core-lib',
                 skipped: false,
@@ -216,12 +218,13 @@ describe('ActionsProgressRenderer', () => {
 
     describe('event log', () => {
         it('should collect all events', () => {
-            const emitter = new EventEmitter();
-            renderer.attachToInstaller(emitter);
+            const installBus = new EventEmitter();
+            const orchestrationBus = new EventEmitter();
+            renderer.attachToInstaller(installBus as any, orchestrationBus as any);
 
-            emitter.emit('orchestration:start', {totalPackages: 2});
-            emitter.emit('install:start', {packageName: 'pkg-a'});
-            emitter.emit('install:complete', {packageName: 'pkg-a', version: '1.0.0'});
+            orchestrationBus.emit('start', {totalPackages: 2});
+            installBus.emit('start', {packageName: 'pkg-a'});
+            installBus.emit('complete', {packageName: 'pkg-a', versionNumber: '1.0.0'});
 
             const events = renderer.getEventLog();
             expect(events).toHaveLength(3);
@@ -233,19 +236,18 @@ describe('ActionsProgressRenderer', () => {
 
     describe('printSummary', () => {
         it('should create a summary group with package table', () => {
-            const emitter = new EventEmitter();
-            renderer.attachToInstaller(emitter);
+            const installBus = new EventEmitter();
+            const orchestrationBus = new EventEmitter();
+            renderer.attachToInstaller(installBus as any, orchestrationBus as any);
 
-            emitter.emit('orchestration:start', {totalPackages: 2});
-            emitter.emit('orchestration:package:start', {packageName: 'pkg-a'});
-            emitter.emit('orchestration:package:complete', {
+            orchestrationBus.emit('start', {totalPackages: 2});
+            orchestrationBus.emit('package:complete', {
                 duration: 5000,
                 packageName: 'pkg-a',
                 skipped: false,
                 success: true,
             });
-            emitter.emit('orchestration:package:start', {packageName: 'pkg-b'});
-            emitter.emit('orchestration:package:complete', {
+            orchestrationBus.emit('package:complete', {
                 duration: 3000,
                 error: 'Deploy failed',
                 packageName: 'pkg-b',
