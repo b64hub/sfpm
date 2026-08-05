@@ -79,9 +79,42 @@ not on this one.
 
 For local `act` runs against not-yet-pushed sfpm changes, the
 `checkout repository: b64hub/sfpm` step would pull whatever's on GitHub, not
-your local edits. Symlink instead, and skip that checkout step locally:
+your local edits. A symlink doesn't work here — act's local checkout copies
+files into the container (`docker cp`), and a symlink pointing outside the
+working directory just becomes a dangling link once copied. Bind-mount your
+local sfpm checkout into the container instead, via the job's `container.options`
+(this is real `container:` syntax, not act-specific — see
+[GitHub's docs](https://docs.github.com/en/actions/using-jobs/running-jobs-in-a-container#example-running-a-job-within-a-container)):
 
-```bash
-# from the consuming project's root
-ln -s /path/to/sfpm .sfpm-actions
+```yaml
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/b64hub/sfpm-actions:latest
+      options: -v /path/to/sfpm:/path/to/consuming-project/.sfpm-actions
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: |
+          cd .sfpm-actions
+          pnpm install --ignore-scripts
+          pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - uses: ./.sfpm-actions/packages/actions/validate-pr
 ```
+
+The bind-mount target must match the container's real working directory path
+(the same absolute path as the consuming project's checkout — act mirrors the
+host path 1:1), and nothing on the host side should already exist at
+`.sfpm-actions`, or `actions/checkout`'s copy step will try to write into the
+mount.
+
+`--ignore-scripts` on the sfpm-actions `pnpm install` skips its `husky
+install` postinstall hook, which fails outside a real git checkout (a plain
+bind mount has no `.git`). Also watch for turbo/tsc output collisions if
+you've run both `pnpm build` (tsc) and `pnpm bundle` (esbuild) locally on the
+same sfpm checkout — they write to the same `dist/*.js` filenames, and
+turbo's cache can replay a stale one. `rm -rf packages/actions/dist
+packages/actions/tsconfig.tsbuildinfo && pnpm turbo build --force` if a test
+is running against unexpectedly old code.
