@@ -1,0 +1,125 @@
+# Build → publish → install → resume pipeline for unlocked packages using async
+# validation. `build` stages each package's dist/ output; `publish` pushes
+# those dist/ directories to the npm registry as a step in the SAME job
+# (pnpm publish reads a live directory, not a portable artifact — it can't
+# be handed off to a separate job). `install` and `build-resume` then pull
+# the published packages from the registry independently, in later jobs.
+#
+# Uses the `install` action (not `deploy`) here on purpose: async validation
+# only matters if the actual package *version* gets installed. The `deploy`
+# action is a pre-configured install variant that always source-deploys
+# instead — a better fit for packages that don't need package-version
+# validation (see packages/actions/deploy/action.yml).
+#
+# Requires repo secrets: SFDX_CONSUMER_KEY, SFDX_JWT_KEY, DEVHUB_USERNAME,
+# TARGET_ORG_USERNAME, NPM_TOKEN.
+#
+# Runs on the sfpm image (node + pnpm + turbo + sf CLI + sfpm CLI preinstalled)
+# so this workflow doesn't need to set those up itself. This is just a
+# convenience image, not a requirement — swap `container:` for any `node:22`
+# image and add back `pnpm/action-setup`, `actions/setup-node`, and
+# `npm install --global @salesforce/cli` if you'd rather not depend on it.
+name: SFPM Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/b64hub/sfpm-actions:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Authenticate DevHub
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.DEVHUB_USERNAME }}" \
+            --set-default-dev-hub \
+            --alias devhub
+          rm server.key
+
+      - name: Build packages
+        uses: ./packages/actions/build
+        with:
+          devhub-username: devhub
+
+      # Same job as build — `sfpm publish` runs `pnpm publish` directly against
+      # each package's dist/ directory, which only exists on this runner/checkout.
+      - name: Publish packages
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          sfpm publish all
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/b64hub/sfpm-actions:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Authenticate target org
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.TARGET_ORG_USERNAME }}" \
+            --alias target
+          rm server.key
+
+      # No artifact download needed — the install action fetches the packages
+      # `publish` just pushed straight from the npm registry.
+      - name: Install packages
+        uses: ./packages/actions/install
+        with:
+          packages: my-package
+          target-org: target
+
+  build-resume:
+    needs: deploy
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/b64hub/sfpm-actions:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Authenticate DevHub
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.DEVHUB_USERNAME }}" \
+            --set-default-dev-hub \
+            --alias devhub
+          rm server.key
+
+      - name: Resume validation
+        id: resume
+        uses: ./packages/actions/build-resume
+        with:
+          devhub-username: devhub
+          max-wait-minutes: '60'
+
+      - name: Report outcome
+        if: always()
+        run: |
+          echo "Validated: ${{ steps.resume.outputs.validated-count }}"
+          echo "Failed: ${{ steps.resume.outputs.failed-count }}"

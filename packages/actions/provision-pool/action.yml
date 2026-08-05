@@ -51,4 +51,4 @@ outputs:
 
 runs:
   using: 'node20'
-  main: 'dist/provision-pool-main.js'
+  main: '../dist/provision-pool-main.js'

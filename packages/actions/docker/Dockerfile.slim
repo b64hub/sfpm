@@ -1,6 +1,10 @@
-# Slim variant: sf CLI + sfpm CLI have no native deps, alpine works fine.
+# Slim variant: same tools as Dockerfile, no native deps so alpine works fine.
 FROM node:22-alpine
 
-RUN npm install -g @salesforce/cli @b64hub/sfpm-cli
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable && corepack prepare pnpm@10.28.1 --activate
+
+RUN pnpm add -g turbo @salesforce/cli @b64hub/sfpm-cli
 
 WORKDIR /workspace

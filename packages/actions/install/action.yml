@@ -1,0 +1,50 @@
+name: 'SFPM Install'
+description: 'Install SFPM packages from the npm registry into a target org'
+author: 'b64'
+
+branding:
+  icon: 'download'
+  color: 'blue'
+
+inputs:
+  target-org:
+    description: 'Target org username or alias'
+    required: true
+  packages:
+    description: 'Comma-separated list of packages to install'
+    required: true
+  force:
+    description: 'Force reinstall even if already installed with matching version/hash'
+    required: false
+    default: 'false'
+  include-dependencies:
+    description: 'Install transitive dependencies of requested packages (default: true)'
+    required: false
+    default: 'true'
+  installation-key:
+    description: 'Installation key for unlocked packages'
+    required: false
+  test-level:
+    description: 'Deployment test level (for source deployments): NoTestRun, RunSpecifiedTests, RunLocalTests, RunAllTestsInOrg'
+    required: false
+  regression-test:
+    description: 'Run tests in direct dependents after install to detect regressions'
+    required: false
+    default: 'false'
+  project-dir:
+    description: 'Path to the SFPM project directory (defaults to workspace root)'
+    required: false
+
+outputs:
+  success:
+    description: 'Whether all installs succeeded (true/false)'
+  duration:
+    description: 'Total install duration in milliseconds'
+  failed-packages:
+    description: 'Comma-separated list of packages that failed to install'
+  result:
+    description: 'Full JSON result with per-package outcomes'
+
+runs:
+  using: 'node20'
+  main: '../dist/install-main.js'

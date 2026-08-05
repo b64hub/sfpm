@@ -21,6 +21,13 @@ export {
   type BuildResult,
 } from './build.js';
 
+// Install
+export {
+  install,
+  type InstallOptions,
+  type InstallResult,
+} from './install.js';
+
 // Logger
 export {
   type BufferEntry,

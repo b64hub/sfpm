@@ -47,4 +47,4 @@ outputs:
 
 runs:
   using: 'node20'
-  main: 'dist/build-main.js'
+  main: '../dist/build-main.js'
