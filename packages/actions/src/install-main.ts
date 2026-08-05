@@ -15,6 +15,11 @@ try {
   const projectDir = core.getInput('project-dir') || undefined;
   const installationKey = core.getInput('installation-key') || undefined;
   const testLevel = core.getInput('test-level') || undefined;
+  const origin = core.getInput('origin') || undefined;
+
+  if (origin && origin !== 'registry' && origin !== 'local') {
+    throw new Error(`Invalid origin "${origin}" — must be "registry" or "local"`);
+  }
 
   const force = core.getInput('force') === 'true';
   const includeDependencies = core.getInput('include-dependencies') !== 'false';
@@ -24,6 +29,7 @@ try {
     force,
     includeDependencies,
     installationKey,
+    origin: origin as 'local' | 'registry' | undefined,
     packages,
     projectDir,
     regressionTest,

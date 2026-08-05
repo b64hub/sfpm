@@ -1,9 +1,26 @@
-# Build → publish → install → resume pipeline for unlocked packages using async
-# validation. `build` stages each package's dist/ output; `publish` pushes
-# those dist/ directories to the npm registry as a step in the SAME job
-# (pnpm publish reads a live directory, not a portable artifact — it can't
-# be handed off to a separate job). `install` and `build-resume` then pull
-# the published packages from the registry independently, in later jobs.
+# Build → {install, resume} → publish pipeline for unlocked packages using
+# async validation. `build` stages each package's dist/ output and creates
+# package versions (async validation starts in the background), then
+# uploads every package's dist/ directory as a workflow artifact — it's
+# needed by both `install` (installs from it directly, no registry) and
+# `build-resume` (runs the final `publish` step, which needs the same dist/
+# output on disk to call `pnpm publish`/`sfpm publish` against).
+#
+# `install` and `build-resume` then both depend only on `build` and run in
+# parallel: `install` smoke-tests THIS run's actual build output against a
+# sandbox (via `origin: local`, resolving straight from the downloaded
+# dist/ directories — no registry round-trip, so no need to have published
+# anything yet) while `build-resume` polls Salesforce for validation
+# completion. `publish` is the final step, gated on `build-resume`'s
+# `publishable-packages` output — a package is only published once it built
+# successfully, wasn't build-skipped (no source changes), and passed
+# validation if validation was required.
+#
+# `sfpm publish` stays a plain, unfiltered CLI call by design (surgical,
+# no side effects) — it's given the exact list of safe package names rather
+# than deciding for itself. Swap it for `npm publish`/`pnpm publish`/`jf npm`/
+# whatever your registry needs; the important part is the filtered list, not
+# which tool consumes it.
 #
 # Uses the `install` action (not `deploy`) here on purpose: async validation
 # only matters if the actual package *version* gets installed. The `deploy`
@@ -53,14 +70,18 @@ jobs:
         with:
           devhub-username: devhub
 
-      # Same job as build — `sfpm publish` runs `pnpm publish` directly against
-      # each package's dist/ directory, which only exists on this runner/checkout.
-      - name: Publish packages
-        run: |
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
-          sfpm publish all
+      # Retain <packageDir>/dist/ output across jobs — install and
+      # build-resume both need it (see header comment).
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: sfpm-dist
+          path: |
+            **/dist/**
+            !node_modules/**
+          retention-days: 1
 
-  deploy:
+  install:
     needs: build
     runs-on: ubuntu-latest
     container:
@@ -70,6 +91,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: sfpm-dist
 
       - name: Authenticate target org
         run: |
@@ -81,16 +107,19 @@ jobs:
             --alias target
           rm server.key
 
-      # No artifact download needed — the install action fetches the packages
-      # `publish` just pushed straight from the npm registry.
+      # Installs straight from the downloaded dist/ output — no registry,
+      # so this is THIS run's actual build, respecting real per-package-type
+      # install semantics (e.g. unlocked packages install the exact version
+      # just created, not a source-only deploy).
       - name: Install packages
         uses: ./packages/actions/install
         with:
+          origin: local
           packages: my-package
           target-org: target
 
   build-resume:
-    needs: deploy
+    needs: build
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/b64hub/sfpm-actions:latest
@@ -99,6 +128,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: sfpm-dist
 
       - name: Authenticate DevHub
         run: |
@@ -123,3 +157,13 @@ jobs:
         run: |
           echo "Validated: ${{ steps.resume.outputs.validated-count }}"
           echo "Failed: ${{ steps.resume.outputs.failed-count }}"
+
+      # Only publish what build-resume marked safe: built successfully, not
+      # build-skipped, and validated (if validation was required). `sfpm
+      # publish` itself stays dumb — it just publishes the exact names it's
+      # given, no filtering logic of its own.
+      - name: Publish packages
+        if: steps.resume.outputs.publishable-packages != ''
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          sfpm publish $(echo "${{ steps.resume.outputs.publishable-packages }}" | tr ',' ' ')

@@ -3,8 +3,12 @@ import {
   ArtifactProvider,
   InstallOrchestrator,
   LifecycleEngine,
+  type ProjectDefinitionProvider,
+  ProjectGraph,
   ProjectService,
+  type SfpmConfig,
   type TestLevel,
+  WorkspaceProvider,
 } from '@b64hub/sfpm-core';
 import {createTracer} from '@b64hub/sfpm-telemetry';
 import {Org} from '@salesforce/core';
@@ -24,7 +28,17 @@ export interface InstallOptions {
   includeDependencies?: boolean;
   /** Installation key for unlocked packages */
   installationKey?: string;
-  /** Packages to install (fetched from the npm registry into node_modules) */
+  /**
+   * Where to resolve packages from:
+   * - `'registry'` (default) — fetch published packages from the npm
+   *   registry via `npm install --no-save`.
+   * - `'local'` — resolve directly from each package's `<packageDir>/dist/`
+   *   output already present on disk (e.g. restored via download-artifact
+   *   from an earlier `build` job in the same workflow run). No registry
+   *   involved — installs exactly what this run built.
+   */
+  origin?: 'local' | 'registry';
+  /** Packages to install */
   packages: string[];
   /** Project directory (default: workspace root) */
   projectDir?: string;
@@ -63,11 +77,10 @@ export interface InstallResult {
  * Main entry point for the install GitHub Action.
  *
  * Workflow:
- * 1. Fetch requested packages (and transitive sfpm deps) from the npm
- *    registry into node_modules via `npm install --no-save`
- * 2. Resolve project definition from the fetched artifacts
- * 3. Run InstallOrchestrator against the target org
- * 4. Set outputs (success, per-package results)
+ * 1. Resolve project definition — from the npm registry (default) or
+ *    directly from local `<packageDir>/dist/` output already on disk
+ * 2. Run InstallOrchestrator against the target org
+ * 3. Set outputs (success, per-package results)
  *
  * Lifecycle stage: **install**
  *
@@ -88,30 +101,49 @@ export async function install(options: InstallOptions): Promise<InstallResult> {
   const startTime = Date.now();
 
   const projectDir = options.projectDir ?? process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const origin = options.origin ?? 'registry';
 
   logger.info(`Project directory: ${projectDir}`);
   logger.info(`Target org: ${options.targetOrg}`);
   logger.info(`Packages to install: ${options.packages.join(', ')}`);
+  logger.info(`Origin: ${origin}`);
 
   // ------------------------------------------------------------------
-  // 1. Fetch published artifacts into node_modules
+  // 1. Resolve project definition
   // ------------------------------------------------------------------
-  const pkgArgs = options.packages.map(p => `'${p}'`).join(' ');
-  execSync(`npm install --no-save ${pkgArgs}`, {cwd: projectDir, stdio: 'inherit'});
+  let projectConfig: ProjectDefinitionProvider;
+  let projectGraph: ProjectGraph;
+  let sfpmConfig: SfpmConfig;
+  let resolvedPackages: string[];
+
+  if (origin === 'registry') {
+    // Fetch published artifacts into node_modules
+    const pkgArgs = options.packages.map(p => `'${p}'`).join(' ');
+    execSync(`npm install --no-save ${pkgArgs}`, {cwd: projectDir, stdio: 'inherit'});
+
+    const artifactProvider = new ArtifactProvider({logger, packages: options.packages, projectDir});
+    const projectService = await ProjectService.create(projectDir, artifactProvider);
+    projectConfig = projectService.getDefinitionProvider();
+    projectGraph = projectService.getProjectGraph();
+    sfpmConfig = projectService.getSfpmConfig();
+    // ArtifactProvider walks node_modules to discover transitive sfpm deps,
+    // so getAllPackageNames() already reflects the full resolved set.
+    resolvedPackages = projectConfig.getAllPackageNames();
+  } else {
+    // Resolve directly from local dist/ output already on disk — no registry.
+    // `distAware: true` overlays packageVersionId/sourceHash from each
+    // package's dist/package.json, so unlocked packages install the exact
+    // version this run built rather than deploying source-only.
+    const workspaceProvider = new WorkspaceProvider({distAware: true, logger, projectDir});
+    const projectService = await ProjectService.create(projectDir, workspaceProvider);
+    projectConfig = projectService.getDefinitionProvider();
+    projectGraph = projectService.getProjectGraph();
+    sfpmConfig = projectService.getSfpmConfig();
+    resolvedPackages = options.packages;
+  }
 
   // ------------------------------------------------------------------
-  // 2. Resolve project definition from fetched artifacts
-  // ------------------------------------------------------------------
-  const artifactProvider = new ArtifactProvider({logger, packages: options.packages, projectDir});
-  const projectService = await ProjectService.create(projectDir, artifactProvider);
-  const projectConfig = projectService.getDefinitionProvider();
-  const projectGraph = projectService.getProjectGraph();
-  const sfpmConfig = projectService.getSfpmConfig();
-
-  const resolvedPackages = projectConfig.getAllPackageNames();
-
-  // ------------------------------------------------------------------
-  // 3. Create lifecycle engine and register hooks
+  // 2. Create lifecycle engine and register hooks
   // ------------------------------------------------------------------
   const lifecycle = LifecycleEngine.stage('install');
   for (const hooks of sfpmConfig.hooks ?? []) {
@@ -119,7 +151,7 @@ export async function install(options: InstallOptions): Promise<InstallResult> {
   }
 
   // ------------------------------------------------------------------
-  // 4. Run InstallOrchestrator
+  // 3. Run InstallOrchestrator
   // ------------------------------------------------------------------
   const targetOrg = await Org.create({aliasOrUsername: options.targetOrg});
 
@@ -153,7 +185,7 @@ export async function install(options: InstallOptions): Promise<InstallResult> {
   await tracer.shutdown();
 
   // ------------------------------------------------------------------
-  // 5. Set outputs and return result
+  // 4. Set outputs and return result
   // ------------------------------------------------------------------
   const duration = Date.now() - startTime;
   const result: InstallResult = {

@@ -1,5 +1,5 @@
 name: 'SFPM Install'
-description: 'Install SFPM packages from the npm registry into a target org'
+description: 'Install SFPM packages into a target org, from the npm registry or from local dist/ build output'
 author: 'b64'
 
 branding:
@@ -13,6 +13,10 @@ inputs:
   packages:
     description: 'Comma-separated list of packages to install'
     required: true
+  origin:
+    description: 'Where to resolve packages from: registry (default, npm) or local (each package dist/ output already on disk, e.g. restored via download-artifact)'
+    required: false
+    default: 'registry'
   force:
     description: 'Force reinstall even if already installed with matching version/hash'
     required: false
