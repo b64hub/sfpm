@@ -1,5 +1,5 @@
 name: 'SFPM Validate PR'
-description: 'Validate a pull request by building and testing packages against a scratch org from the pool'
+description: 'Validate a pull request via local nimbus checks or a deploy against a pooled scratch org'
 author: 'b64'
 
 branding:
@@ -8,13 +8,17 @@ branding:
 
 inputs:
   devhub-username:
-    description: 'DevHub username or alias for org pool access'
-    required: true
+    description: 'DevHub username or alias for org pool access. Required when mode is org.'
+    required: false
+  mode:
+    description: 'Validation mode: local (default, nimbus compile + dependency checks, no scratch org) or org (deploy to a pooled scratch org, unlocked packages forced source-only)'
+    required: false
+    default: 'local'
   pool-tag:
-    description: 'Pool tag to fetch orgs from'
-    required: true
+    description: 'Pool tag to fetch orgs from. Required when mode is org.'
+    required: false
   cache-ttl-hours:
-    description: 'How long to cache an org for this PR (hours). Set to 0 to disable caching.'
+    description: 'How long to cache an org for this PR (hours). Set to 0 to disable caching. Only used when mode is org.'
     required: false
     default: '4'
   project-dir:
@@ -42,4 +46,4 @@ outputs:
 
 runs:
   using: 'node20'
-  main: 'dist/main.js'
+  main: '../dist/validate-main.js'

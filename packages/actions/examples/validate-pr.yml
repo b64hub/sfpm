@@ -1,5 +1,12 @@
-# Validates a PR by building + testing packages against a pooled scratch org.
-# Requires repo secrets: SFDX_CONSUMER_KEY, SFDX_JWT_KEY, DEVHUB_USERNAME.
+# Validates a PR. Default mode is 'local': compile + dependency checks via
+# the local nimbus validator only — no scratch org, no DevHub auth needed.
+#
+# For a real deploy against a pooled scratch org instead, set mode: org (see
+# commented block below) — requires repo secrets SFDX_CONSUMER_KEY,
+# SFDX_JWT_KEY, DEVHUB_USERNAME, and a scratch org pool tag. Unlocked
+# packages are always forced source-only in org mode — PR validation never
+# creates a real package version (that only happens on push to main, via the
+# `build` action), so concurrent PRs can't race for conflicting build numbers.
 #
 # Runs on the sfpm image (node + pnpm + turbo + sf CLI + sfpm CLI preinstalled)
 # so this workflow doesn't need to set those up itself. This is just a
@@ -20,28 +27,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Builds the actions package (and its workspace deps) so dist/main.js exists.
+      # Builds the actions package (and its workspace deps) so dist/validate-main.js exists.
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
 
-      - name: Authenticate DevHub
-        run: |
-          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
-          sf org login jwt \
-            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
-            --jwt-key-file server.key \
-            --username "${{ secrets.DEVHUB_USERNAME }}" \
-            --set-default-dev-hub \
-            --alias devhub
-          rm server.key
-
       - name: Validate PR
         id: validate
-        uses: ./packages/actions
-        with:
-          devhub-username: devhub
-          pool-tag: ci-pool
-          cache-ttl-hours: '6'
+        uses: ./packages/actions/validate-pr
+
+      # --- org mode instead (deploy to a pooled scratch org) ---
+      # - name: Authenticate DevHub
+      #   run: |
+      #     echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+      #     sf org login jwt \
+      #       --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+      #       --jwt-key-file server.key \
+      #       --username "${{ secrets.DEVHUB_USERNAME }}" \
+      #       --set-default-dev-hub \
+      #       --alias devhub
+      #     rm server.key
+      #
+      # - name: Validate PR
+      #   id: validate
+      #   uses: ./packages/actions/validate-pr
+      #   with:
+      #     mode: org
+      #     devhub-username: devhub
+      #     pool-tag: ci-pool
+      #     cache-ttl-hours: '6'
 
       - name: Report outcome
         if: always()

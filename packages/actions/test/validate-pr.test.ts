@@ -31,9 +31,15 @@ vi.mock('@b64hub/sfpm-core', () => ({
   ProjectService: {
     getInstance: vi.fn(),
   },
+  ValidationEventBus: vi.fn(),
+  ValidationResolver: vi.fn(),
 }));
 vi.mock('@b64hub/sfpm-orgs');
 vi.mock('@b64hub/sfpm-telemetry');
+vi.mock('@b64hub/sfpm-validation', () => ({
+  NimbusLocalValidator: vi.fn(),
+  NimbusValidationEventBus: vi.fn(),
+}));
 vi.mock('@salesforce/core', () => ({
   AuthInfo: {
     create: vi.fn(),
@@ -48,6 +54,7 @@ import {
   BuildOrchestrator,
   LifecycleEngine,
   ProjectService,
+  ValidationResolver,
 } from '@b64hub/sfpm-core';
 import {createTracer} from '@b64hub/sfpm-telemetry';
 import {AuthInfo, Org} from '@salesforce/core';
@@ -64,11 +71,17 @@ import {OrgCacheService} from '../src/org-cache.js';
 describe('validatePr', () => {
   let mockBuildOrchestrator: {buildAll: ReturnType<typeof vi.fn>; buildBus: EventEmitter; orchestrationBus: EventEmitter};
   let mockOrgCache: {restore: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn>; setOutputs: ReturnType<typeof vi.fn>};
+  let mockValidationResolver: {resolve: ReturnType<typeof vi.fn>};
 
-  const defaultOptions = {
+  const localOptions = {
     devhubUsername: 'devhub@test.com',
-    poolTag: 'ci-pool',
     projectDir: '/test/project',
+  };
+
+  const orgOptions = {
+    ...localOptions,
+    mode: 'org' as const,
+    poolTag: 'ci-pool',
   };
 
   beforeEach(() => {
@@ -77,7 +90,13 @@ describe('validatePr', () => {
     // Mock ProjectService
     vi.mocked(ProjectService.getInstance).mockResolvedValue({
       getDefinitionProvider: () => ({
+        getAllPackageDefinitions: () => [
+          {name: 'pkg-a', path: 'pkg-a'},
+          {name: 'pkg-b', path: 'pkg-b'},
+        ],
         getAllPackageNames: () => ['pkg-a', 'pkg-b'],
+        getDependencies: () => [],
+        projectDir: '/test/project',
       }),
       getProjectGraph: () => ({
         resolveDependencies: vi.fn(),
@@ -90,8 +109,8 @@ describe('validatePr', () => {
       buildAll: vi.fn().mockResolvedValue({
         failedPackages: [],
         results: [
-          {duration: 100, error: undefined, packageName: 'pkg-a', skipped: false, success: true},
-          {duration: 200, error: undefined, packageName: 'pkg-b', skipped: false, success: true},
+          {duration: 100, error: undefined, packageName: 'pkg-a', result: undefined, skipped: false, success: true},
+          {duration: 200, error: undefined, packageName: 'pkg-b', result: undefined, skipped: false, success: true},
         ],
         skippedPackages: [],
         success: true,
@@ -104,6 +123,10 @@ describe('validatePr', () => {
 
     // Mock LifecycleEngine
     vi.mocked(LifecycleEngine.stage).mockReturnValue({use: vi.fn()} as any);
+
+    // Mock ValidationResolver (org mode's deploy-validation resolution)
+    mockValidationResolver = {resolve: vi.fn().mockResolvedValue(new Map())};
+    vi.mocked(ValidationResolver).mockImplementation(function () { return mockValidationResolver; } as any);
 
     // Mock OrgCacheService
     mockOrgCache = {
@@ -135,116 +158,167 @@ describe('validatePr', () => {
     vi.restoreAllMocks();
   });
 
-  it('should use BuildOrchestrator with validate mode', async () => {
-    await validatePr(defaultOptions);
+  describe('local mode (default)', () => {
+    it('does not touch the scratch org pool', async () => {
+      await validatePr(localOptions);
 
-    expect(BuildOrchestrator).toHaveBeenCalledWith(
-      expect.anything(), // provider
-      expect.anything(), // graph
-      expect.objectContaining({buildOrg: expect.anything()}),
-      expect.objectContaining({
-        continueOnError: true,
-        includeDependencies: true,
-        validation: 'local',
-      }),
-      expect.anything(), // logger
-    );
+      expect(OrgCacheService).not.toHaveBeenCalled();
+    });
+
+    it('runs BuildOrchestrator with no buildOrg and validation: local', async () => {
+      await validatePr(localOptions);
+
+      expect(BuildOrchestrator).toHaveBeenCalledWith(
+        expect.anything(), // provider
+        expect.anything(), // graph
+        {},
+        expect.objectContaining({
+          continueOnError: true,
+          includeDependencies: true,
+          unlocked: undefined,
+          validation: 'local',
+        }),
+        expect.anything(), // logger
+        expect.anything(), // local nimbus validator
+      );
+    });
+
+    it('returns a successful result with no org info', async () => {
+      const result = await validatePr(localOptions);
+
+      expect(result.success).toBe(true);
+      expect(result.orgId).toBe('');
+      expect(result.username).toBe('');
+      expect(result.cacheHit).toBe(false);
+    });
+
+    it('fails when explicit mode is "org" without a poolTag', async () => {
+      await expect(validatePr({...localOptions, mode: 'org'})).rejects.toThrow('poolTag is required');
+    });
   });
 
-  it('should call buildAll with all package names', async () => {
-    await validatePr(defaultOptions);
+  describe('org mode', () => {
+    it('fetches/authenticates the scratch org and runs BuildOrchestrator with sourceOnly forced', async () => {
+      await validatePr(orgOptions);
 
-    expect(mockBuildOrchestrator.buildAll).toHaveBeenCalledWith(['pkg-a', 'pkg-b']);
-  });
+      expect(BuildOrchestrator).toHaveBeenCalledWith(
+        expect.anything(), // provider
+        expect.anything(), // graph
+        expect.objectContaining({buildOrg: expect.anything()}),
+        expect.objectContaining({
+          continueOnError: true,
+          includeDependencies: true,
+          unlocked: {sourceOnly: true},
+          validation: 'org',
+        }),
+        expect.anything(), // logger
+        expect.anything(), // local nimbus validator
+      );
+    });
 
-  it('should call buildAll with specified packages when provided', async () => {
-    await validatePr({...defaultOptions, packages: ['pkg-a']});
+    it('calls buildAll with all package names', async () => {
+      await validatePr(orgOptions);
 
-    expect(mockBuildOrchestrator.buildAll).toHaveBeenCalledWith(['pkg-a']);
-  });
+      expect(mockBuildOrchestrator.buildAll).toHaveBeenCalledWith(['pkg-a', 'pkg-b']);
+    });
 
-  it('should return successful result with per-package outcomes', async () => {
-    const result = await validatePr(defaultOptions);
+    it('calls buildAll with specified packages when provided', async () => {
+      await validatePr({...orgOptions, packages: ['pkg-a']});
 
-    expect(result.success).toBe(true);
-    expect(result.prNumber).toBe(42);
-    expect(result.cacheHit).toBe(true);
-    expect(result.username).toBe('test@scratch.org');
-    expect(result.orgId).toBe('00D000000000000');
-    expect(result.packages).toHaveLength(2);
-    expect(result.packages[0]).toEqual(expect.objectContaining({
-      packageName: 'pkg-a',
-      success: true,
-    }));
-  });
+      expect(mockBuildOrchestrator.buildAll).toHaveBeenCalledWith(['pkg-a']);
+    });
 
-  it('should capture coverage data from task:validate:complete events', async () => {
-    // Override buildAll to emit coverage events during execution
-    mockBuildOrchestrator.buildAll.mockImplementation(async () => {
-      mockBuildOrchestrator.buildBus.emit('task:validate:complete', {
-        coveragePercentage: 82.5,
+    it('returns successful result with per-package outcomes and org info', async () => {
+      const result = await validatePr(orgOptions);
+
+      expect(result.success).toBe(true);
+      expect(result.prNumber).toBe(42);
+      expect(result.cacheHit).toBe(true);
+      expect(result.username).toBe('test@scratch.org');
+      expect(result.orgId).toBe('00D000000000000');
+      expect(result.packages).toHaveLength(2);
+      expect(result.packages[0]).toEqual(expect.objectContaining({
         packageName: 'pkg-a',
-      });
-      mockBuildOrchestrator.buildBus.emit('task:validate:complete', {
-        coveragePercentage: 91.0,
-        packageName: 'pkg-b',
-      });
+        success: true,
+      }));
+    });
 
-      return {
+    it('resolves pending deploy validations and fails when one is rejected', async () => {
+      mockBuildOrchestrator.buildAll.mockResolvedValue({
         failedPackages: [],
         results: [
-          {duration: 100, packageName: 'pkg-a', skipped: false, success: true},
-          {duration: 200, packageName: 'pkg-b', skipped: false, success: true},
+          {
+            duration: 100, packageName: 'pkg-a', result: {operationType: 'deploy', packageName: 'pkg-a', targetOrg: 'test@scratch.org', testLevel: 'RunSpecifiedTests'}, skipped: false, success: true,
+          },
+          {
+            duration: 200, packageName: 'pkg-b', result: {operationType: 'deploy', packageName: 'pkg-b', targetOrg: 'test@scratch.org', testLevel: 'RunSpecifiedTests'}, skipped: false, success: true,
+          },
         ],
         skippedPackages: [],
         success: true,
-      };
+      });
+      mockValidationResolver.resolve.mockResolvedValue(new Map([
+        ['pkg-a', {checks: ['deploy'], status: 'passed', testCoverage: 82.5}],
+        ['pkg-b', {checks: ['deploy'], error: 'Apex test failed', status: 'failed'}],
+      ]));
+
+      const result = await validatePr(orgOptions);
+
+      expect(mockValidationResolver.resolve).toHaveBeenCalled();
+      expect(result.success).toBe(false);
+      expect(result.packages[0]).toEqual(expect.objectContaining({coveragePercentage: 82.5, packageName: 'pkg-a', success: true}));
+      expect(result.packages[1]).toEqual(expect.objectContaining({error: 'Apex test failed', packageName: 'pkg-b', success: false}));
+      expect(core.setFailed).toHaveBeenCalledWith('Validation failed for: pkg-b');
     });
 
-    const result = await validatePr(defaultOptions);
+    it('skips ValidationResolver entirely when there are no pending validations', async () => {
+      await validatePr(orgOptions);
 
-    expect(result.packages[0].coveragePercentage).toBe(82.5);
-    expect(result.packages[1].coveragePercentage).toBe(91.0);
-  });
-
-  it('should call setFailed when validation fails', async () => {
-    mockBuildOrchestrator.buildAll.mockResolvedValue({
-      failedPackages: ['pkg-b'],
-      results: [
-        {duration: 100, packageName: 'pkg-a', skipped: false, success: true},
-        {duration: 200, error: 'Coverage below 75%', packageName: 'pkg-b', skipped: false, success: false},
-      ],
-      skippedPackages: [],
-      success: false,
+      expect(mockValidationResolver.resolve).not.toHaveBeenCalled();
     });
 
-    const result = await validatePr(defaultOptions);
+    it('calls setFailed when the build itself fails', async () => {
+      mockBuildOrchestrator.buildAll.mockResolvedValue({
+        failedPackages: ['pkg-b'],
+        results: [
+          {duration: 100, packageName: 'pkg-a', skipped: false, success: true},
+          {
+            duration: 200, error: 'Deploy failed', packageName: 'pkg-b', skipped: false, success: false,
+          },
+        ],
+        skippedPackages: [],
+        success: false,
+      });
 
-    expect(result.success).toBe(false);
-    expect(core.setFailed).toHaveBeenCalledWith('Validation failed for: pkg-b');
-  });
+      const result = await validatePr(orgOptions);
 
-  it('should set action outputs', async () => {
-    await validatePr(defaultOptions);
+      expect(result.success).toBe(false);
+      expect(core.setFailed).toHaveBeenCalledWith('Validation failed for: pkg-b');
+    });
 
-    expect(core.setOutput).toHaveBeenCalledWith('success', 'true');
-    expect(core.setOutput).toHaveBeenCalledWith('org-username', 'test@scratch.org');
-    expect(core.setOutput).toHaveBeenCalledWith('org-id', '00D000000000000');
-    expect(core.setOutput).toHaveBeenCalledWith('pr-number', '42');
-    expect(core.setOutput).toHaveBeenCalledWith('result', expect.any(String));
-  });
+    it('sets action outputs', async () => {
+      await validatePr(orgOptions);
 
-  it('should include includeDependencies: true in orchestrator options', async () => {
-    await validatePr(defaultOptions);
+      expect(core.setOutput).toHaveBeenCalledWith('success', 'true');
+      expect(core.setOutput).toHaveBeenCalledWith('org-username', 'test@scratch.org');
+      expect(core.setOutput).toHaveBeenCalledWith('org-id', '00D000000000000');
+      expect(core.setOutput).toHaveBeenCalledWith('pr-number', '42');
+      expect(core.setOutput).toHaveBeenCalledWith('result', expect.any(String));
+    });
 
-    expect(BuildOrchestrator).toHaveBeenCalledWith(
-      expect.anything(), // provider
-      expect.anything(), // graph
-      expect.anything(), // buildOrg opts
-      expect.objectContaining({
-        includeDependencies: true,
-      }),
-      expect.anything(), // logger
-    );
+    it('includes includeDependencies: true in orchestrator options', async () => {
+      await validatePr(orgOptions);
+
+      expect(BuildOrchestrator).toHaveBeenCalledWith(
+        expect.anything(), // provider
+        expect.anything(), // graph
+        expect.anything(), // buildOrg opts
+        expect.objectContaining({
+          includeDependencies: true,
+        }),
+        expect.anything(), // logger
+        expect.anything(), // local nimbus validator
+      );
+    });
   });
 });
