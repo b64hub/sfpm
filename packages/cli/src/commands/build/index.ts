@@ -5,7 +5,6 @@ import {
   findSfpmRoot,
   LifecycleEngine,
   noopLogger,
-  type OrchestrationResult,
   PackageType,
   type PendingValidationDescriptor, ProjectService, ValidationEventBus, ValidationResolver,
   type WatcherState,
@@ -22,7 +21,6 @@ import '@b64hub/sfpm-sfdmu'
 import chalk from 'chalk'
 import EventEmitter from 'node:events'
 import path from 'node:path'
-import ora from 'ora'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {attachBuildBridge} from '../../ui/build-event-bridge.js'
@@ -186,7 +184,11 @@ export default class Build extends SfpmCommand {
 
     if (uiBus) {
       attachBuildBridge(orchestrator.buildBus, orchestrator.orchestrationBus, uiBus, validationBus);
-      inkInstance = renderApp(uiBus, {logPath});
+      const orgUsername = resolved.buildOrgUsername ?? resolved.devhubUsername;
+      inkInstance = renderApp(uiBus, {
+        logPath,
+        org: orgUsername ? {alias: orgUsername} : undefined,
+      });
     } else {
       renderer = new BuildProgressRenderer({
         logger: {
@@ -263,16 +265,12 @@ export default class Build extends SfpmCommand {
     if (!resolved.autoCreatedBuildOrg) return
 
     const {devhub: hubOrg, username} = resolved.autoCreatedBuildOrg
-    const spinner = resolved.mode === 'interactive'
-      ? ora(`Deleting build org ${chalk.cyan(username)}...`).start()
-      : undefined
 
     try {
       const scratchOrg = await Org.create({aliasOrUsername: username})
       await scratchOrg.deleteFrom(hubOrg)
-      spinner?.succeed(`Build org ${chalk.cyan(username)} deleted`)
+      if (resolved.mode === 'plain') this.log(`Build org ${chalk.cyan(username)} deleted`)
     } catch (error) {
-      spinner?.fail(`Failed to delete build org ${chalk.cyan(username)}`)
       this.sfpmLogger?.warn(`Failed to delete auto-created build org ${username}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -305,9 +303,7 @@ export default class Build extends SfpmCommand {
       this.error('A target dev hub is required to auto-create a build org for source validation. Specify one with --target-dev-hub (-v).', {exit: 1})
     }
 
-    const spinner = resolved.mode === 'interactive'
-      ? ora('Creating scratch org for source validation...').start()
-      : undefined
+    if (resolved.mode === 'plain') this.log('Creating scratch org for source validation...')
 
     const hubOrg = await Org.create({aliasOrUsername: resolved.devhubUsername})
     const provider = new ScratchOrgProvider(hubOrg)
@@ -315,29 +311,23 @@ export default class Build extends SfpmCommand {
     const scratchDefPath = path.join(resolved.projectDir, 'config', 'project-scratch-def.json')
     const alias = `sfpm-build-${Date.now()}`
 
-    try {
-      const scratchOrg = await provider.createOrg({
-        alias,
-        definitionfile: scratchDefPath,
-        durationDays: 1,
-        noancestors: true,
-        nonamespace: true,
-      })
+    const scratchOrg = await provider.createOrg({
+      alias,
+      definitionfile: scratchDefPath,
+      durationDays: 1,
+      noancestors: true,
+      nonamespace: true,
+    })
 
-      const {username} = scratchOrg.auth
-      if (!username) {
-        spinner?.fail('Failed to create scratch org: no username returned')
-        this.error('Failed to create scratch org: no username returned', {exit: 1})
-      }
-
-      spinner?.succeed(`Build org created: ${chalk.cyan(username)}`)
-
-      resolved.buildOrgUsername = username
-      resolved.autoCreatedBuildOrg = {devhub: hubOrg, username}
-    } catch (error) {
-      spinner?.fail('Failed to create scratch org')
-      throw error
+    const {username} = scratchOrg.auth
+    if (!username) {
+      this.error('Failed to create scratch org: no username returned', {exit: 1})
     }
+
+    if (resolved.mode === 'plain') this.log(`Build org created: ${chalk.cyan(username)}`)
+
+    resolved.buildOrgUsername = username
+    resolved.autoCreatedBuildOrg = {devhub: hubOrg, username}
   }
 
   /**
