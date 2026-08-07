@@ -14,63 +14,35 @@ vi.mock('@actions/core', () => ({
   warning: vi.fn(),
 }));
 
-vi.mock('@actions/github', () => ({
-  context: {runId: 123},
-}));
+const mockResolve = vi.fn();
 
 vi.mock('@b64hub/sfpm-core', () => ({
-  ValidationPoller: vi.fn(),
-}));
-
-vi.mock('@salesforce/core', () => ({
-  Org: {
-    create: vi.fn(),
+  ProjectService: {
+    getInstance: vi.fn().mockResolvedValue({
+      getDefinitionProvider: vi.fn().mockReturnValue({}),
+      getProjectGraph: vi.fn().mockReturnValue({}),
+    }),
   },
+  ValidationEventBus: vi.fn(),
+  ValidationResolver: vi.fn().mockImplementation(() => ({resolve: mockResolve})),
 }));
 
 import * as core from '@actions/core';
-import {ValidationPoller} from '@b64hub/sfpm-core';
-import {Org} from '@salesforce/core';
 
-import type {CachedBuildState} from '../src/build-cache.js';
+import type {BuildResult} from '../src/build.js';
 
 import {buildResume} from '../src/build-resume.js';
 
-// Mock BuildCacheService — must be after vi.mock calls
-vi.mock('../src/build-cache.js', () => ({
-  BuildCacheService: vi.fn(),
-}));
-
-import {BuildCacheService} from '../src/build-cache.js';
-
-function stateWith(packages: CachedBuildState['packages']): CachedBuildState {
-  return {
-    cachedAt: Date.now(),
-    devhubUsername: 'devhub@test.com',
-    packages,
-    projectDir: '/test/project',
-    runId: '123',
-  };
+function stateWith(packages: BuildResult['packages']): string {
+  return JSON.stringify({
+    duration: 0, failedPackages: [], packages, success: true,
+  } satisfies BuildResult);
 }
 
 describe('buildResume', () => {
-  let mockRestore: ReturnType<typeof vi.fn>;
-  let mockPollAll: ReturnType<typeof vi.fn>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockRestore = vi.fn();
-    vi.mocked(BuildCacheService).mockImplementation(function () {
-      return {restore: mockRestore} as any;
-    } as any);
-
-    mockPollAll = vi.fn().mockResolvedValue([]);
-    vi.mocked(ValidationPoller).mockImplementation(function () {
-      return {pollAll: mockPollAll} as any;
-    } as any);
-
-    vi.mocked(Org.create).mockResolvedValue({getConnection: () => ({})} as any);
+    mockResolve.mockResolvedValue(new Map());
   });
 
   afterEach(() => {
@@ -78,95 +50,146 @@ describe('buildResume', () => {
   });
 
   it('publishes packages that needed validation and passed', async () => {
-    mockRestore.mockResolvedValue(stateWith([
-      {
-        needsValidation: true, packageName: 'unlocked-pkg', packageType: 'Unlocked', packageVersionCreateRequestId: 'req1', skipped: false, success: true,
-      },
+    mockResolve.mockResolvedValue(new Map([
+      ['unlocked-pkg', {checks: ['dependencies', 'deploy', 'test'], status: 'passed'}],
     ]));
-    mockPollAll.mockResolvedValue([
-      {packageName: 'unlocked-pkg', status: 'Success'},
-    ]);
 
-    const result = await buildResume({});
+    const result = await buildResume({
+      buildResult: stateWith([
+        {
+          packageName: 'unlocked-pkg',
+          packageType: 'Unlocked',
+          pendingValidation: {
+            devhub: 'devhub@test.com', operationType: 'package-version-request', packageName: 'unlocked-pkg', packageVersionRequestId: 'req1',
+          },
+          skipped: false,
+          success: true,
+        },
+      ]),
+    });
 
     expect(result.publishablePackages).toEqual(['unlocked-pkg']);
     expect(result.success).toBe(true);
   });
 
   it('excludes packages that needed validation and failed', async () => {
-    mockRestore.mockResolvedValue(stateWith([
-      {
-        needsValidation: true, packageName: 'unlocked-pkg', packageType: 'Unlocked', packageVersionCreateRequestId: 'req1', skipped: false, success: true,
-      },
+    mockResolve.mockResolvedValue(new Map([
+      ['unlocked-pkg', {checks: ['dependencies', 'deploy', 'test'], error: 'boom', status: 'failed'}],
     ]));
-    mockPollAll.mockResolvedValue([
-      {packageName: 'unlocked-pkg', status: 'Error'},
-    ]);
 
-    const result = await buildResume({});
+    const result = await buildResume({
+      buildResult: stateWith([
+        {
+          packageName: 'unlocked-pkg',
+          packageType: 'Unlocked',
+          pendingValidation: {
+            devhub: 'devhub@test.com', operationType: 'package-version-request', packageName: 'unlocked-pkg', packageVersionRequestId: 'req1',
+          },
+          skipped: false,
+          success: true,
+        },
+      ]),
+    });
 
     expect(result.publishablePackages).toEqual([]);
     expect(result.success).toBe(false);
   });
 
   it('publishes successfully built packages that never needed validation', async () => {
-    mockRestore.mockResolvedValue(stateWith([
-      {
-        needsValidation: false, packageName: 'source-pkg', packageType: 'Source', skipped: false, success: true,
-      },
-    ]));
-
-    const result = await buildResume({});
+    const result = await buildResume({
+      buildResult: stateWith([
+        {
+          packageName: 'source-pkg', packageType: 'Source', skipped: false, success: true,
+        },
+      ]),
+    });
 
     expect(result.publishablePackages).toEqual(['source-pkg']);
     expect(result.success).toBe(true);
+    expect(mockResolve).not.toHaveBeenCalled();
   });
 
   it('excludes packages that failed to build, even though they never needed validation', async () => {
-    mockRestore.mockResolvedValue(stateWith([
-      {
-        needsValidation: false, packageName: 'broken-pkg', packageType: 'Source', skipped: false, success: false,
-      },
-    ]));
-
-    const result = await buildResume({});
+    const result = await buildResume({
+      buildResult: stateWith([
+        {
+          packageName: 'broken-pkg', packageType: 'Source', skipped: false, success: false,
+        },
+      ]),
+    });
 
     expect(result.publishablePackages).toEqual([]);
   });
 
   it('excludes packages whose build was skipped (no source changes)', async () => {
-    mockRestore.mockResolvedValue(stateWith([
-      {
-        needsValidation: false, packageName: 'unchanged-pkg', packageType: 'Source', skipped: true, success: true,
-      },
-    ]));
-
-    const result = await buildResume({});
+    const result = await buildResume({
+      buildResult: stateWith([
+        {
+          packageName: 'unchanged-pkg', packageType: 'Source', skipped: true, success: true,
+        },
+      ]),
+    });
 
     expect(result.publishablePackages).toEqual([]);
   });
 
   it('sets the publishable-packages output', async () => {
-    mockRestore.mockResolvedValue(stateWith([
-      {
-        needsValidation: false, packageName: 'pkg-a', packageType: 'Source', skipped: false, success: true,
-      },
-      {
-        needsValidation: false, packageName: 'pkg-b', packageType: 'Source', skipped: true, success: true,
-      },
-    ]));
-
-    await buildResume({});
+    await buildResume({
+      buildResult: stateWith([
+        {
+          packageName: 'pkg-a', packageType: 'Source', skipped: false, success: true,
+        },
+        {
+          packageName: 'pkg-b', packageType: 'Source', skipped: true, success: true,
+        },
+      ]),
+    });
 
     expect(core.setOutput).toHaveBeenCalledWith('publishable-packages', 'pkg-a');
   });
 
-  it('returns an empty publishable list when no build state is found', async () => {
-    mockRestore.mockResolvedValue(undefined);
+  it('narrows validation resolution to the requested subset of packages', async () => {
+    mockResolve.mockResolvedValue(new Map([
+      ['pkg-a', {checks: ['dependencies', 'deploy', 'test'], status: 'passed'}],
+    ]));
 
-    const result = await buildResume({});
+    const result = await buildResume({
+      buildResult: stateWith([
+        {
+          packageName: 'pkg-a',
+          packageType: 'Unlocked',
+          pendingValidation: {
+            devhub: 'devhub@test.com', operationType: 'package-version-request', packageName: 'pkg-a', packageVersionRequestId: 'req-a',
+          },
+          skipped: false,
+          success: true,
+        },
+        {
+          packageName: 'pkg-b',
+          packageType: 'Unlocked',
+          pendingValidation: {
+            devhub: 'devhub@test.com', operationType: 'package-version-request', packageName: 'pkg-b', packageVersionRequestId: 'req-b',
+          },
+          skipped: false,
+          success: true,
+        },
+      ]),
+      packages: ['pkg-a'],
+    });
+
+    expect(mockResolve).toHaveBeenCalledWith(
+      [expect.objectContaining({packageName: 'pkg-a'})],
+      expect.anything(),
+    );
+    // pkg-b was never resolved — still pending, so not publishable this call.
+    expect(result.publishablePackages).toEqual(['pkg-a']);
+  });
+
+  it('fails when build-result is not valid JSON', async () => {
+    const result = await buildResume({buildResult: 'not-json'});
 
     expect(result.publishablePackages).toEqual([]);
     expect(result.success).toBe(false);
+    expect(core.setFailed).toHaveBeenCalled();
   });
 });

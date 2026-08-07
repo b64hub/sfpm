@@ -1,12 +1,14 @@
 import * as core from '@actions/core';
-import * as github from '@actions/github';
 import {
-  type PackageValidationResult,
-  ValidationPoller,
+  type PendingValidationDescriptor,
+  ProjectService,
+  ValidationEventBus,
+  ValidationResolver,
+  type ValidationState,
 } from '@b64hub/sfpm-core';
-import {Org} from '@salesforce/core';
 
-import {BuildCacheService, type PackageBuildState} from './build-cache.js';
+import type {BuildResult, PackageBuildState} from './build.js';
+
 import {createGitHubActionsLogger} from './logger.js';
 
 // ============================================================================
@@ -14,63 +16,74 @@ import {createGitHubActionsLogger} from './logger.js';
 // ============================================================================
 
 export interface BuildResumeOptions {
-  /** DevHub username or alias (overrides cached value) */
-  devhubUsername?: string;
-  /** Maximum time to poll for validation in minutes (default: 120) */
+  /** JSON `result` output from the `build` action/job (e.g. `needs.build.outputs.result`) */
+  buildResult: string;
+  /** Maximum time to wait for validation in minutes (default: 120) */
   maxWaitMinutes?: number;
+  /** Restrict validation resolution to this subset of package names (default: all pending) */
+  packages?: string[];
   /** Polling interval in seconds (default: 30) */
   pollingIntervalSeconds?: number;
   /** Project directory (default: workspace root) */
   projectDir?: string;
-  /** GitHub Actions run ID to restore build state from (default: current run) */
-  runId?: string;
+}
+
+export interface PackageValidationOutcome {
+  /** Code coverage percentage (if available) */
+  codeCoverage?: number;
+  /** Error message if validation failed */
+  error?: string;
+  /** Package name */
+  packageName: string;
+  /** Final validation status */
+  status: 'Error' | 'Skipped' | 'Success';
 }
 
 export interface BuildResumeResult {
   /** Duration of the resume step in milliseconds */
   duration: number;
   /** Per-package validation outcomes */
-  packages: PackageValidationResult[];
+  packages: PackageValidationOutcome[];
   /**
    * Package names that are safe to publish: built successfully, not
    * build-skipped (no source changes — nothing new to publish), and either
    * didn't require validation or passed it.
    */
   publishablePackages: string[];
-  /** Whether all validations passed */
+  /** Whether all resolved validations passed */
   success: boolean;
 }
-
-export type {PackageValidationResult} from '@b64hub/sfpm-core';
 
 // ============================================================================
 // Build Resume Pipeline
 // ============================================================================
 
 /**
- * Resume a build workflow by polling for unlocked package async validation.
+ * Resume a build workflow by resolving pending async validation for
+ * unlocked packages.
  *
  * Workflow:
- * 1. Restore cached build state from the `build` job
- * 2. Connect to DevHub
- * 3. For each unlocked package pending validation, poll the
- *    Package2VersionCreateRequest status using the creation request ID
- *    until validation completes, errors, or times out
+ * 1. Parse the `build` job's `result` output (its `packages[]` already carry
+ *    a {@link PendingValidationDescriptor} for any unlocked package that
+ *    queued async validation — no cache, no run-ID lookup needed)
+ * 2. Optionally narrow to a subset via `packages` (e.g. resume validation
+ *    for only specific unlocked packages)
+ * 3. Resolve the descriptors via {@link ValidationResolver}, which polls the
+ *    DevHub named on each descriptor directly (no devhub-username input needed)
  * 4. Compute which packages are safe to publish (built successfully, not
  *    build-skipped, and validated if validation was required)
  * 5. Report results via GitHub Actions outputs, including the
  *    `publishable-packages` list a downstream publish step can filter on
  *
  * Designed to run in parallel with an install/deploy job right after `build`
- * (both only depend on `build`), so validation polling and a sandbox
- * smoke-test install can happen at the same time. Publishing should wait on
- * this action's `publishable-packages` output rather than running
- * unconditionally against everything the build produced.
+ * (both only depend on `build`). Publishing should wait on this action's
+ * `publishable-packages` output rather than running unconditionally against
+ * everything the build produced.
  *
  * @example
  * ```typescript
  * const result = await buildResume({
- *   devhubUsername: 'devhub@myorg.com',
+ *   buildResult: coreGetInput('build-result'),
  *   maxWaitMinutes: 120,
  * });
  * ```
@@ -80,86 +93,82 @@ export async function buildResume(options: BuildResumeOptions): Promise<BuildRes
   const startTime = Date.now();
 
   // ------------------------------------------------------------------
-  // 1. Restore cached build state
+  // 1. Parse the build job's result
   // ------------------------------------------------------------------
-  const runId = options.runId ?? String(github.context.runId);
-  const buildCache = new BuildCacheService({logger, runId});
-
-  const state = await buildCache.restore();
-  if (!state) {
-    core.setFailed(`No build state found for run ${runId}. Did the build job complete?`);
+  let state: BuildResult;
+  try {
+    state = JSON.parse(options.buildResult) as BuildResult;
+  } catch {
+    core.setFailed('Invalid build-result input — expected the JSON `result` output from the build action');
     return {
       duration: 0, packages: [], publishablePackages: [], success: false,
     };
   }
 
-  const pendingPackages = state.packages.filter(p => p.needsValidation);
+  const pendingAll = state.packages.filter((p): p is PackageBuildState & {pendingValidation: PendingValidationDescriptor} => Boolean(p.pendingValidation));
 
-  let validationResults: PackageValidationResult[] = [];
+  // ------------------------------------------------------------------
+  // 2. Narrow to the requested subset, if any
+  // ------------------------------------------------------------------
+  const pending = options.packages?.length
+    ? pendingAll.filter(p => options.packages!.includes(p.packageName))
+    : pendingAll;
 
-  if (pendingPackages.length > 0) {
-    logger.info(`Resuming validation for ${pendingPackages.length} unlocked package(s)`);
+  let resolved = new Map<string, Extract<ValidationState, {status: 'failed' | 'passed'}>>();
 
-    // ------------------------------------------------------------------
-    // 2. Connect to DevHub
-    // ------------------------------------------------------------------
-    const devhubUsername = options.devhubUsername ?? state.devhubUsername;
-    if (!devhubUsername) {
-      core.setFailed('DevHub username required for validation polling');
-      return {
-        duration: 0, packages: [], publishablePackages: [], success: false,
-      };
-    }
-
-    logger.info(`Connecting to DevHub: ${devhubUsername}`);
-    const devhub = await Org.create({aliasOrUsername: devhubUsername});
-    const connection = devhub.getConnection();
+  if (pending.length > 0) {
+    logger.info(`Resolving validation for ${pending.length} package(s): ${pending.map(p => p.packageName).join(', ')}`);
 
     // ------------------------------------------------------------------
-    // 3. Poll validation status for each pending package
+    // 3. Resolve pending validations
     // ------------------------------------------------------------------
-    logger.group('Validation Polling');
+    const projectDir = options.projectDir ?? process.env.GITHUB_WORKSPACE ?? process.cwd();
+    const projectService = await ProjectService.getInstance(projectDir);
+    const projectConfig = projectService.getDefinitionProvider();
+    const projectGraph = projectService.getProjectGraph();
 
-    const maxWaitMs = (options.maxWaitMinutes ?? 120) * 60 * 1000;
-    const pollingIntervalMs = (options.pollingIntervalSeconds ?? 30) * 1000;
+    logger.group('Validation Resolution');
 
-    const poller = new ValidationPoller(
-      connection,
-      {maxWaitMs, pollingIntervalMs},
-      logger,
+    const resolver = new ValidationResolver(projectConfig, projectGraph, logger, new ValidationEventBus());
+    resolved = await resolver.resolve(
+      pending.map(p => p.pendingValidation),
+      {
+        maxWaitMs: (options.maxWaitMinutes ?? 120) * 60 * 1000,
+        pollingIntervalMs: (options.pollingIntervalSeconds ?? 30) * 1000,
+      },
     );
-
-    validationResults = await poller.pollAll(pendingPackages.map(pkg => ({
-      packageName: pkg.packageName,
-      packageVersionCreateRequestId: pkg.packageVersionCreateRequestId!,
-      packageVersionId: pkg.packageVersionId,
-    })));
 
     logger.groupEnd();
   } else {
-    logger.info('No packages pending validation — nothing to poll');
-  }
-
-  // Include non-validation packages as skipped (no async validation was required)
-  for (const pkg of state.packages.filter(p => !p.needsValidation)) {
-    validationResults.push({
-      packageName: pkg.packageName,
-      packageVersionId: pkg.packageVersionId,
-      status: 'Skipped',
-    });
+    logger.info('No pending validations to resolve');
   }
 
   // ------------------------------------------------------------------
-  // 4. Determine which packages are safe to publish
+  // 4. Build per-package outcomes and determine publishable packages
   // ------------------------------------------------------------------
+  const packages: PackageValidationOutcome[] = [];
+  for (const pkg of state.packages) {
+    if (!pkg.pendingValidation) {
+      packages.push({packageName: pkg.packageName, status: 'Skipped'});
+      continue;
+    }
+
+    const validationState = resolved.get(pkg.packageName);
+    if (!validationState) continue; // not part of this resolve call (subset filter)
+
+    packages.push(validationState.status === 'passed'
+      ? {codeCoverage: validationState.testCoverage, packageName: pkg.packageName, status: 'Success'}
+      : {error: validationState.error, packageName: pkg.packageName, status: 'Error'});
+  }
+
   const publishablePackages = state.packages
   .filter(pkg => {
     // Build failed, or nothing new was built (no source changes) — don't publish.
     if (!pkg.success || pkg.skipped) return false;
     // Didn't require async validation (e.g. Source packages) — build success is enough.
-    if (!pkg.needsValidation) return true;
+    if (!pkg.pendingValidation) return true;
     // Required validation — only publishable if it actually passed.
-    return validationResults.find(v => v.packageName === pkg.packageName)?.status === 'Success';
+    return resolved.get(pkg.packageName)?.status === 'passed';
   })
   .map(pkg => pkg.packageName);
 
@@ -167,13 +176,13 @@ export async function buildResume(options: BuildResumeOptions): Promise<BuildRes
   // 5. Set outputs and return
   // ------------------------------------------------------------------
   const duration = Date.now() - startTime;
-  const allPassed = validationResults
-  .filter(r => r.status !== 'Skipped')
-  .every(r => r.status === 'Success');
+  const allPassed = packages
+  .filter(p => p.status !== 'Skipped')
+  .every(p => p.status === 'Success');
 
   const result: BuildResumeResult = {
     duration,
-    packages: validationResults,
+    packages,
     publishablePackages,
     success: allPassed,
   };
@@ -183,7 +192,7 @@ export async function buildResume(options: BuildResumeOptions): Promise<BuildRes
   if (allPassed) {
     logger.info(`All validations passed in ${Math.round(duration / 1000)}s`);
   } else {
-    const failed = validationResults.filter(r => r.status === 'Error' || r.status === 'TimedOut');
+    const failed = packages.filter(p => p.status === 'Error');
     core.setFailed(`Validation failed for: ${failed.map(f => f.packageName).join(', ')}`);
   }
 
@@ -201,7 +210,7 @@ function setActionOutputs(result: BuildResumeResult): void {
   core.setOutput('publishable-packages', result.publishablePackages.join(','));
 
   const validated = result.packages.filter(p => p.status === 'Success');
-  const failed = result.packages.filter(p => p.status === 'Error' || p.status === 'TimedOut');
+  const failed = result.packages.filter(p => p.status === 'Error');
 
   core.setOutput('validated-count', String(validated.length));
   core.setOutput('failed-count', String(failed.length));

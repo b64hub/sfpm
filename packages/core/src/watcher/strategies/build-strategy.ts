@@ -20,9 +20,8 @@ import type {
 /**
  * Polls Package2VersionCreateRequest for unlocked package builds.
  *
- * Wraps the same `PackageVersion.getCreateStatus()` API used by
- * {@link ValidationPoller}, but as a single-check poll conforming
- * to the generic watcher strategy interface.
+ * Wraps `PackageVersion.getCreateStatus()` as a single-check poll
+ * conforming to the generic watcher strategy interface.
  *
  * Each `poll()` call checks ALL targets and returns:
  * - `pending` if any target is still in progress

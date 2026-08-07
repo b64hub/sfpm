@@ -7,9 +7,13 @@ import {buildResume} from './build-resume.js';
 // ============================================================================
 
 try {
-  const devhubUsername = core.getInput('devhub-username') || undefined;
+  const buildResult = core.getInput('build-result', {required: true});
   const projectDir = core.getInput('project-dir') || undefined;
-  const runId = core.getInput('run-id') || undefined;
+
+  const packagesInput = core.getInput('packages') || '';
+  const packages = packagesInput
+    ? packagesInput.split(',').map(p => p.trim()).filter(Boolean)
+    : undefined;
 
   const maxWaitMinutes = core.getInput('max-wait-minutes')
     ? Number.parseInt(core.getInput('max-wait-minutes'), 10)
@@ -19,11 +23,11 @@ try {
     : undefined;
 
   const result = await buildResume({
-    devhubUsername,
+    buildResult,
     maxWaitMinutes,
+    packages,
     pollingIntervalSeconds,
     projectDir,
-    runId,
   });
 
   if (!result.success) {

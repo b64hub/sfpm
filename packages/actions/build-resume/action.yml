@@ -1,5 +1,5 @@
 name: 'SFPM Build Resume'
-description: 'Resume build validation for unlocked packages. Polls Salesforce for async validation completion.'
+description: 'Resolve pending async validation for unlocked packages from a build job'
 author: 'b64'
 
 branding:
@@ -7,14 +7,14 @@ branding:
   color: 'blue'
 
 inputs:
-  devhub-username:
-    description: 'DevHub username or alias (overrides cached value from build step)'
-    required: false
-  run-id:
-    description: 'GitHub Actions run ID to restore build state from (defaults to current run)'
+  build-result:
+    description: 'JSON result output from the build job/action (e.g. needs.build.outputs.result)'
+    required: true
+  packages:
+    description: 'Comma-separated list of package names to resolve validation for. Defaults to all packages with pending validation.'
     required: false
   max-wait-minutes:
-    description: 'Maximum time to poll for validation completion in minutes (default: 120)'
+    description: 'Maximum time to wait for validation completion in minutes (default: 120)'
     required: false
     default: '120'
   polling-interval-seconds:

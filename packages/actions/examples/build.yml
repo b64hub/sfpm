@@ -1,20 +1,26 @@
 # Build → {install, resume} → publish pipeline for unlocked packages using
 # async validation. `build` stages each package's dist/ output and creates
-# package versions (async validation starts in the background), then
-# uploads every package's dist/ directory as a workflow artifact — it's
-# needed by both `install` (installs from it directly, no registry) and
-# `build-resume` (runs the final `publish` step, which needs the same dist/
-# output on disk to call `pnpm publish`/`sfpm publish` against).
+# package versions (async validation starts in the background). Its `result`
+# output (JSON) carries each package's pending validation descriptor (devhub,
+# package version creation request ID) straight to the `build-resume` job via
+# `needs.build.outputs.result` — no cache, no run-ID lookup, and nothing
+# written back into the dist/ output itself (which stays exactly what gets
+# packed and published). `build` also uploads every package's dist/
+# directory as a workflow artifact — it's needed by both `install` (installs
+# from it directly, no registry) and `build-resume` (runs the final
+# `publish` step, which needs the same dist/ output on disk to call
+# `pnpm publish`/`sfpm publish` against).
 #
 # `install` and `build-resume` then both depend only on `build` and run in
 # parallel: `install` smoke-tests THIS run's actual build output against a
 # sandbox (via `origin: local`, resolving straight from the downloaded
 # dist/ directories — no registry round-trip, so no need to have published
-# anything yet) while `build-resume` polls Salesforce for validation
-# completion. `publish` is the final step, gated on `build-resume`'s
-# `publishable-packages` output — a package is only published once it built
-# successfully, wasn't build-skipped (no source changes), and passed
-# validation if validation was required.
+# anything yet) while `build-resume` resolves the pending validations from
+# `build`'s output via `ValidationResolver` (polls the DevHub named on each
+# descriptor directly). `publish` is the final step, gated on
+# `build-resume`'s `publishable-packages` output — a package is only
+# published once it built successfully, wasn't build-skipped (no source
+# changes), and passed validation if validation was required.
 #
 # `sfpm publish` stays a plain, unfiltered CLI call by design (surgical,
 # no side effects) — it's given the exact list of safe package names rather
@@ -48,6 +54,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/b64hub/sfpm-actions:latest
+    outputs:
+      result: ${{ steps.build.outputs.result }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,6 +74,7 @@ jobs:
           rm server.key
 
       - name: Build packages
+        id: build
         uses: ./packages/actions/build
         with:
           devhub-username: devhub
@@ -149,7 +158,7 @@ jobs:
         id: resume
         uses: ./packages/actions/build-resume
         with:
-          devhub-username: devhub
+          build-result: ${{ needs.build.outputs.result }}
           max-wait-minutes: '60'
 
       - name: Report outcome

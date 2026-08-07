@@ -101,8 +101,7 @@ export default class PackageService {
   }
 
   /**
-   * Static entry point for callers that already hold a {@link Connection} (e.g.
-   * the deprecated {@link ValidationPoller}).
+   * Static entry point for callers that already hold a {@link Connection}.
    *
    * Polls `PackageVersion.getCreateVersionReport` on a fixed interval until
    * the request reaches a terminal state or the deadline expires.

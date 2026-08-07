@@ -1,17 +1,9 @@
-// Build cache
-export {
-  type BuildCacheOptions,
-  BuildCacheService,
-  type CachedBuildState,
-  type PackageBuildState,
-} from './build-cache.js';
-
 // Build resume
 export {
   buildResume,
   type BuildResumeOptions,
   type BuildResumeResult,
-  type PackageValidationResult,
+  type PackageValidationOutcome,
 } from './build-resume.js';
 
 // Build
@@ -19,6 +11,7 @@ export {
   build,
   type BuildOptions,
   type BuildResult,
+  type PackageBuildState,
 } from './build.js';
 
 // Install
