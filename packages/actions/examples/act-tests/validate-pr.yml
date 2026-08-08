@@ -1,0 +1,60 @@
+# Local-only test of the sfpm-actions validate-pr action against this
+# project's real packages. Not a real workflow — lives outside
+# .github/workflows/ so GitHub never picks it up. Doesn't use the sfpm
+# container so a debugger can attach directly to the act runner container
+# (see packages/actions/DEBUGGING.md in the sfpm checkout). Run with:
+#
+#   act pull_request \
+#     -W .github/act-tests/validate-pr.yml \
+#     --eventpath .github/act/pull_request.json \
+#     --container-options "-v /path/to/sfpm:/path/to/this-project/.sfpm-actions" \
+#     -j validate
+#
+# Requires .sfpm-actions to exist (symlink to a local sfpm checkout, or a
+# real `actions/checkout` with `repository: b64hub/sfpm` for actual CI —
+# see packages/actions/examples/README.md).
+name: SFPM Validate PR Test (local act only)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install CLI toolchain (mirrors sfpm-actions image)
+        env:
+          PNPM_HOME: /pnpm
+        run: |
+          export PATH="$PNPM_HOME:$PATH"
+          echo "$PNPM_HOME" >> "$GITHUB_PATH"
+          corepack enable
+          corepack prepare pnpm@10.28.1 --activate
+          curl -fsSL https://install.testnimbus.dev | sh
+          pnpm add -g turbo @salesforce/cli @b64hub/sfpm-cli
+
+      - run: |
+          cd .sfpm-actions
+          pnpm install --ignore-scripts
+          pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Validate PR
+        id: validate
+        env:
+          NODE_OPTIONS: --inspect-brk=0.0.0.0:9229
+        uses: ./.sfpm-actions/packages/actions/validate-pr
+        with:
+          packages: my-package
+
+      - name: Report outcome
+        if: always()
+        run: |
+          echo "Success: ${{ steps.validate.outputs.success }}"
+          echo "Result: ${{ steps.validate.outputs.result }}"
