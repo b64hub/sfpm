@@ -15,7 +15,7 @@ import {createGitHubActionsLogger} from './logger.js';
 // Types
 // ============================================================================
 
-export interface BuildResumeOptions {
+export interface BuildValidationOptions {
   /** JSON `result` output from the `build` action/job (e.g. `needs.build.outputs.result`) */
   buildResult: string;
   /** Maximum time to wait for validation in minutes (default: 120) */
@@ -39,7 +39,7 @@ export interface PackageValidationOutcome {
   status: 'Error' | 'Skipped' | 'Success';
 }
 
-export interface BuildResumeResult {
+export interface BuildValidationResult {
   /** Duration of the resume step in milliseconds */
   duration: number;
   /** Per-package validation outcomes */
@@ -55,7 +55,7 @@ export interface BuildResumeResult {
 }
 
 // ============================================================================
-// Build Resume Pipeline
+// Build Validation Pipeline
 // ============================================================================
 
 /**
@@ -82,14 +82,14 @@ export interface BuildResumeResult {
  *
  * @example
  * ```typescript
- * const result = await buildResume({
+ * const result = await buildValidation({
  *   buildResult: coreGetInput('build-result'),
  *   maxWaitMinutes: 120,
  * });
  * ```
  */
-export async function buildResume(options: BuildResumeOptions): Promise<BuildResumeResult> {
-  const logger = createGitHubActionsLogger({prefix: 'build-resume'});
+export async function buildValidation(options: BuildValidationOptions): Promise<BuildValidationResult> {
+  const logger = createGitHubActionsLogger({prefix: 'build-validation'});
   const startTime = Date.now();
 
   // ------------------------------------------------------------------
@@ -180,7 +180,7 @@ export async function buildResume(options: BuildResumeOptions): Promise<BuildRes
   .filter(p => p.status !== 'Skipped')
   .every(p => p.status === 'Success');
 
-  const result: BuildResumeResult = {
+  const result: BuildValidationResult = {
     duration,
     packages,
     publishablePackages,
@@ -203,7 +203,7 @@ export async function buildResume(options: BuildResumeOptions): Promise<BuildRes
 // Helpers
 // ============================================================================
 
-function setActionOutputs(result: BuildResumeResult): void {
+function setActionOutputs(result: BuildValidationResult): void {
   core.setOutput('success', String(result.success));
   core.setOutput('duration', String(result.duration));
   core.setOutput('result', JSON.stringify(result));

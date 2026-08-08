@@ -24,14 +24,16 @@ vi.mock('@b64hub/sfpm-core', () => ({
     }),
   },
   ValidationEventBus: vi.fn(),
-  ValidationResolver: vi.fn().mockImplementation(() => ({resolve: mockResolve})),
+  ValidationResolver: vi.fn().mockImplementation(function () {
+    return {resolve: mockResolve};
+  }),
 }));
 
 import * as core from '@actions/core';
 
 import type {BuildResult} from '../src/build.js';
 
-import {buildResume} from '../src/build-resume.js';
+import {buildValidation} from '../src/build-validation.js';
 
 function stateWith(packages: BuildResult['packages']): string {
   return JSON.stringify({
@@ -39,7 +41,7 @@ function stateWith(packages: BuildResult['packages']): string {
   } satisfies BuildResult);
 }
 
-describe('buildResume', () => {
+describe('buildValidation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockResolve.mockResolvedValue(new Map());
@@ -54,7 +56,7 @@ describe('buildResume', () => {
       ['unlocked-pkg', {checks: ['dependencies', 'deploy', 'test'], status: 'passed'}],
     ]));
 
-    const result = await buildResume({
+    const result = await buildValidation({
       buildResult: stateWith([
         {
           packageName: 'unlocked-pkg',
@@ -77,7 +79,7 @@ describe('buildResume', () => {
       ['unlocked-pkg', {checks: ['dependencies', 'deploy', 'test'], error: 'boom', status: 'failed'}],
     ]));
 
-    const result = await buildResume({
+    const result = await buildValidation({
       buildResult: stateWith([
         {
           packageName: 'unlocked-pkg',
@@ -96,7 +98,7 @@ describe('buildResume', () => {
   });
 
   it('publishes successfully built packages that never needed validation', async () => {
-    const result = await buildResume({
+    const result = await buildValidation({
       buildResult: stateWith([
         {
           packageName: 'source-pkg', packageType: 'Source', skipped: false, success: true,
@@ -110,7 +112,7 @@ describe('buildResume', () => {
   });
 
   it('excludes packages that failed to build, even though they never needed validation', async () => {
-    const result = await buildResume({
+    const result = await buildValidation({
       buildResult: stateWith([
         {
           packageName: 'broken-pkg', packageType: 'Source', skipped: false, success: false,
@@ -122,7 +124,7 @@ describe('buildResume', () => {
   });
 
   it('excludes packages whose build was skipped (no source changes)', async () => {
-    const result = await buildResume({
+    const result = await buildValidation({
       buildResult: stateWith([
         {
           packageName: 'unchanged-pkg', packageType: 'Source', skipped: true, success: true,
@@ -134,7 +136,7 @@ describe('buildResume', () => {
   });
 
   it('sets the publishable-packages output', async () => {
-    await buildResume({
+    await buildValidation({
       buildResult: stateWith([
         {
           packageName: 'pkg-a', packageType: 'Source', skipped: false, success: true,
@@ -153,7 +155,7 @@ describe('buildResume', () => {
       ['pkg-a', {checks: ['dependencies', 'deploy', 'test'], status: 'passed'}],
     ]));
 
-    const result = await buildResume({
+    const result = await buildValidation({
       buildResult: stateWith([
         {
           packageName: 'pkg-a',
@@ -186,7 +188,7 @@ describe('buildResume', () => {
   });
 
   it('fails when build-result is not valid JSON', async () => {
-    const result = await buildResume({buildResult: 'not-json'});
+    const result = await buildValidation({buildResult: 'not-json'});
 
     expect(result.publishablePackages).toEqual([]);
     expect(result.success).toBe(false);

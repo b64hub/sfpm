@@ -1,10 +1,10 @@
-// Build resume
+// Build validation
 export {
-  buildResume,
-  type BuildResumeOptions,
-  type BuildResumeResult,
+  buildValidation,
+  type BuildValidationOptions,
+  type BuildValidationResult,
   type PackageValidationOutcome,
-} from './build-resume.js';
+} from './build-validation.js';
 
 // Build
 export {

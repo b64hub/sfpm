@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 
-import {buildResume} from './build-resume.js';
+import {buildValidation} from './build-validation.js';
 
 // ============================================================================
 // Action Entry Point
@@ -22,7 +22,7 @@ try {
     ? Number.parseInt(core.getInput('polling-interval-seconds'), 10)
     : undefined;
 
-  const result = await buildResume({
+  const result = await buildValidation({
     buildResult,
     maxWaitMinutes,
     packages,

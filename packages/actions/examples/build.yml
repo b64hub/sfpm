@@ -2,23 +2,23 @@
 # async validation. `build` stages each package's dist/ output and creates
 # package versions (async validation starts in the background). Its `result`
 # output (JSON) carries each package's pending validation descriptor (devhub,
-# package version creation request ID) straight to the `build-resume` job via
+# package version creation request ID) straight to the `build-validation` job via
 # `needs.build.outputs.result` — no cache, no run-ID lookup, and nothing
 # written back into the dist/ output itself (which stays exactly what gets
 # packed and published). `build` also uploads every package's dist/
 # directory as a workflow artifact — it's needed by both `install` (installs
-# from it directly, no registry) and `build-resume` (runs the final
+# from it directly, no registry) and `build-validation` (runs the final
 # `publish` step, which needs the same dist/ output on disk to call
 # `pnpm publish`/`sfpm publish` against).
 #
-# `install` and `build-resume` then both depend only on `build` and run in
+# `install` and `build-validation` then both depend only on `build` and run in
 # parallel: `install` smoke-tests THIS run's actual build output against a
 # sandbox (via `origin: local`, resolving straight from the downloaded
 # dist/ directories — no registry round-trip, so no need to have published
-# anything yet) while `build-resume` resolves the pending validations from
+# anything yet) while `build-validation` resolves the pending validations from
 # `build`'s output via `ValidationResolver` (polls the DevHub named on each
 # descriptor directly). `publish` is the final step, gated on
-# `build-resume`'s `publishable-packages` output — a package is only
+# `build-validation`'s `publishable-packages` output — a package is only
 # published once it built successfully, wasn't build-skipped (no source
 # changes), and passed validation if validation was required.
 #
@@ -80,7 +80,7 @@ jobs:
           devhub-username: devhub
 
       # Retain <packageDir>/dist/ output across jobs — install and
-      # build-resume both need it (see header comment).
+      # build-validation both need it (see header comment).
       - name: Upload build output
         uses: actions/upload-artifact@v4
         with:
@@ -127,7 +127,7 @@ jobs:
           packages: my-package
           target-org: target
 
-  build-resume:
+  build-validation:
     needs: build
     runs-on: ubuntu-latest
     container:
@@ -156,7 +156,7 @@ jobs:
 
       - name: Resume validation
         id: resume
-        uses: ./packages/actions/build-resume
+        uses: ./packages/actions/build-validation
         with:
           build-result: ${{ needs.build.outputs.result }}
           max-wait-minutes: '60'
@@ -167,7 +167,7 @@ jobs:
           echo "Validated: ${{ steps.resume.outputs.validated-count }}"
           echo "Failed: ${{ steps.resume.outputs.failed-count }}"
 
-      # Only publish what build-resume marked safe: built successfully, not
+      # Only publish what build-validation marked safe: built successfully, not
       # build-skipped, and validated (if validation was required). `sfpm
       # publish` itself stays dumb — it just publishes the exact names it's
       # given, no filtering logic of its own.

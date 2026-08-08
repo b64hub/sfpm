@@ -30,8 +30,8 @@ await Promise.all([
     }),
     esbuild.build({
         ...sharedOptions,
-        entryPoints: ['src/build-resume-main.ts'],
-        outfile: 'dist/build-resume-main.js',
+        entryPoints: ['src/build-validation-main.ts'],
+        outfile: 'dist/build-validation-main.js',
     }),
     esbuild.build({
         ...sharedOptions,
@@ -48,6 +48,6 @@ await Promise.all([
 console.log('Bundled dist/validate-main.js');
 console.log('Bundled dist/provision-pool-main.js');
 console.log('Bundled dist/build-main.js');
-console.log('Bundled dist/build-resume-main.js');
+console.log('Bundled dist/build-validation-main.js');
 console.log('Bundled dist/install-main.js');
 console.log('Bundled dist/deploy-main.js');

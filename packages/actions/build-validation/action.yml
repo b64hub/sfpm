@@ -1,4 +1,4 @@
-name: 'SFPM Build Resume'
+name: 'SFPM Build Validation'
 description: 'Resolve pending async validation for unlocked packages from a build job'
 author: 'b64'
 
@@ -43,4 +43,4 @@ outputs:
 
 runs:
   using: 'node20'
-  main: '../dist/build-resume-main.js'
+  main: '../dist/build-validation-main.js'

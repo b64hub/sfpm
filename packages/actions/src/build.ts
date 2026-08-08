@@ -33,7 +33,7 @@ export interface BuildOptions {
 
 /**
  * Per-package build outcome. Fed straight into the `result` action output —
- * the `build-resume` action reads that output (via `needs.build.outputs.result`
+ * the `build-validation` action reads that output (via `needs.build.outputs.result`
  * in the workflow) as its `build-result` input, no cache or polling involved.
  */
 export interface PackageBuildState {
@@ -44,7 +44,7 @@ export interface PackageBuildState {
   /**
    * Descriptor for in-flight async validation, present only for unlocked
    * packages that successfully queued a package version creation request.
-   * Resolved by `build-resume` via {@link ValidationResolver}.
+   * Resolved by `build-validation` via {@link ValidationResolver}.
    */
   pendingValidation?: PendingValidationDescriptor;
   /** Whether the build was skipped (no source changes) */
@@ -76,7 +76,7 @@ export interface BuildResult {
  * 2. Run BuildOrchestrator with async validation for unlocked packages
  * 3. Collect per-package build outcomes, including any pending validation descriptor
  * 4. Set outputs (per-package results, including pending validation descriptors
- *    the `build-resume` action reads via its `build-result` input)
+ *    the `build-validation` action reads via its `build-result` input)
  *
  * Lifecycle stage: **build**
  *
@@ -88,7 +88,7 @@ export interface BuildResult {
  * the Salesforce platform starts validation in the background.
  * `PackageVersion.create()` returns immediately with a creation request ID,
  * captured as a {@link PendingValidationDescriptor} on the package's result.
- * The `build-resume` action resolves these via `ValidationResolver`.
+ * The `build-validation` action resolves these via `ValidationResolver`.
  *
  * @example
  * ```typescript

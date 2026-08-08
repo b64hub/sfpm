@@ -41,7 +41,7 @@ outputs:
   failed-packages:
     description: 'Comma-separated list of packages that failed to build'
   result:
-    description: "Full JSON result with per-package outcomes, including pending validation descriptors. Pass this into build-resume's build-result input as needs.build.outputs.result"
+    description: "Full JSON result with per-package outcomes, including pending validation descriptors. Pass this into build-validation's build-result input as needs.build.outputs.result"
 
 runs:
   using: 'node20'

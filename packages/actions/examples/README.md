@@ -118,3 +118,12 @@ same sfpm checkout — they write to the same `dist/*.js` filenames, and
 turbo's cache can replay a stale one. `rm -rf packages/actions/dist
 packages/actions/tsconfig.tsbuildinfo && pnpm turbo build --force` if a test
 is running against unexpectedly old code.
+
+## Debugging an action inside a consuming project
+
+`act-tests/` has bind-mount-flavored copies of `build.yml`, `provision-pool.yml`,
+and `validate-pr.yml` meant to be dropped into a *consuming* project's
+`.github/act-tests/` — they skip the `sfpm-actions` container entirely (a
+container job can't be reached by a debugger the same way) and install the
+same toolchain directly on the runner instead. See
+packages/actions/DEBUGGING.md for the full attach-a-debugger walkthrough.
