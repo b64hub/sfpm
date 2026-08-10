@@ -202,7 +202,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
 // Helpers
 // ============================================================================
 
-function setActionOutputs(result: BuildResult): void {
+export function setActionOutputs(result: BuildResult): void {
   core.setOutput('success', String(result.success));
   core.setOutput('duration', String(result.duration));
   core.setOutput('failed-packages', result.failedPackages.join(','));
