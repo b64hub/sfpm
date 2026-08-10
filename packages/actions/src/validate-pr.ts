@@ -2,12 +2,14 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import {
   BuildOrchestrator,
+  GitService,
   LifecycleEngine,
   type PackageResult,
   type PendingValidationDescriptor,
   type ProjectDefinitionProvider,
   ProjectGraph,
   ProjectService,
+  type SfpmConfig,
   ValidationEventBus,
   ValidationResolver,
 } from '@b64hub/sfpm-core';
@@ -17,7 +19,7 @@ import {
 } from '@b64hub/sfpm-orgs';
 import {createTracer} from '@b64hub/sfpm-telemetry';
 import {NimbusLocalValidator, NimbusValidationEventBus} from '@b64hub/sfpm-validation';
-import {AuthInfo, Org} from '@salesforce/core';
+import {AuthInfo, Org, OrgTypes} from '@salesforce/core';
 import path from 'node:path';
 
 import {createGitHubActionsLogger, GitHubActionsLogger} from './logger.js';
@@ -29,6 +31,8 @@ import {ActionsProgressRenderer} from './progress-renderer.js';
 // ============================================================================
 
 export interface ValidatePrOptions {
+  /** Git ref to diff against for changed-package detection (default: PR base SHA from GH context). Only used when `packages` is not set. */
+  baseRef?: string;
   /** Cache TTL for scratch orgs in hours (default: 4). Only used in 'org' mode. */
   cacheTtlHours?: number;
   /** DevHub username or alias. Required when mode is 'org' (pool access). */
@@ -44,10 +48,12 @@ export interface ValidatePrOptions {
    *   `build` action, so concurrent PRs never race for build numbers).
    */
   mode?: 'local' | 'org';
-  /** Packages to deploy (empty = all packages in the project) */
+  /** Packages to deploy (default: only packages changed against `baseRef`, or all packages if no base ref is available) */
   packages?: string[];
   /** Pool tag to fetch scratch orgs from. Required when mode is 'org'. */
   poolTag?: string;
+  /** Pool type: scratch or sandbox (inferred from sfpm.config.ts orgs.pools[tag] if omitted, default scratch) */
+  poolType?: OrgTypes;
   /** Project directory (default: workspace root) */
   projectDir?: string;
 }
@@ -129,23 +135,24 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   const projectService = await ProjectService.getInstance(projectDir);
   const projectConfig = projectService.getDefinitionProvider();
   const projectGraph = projectService.getProjectGraph();
+  const sfpmConfig = projectService.getSfpmConfig();
 
   const packageNames = options.packages?.length
     ? options.packages
-    : projectConfig.getAllPackageNames();
+    : await resolveChangedPackageNames(projectConfig, options, logger);
 
-  logger.info(`Packages to validate: ${packageNames.join(', ')}`);
+  logger.info(`Packages to validate: ${packageNames.join(', ') || '(none — no package changes detected)'}`);
 
   // ------------------------------------------------------------------
   // 2. Resolve scratch org (cache or pool) — 'org' mode only
   // ------------------------------------------------------------------
-  const {cacheHit, connection, scratchOrg} = await resolveScratchOrg(mode, options, prNumber, logger);
+  const poolType = resolvePoolType(sfpmConfig, options.poolTag, options.poolType);
+  const {cacheHit, connection, scratchOrg} = await resolveScratchOrg(mode, options, poolType, prNumber, logger);
 
   // ------------------------------------------------------------------
   // 3. Build + validate packages
   // ------------------------------------------------------------------
   const lifecycle = LifecycleEngine.stage('validate');
-  const sfpmConfig = projectService.getSfpmConfig();
   for (const hooks of sfpmConfig.hooks ?? []) {
     lifecycle.use(hooks);
   }
@@ -231,12 +238,72 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
 }
 
 // ============================================================================
+// Changed-package detection (default when `packages` is not specified)
+// ============================================================================
+
+/**
+ * Resolves the PR base ref to diff against: explicit `baseRef` option, else
+ * the PR's base SHA from the GitHub Actions event context.
+ */
+export function resolveBaseRef(options: ValidatePrOptions): string | undefined {
+  return options.baseRef ?? github.context.payload.pull_request?.base?.sha;
+}
+
+/**
+ * Resolves the packages to validate when none are explicitly specified:
+ * only packages changed against `baseRef`. Falls back to all packages if no
+ * base ref is available, or if the git diff fails (e.g. shallow checkout —
+ * requires `fetch-depth: 0` or fetching the PR base ref).
+ */
+async function resolveChangedPackageNames(
+  projectConfig: ProjectDefinitionProvider,
+  options: ValidatePrOptions,
+  logger: GitHubActionsLogger,
+): Promise<string[]> {
+  const allPackageNames = projectConfig.getAllPackageNames();
+  const baseRef = resolveBaseRef(options);
+
+  if (!baseRef) {
+    logger.warn('No base ref available to detect changed packages; validating all packages.');
+    return allPackageNames;
+  }
+
+  try {
+    const gitService = await GitService.initialize(projectConfig.projectDir, logger);
+    const definitions = projectConfig.getAllPackageDefinitions();
+    const pathToName = new Map(definitions.map(def => [def.path, def.name]));
+
+    const changedPaths = await gitService.getChangedPackagePaths(baseRef, definitions.map(def => def.path));
+
+    return changedPaths.map(p => pathToName.get(p)).filter(Boolean);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`Failed to detect changed packages against "${baseRef}" (${message}); validating all packages. Ensure the checkout step uses fetch-depth: 0 (or otherwise fetches the PR base ref).`);
+    return allPackageNames;
+  }
+}
+
+// ============================================================================
+// Pool config resolution
+// ============================================================================
+
+/**
+ * Resolves the pool type for `poolTag`, preferring (in order): the explicit
+ * `poolType` option, `sfpm.config.ts` orgs.pools[tag].type, then 'scratch'.
+ */
+export function resolvePoolType(sfpmConfig: SfpmConfig, poolTag: string | undefined, explicitType: OrgTypes | undefined): OrgTypes {
+  const poolConfig = (sfpmConfig.orgs as undefined | {[tag: string]: {type?: OrgTypes}})?.[poolTag ?? ''];
+  return explicitType ?? poolConfig?.type ?? OrgTypes.Scratch;
+}
+
+// ============================================================================
 // Scratch org resolution ('org' mode)
 // ============================================================================
 
 async function resolveScratchOrg(
   mode: 'local' | 'org',
   options: ValidatePrOptions,
+  poolType: OrgTypes,
   prNumber: number,
   logger: GitHubActionsLogger,
 ): Promise<{cacheHit: boolean; connection?: CachedOrgConnection; scratchOrg?: Org}> {
@@ -254,7 +321,7 @@ async function resolveScratchOrg(
 
   logger.info(`Pool tag: ${options.poolTag}`);
 
-  const {cacheHit, connection} = await resolveOrg(options.poolTag, options, prNumber, logger);
+  const {cacheHit, connection} = await resolveOrg(options.poolTag, poolType, options, prNumber, logger);
 
   logger.info(`Authenticating to ${connection.username}...`);
   await authenticateOrg(connection, options.devhubUsername, logger);
@@ -321,6 +388,7 @@ async function resolvePendingValidations(
 
 async function resolveOrg(
   poolTag: string,
+  poolType: OrgTypes,
   options: ValidatePrOptions,
   prNumber: number,
   logger: GitHubActionsLogger,
@@ -341,7 +409,7 @@ async function resolveOrg(
 
   // Fetch from pool
   logger.info('No cached org available, fetching from pool...');
-  const org = await fetchOrgFromPool(poolTag, options, logger);
+  const org = await fetchOrgFromPool(poolTag, poolType, options, logger);
 
   const connection: CachedOrgConnection = {
     cachedAt: Date.now(),
@@ -366,13 +434,14 @@ async function resolveOrg(
 
 async function fetchOrgFromPool(
   poolTag: string,
+  poolType: OrgTypes,
   options: ValidatePrOptions,
   logger: GitHubActionsLogger,
 ): Promise<PoolOrg> {
   logger.group('Pool Fetch');
 
   const devhub = await Org.create({aliasOrUsername: options.devhubUsername!});
-  const {authenticator, fetcher} = createPoolServices({devhub, logger});
+  const {authenticator, fetcher} = createPoolServices({devhub, logger, poolType});
 
   const renderer = new ActionsProgressRenderer(logger);
   renderer.attachToPoolFetcher(fetcher);

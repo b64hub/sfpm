@@ -1,10 +1,12 @@
 import * as core from '@actions/core';
+import {loadSfpmConfig} from '@b64hub/sfpm-core';
 import {
   createPoolServices,
   type PoolConfig,
   type PoolProvisionResult,
 } from '@b64hub/sfpm-orgs';
 import {Org, OrgTypes} from '@salesforce/core';
+import path from 'node:path';
 
 import {createGitHubActionsLogger} from './logger.js';
 import {ActionsProgressRenderer} from './progress-renderer.js';
@@ -23,9 +25,11 @@ export interface ProvisionPoolOptions {
   /** Scratch org expiry in days (default: 7) */
   expiryDays?: number;
   /** Maximum number of orgs to allocate */
-  maxAllocation: number;
+  maxAllocation?: number;
   /** Pool type: scratch or sandbox */
   poolType?: OrgTypes;
+  /** Absolute path to the project root (default: GITHUB_WORKSPACE or cwd) */
+  projectDir?: string;
   /** Sandbox name prefix (e.g., SB → SB1, SB2, ...) */
   sandboxNamePattern?: string;
   /** Pool tag */
@@ -64,7 +68,10 @@ export interface ProvisionPoolResult {
 export async function provisionPool(options: ProvisionPoolOptions): Promise<ProvisionPoolResult> {
   const logger = createGitHubActionsLogger({prefix: 'provision-pool'});
   const startTime = Date.now();
-  const poolType = options.poolType ?? OrgTypes.Scratch;
+  const projectDir = options.projectDir ?? process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const sfpmConfig = await loadSfpmConfig(projectDir, logger);
+  const poolConfig = (sfpmConfig.orgs as undefined | {[tag: string]: PoolConfig})?.[options.tag];
+  const poolType = options.poolType ?? poolConfig?.type as OrgTypes | undefined ?? OrgTypes.Scratch;
 
   logger.info(`Pool tag: ${options.tag}`);
   logger.info(`Pool type: ${poolType}`);
@@ -101,7 +108,7 @@ export async function provisionPool(options: ProvisionPoolOptions): Promise<Prov
   // ------------------------------------------------------------------
   // 4. Build config and provision
   // ------------------------------------------------------------------
-  const config = buildPoolConfig(options, poolType);
+  const config = buildPoolConfig(options, poolType, projectDir, poolConfig);
   const provisionResult = await manager.provision(options.tag, config);
 
   renderer.printSummary();
@@ -136,31 +143,39 @@ export async function provisionPool(options: ProvisionPoolOptions): Promise<Prov
 // Helpers
 // ============================================================================
 
-function buildPoolConfig(options: ProvisionPoolOptions, poolType: OrgTypes): PoolConfig {
+export function buildPoolConfig(options: ProvisionPoolOptions, poolType: OrgTypes, projectDir: string, poolConfig?: PoolConfig): PoolConfig {
+  // Workflow inputs take precedence over sfpm.config.ts pool config.
   const sizing = {
-    batch: options.batchSize,
-    max: options.maxAllocation,
+    batch: options.batchSize ?? poolConfig?.sizing?.batch,
+    max: options.maxAllocation ?? poolConfig?.sizing?.max,
   };
 
-  if (!options.definitionFile) {
-    throw new Error('definition-file is required');
+  const definitionFile = options.definitionFile ?? poolConfig?.definitionFile;
+  if (!definitionFile) {
+    throw new Error('definition-file is required (or configure definitionFile in pool/scratch/sandbox config)');
+  }
+
+  if (!sizing.max) {
+    throw new Error('max-allocation is required (or configure sizing.max in pool config)');
   }
 
   if (poolType === OrgTypes.Sandbox) {
     return {
-      definitionFile: options.definitionFile,
-      namePattern: options.sandboxNamePattern ?? 'SB',
+      ...poolConfig,
+      definitionFile: path.resolve(projectDir, definitionFile),
+      namePattern: options.sandboxNamePattern ?? (poolConfig as undefined | {namePattern?: string})?.namePattern ?? 'SB',
       sizing,
       type: OrgTypes.Sandbox,
-    };
+    } as PoolConfig;
   }
 
   return {
-    definitionFile: options.definitionFile,
-    expiryDays: options.expiryDays,
+    ...poolConfig,
+    definitionFile: path.resolve(projectDir, definitionFile),
+    expiryDays: options.expiryDays ?? (poolConfig as undefined | {expiryDays?: number})?.expiryDays,
     sizing,
     type: OrgTypes.Scratch,
-  };
+  } as PoolConfig;
 }
 
 function setActionOutputs(result: ProvisionPoolResult, provisionResult: PoolProvisionResult): void {

@@ -14,14 +14,17 @@ inputs:
     description: 'Pool tag to provision orgs for'
     required: true
   max-allocation:
-    description: 'Maximum number of orgs to allocate'
-    required: true
+    description: 'Maximum number of orgs to allocate (overrides sfpm.config.ts sizing.max)'
+    required: false
   pool-type:
     description: 'Pool type: scratch or sandbox (default: scratch)'
     required: false
     default: 'scratch'
   definition-file:
-    description: 'Org definition file path (scratch org or sandbox)'
+    description: 'Org definition file path (scratch org or sandbox); overrides sfpm.config.ts'
+    required: false
+  project-dir:
+    description: 'Project root directory, used to resolve sfpm.config.ts (default: GITHUB_WORKSPACE)'
     required: false
   expiry-days:
     description: 'Scratch org expiry in days (default: 7)'

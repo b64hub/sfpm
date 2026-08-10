@@ -10,10 +10,12 @@ import {provisionPool} from './provision-pool.js';
 try {
   const devhubUsername = core.getInput('devhub-username', {required: true});
   const tag = core.getInput('pool-tag', {required: true});
-  const maxAllocation = Number.parseInt(core.getInput('max-allocation', {required: true}), 10);
+  const maxAllocation = core.getInput('max-allocation')
+    ? Number.parseInt(core.getInput('max-allocation'), 10)
+    : undefined;
 
-  const poolTypeInput = core.getInput('pool-type') || OrgTypes.Scratch;
-  const poolType = poolTypeInput === 'sandbox' ? OrgTypes.Sandbox : OrgTypes.Scratch;
+  const poolTypeInput = core.getInput('pool-type') || undefined;
+  const poolType = poolTypeInput === 'sandbox' ? OrgTypes.Sandbox : poolTypeInput === 'scratch' ? OrgTypes.Scratch : undefined;
 
   const batchSize = core.getInput('batch-size')
     ? Number.parseInt(core.getInput('batch-size'), 10)
@@ -22,6 +24,7 @@ try {
   const expiryDays = core.getInput('expiry-days')
     ? Number.parseInt(core.getInput('expiry-days'), 10)
     : undefined;
+  const projectDir = core.getInput('project-dir') || undefined;
   const sandboxNamePattern = core.getInput('sandbox-name-pattern') || undefined;
 
   const result = await provisionPool({
@@ -31,6 +34,7 @@ try {
     expiryDays,
     maxAllocation,
     poolType,
+    projectDir,
     sandboxNamePattern,
     tag,
   });
