@@ -26,6 +26,12 @@ jobs:
       image: ghcr.io/b64hub/sfpm-actions:latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Needed so the action can diff against the PR base to detect changed
+          # packages (default when `packages` input isn't set). Without this,
+          # the base commit usually isn't available locally and the action
+          # falls back to validating all packages (with a warning).
+          fetch-depth: 0
 
       # Builds the actions package (and its workspace deps) so dist/validate-main.js exists.
       - run: pnpm install --frozen-lockfile

@@ -17,6 +17,9 @@ inputs:
   pool-tag:
     description: 'Pool tag to fetch orgs from. Required when mode is org.'
     required: false
+  pool-type:
+    description: 'Pool type: scratch or sandbox (inferred from sfpm.config.ts orgs.pools[tag] if omitted, default scratch)'
+    required: false
   cache-ttl-hours:
     description: 'How long to cache an org for this PR (hours). Set to 0 to disable caching. Only used when mode is org.'
     required: false
@@ -25,7 +28,10 @@ inputs:
     description: 'Path to the SFPM project directory (defaults to workspace root)'
     required: false
   packages:
-    description: 'Comma-separated list of packages to deploy. Defaults to all packages.'
+    description: 'Comma-separated list of packages to deploy. Defaults to only packages changed against base-ref (or all packages if no base ref is available).'
+    required: false
+  base-ref:
+    description: 'Git ref to diff against for changed-package detection (default: PR base SHA). Only used when packages is not set. Requires checkout with fetch-depth: 0 or otherwise fetching the PR base ref.'
     required: false
 
 outputs:

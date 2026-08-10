@@ -25,6 +25,9 @@ vi.mock('@actions/github', () => ({
 
 vi.mock('@b64hub/sfpm-core', () => ({
   BuildOrchestrator: vi.fn(),
+  GitService: {
+    initialize: vi.fn(),
+  },
   LifecycleEngine: {
     stage: vi.fn(),
   },
@@ -47,11 +50,16 @@ vi.mock('@salesforce/core', () => ({
   Org: {
     create: vi.fn(),
   },
+  OrgTypes: {
+    Sandbox: 'sandbox',
+    Scratch: 'scratch',
+  },
 }));
 
 import * as core from '@actions/core';
 import {
   BuildOrchestrator,
+  GitService,
   LifecycleEngine,
   ProjectService,
   ValidationResolver,
@@ -156,6 +164,39 @@ describe('validatePr', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  describe('changed-package detection (no explicit packages)', () => {
+    it('validates only packages changed against baseRef', async () => {
+      vi.mocked(GitService.initialize).mockResolvedValue({
+        getChangedPackagePaths: vi.fn().mockResolvedValue(['pkg-a']),
+      } as any);
+
+      await validatePr({...localOptions, baseRef: 'main'});
+
+      expect(mockBuildOrchestrator.buildAll).toHaveBeenCalledWith(['pkg-a']);
+    });
+
+    it('falls back to all packages when the git diff fails (e.g. shallow checkout)', async () => {
+      vi.mocked(GitService.initialize).mockRejectedValue(new Error('unknown revision'));
+
+      await validatePr({...localOptions, baseRef: 'main'});
+
+      expect(mockBuildOrchestrator.buildAll).toHaveBeenCalledWith(['pkg-a', 'pkg-b']);
+    });
+
+    it('falls back to all packages when no baseRef is available', async () => {
+      await validatePr(localOptions);
+
+      expect(mockBuildOrchestrator.buildAll).toHaveBeenCalledWith(['pkg-a', 'pkg-b']);
+    });
+
+    it('explicit packages option bypasses changed-package detection', async () => {
+      await validatePr({...localOptions, baseRef: 'main', packages: ['pkg-a']});
+
+      expect(GitService.initialize).not.toHaveBeenCalled();
+      expect(mockBuildOrchestrator.buildAll).toHaveBeenCalledWith(['pkg-a']);
+    });
   });
 
   describe('local mode (default)', () => {
