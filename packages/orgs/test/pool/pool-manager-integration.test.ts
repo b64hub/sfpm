@@ -1,7 +1,7 @@
 import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest';
-import {OrgTypes} from '@salesforce/core';
+import {OrgTypes, SfError} from '@salesforce/core';
 
 import type {
   PoolConfig, PoolOrgTask, PoolOrgTaskResult,
@@ -111,7 +111,7 @@ describe('PoolManager', () => {
 
       const manager = new PoolManager({provider: provider as any});
       const events: any[] = [];
-      manager.on('pool:allocation:computed', e => events.push(e));
+      manager.bus.on('pool:allocation:computed', e => events.push(e));
 
       await manager.computeAllocation('test-pool', createPoolConfig());
 
@@ -197,6 +197,100 @@ describe('PoolManager', () => {
       expect(result.failed).toBe(1);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]).toContain('Creation timed out');
+    });
+
+    it('should surface the named SfError and its action hints in the error message', async () => {
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
+
+      const org1 = createScratchOrg({username: 'org1@scratch.org'});
+      provider.createOrg
+      .mockResolvedValueOnce(org1)
+      .mockRejectedValueOnce(new SfError('No org shape exists for the specified sourceOrg.', 'RemoteOrgSignupFailed', ['Create an org shape and try again.']));
+
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue(undefined);
+
+      const manager = new PoolManager({provider: provider as any});
+      const config = createPoolConfig({sizing: {batch: 5, max: 2}});
+      const result = await manager.provision('test-pool', config);
+
+      expect(result.errors[0]).toContain('No org shape exists for the specified sourceOrg.');
+      expect(result.errors[0]).toContain('RemoteOrgSignupFailed');
+      expect(result.errors[0]).toContain('Create an org shape and try again.');
+    });
+
+    it('should retry the Connected App signup error with backoff, then succeed', async () => {
+      vi.useFakeTimers();
+
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
+
+      const connectedAppError = new SfError(
+        'We encountered a problem while attempting to configure and approve the Connected App for your org.',
+        'RemoteOrgSignupFailed',
+        ['See https://developer.salesforce.com/docs/... for information on error code C-1016.'],
+      );
+      const org1 = createScratchOrg({username: 'org1@scratch.org'});
+
+      provider.createOrg
+      .mockRejectedValueOnce(connectedAppError)
+      .mockRejectedValueOnce(connectedAppError)
+      .mockResolvedValueOnce(org1);
+
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue(undefined);
+
+      const manager = new PoolManager({provider: provider as any});
+      const retryEvents: any[] = [];
+      manager.bus.on('pool:org:retrying', e => retryEvents.push(e));
+
+      const config = createPoolConfig({sizing: {batch: 5, max: 1}});
+      const resultPromise = manager.provision('test-pool', config);
+
+      // Two retries, each with exponential backoff (5s, then 10s).
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      const result = await resultPromise;
+
+      expect(provider.createOrg).toHaveBeenCalledTimes(3);
+      expect(retryEvents).toHaveLength(2);
+      expect(retryEvents[0].attempt).toBe(1);
+      expect(retryEvents[1].attempt).toBe(2);
+      expect(result.succeeded).toHaveLength(1);
+      expect(result.failed).toBe(0);
+
+      vi.useRealTimers();
+    });
+
+    it('should give up on the Connected App signup error after the max attempts', async () => {
+      vi.useFakeTimers();
+
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
+
+      const connectedAppError = new SfError(
+        'We encountered a problem while attempting to configure and approve the Connected App for your org.',
+        'RemoteOrgSignupFailed',
+      );
+      provider.createOrg.mockRejectedValue(connectedAppError);
+
+      const manager = new PoolManager({provider: provider as any});
+      const config = createPoolConfig({sizing: {batch: 5, max: 1}});
+      const resultPromise = manager.provision('test-pool', config).catch((error: Error) => error);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      const error = await resultPromise;
+
+      expect(provider.createOrg).toHaveBeenCalledTimes(3);
+      expect(error).toBeInstanceOf(Error);
+
+      vi.useRealTimers();
     });
 
     it('should throw when all creation attempts fail', async () => {
@@ -289,8 +383,8 @@ describe('PoolManager', () => {
 
       const manager = new PoolManager({provider: provider as any});
       const events: string[] = [];
-      manager.on('pool:provision:start', () => events.push('start'));
-      manager.on('pool:provision:complete', () => events.push('complete'));
+      manager.bus.on('pool:provision:start', () => events.push('start'));
+      manager.bus.on('pool:provision:complete', () => events.push('complete'));
 
       await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
@@ -458,8 +552,8 @@ describe('PoolManager', () => {
       });
 
       const taskEvents: string[] = [];
-      manager.on('pool:task:start', () => taskEvents.push('start'));
-      manager.on('pool:task:complete', () => taskEvents.push('complete'));
+      manager.bus.on('pool:task:start', () => taskEvents.push('start'));
+      manager.bus.on('pool:task:complete', () => taskEvents.push('complete'));
 
       await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
@@ -646,9 +740,9 @@ describe('PoolManager', () => {
       });
 
       const events: string[] = [];
-      manager.on('pool:delete:start', () => events.push('start'));
-      manager.on('pool:delete:complete', () => events.push('complete'));
-      manager.on('pool:org:deleted', () => events.push('deleted'));
+      manager.bus.on('pool:delete:start', () => events.push('start'));
+      manager.bus.on('pool:delete:complete', () => events.push('complete'));
+      manager.bus.on('pool:org:deleted', () => events.push('deleted'));
 
       await manager.delete('test-pool');
 

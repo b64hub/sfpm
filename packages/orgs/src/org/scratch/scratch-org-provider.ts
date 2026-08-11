@@ -116,7 +116,7 @@ export default class ScratchOrgProvider implements OrgProvider<ScratchOrgRequest
       ...options,
       durationDays: options.durationDays ?? DEFAULT_SCRATCH_ORG.expiryDays,
       noancestors: options.noancestors ?? DEFAULT_SCRATCH_ORG.noAncestors,
-      nonamespace: options.nonamespace ?? false,
+      nonamespace: options.nonamespace ?? true,
       retry: options.retry ?? DEFAULT_SCRATCH_ORG.maxRetries,
       wait: options.wait ?? Duration.minutes(DEFAULT_SCRATCH_ORG.waitMinutes),
     });

@@ -92,8 +92,8 @@ export default class PoolFill extends SfpmCommand {
     if (mode === 'interactive') {
       // Wire per-package events from DeploymentTask through the pool manager
       deployTask?.setPackageForwarder({
-        packageComplete: p => manager!.emit('pool:package:complete', {...p, timestamp: new Date()}),
-        packageStart: p => manager!.emit('pool:package:start',    {...p, timestamp: new Date()}),
+        packageComplete: p => manager!.bus.emit('pool:package:complete', {...p, timestamp: new Date()}),
+        packageStart: p => manager!.bus.emit('pool:package:start',    {...p, timestamp: new Date()}),
       });
 
       const inkInstance = renderPoolFill(manager!, alias);

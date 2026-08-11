@@ -1,7 +1,6 @@
 import type {Logger} from '@b64hub/sfpm-core';
 
-import {OrgTypes} from '@salesforce/core';
-import {EventEmitter} from 'node:events';
+import {OrgTypes, SfError} from '@salesforce/core';
 
 import type {OrgCreateOptions, OrgProvider} from '../org/org-provider.js';
 import type {PoolOrg, PoolOrgRecord} from '../org/pool-org.js';
@@ -10,6 +9,7 @@ import {
   OrgError,
   PoolStage,
 } from '../org/types.js';
+import {PoolEventBus} from './pool-event-bus.js';
 import {
   DEFAULT_POOL_SIZING,
   type PoolConfig,
@@ -19,6 +19,59 @@ import {
   type PoolOrgTaskResult,
   type PoolSize,
 } from './types.js';
+
+// ============================================================================
+// Create Retry Policy
+// ============================================================================
+
+/**
+ * One retryable-error rule for org creation.
+ *
+ * `matches` identifies a specific, known-flaky failure; `maxAttempts`
+ * bounds how many total attempts (including the first) are made before
+ * giving up and reporting it as a normal failure.
+ */
+interface CreateRetryRule {
+  readonly matches: (error: unknown) => boolean;
+  readonly maxAttempts: number;
+}
+
+/**
+ * Error types worth retrying during scratch org creation, with backoff.
+ *
+ * Currently just Salesforce error C-1016 ("We encountered a problem while
+ * attempting to configure and approve the Connected App for your org") —
+ * a known-flaky DevHub-side signup failure, unrelated to the caller's own
+ * auth, that the `@salesforce/core` SDK never retries itself. Add more
+ * rules here as other retryable error types are identified.
+ */
+const CREATE_RETRY_RULES: CreateRetryRule[] = [
+  {
+    matches: error => error instanceof SfError
+      && error.name === 'RemoteOrgSignupFailed'
+      && /Connected App/i.test(error.message),
+    maxAttempts: 3,
+  },
+];
+
+/** Base delay before the first retry; doubles on each subsequent attempt. */
+const RETRY_BASE_DELAY_MS = 5000;
+
+/**
+ * Format a caught error for logging/emission.
+ *
+ * `@salesforce/core` throws named `SfError`s (e.g. `RemoteOrgSignupFailed`)
+ * with an `actions` hint array — plain `error.message` alone drops both,
+ * making otherwise-actionable errors look identical to generic failures.
+ */
+function formatCreateError(error: unknown): string {
+  if (error instanceof SfError) {
+    const hint = error.actions?.length ? ` — ${error.actions.join(' ')}` : '';
+    return `${error.message} [${error.name}]${hint}`;
+  }
+
+  return error instanceof Error ? error.message : String(error);
+}
 
 // ============================================================================
 // Constants
@@ -87,28 +140,6 @@ export interface OrgTaskSummary {
   username: string;
 }
 
-/**
- * Event map for PoolManager. Provides progress tracking during
- * the provisioning lifecycle.
- */
-export interface PoolManagerEvents {
-  'pool:allocation:computed': [payload: {currentAllocation: number; remaining: number; tag: string; toAllocate: number}];
-  'pool:delete:complete': [payload: PoolDeleteResult];
-  'pool:delete:start': [payload: {count: number; tag: string; timestamp: Date}];
-  'pool:org:created': [payload: {alias: string; index: number; timestamp: Date; total: number; username: string}];
-  'pool:org:deleted': [payload: {timestamp: Date; username: string}];
-  'pool:org:discarded': [payload: {reason: string; timestamp: Date; username: string}];
-  'pool:org:failed': [payload: {alias: string; error: string; index: number; timedOut: boolean; timestamp: Date}];
-  'pool:org:validated': [payload: {timestamp: Date; username: string}];
-  'pool:package:complete': [payload: {packageName: string; success: boolean; timestamp: Date; total: number; username: string; version?: string}];
-  'pool:package:start': [payload: {packageName: string; timestamp: Date; total: number; username: string}];
-  'pool:provision:complete': [payload: PoolProvisionResult];
-  'pool:provision:start': [payload: {tag: string; timestamp: Date; toAllocate: number}];
-  'pool:task:complete': [payload: {success: boolean; task: string; timestamp: Date; username: string}];
-  'pool:task:error': [payload: {error: string; task: string; timestamp: Date; username: string}];
-  'pool:task:start': [payload: {task: string; timestamp: Date; username: string}];
-}
-
 // ============================================================================
 // PoolManager
 // ============================================================================
@@ -117,6 +148,8 @@ export interface PoolManagerEvents {
  * Options for constructing a `PoolManager`.
  */
 export interface PoolManagerOptions {
+  /** Event bus for progress tracking (created internally if omitted) */
+  eventBus?: PoolEventBus;
   /** Logger for the pool manager itself */
   logger?: Logger;
   /** Factory for creating per-org scoped loggers during task execution */
@@ -148,20 +181,22 @@ export interface PoolManagerOptions {
  *   poolInfo: poolInfoProvider,
  *   tasks: [deployTask, scriptTask],
  * });
- * manager.on('pool:org:created', (p) => console.log(`Created ${p.alias}`));
+ * manager.events.on('pool:org:created', (p) => console.log(`Created ${p.alias}`));
  *
  * const result = await manager.provision(poolConfig);
  * console.log(`${result.succeeded.length} orgs provisioned`);
  * ```
  */
-export default class PoolManager extends EventEmitter<PoolManagerEvents> {
+export default class PoolManager {
+  /** Event bus for progress tracking during the provisioning lifecycle. */
+  public readonly bus: PoolEventBus;
   private readonly logger?: Logger;
   private readonly loggerFactory?: PoolOrgLoggerFactory;
   private readonly provider: OrgProvider;
   private readonly tasks: PoolOrgTask[];
 
   constructor(options: PoolManagerOptions) {
-    super();
+    this.bus = options.eventBus ?? new PoolEventBus();
     this.loggerFactory = options.loggerFactory;
     this.logger = options.logger;
     this.provider = options.provider;
@@ -182,7 +217,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
 
     const allocation = computeOrgAllocation(remaining, activeCount, config.sizing);
 
-    this.emit('pool:allocation:computed', {
+    this.bus.emit('pool:allocation:computed', {
       currentAllocation: activeCount,
       remaining,
       tag,
@@ -229,7 +264,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       };
     }
 
-    this.emit('pool:delete:start', {
+    this.bus.emit('pool:delete:start', {
       count: orgs.length,
       tag,
       timestamp: new Date(),
@@ -252,7 +287,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
         await this.provider.deleteOrgs([org.recordId]);
         deleted.push(org);
 
-        this.emit('pool:org:deleted', {
+        this.bus.emit('pool:org:deleted', {
           timestamp: new Date(),
           username: org.auth.username!,
         });
@@ -271,7 +306,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       tag,
     };
 
-    this.emit('pool:delete:complete', result);
+    this.bus.emit('pool:delete:complete', result);
     this.logger?.info(`Deleted ${deleted.length} org(s) from pool "${tag}" in ${elapsedMs}ms`);
 
     return result;
@@ -318,7 +353,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       return this.handleZeroAllocation(tag, config, allocation, startTime);
     }
 
-    this.emit('pool:provision:start', {
+    this.bus.emit('pool:provision:start', {
       tag,
       timestamp: new Date(),
       toAllocate: allocation.toAllocate,
@@ -393,7 +428,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       taskResults,
     };
 
-    this.emit('pool:provision:complete', result);
+    this.bus.emit('pool:provision:complete', result);
     return result;
   }
 
@@ -467,7 +502,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
         // eslint-disable-next-line no-await-in-loop -- sequential deletion avoids overwhelming the DevHub API
         await this.provider.deleteOrgs([org.recordId!]);
 
-        this.emit('pool:org:deleted', {
+        this.bus.emit('pool:org:deleted', {
           timestamp: new Date(),
           username: org.auth.username!,
         });
@@ -544,6 +579,9 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
   /**
    * Create a single org and return the result.
    * Never throws — returns an `OrgProvisionResult` with error info on failure.
+   *
+   * Retries in place (with backoff) when the failure matches a
+   * {@link CREATE_RETRY_RULES} rule; otherwise fails on the first attempt.
    */
   private async createSingleOrg(
     tag: string,
@@ -552,41 +590,66 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
     index: number,
     total: number,
   ): Promise<OrgProvisionResult> {
-    try {
-      const createOptions = this.buildCreateOptions(config, alias);
-      const org = await this.provider.createOrg(createOptions);
+    const createOptions = this.buildCreateOptions(config, alias);
 
-      org.pool = {stage: PoolStage.InProgress, tag, timestamp: Date.now()};
+    for (let attempt = 1; ; attempt++) {
+      try {
+        // eslint-disable-next-line no-await-in-loop -- retries of the same org creation are intentionally sequential
+        const org = await this.provider.createOrg(createOptions);
 
-      this.emit('pool:org:created', {
-        alias,
-        index: index + 1,
-        timestamp: new Date(),
-        total,
-        username: org.auth.username!,
-      });
+        org.pool = {stage: PoolStage.InProgress, tag, timestamp: Date.now()};
 
-      return {org};
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const timedOut = message.includes('timed out');
-      const {waitMinutes} = config;
+        this.bus.emit('pool:org:created', {
+          alias,
+          index: index + 1,
+          timestamp: new Date(),
+          total,
+          username: org.auth.username!,
+        });
 
-      this.emit('pool:org:failed', {
-        alias,
-        error: message,
-        index: index + 1,
-        timedOut,
-        timestamp: new Date(),
-      });
+        return {org};
+      } catch (error) {
+        const message = formatCreateError(error);
+        const rule = CREATE_RETRY_RULES.find(r => r.matches(error));
 
-      if (timedOut) {
-        this.logger?.warn(`Org "${alias}" creation timed out — consider increasing waitMinutes (current: ${waitMinutes ?? 6}min)`);
-      } else {
-        this.logger?.warn(`Org "${alias}" creation failed: ${message}`);
+        if (rule && attempt < rule.maxAttempts) {
+          const delayMs = RETRY_BASE_DELAY_MS * (2 ** (attempt - 1));
+
+          this.bus.emit('pool:org:retrying', {
+            alias,
+            attempt,
+            error: message,
+            maxAttempts: rule.maxAttempts,
+            timestamp: new Date(),
+          });
+          this.logger?.warn(`Org "${alias}" creation failed (attempt ${attempt}/${rule.maxAttempts}) — retrying in ${delayMs}ms: ${message}`);
+
+          // eslint-disable-next-line no-await-in-loop -- backoff between retries of the same org is intentionally sequential
+          await new Promise(resolve => {
+            setTimeout(resolve, delayMs);
+          });
+          continue;
+        }
+
+        const timedOut = message.includes('timed out');
+        const {waitMinutes} = config;
+
+        this.bus.emit('pool:org:failed', {
+          alias,
+          error: message,
+          index: index + 1,
+          timedOut,
+          timestamp: new Date(),
+        });
+
+        if (timedOut) {
+          this.logger?.warn(`Org "${alias}" creation timed out — consider increasing waitMinutes (current: ${waitMinutes ?? 6}min)`);
+        } else {
+          this.logger?.warn(`Org "${alias}" creation failed: ${message}`);
+        }
+
+        return {error: message, timedOut};
       }
-
-      return {error: message, timedOut};
     }
   }
 
@@ -749,7 +812,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
         continue;
       }
 
-      this.emit('pool:task:start', {
+      this.bus.emit('pool:task:start', {
         task: task.name,
         timestamp: new Date(),
         username: org.auth.username!,
@@ -760,14 +823,14 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       results.push({error: taskResult.error, success: taskResult.success, task: task.name});
 
       if (taskResult.success) {
-        this.emit('pool:task:complete', {
+        this.bus.emit('pool:task:complete', {
           success: true,
           task: task.name,
           timestamp: new Date(),
           username: org.auth.username!,
         });
       } else {
-        this.emit('pool:task:error', {
+        this.bus.emit('pool:task:error', {
           error: taskResult.error ?? 'Unknown error',
           task: task.name,
           timestamp: new Date(),
@@ -810,14 +873,14 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       const isActive = await this.provider.isOrgActive(org.auth.username!);
 
       if (isActive) {
-        this.emit('pool:org:validated', {
+        this.bus.emit('pool:org:validated', {
           timestamp: new Date(),
           username: org.auth.username!,
         });
         return org;
       }
 
-      this.emit('pool:org:discarded', {
+      this.bus.emit('pool:org:discarded', {
         reason: 'Org has status "Deleted"',
         timestamp: new Date(),
         username: org.auth.username!,
@@ -825,7 +888,7 @@ export default class PoolManager extends EventEmitter<PoolManagerEvents> {
       this.logger?.warn(`Discarding org ${org.auth.username} — reported as deleted`);
       return null;
     } catch (error) {
-      this.emit('pool:org:discarded', {
+      this.bus.emit('pool:org:discarded', {
         reason: error instanceof Error ? error.message : String(error),
         timestamp: new Date(),
         username: org.auth.username!,
