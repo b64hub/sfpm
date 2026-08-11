@@ -23,20 +23,24 @@ vi.mock('@actions/github', () => ({
   },
 }));
 
-vi.mock('@b64hub/sfpm-core', () => ({
-  BuildOrchestrator: vi.fn(),
-  GitService: {
-    initialize: vi.fn(),
-  },
-  LifecycleEngine: {
-    stage: vi.fn(),
-  },
-  ProjectService: {
-    getInstance: vi.fn(),
-  },
-  ValidationEventBus: vi.fn(),
-  ValidationResolver: vi.fn(),
-}));
+vi.mock('@b64hub/sfpm-core', async importOriginal => {
+  const actual = await importOriginal<typeof import('@b64hub/sfpm-core')>();
+  return {
+    ...actual,
+    BuildOrchestrator: vi.fn(),
+    GitService: {
+      initialize: vi.fn(),
+    },
+    LifecycleEngine: {
+      stage: vi.fn(),
+    },
+    ProjectService: {
+      getInstance: vi.fn(),
+    },
+    ValidationEventBus: vi.fn(),
+    ValidationResolver: vi.fn(),
+  };
+});
 vi.mock('@b64hub/sfpm-orgs');
 vi.mock('@b64hub/sfpm-telemetry');
 vi.mock('@b64hub/sfpm-validation', () => ({

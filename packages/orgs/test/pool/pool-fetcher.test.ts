@@ -186,9 +186,9 @@ describe('PoolFetcher', () => {
       const fetcher = new PoolFetcher(orgSource as any);
 
       const events: string[] = [];
-      fetcher.on('pool:fetch:start', () => events.push('start'));
-      fetcher.on('pool:fetch:claimed', () => events.push('claimed'));
-      fetcher.on('pool:fetch:complete', () => events.push('complete'));
+      fetcher.bus.on('pool:fetch:start', () => events.push('start'));
+      fetcher.bus.on('pool:fetch:claimed', () => events.push('claimed'));
+      fetcher.bus.on('pool:fetch:complete', () => events.push('complete'));
 
       await fetcher.fetch('test-pool');
 
@@ -265,8 +265,8 @@ describe('PoolFetcher', () => {
       const fetcher = new PoolFetcher(orgSource as any);
 
       const events: string[] = [];
-      fetcher.on('pool:fetch:start', () => events.push('start'));
-      fetcher.on('pool:fetch:complete', () => events.push('complete'));
+      fetcher.bus.on('pool:fetch:start', () => events.push('start'));
+      fetcher.bus.on('pool:fetch:complete', () => events.push('complete'));
 
       await fetcher.fetchAll('test-pool');
 

@@ -20,43 +20,6 @@ import {
   type PoolSize,
 } from './types.js';
 
-// ============================================================================
-// Create Retry Policy
-// ============================================================================
-
-/**
- * One retryable-error rule for org creation.
- *
- * `matches` identifies a specific, known-flaky failure; `maxAttempts`
- * bounds how many total attempts (including the first) are made before
- * giving up and reporting it as a normal failure.
- */
-interface CreateRetryRule {
-  readonly matches: (error: unknown) => boolean;
-  readonly maxAttempts: number;
-}
-
-/**
- * Error types worth retrying during scratch org creation, with backoff.
- *
- * Currently just Salesforce error C-1016 ("We encountered a problem while
- * attempting to configure and approve the Connected App for your org") —
- * a known-flaky DevHub-side signup failure, unrelated to the caller's own
- * auth, that the `@salesforce/core` SDK never retries itself. Add more
- * rules here as other retryable error types are identified.
- */
-const CREATE_RETRY_RULES: CreateRetryRule[] = [
-  {
-    matches: error => error instanceof SfError
-      && error.name === 'RemoteOrgSignupFailed'
-      && /Connected App/i.test(error.message),
-    maxAttempts: 3,
-  },
-];
-
-/** Base delay before the first retry; doubles on each subsequent attempt. */
-const RETRY_BASE_DELAY_MS = 5000;
-
 /**
  * Format a caught error for logging/emission.
  *
@@ -579,9 +542,6 @@ export default class PoolManager {
   /**
    * Create a single org and return the result.
    * Never throws — returns an `OrgProvisionResult` with error info on failure.
-   *
-   * Retries in place (with backoff) when the failure matches a
-   * {@link CREATE_RETRY_RULES} rule; otherwise fails on the first attempt.
    */
   private async createSingleOrg(
     tag: string,
@@ -590,66 +550,41 @@ export default class PoolManager {
     index: number,
     total: number,
   ): Promise<OrgProvisionResult> {
-    const createOptions = this.buildCreateOptions(config, alias);
+    try {
+      const createOptions = this.buildCreateOptions(config, alias);
+      const org = await this.provider.createOrg(createOptions);
 
-    for (let attempt = 1; ; attempt++) {
-      try {
-        // eslint-disable-next-line no-await-in-loop -- retries of the same org creation are intentionally sequential
-        const org = await this.provider.createOrg(createOptions);
+      org.pool = {stage: PoolStage.InProgress, tag, timestamp: Date.now()};
 
-        org.pool = {stage: PoolStage.InProgress, tag, timestamp: Date.now()};
+      this.bus.emit('pool:org:created', {
+        alias,
+        index: index + 1,
+        timestamp: new Date(),
+        total,
+        username: org.auth.username!,
+      });
 
-        this.bus.emit('pool:org:created', {
-          alias,
-          index: index + 1,
-          timestamp: new Date(),
-          total,
-          username: org.auth.username!,
-        });
+      return {org};
+    } catch (error) {
+      const message = formatCreateError(error);
+      const timedOut = message.includes('timed out');
+      const {waitMinutes} = config;
 
-        return {org};
-      } catch (error) {
-        const message = formatCreateError(error);
-        const rule = CREATE_RETRY_RULES.find(r => r.matches(error));
+      this.bus.emit('pool:org:failed', {
+        alias,
+        error: message,
+        index: index + 1,
+        timedOut,
+        timestamp: new Date(),
+      });
 
-        if (rule && attempt < rule.maxAttempts) {
-          const delayMs = RETRY_BASE_DELAY_MS * (2 ** (attempt - 1));
-
-          this.bus.emit('pool:org:retrying', {
-            alias,
-            attempt,
-            error: message,
-            maxAttempts: rule.maxAttempts,
-            timestamp: new Date(),
-          });
-          this.logger?.warn(`Org "${alias}" creation failed (attempt ${attempt}/${rule.maxAttempts}) — retrying in ${delayMs}ms: ${message}`);
-
-          // eslint-disable-next-line no-await-in-loop -- backoff between retries of the same org is intentionally sequential
-          await new Promise(resolve => {
-            setTimeout(resolve, delayMs);
-          });
-          continue;
-        }
-
-        const timedOut = message.includes('timed out');
-        const {waitMinutes} = config;
-
-        this.bus.emit('pool:org:failed', {
-          alias,
-          error: message,
-          index: index + 1,
-          timedOut,
-          timestamp: new Date(),
-        });
-
-        if (timedOut) {
-          this.logger?.warn(`Org "${alias}" creation timed out — consider increasing waitMinutes (current: ${waitMinutes ?? 6}min)`);
-        } else {
-          this.logger?.warn(`Org "${alias}" creation failed: ${message}`);
-        }
-
-        return {error: message, timedOut};
+      if (timedOut) {
+        this.logger?.warn(`Org "${alias}" creation timed out — consider increasing waitMinutes (current: ${waitMinutes ?? 6}min)`);
+      } else {
+        this.logger?.warn(`Org "${alias}" creation failed: ${message}`);
       }
+
+      return {error: message, timedOut};
     }
   }
 

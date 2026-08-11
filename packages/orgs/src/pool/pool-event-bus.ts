@@ -14,8 +14,6 @@ export interface PoolEvents {
   'pool:org:deleted': [payload: {timestamp: Date; username: string}];
   'pool:org:discarded': [payload: {reason: string; timestamp: Date; username: string}];
   'pool:org:failed': [payload: {alias: string; error: string; index: number; timedOut: boolean; timestamp: Date}];
-  /** Emitted before a backoff-delayed retry of a single org creation. */
-  'pool:org:retrying': [payload: {alias: string; attempt: number; error: string; maxAttempts: number; timestamp: Date}];
   'pool:org:validated': [payload: {timestamp: Date; username: string}];
   'pool:package:complete': [payload: {packageName: string; success: boolean; timestamp: Date; total: number; username: string; version?: string}];
   'pool:package:start': [payload: {packageName: string; timestamp: Date; total: number; username: string}];

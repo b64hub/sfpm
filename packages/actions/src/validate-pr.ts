@@ -446,7 +446,7 @@ async function fetchOrgFromPool(
   const {authenticator, fetcher} = createPoolServices({devhub, logger, poolType});
 
   const renderer = new ActionsProgressRenderer(logger);
-  renderer.attachToPoolFetcher(fetcher);
+  renderer.attachToPoolFetcher(fetcher.bus);
 
   const org = await fetcher.fetch(poolTag, {
     postClaimActions: [org => authenticator.login(org)],
