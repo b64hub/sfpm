@@ -276,7 +276,8 @@ async function resolveChangedPackageNames(
     const changedPaths = await gitService.getChangedPackagePaths(baseRef, definitions.map(def => def.path));
 
     return changedPaths.map(p => pathToName.get(p))
-    .filter(Boolean);
+    // eslint-disable-next-line unicorn/prefer-native-coercion-functions -- `.filter(Boolean)` doesn't narrow (string | undefined)[] to string[] for the tsc build
+    .filter((name): name is string => Boolean(name));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn(`Failed to detect changed packages against "${baseRef}" (${message}); validating all packages. Ensure the checkout step uses fetch-depth: 0 (or otherwise fetches the PR base ref).`);
