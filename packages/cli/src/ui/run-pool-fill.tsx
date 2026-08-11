@@ -1,4 +1,4 @@
-import type {PoolManager} from '@b64hub/sfpm-orgs';
+import type {PoolEventBus} from '@b64hub/sfpm-orgs';
 import type {Instance} from 'ink';
 
 import EventEmitter from 'node:events';
@@ -14,8 +14,8 @@ import {PoolFillApp} from './apps/PoolFillApp.js';
  * and renders the PoolFillApp. The app self-exits when pool:provision:complete
  * is received, so call `await instance.waitUntilExit()` after `manager.provision()`.
  */
-export function renderPoolFill(manager: PoolManager, devhubAlias: string): Instance {
+export function renderPoolFill(eventBus: PoolEventBus, devhubAlias: string): Instance {
   const uiBus = new EventEmitter();
-  attachPoolFillBridge(manager, uiBus);
+  attachPoolFillBridge(eventBus, uiBus);
   return render(<PoolFillApp bus={uiBus} devhubAlias={devhubAlias} />);
 }

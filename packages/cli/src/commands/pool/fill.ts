@@ -96,7 +96,7 @@ export default class PoolFill extends SfpmCommand {
         packageStart: p => manager!.bus.emit('pool:package:start',    {...p, timestamp: new Date()}),
       });
 
-      const inkInstance = renderPoolFill(manager!, alias);
+      const inkInstance = renderPoolFill(manager!.bus, alias);
       try {
         result = await manager!.provision(flags.tag as string, config);
         await inkInstance.waitUntilExit();
