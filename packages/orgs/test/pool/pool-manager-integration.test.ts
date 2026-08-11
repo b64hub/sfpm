@@ -18,6 +18,7 @@ import PoolManager from '../../src/pool/pool-manager.js';
 function createMockProvider(): {[K in keyof OrgProvider]: ReturnType<typeof vi.fn>} {
   return {
     claimOrg: vi.fn(),
+    cleanupOrgs: vi.fn(),
     createOrg: vi.fn(),
     deleteOrgs: vi.fn(),
     getActiveCountByTag: vi.fn(),
@@ -270,6 +271,25 @@ describe('PoolManager', () => {
       const config = createPoolConfig({sizing: {batch: 5, max: 1}});
 
       await expect(manager.provision('test-pool', config)).rejects.toThrow('All provisioned orgs were found to be inactive');
+    });
+
+    it('should clean up created orgs when registerInPool fails, then rethrow', async () => {
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
+
+      const org = createScratchOrg({username: 'unregistered@scratch.org'});
+      provider.createOrg.mockResolvedValue(org);
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockRejectedValue(new Error('SOQL query failed'));
+      provider.cleanupOrgs.mockResolvedValue(undefined);
+
+      const manager = new PoolManager({provider: provider as any});
+      const config = createPoolConfig({sizing: {batch: 5, max: 1}});
+
+      await expect(manager.provision('test-pool', config)).rejects.toThrow('Failed to register provisioned orgs in pool "test-pool"');
+
+      expect(provider.cleanupOrgs).toHaveBeenCalledWith([expect.objectContaining({auth: expect.objectContaining({username: 'unregistered@scratch.org'})})]);
+      expect(provider.updatePoolMetadata).not.toHaveBeenCalled();
     });
 
     it('should register orgs in pool with correct metadata', async () => {

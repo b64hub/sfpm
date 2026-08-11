@@ -1,8 +1,11 @@
 import * as core from '@actions/core';
 import {loadSfpmConfig} from '@b64hub/sfpm-core';
 import {
+  ArtifactPackageInstallTask,
   createPoolServices,
+  DeploymentTask,
   type PoolConfig,
+  type PoolOrgTask,
   type PoolProvisionResult,
 } from '@b64hub/sfpm-orgs';
 import {Org, OrgTypes} from '@salesforce/core';
@@ -60,9 +63,11 @@ export interface ProvisionPoolResult {
  *
  * Workflow:
  * 1. Connect to the DevHub org
- * 2. Validate hub prerequisites
- * 3. Build pool configuration
- * 4. Provision orgs via PoolManager
+ * 2. Build pool config and provisioning tasks
+ * 3. Validate hub prerequisites
+ * 4. Provision orgs via PoolManager (creates orgs, then runs tasks — e.g.
+ *    installing the artifact-tracking package and deploying project
+ *    packages — on each before marking it Available)
  * 5. Report results via GitHub Actions outputs
  */
 export async function provisionPool(options: ProvisionPoolOptions): Promise<ProvisionPoolResult> {
@@ -84,37 +89,43 @@ export async function provisionPool(options: ProvisionPoolOptions): Promise<Prov
   logger.info('Connecting to hub org...');
   const devhub = await Org.create({aliasOrUsername: options.devhubUsername});
 
+  // ------------------------------------------------------------------
+  // 2. Build pool config and provisioning tasks
+  // ------------------------------------------------------------------
+  const config = buildPoolConfig(options, poolType, projectDir, poolConfig);
+  const tasks = buildTasks(config, devhub, projectDir);
+
   const {manager} = createPoolServices({
     devhub,
     logger,
     poolType,
+    tasks,
   });
 
   logger.info('Connected to hub org');
 
   // ------------------------------------------------------------------
-  // 2. Attach progress renderer
+  // 3. Attach progress renderer
   // ------------------------------------------------------------------
   const renderer = new ActionsProgressRenderer(logger);
-  renderer.attachToManager(manager);
+  renderer.attachToManager(manager.bus);
 
   // ------------------------------------------------------------------
-  // 3. Validate prerequisites
+  // 4. Validate prerequisites
   // ------------------------------------------------------------------
   logger.info('Validating hub prerequisites...');
   await manager.validatePrerequisites();
   logger.info('Hub prerequisites validated');
 
   // ------------------------------------------------------------------
-  // 4. Build config and provision
+  // 5. Provision
   // ------------------------------------------------------------------
-  const config = buildPoolConfig(options, poolType, projectDir, poolConfig);
   const provisionResult = await manager.provision(options.tag, config);
 
   renderer.printSummary();
 
   // ------------------------------------------------------------------
-  // 5. Set outputs and return result
+  // 6. Set outputs and return result
   // ------------------------------------------------------------------
   const duration = Date.now() - startTime;
   const result: ProvisionPoolResult = {
@@ -186,4 +197,27 @@ function setActionOutputs(result: ProvisionPoolResult, provisionResult: PoolProv
   core.setOutput('duration', String(result.duration));
   core.setOutput('result', JSON.stringify(result));
   core.setOutput('org-usernames', provisionResult.succeeded.map(o => o.auth.username).join(','));
+}
+
+/**
+ * Build the pool org tasks that run against each provisioned org before
+ * it's marked Available — mirrors `PoolFill.buildTasks()` in the CLI so
+ * both entry points deploy project packages to freshly provisioned orgs.
+ */
+function buildTasks(config: PoolConfig, devhub: Org, projectDir: string): PoolOrgTask[] {
+  const tasks: PoolOrgTask[] = [];
+
+  // Scratch orgs need the artifact tracking package installed first
+  if (config.type === OrgTypes.Scratch) {
+    tasks.push(new ArtifactPackageInstallTask({devhub}));
+  }
+
+  // Deploy packages to the provisioned org
+  tasks.push(new DeploymentTask({
+    continueOnError: config.deployment?.continueOnError ?? true,
+    testLevel: config.deployment?.testLevel,
+    workingDirectory: projectDir,
+  }));
+
+  return tasks;
 }

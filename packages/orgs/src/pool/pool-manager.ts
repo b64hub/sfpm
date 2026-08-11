@@ -355,7 +355,19 @@ export default class PoolManager {
     }
 
     // 4. Fetch record IDs and register in pool
-    const registeredOrgs = await this.registerInPool(validOrgs, tag);
+    let registeredOrgs: PoolOrg[];
+    try {
+      registeredOrgs = await this.registerInPool(validOrgs, tag);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger?.warn(`Failed to register ${validOrgs.length} org(s) in pool "${tag}" — cleaning up: ${message}`);
+      await this.cleanupOrphanedOrgs(validOrgs);
+
+      throw new OrgError('create', `Failed to register provisioned orgs in pool "${tag}": ${message}`, {
+        cause: error instanceof Error ? error : undefined,
+        context: {tag},
+      });
+    }
 
     // 5. Clean up orgs that were created but couldn't be registered
     const orphanedOrgs = validOrgs.filter(org => !org.recordId);
