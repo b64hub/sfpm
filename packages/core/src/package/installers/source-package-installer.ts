@@ -7,8 +7,9 @@ import {MetadataDeployService} from '../../tooling/metadata-deploy-service.js';
 import Logger from '../../types/logger.js';
 import {PackageType} from '../../types/package.js';
 import {resolveOrgType} from '../../utils/org-utils.js';
+import {OrgAliasResolution} from '../org-alias-resolver.js';
 import PackageManager from '../package-manager.js';
-import {SfpmMetadataPackage} from '../sfpm-package.js';
+import SfpmPackage, {isOrgAliasable, SfpmMetadataPackage} from '../sfpm-package.js';
 import {
   type InstallCheckResult, Installer, type InstallerResult, RegisterInstaller,
 } from './installer-registry.js';
@@ -16,6 +17,13 @@ import {
 export interface SourcePackageInstallerOptions {
   /** Salesforce test level for the deployment */
   testLevel?: string;
+}
+
+async function resolveOrgAlias(sfpmPackage: SfpmPackage, targetOrg: Org): Promise<OrgAliasResolution | undefined> {
+  if (!isOrgAliasable(sfpmPackage) || !sfpmPackage.isOrgAliased) return;
+
+  const resolution = await sfpmPackage.resolveOrgAlias(targetOrg.getUsername()!);
+  return resolution;
 }
 
 /**
@@ -66,6 +74,7 @@ export default class SourcePackageInstaller implements Installer {
   public async run(): Promise<InstallerResult> {
     this.requireTargetOrg();
 
+    await resolveOrgAlias(this.sfpmPackage, this.targetOrg!);
     const {componentSet} = this.sfpmPackage;
     // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain -- checked in requireTargetOrg()
     const username = this.targetOrg?.getUsername()!;
