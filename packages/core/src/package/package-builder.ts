@@ -68,6 +68,20 @@ function resolveModeConfig(validation?: ValidationLevel): ModeConfig {
 }
 
 /**
+ * Result of a single {@link PackageBuilder.build} call.
+ *
+ * `skipped` is always explicit here rather than inferred from `pendingValidation`
+ * being absent — a successful build with no pending validation (e.g. a plain
+ * source package) also has no `pendingValidation`, so the two cases are not
+ * distinguishable by presence/absence alone.
+ */
+export interface PackageBuildResult {
+  pendingValidation?: PendingValidationDescriptor;
+  skipped: boolean;
+  skipReason?: 'empty-package' | 'no-changes';
+}
+
+/**
  * Orchestrator for package builds.
  *
  * Manages the full build lifecycle:
@@ -77,16 +91,20 @@ function resolveModeConfig(validation?: ValidationLevel): ModeConfig {
  * 4. Run pre-build hooks
  * 5. Execute the builder (via {@link builderFactory})
  * 6. Run post-build hooks
+ *
+ * Holds no per-call mutable state — safe to construct once and reuse across
+ * concurrent {@link build} calls for different packages. Each call computes
+ * its own child logger, event sink, and effective options locally and
+ * threads them through explicitly, rather than storing them on the instance.
  */
 export {PackageBuilder};
 export default class PackageBuilder {
   private buildOrg?: BuildOrg;
   private bus?: BuildEventBus;
   private localValidator?: LocalValidator;
-  private logger?: Logger;
   private options: BuildOptions;
   private provider: ProjectDefinitionProvider;
-  private sink?: BuildEventSink;
+  private readonly rootLogger?: Logger;
 
   constructor(
     provider: ProjectDefinitionProvider,
@@ -99,7 +117,7 @@ export default class PackageBuilder {
     this.buildOrg = buildOrg;
     this.bus = bus;
     this.localValidator = localValidator;
-    this.logger = logger;
+    this.rootLogger = logger;
     this.options = options || {};
     this.provider = provider;
   }
@@ -107,32 +125,18 @@ export default class PackageBuilder {
   /**
    * Build a single package by name.
    */
-  public async build(packageName: string): Promise<PendingValidationDescriptor | undefined> {
-    const packageFactory = new PackageFactory(this.provider);
-    const sfpmPackage = packageFactory.createFromName(packageName);
-
-    this.sink = this.bus?.forPackage(sfpmPackage.name);
-
-    this.sink?.start({
-      buildNumber: this.options.buildNumber,
-      packageType: sfpmPackage.type as PackageType,
-      version: sfpmPackage.version,
-    });
-
-    this.handleBuildConfiguration(sfpmPackage);
-
-    return this.runBuilder(sfpmPackage);
+  public async build(packageName: string): Promise<PackageBuildResult> {
+    return this.execute(packageName);
   }
 
-  public async dryRun(packageName: string): Promise<PendingValidationDescriptor | undefined> {
-    this.options.validation = 'local';
-    return this.build(packageName);
+  public async dryRun(packageName: string): Promise<PackageBuildResult> {
+    return this.execute(packageName, {validation: 'local'});
   }
 
-  public async runAnalyzer(sfpmPackage: SfpmPackage, analyzer: PackageAnalyzer): Promise<{name: string; success: boolean}> {
+  public async runAnalyzer(sfpmPackage: SfpmPackage, analyzer: PackageAnalyzer, sink?: BuildEventSink): Promise<{name: string; success: boolean}> {
     const analyzerName = analyzer.name;
 
-    this.sink?.analyzerStart({
+    sink?.analyzerStart({
       analyzerName,
     });
 
@@ -142,13 +146,13 @@ export default class PackageBuilder {
         sfpmPackage.updateContent(metadataContribution);
       }
 
-      this.sink?.analyzerComplete({
+      sink?.analyzerComplete({
         analyzerName,
       });
 
       return {name: analyzerName, success: true};
     } catch (error) {
-      this.sink?.analyzerComplete({
+      sink?.analyzerComplete({
         analyzerName,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -158,38 +162,38 @@ export default class PackageBuilder {
     }
   }
 
-  public async runAnalyzers(sfpmPackage: SfpmPackage): Promise<void> {
+  public async runAnalyzers(sfpmPackage: SfpmPackage, logger?: Logger, sink?: BuildEventSink): Promise<void> {
     if (sfpmPackage.type === PackageType.Data) {
       return;
     }
 
-    const analyzers = AnalyzerRegistry.getAnalyzers(this.logger);
+    const analyzers = AnalyzerRegistry.getAnalyzers(logger);
     const enabledAnalyzers = analyzers.filter(a => a.isEnabled(sfpmPackage));
 
-    this.sink?.analyzersStart({
+    sink?.analyzersStart({
       analyzerCount: enabledAnalyzers.length,
     });
 
     try {
-      await Promise.all(enabledAnalyzers.map(async analyzer => this.runAnalyzer(sfpmPackage, analyzer)));
+      await Promise.all(enabledAnalyzers.map(async analyzer => this.runAnalyzer(sfpmPackage, analyzer, sink)));
 
       // Mark analyzed so ensureAnalyzed() is a no-op for deploy/install paths
       if (sfpmPackage instanceof SfpmMetadataPackage) {
         sfpmPackage.markAnalyzed();
       }
 
-      this.sink?.analyzersComplete({
+      sink?.analyzersComplete({
         completedCount: enabledAnalyzers.length,
       });
     } catch (error: any) {
-      this.sink?.error({
+      sink?.error({
         error,
         phase: 'analysis',
       });
       // One log line per item when the failure has a structured breakdown —
       // grep-able individually, instead of one giant joined-string entry.
       for (const detail of extractErrorDetails(error) ?? []) {
-        this.logger?.error(`${detail.label}: ${detail.message}`);
+        logger?.error(`${detail.label}: ${detail.message}`);
       }
 
       // Single choke point: every error escaping build() is guaranteed to be
@@ -239,28 +243,55 @@ export default class PackageBuilder {
   private async checkSourceHash(
     sfpmPackage: SfpmMetadataPackage,
     repo: ArtifactRepository,
+    logger?: Logger,
   ): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
     const currentSourceHash = await SourceHasher.calculate(sfpmPackage);
-    this.logger?.debug(`Source hash: ${currentSourceHash}`);
+    logger?.debug(`Source hash: ${currentSourceHash}`);
 
     const match = await repo.checkSourceHash(currentSourceHash);
     if (!match) {
-      this.logger?.info('Source changes detected, proceeding with build');
+      logger?.info('Source changes detected, proceeding with build');
     }
 
     return match;
   }
 
   /**
+   * Compute the effective (possibly overridden) options for a build call,
+   * compute the per-package child logger, and run the pipeline. Neither the
+   * override nor the child logger are ever written back onto the instance —
+   * this keeps the instance safe to reuse across concurrent builds.
+   */
+  private async execute(packageName: string, optionsOverride?: Partial<BuildOptions>): Promise<PackageBuildResult> {
+    const options: BuildOptions = optionsOverride ? {...this.options, ...optionsOverride} : this.options;
+    const logger = this.rootLogger?.child?.({package: packageName}) ?? this.rootLogger;
+
+    const packageFactory = new PackageFactory(this.provider);
+    const sfpmPackage = packageFactory.createFromName(packageName);
+
+    const sink = this.bus?.forPackage(sfpmPackage.name);
+
+    sink?.start({
+      buildNumber: options.buildNumber,
+      packageType: sfpmPackage.type as PackageType,
+      version: sfpmPackage.version,
+    });
+
+    this.handleBuildConfiguration(sfpmPackage, options, logger);
+
+    return this.runBuilder(sfpmPackage, options, logger, sink);
+  }
+
+  /**
    * Merge package definition build options and assign build number.
    */
-  private handleBuildConfiguration(sfpmPackage: SfpmPackage): void {
-    if (this.options.buildNumber) {
-      sfpmPackage.setBuildNumber(this.options.buildNumber);
+  private handleBuildConfiguration(sfpmPackage: SfpmPackage, options: BuildOptions, logger?: Logger): void {
+    if (options.buildNumber) {
+      sfpmPackage.setBuildNumber(options.buildNumber);
     } else if (sfpmPackage.type !== PackageType.Unlocked) {
       const autoBuildNumber = getPipelineRunId() ?? String(Math.floor(Date.now() / 1000));
       sfpmPackage.setBuildNumber(autoBuildNumber);
-      this.logger?.debug(`Auto-assigned build number ${autoBuildNumber} for ${sfpmPackage.name}`);
+      logger?.debug(`Auto-assigned build number ${autoBuildNumber} for ${sfpmPackage.name}`);
     }
   }
 
@@ -274,16 +305,18 @@ export default class PackageBuilder {
   private async manifestSatisfiesBuild(
     sfpmPackage: SfpmPackage,
     repo: ArtifactRepository,
+    options: BuildOptions,
+    logger?: Logger,
   ): Promise<boolean> {
     const needsPackageVersionId = sfpmPackage.type === PackageType.Unlocked
-      && !this.options.unlocked?.sourceOnly
-      && (this.options.validation === 'org' || this.options.validation === 'full' || !this.options.validation);
+      && !options.unlocked?.sourceOnly
+      && (options.validation === 'org' || options.validation === 'full' || !options.validation);
 
     if (!needsPackageVersionId) return true;
 
     const packageVersionId = repo.getPackageVersionId();
     if (!packageVersionId) {
-      this.logger?.info(`Build required for '${sfpmPackage.packageName}': existing build has no packageVersionId`);
+      logger?.info(`Build required for '${sfpmPackage.packageName}': existing build has no packageVersionId`);
       return false;
     }
 
@@ -301,33 +334,37 @@ export default class PackageBuilder {
    *
    * Returns skip info when the build can be skipped, or undefined to proceed.
    */
-  private async needsBuild(sfpmPackage: SfpmPackage): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
+  private async needsBuild(
+    sfpmPackage: SfpmPackage,
+    options: BuildOptions,
+    logger?: Logger,
+  ): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
     if (!(sfpmPackage instanceof SfpmMetadataPackage)) {
       return undefined;
     }
 
     const sourcePath = sfpmPackage.packageDefinition?.path;
     if (!sourcePath) {
-      this.logger?.info('No package definition path, proceeding with build');
+      logger?.info('No package definition path, proceeding with build');
       return undefined;
     }
 
     const packageWorkspacePath = this.provider.getPackageDir(sfpmPackage.name);
     if (!packageWorkspacePath) {
-      this.logger?.info('Could not resolve package workspace path, proceeding with build');
+      logger?.info('Could not resolve package workspace path, proceeding with build');
       return undefined;
     }
 
-    const repo = new ArtifactRepository(packageWorkspacePath, this.logger);
+    const repo = new ArtifactRepository(packageWorkspacePath, logger);
 
     // 1. Check source hash
-    const hashMatch = await this.checkSourceHash(sfpmPackage, repo);
+    const hashMatch = await this.checkSourceHash(sfpmPackage, repo, logger);
     if (!hashMatch) return undefined;
 
     // 2. Check build completeness
-    if (!await this.manifestSatisfiesBuild(sfpmPackage, repo)) return undefined;
+    if (!await this.manifestSatisfiesBuild(sfpmPackage, repo, options, logger)) return undefined;
 
-    this.logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected. `
+    logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected. `
       + `Latest version: ${hashMatch.latestVersion}`);
     return hashMatch;
   }
@@ -338,10 +375,11 @@ export default class PackageBuilder {
    * --source-only mode (PR validation without DevHub)
    * @param sfpmPackage
    * @param modeConfig
+   * @param options
    */
-  private resolveBuildAs(sfpmPackage: SfpmPackage, modeConfig: ModeConfig): PackageType | undefined {
+  private resolveBuildAs(sfpmPackage: SfpmPackage, modeConfig: ModeConfig, options: BuildOptions): PackageType | undefined {
     if (sfpmPackage.type !== PackageType.Unlocked) return undefined;
-    if (this.options.unlocked?.sourceOnly) return PackageType.Source;
+    if (options.unlocked?.sourceOnly) return PackageType.Source;
     if (!modeConfig.orgValidation) return PackageType.Source;
     return undefined;
   }
@@ -350,11 +388,11 @@ export default class PackageBuilder {
    * Resolve the target org for the builder based on package type.
    * Returns undefined when org validation is disabled.
    */
-  private resolveTargetOrg(sfpmPackage: SfpmPackage, modeConfig: ModeConfig): Org | undefined {
+  private resolveTargetOrg(sfpmPackage: SfpmPackage, modeConfig: ModeConfig, options: BuildOptions): Org | undefined {
     if (!modeConfig.orgValidation) return undefined;
 
     // Unlocked packages use the DevHub (unless sourceOnly, which uses buildOrg)
-    if (sfpmPackage.type === PackageType.Unlocked && !this.options.unlocked?.sourceOnly) {
+    if (sfpmPackage.type === PackageType.Unlocked && !options.unlocked?.sourceOnly) {
       return this.buildOrg?.devhub;
     }
 
@@ -364,45 +402,50 @@ export default class PackageBuilder {
   /**
    * Unified build flow: stage → check → analyze → hooks → build → hooks.
    */
-  private async runBuilder(sfpmPackage: SfpmPackage): Promise<PendingValidationDescriptor | undefined> {
-    const componentCount = await this.stagePackage(sfpmPackage);
+  private async runBuilder(
+    sfpmPackage: SfpmPackage,
+    options: BuildOptions,
+    logger?: Logger,
+    sink?: BuildEventSink,
+  ): Promise<PackageBuildResult> {
+    const componentCount = await this.stagePackage(sfpmPackage, logger, sink);
 
     if (componentCount === 0) {
-      this.sink?.skip({
+      sink?.skip({
         packageType: sfpmPackage.type as PackageType,
         reason: 'empty-package',
         version: sfpmPackage.version,
       });
-      return undefined;
+      return {skipped: true, skipReason: 'empty-package'};
     }
 
     // Check if build is needed (source hash comparison)
-    if (!this.options.force) {
-      const skip = await this.needsBuild(sfpmPackage);
+    if (!options.force) {
+      const skip = await this.needsBuild(sfpmPackage, options, logger);
       if (skip) {
-        this.sink?.skip({
+        sink?.skip({
           artifactPath: skip.artifactPath,
           latestVersion: skip.latestVersion,
           packageType: sfpmPackage.type as PackageType,
           reason: 'no-changes',
           version: sfpmPackage.version,
         });
-        return undefined;
+        return {skipped: true, skipReason: 'no-changes'};
       }
     }
 
-    const modeConfig = resolveModeConfig(this.options.validation);
+    const modeConfig = resolveModeConfig(options.validation);
 
     // Content analyzers always run — they enrich the package model
     // with data needed for deployment (test classes, FHT fields, etc.)
-    await this.runAnalyzers(sfpmPackage);
+    await this.runAnalyzers(sfpmPackage, logger, sink);
 
     // Run pre-build hooks after analyzers have enriched the package context
-    await this.runLifecycleHooks('pre', sfpmPackage);
+    await this.runLifecycleHooks('pre', sfpmPackage, logger, sink);
 
-    const buildAs = this.resolveBuildAs(sfpmPackage, modeConfig);
+    const buildAs = this.resolveBuildAs(sfpmPackage, modeConfig, options);
 
-    const builderInstance = builderFactory(this.provider, sfpmPackage, this.options, this.logger, this.sink, buildAs as PackageType);
+    const builderInstance = builderFactory(this.provider, sfpmPackage, options, logger, sink, buildAs as PackageType);
 
     // Register local compile check as a pre-build task (best-effort, always warn-only)
     if (this.localValidator && modeConfig.localCompile) {
@@ -427,19 +470,19 @@ export default class PackageBuilder {
     }
 
     // Connect to org if needed
-    const targetOrg = this.resolveTargetOrg(sfpmPackage, modeConfig);
+    const targetOrg = this.resolveTargetOrg(sfpmPackage, modeConfig, options);
     if (targetOrg) {
       await builderInstance.connect(targetOrg);
     }
 
-    this.sink?.builderStart({
+    sink?.builderStart({
       builderName: builderInstance.constructor.name,
       packageType: sfpmPackage.type as PackageType,
     });
 
     try {
       // Run pre-build tasks
-      await this.runTasks(sfpmPackage, builderInstance, 'pre');
+      await this.runTasks(sfpmPackage, builderInstance, 'pre', logger, sink);
 
       // Execute the builder
       const result = await builderInstance.exec();
@@ -449,7 +492,7 @@ export default class PackageBuilder {
 
       if (result.pendingValidation) {
         const pv = result.pendingValidation;
-        this.sink?.validateQueued({
+        sink?.validateQueued({
           operationId: pv.operationType === 'package-version-request'
             ? pv.packageVersionRequestId
             : pv.packageName,
@@ -458,30 +501,30 @@ export default class PackageBuilder {
       }
 
       // Run post-build tasks
-      await this.runTasks(sfpmPackage, builderInstance, 'post');
+      await this.runTasks(sfpmPackage, builderInstance, 'post', logger, sink);
 
-      this.sink?.builderComplete({
+      sink?.builderComplete({
         builderName: builderInstance.constructor.name,
         componentCount,
         packageType: sfpmPackage.type as PackageType,
       });
 
       // Run post-build hooks
-      await this.runLifecycleHooks('post', sfpmPackage);
+      await this.runLifecycleHooks('post', sfpmPackage, logger, sink);
 
-      this.sink?.complete({
+      sink?.complete({
         packageVersionId: result.packageVersionId,
         success: true,
       });
 
-      return result.pendingValidation;
+      return {pendingValidation: result.pendingValidation, skipped: false};
     } catch (error: any) {
-      this.sink?.error({
+      sink?.error({
         error,
         phase: 'build',
       });
       for (const detail of extractErrorDetails(error) ?? []) {
-        this.logger?.error(`${detail.label}: ${detail.message}`);
+        logger?.error(`${detail.label}: ${detail.message}`);
       }
 
       if (error instanceof BuildError) throw error;
@@ -499,12 +542,14 @@ export default class PackageBuilder {
   private async runLifecycleHooks(
     timing: HookTiming,
     sfpmPackage: SfpmPackage,
+    logger?: Logger,
+    sink?: BuildEventSink,
   ): Promise<void> {
     if (!LifecycleEngine.isInitialized()) return;
 
     const lifecycle = LifecycleEngine.getInstance();
     const hookContext: HookContext = {
-      logger: this.logger,
+      logger,
       operation: 'build',
       projectDir: this.provider.projectDir,
       provider: this.provider,
@@ -515,9 +560,9 @@ export default class PackageBuilder {
     };
 
     if (timing === 'pre') {
-      await lifecycle.runBuildPre(hookContext, this.sink);
+      await lifecycle.runBuildPre(hookContext, sink);
     } else {
-      await lifecycle.runBuildPost(hookContext, this.sink);
+      await lifecycle.runBuildPost(hookContext, sink);
     }
   }
 
@@ -528,15 +573,17 @@ export default class PackageBuilder {
     sfpmPackage: SfpmPackage,
     builderInstance: Builder,
     phase: 'post' | 'pre',
+    logger?: Logger,
+    sink?: BuildEventSink,
   ): Promise<void> {
     const registrations = builderInstance.tasks.filter(t => t.phase === phase);
     const taskType = `${phase}-build` as 'post-build' | 'pre-build';
 
     const ctx: BuildTaskContext = {
-      logger: this.logger,
+      logger,
       provider: this.provider,
       sfpmPackage,
-      sink: this.sink,
+      sink,
     };
 
     for (const registration of registrations) {
@@ -545,7 +592,7 @@ export default class PackageBuilder {
 
       // Check runtime precondition
       if (task.canRun && !task.canRun()) {
-        this.sink?.taskSkip({
+        sink?.taskSkip({
           reason: `Precondition not met for task '${taskName}'`,
           taskName,
           taskType,
@@ -553,7 +600,7 @@ export default class PackageBuilder {
         continue;
       }
 
-      this.sink?.taskStart({
+      sink?.taskStart({
         taskName,
         taskType,
       });
@@ -566,14 +613,14 @@ export default class PackageBuilder {
           this.applyEnrichments(sfpmPackage, result.enrichments);
         }
 
-        this.sink?.taskComplete({
+        sink?.taskComplete({
           success: true,
           taskName,
           taskType,
           warnings: result?.warnings,
         });
       } catch (error) {
-        this.sink?.taskComplete({
+        sink?.taskComplete({
           success: false,
           taskName,
           taskType,
@@ -584,8 +631,8 @@ export default class PackageBuilder {
     }
   }
 
-  private async stagePackage(sfpmPackage: SfpmPackage): Promise<number> {
-    this.sink?.stageStart({
+  private async stagePackage(sfpmPackage: SfpmPackage, logger?: Logger, sink?: BuildEventSink): Promise<number> {
+    sink?.stageStart({
       stagingDirectory: this.provider.getPackageBuildDirectory(sfpmPackage.name),
     });
 
@@ -596,7 +643,7 @@ export default class PackageBuilder {
         {
           versionNumber: sfpmPackage.version,
         },
-        this.logger,
+        logger,
       ).assemble();
 
       // Initialise the ComponentSet from staged source so the package model
@@ -608,19 +655,19 @@ export default class PackageBuilder {
         }
       }
 
-      this.sink?.stageComplete({
+      sink?.stageComplete({
         componentCount: assemblyOutput.componentCount || 0,
         stagingDirectory: assemblyOutput.stagingDirectory,
       });
 
       return assemblyOutput.componentCount || 0;
     } catch (error: any) {
-      this.sink?.error({
+      sink?.error({
         error,
         phase: 'staging',
       });
       for (const detail of extractErrorDetails(error) ?? []) {
-        this.logger?.error(`${detail.label}: ${detail.message}`);
+        logger?.error(`${detail.label}: ${detail.message}`);
       }
 
       if (error instanceof BuildError) throw error;

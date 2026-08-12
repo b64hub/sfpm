@@ -11,8 +11,7 @@ import {
   OrchestrationResult,
   PackageResult,
 } from '../events/index.js';
-import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
-import PackageBuilder from '../package/package-builder.js';
+import PackageBuilder, {type PackageBuildResult} from '../package/package-builder.js';
 import ProjectGraph from '../project/project-graph.js';
 import Logger from '../types/logger.js';
 import {
@@ -26,82 +25,33 @@ export type BuildOrchestratorOptions = BuildOptions & OrchestratorOptions;
 /**
  * {@link OrchestrationTask} for package builds.
  *
- * Delegates individual package builds to PackageBuilder.
- * Builders emit events directly on the shared BuildEventBus.
+ * Wraps a single, pre-configured {@link PackageBuilder} shared across every
+ * package in the run — the builder holds no per-call mutable state, so this
+ * is safe under the Orchestrator's intra-level concurrency. `build()` returns
+ * an explicit `skipped` flag, so no event-bus listening is needed here.
  */
 export class BuildOrchestrationTask implements OrchestrationTask<PendingValidationDescriptor> {
-  private readonly buildBus: BuildEventBus;
-  private readonly buildOrg?: BuildOrg;
-  private readonly localValidator?: LocalValidator;
-  private readonly logger?: Logger;
-  private readonly options: BuildOrchestratorOptions;
-  private readonly provider: ProjectDefinitionProvider;
-
-  constructor(
-    provider: ProjectDefinitionProvider,
-    buildOrg: BuildOrg | undefined,
-    options: BuildOrchestratorOptions,
-    logger?: Logger,
-    localValidator?: LocalValidator,
-    buildBus?: BuildEventBus,
-  ) {
-    this.provider = provider;
-    this.buildOrg = buildOrg;
-    this.localValidator = localValidator;
-    this.options = options;
-    this.logger = logger;
-    this.buildBus = buildBus ?? new BuildEventBus();
-  }
+  constructor(public readonly builder: PackageBuilder) {}
 
   async processSinglePackage(
     packageName: string,
     _level: number,
   ): Promise<PackageResult<PendingValidationDescriptor>> {
     const start = Date.now();
-    const pkgLogger = this.logger?.child?.({package: packageName}) ?? this.logger;
-
-    // Check if this package should be skipped for the current lifecycle stage
-    if (LifecycleEngine.isInitialized()) {
-      const lifecycle = LifecycleEngine.getInstance();
-      const packageDefinition = this.provider.getPackageDefinition(packageName);
-      const skipStages = packageDefinition?.packageOptions?.skip ?? [];
-      if (skipStages.includes(lifecycle.stage)) {
-        pkgLogger?.info(`Skipping — stage '${lifecycle.stage}' is in skip list`);
-        return {
-          duration: 0, packageName, skipped: true, success: true,
-        };
-      }
-    }
-
-    const builder = new PackageBuilder(
-      this.provider,
-      this.buildOrg,
-      this.options,
-      pkgLogger,
-      this.localValidator,
-      this.buildBus,
-    );
 
     let success = true;
     let skipped = false;
     let error: string | undefined;
     let pendingValidation: PendingValidationDescriptor | undefined;
 
-    // Detect build-skip via the shared bus
-    const skipHandler = (evt: any) => {
-      if (evt.packageName === packageName) skipped = true;
-    };
-
-    this.buildBus.on('skip', skipHandler);
-
     try {
-      pendingValidation = await builder.build(packageName);
+      const result: PackageBuildResult = await this.builder.build(packageName);
+      skipped = result.skipped;
+      pendingValidation = result.pendingValidation;
     } catch (error_) {
       success = false;
       error = error_ instanceof Error ? error_.message : String(error_);
     }
-
-    this.buildBus.off('skip', skipHandler);
 
     const duration = Date.now() - start;
     return {
@@ -118,7 +68,7 @@ export class BuildOrchestrationTask implements OrchestrationTask<PendingValidati
  * Orchestrates building multiple packages in parallel, respecting dependency order.
  *
  * Composes the shared {@link Orchestrator} engine with a {@link BuildOrchestrationTask}
- * to handle build-specific setup and per-package processing.
+ * wrapping one {@link PackageBuilder} instance, reused across every package in the run.
  *
  * All events are emitted on typed buses:
  * - {@link buildBus} for build domain events (start, complete, stage, analyzer, etc.)
@@ -130,17 +80,34 @@ export class BuildOrchestrator {
   private readonly orchestrator: Orchestrator<PendingValidationDescriptor>;
 
   constructor(
-    provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
-    buildOrg: BuildOrg,
+    builder: PackageBuilder,
+    buildBus: BuildEventBus,
+    options: OrchestratorOptions,
+    logger?: Logger,
+  ) {
+    this.buildBus = buildBus;
+    this.orchestrationBus = new OrchestrationEventBus(randomUUID());
+    const task = new BuildOrchestrationTask(builder);
+    this.orchestrator = new Orchestrator(graph, options, task, logger, this.orchestrationBus);
+  }
+
+  /**
+   * Create an orchestrator for building packages from project source.
+   * Constructs the shared PackageBuilder + BuildEventBus once; every package
+   * in the run is built through that same instance.
+   */
+  static create(
+    provider: ProjectDefinitionProvider,
+    buildOrg: BuildOrg | undefined,
+    graph: ProjectGraph,
     options: BuildOrchestratorOptions,
     logger?: Logger,
     localValidator?: LocalValidator,
-  ) {
-    this.buildBus = new BuildEventBus();
-    this.orchestrationBus = new OrchestrationEventBus(randomUUID());
-    const task = new BuildOrchestrationTask(provider, buildOrg, options, logger, localValidator, this.buildBus);
-    this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: false}, task, logger, this.orchestrationBus);
+  ): BuildOrchestrator {
+    const buildBus = new BuildEventBus();
+    const builder = new PackageBuilder(provider, buildOrg, options, logger, localValidator, buildBus);
+    return new BuildOrchestrator(graph, builder, buildBus, {...options, includeManagedPackages: false}, logger);
   }
 
   /**
