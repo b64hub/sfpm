@@ -1,4 +1,5 @@
 import {Org} from '@salesforce/core';
+import {Package} from '@salesforce/packaging';
 import {randomUUID} from 'node:crypto';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
@@ -13,22 +14,15 @@ import {
   OrchestrationResult,
   PackageResult,
 } from '../events/orchestration-event-bus.js';
-import {LifecycleEngine} from '../lifecycle/lifecycle-engine.js';
 import PackageInstaller, {InstallResult} from '../package/package-installer.js';
 import {ProjectGraph} from '../project/project-graph.js';
+import {ArtifactProvider} from '../project/providers/artifact-provider.js';
+import {WorkspaceProvider} from '../project/providers/workspace-provider.js';
 import Logger from '../types/logger.js';
-import {type InstallOptions, PackageOrigin} from '../types/package.js';
+import {type InstallOptions} from '../types/package.js';
 import {
-  OrchestrationTask,
-  Orchestrator,
-  OrchestratorOptions,
+  isSkipStage, OrchestrationTask, Orchestrator, OrchestratorOptions,
 } from './orchestrator.js';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export type InstallOrchestratorOptions = InstallOptions & OrchestratorOptions;
 
 /** Regression test outcome for a single dependent package. */
 export interface RegressionTestResult {
@@ -57,53 +51,13 @@ export interface InstallOrchestrationResult extends OrchestrationResult<InstallR
  * Installers emit events directly on the shared InstallEventBus.
  */
 export class InstallOrchestrationTask implements OrchestrationTask<InstallResult> {
-  private readonly installBus: InstallEventBus;
-  private readonly logger?: Logger;
-  private readonly options: InstallOrchestratorOptions;
-  private readonly provider: ProjectDefinitionProvider;
-  private readonly targetOrg: Org;
-
   constructor(
-    targetOrg: Org,
-    provider: ProjectDefinitionProvider,
-    options: InstallOrchestratorOptions,
-    logger?: Logger,
-    installBus?: InstallEventBus,
-  ) {
-    this.targetOrg = targetOrg;
-    this.provider = provider;
-    this.options = options;
-    this.logger = logger;
-    this.installBus = installBus ?? new InstallEventBus();
-  }
+    public readonly installer: PackageInstaller,
+    public logger?: Logger,
+  ) {}
 
-  async processSinglePackage(
-    packageName: string,
-    _level: number,
-  ): Promise<PackageResult<InstallResult>> {
+  async processSinglePackage(packageName: string, _level: number): Promise<PackageResult<InstallResult>> {
     const start = Date.now();
-    const pkgLogger = this.logger?.child?.({package: packageName}) ?? this.logger;
-
-    // Check if this package should be skipped for the current lifecycle stage
-    if (LifecycleEngine.isInitialized()) {
-      const lifecycle = LifecycleEngine.getInstance();
-      const packageDefinition = this.provider.getPackageDefinition(packageName);
-      const skipStages = packageDefinition?.packageOptions?.skip ?? [];
-      if (skipStages.includes(lifecycle.stage)) {
-        pkgLogger?.info(`Skipping — stage '${lifecycle.stage}' is in skip list`);
-        return {
-          duration: 0, packageName, skipped: true, success: true,
-        };
-      }
-    }
-
-    const installer = new PackageInstaller(
-      this.targetOrg,
-      this.provider,
-      this.options,
-      pkgLogger,
-      this.installBus,
-    );
 
     let success = true;
     let skipped = false;
@@ -112,8 +66,8 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
     let result: InstallResult | undefined;
 
     try {
-      result = await installer.install(packageName);
-      if (result.skipped) {
+      result = await this.installer.install(packageName);
+      if (result?.skipped) {
         skipped = true;
       }
     } catch (error_) {
@@ -124,7 +78,13 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
 
     const duration = Date.now() - start;
     return {
-      duration, error, errorDetails, packageName, result, skipped, success,
+      duration,
+      error,
+      errorDetails,
+      packageName,
+      result,
+      skipped,
+      success,
     };
   }
 }
@@ -144,29 +104,13 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
  * - {@link orchestrationBus} for orchestration events (level start/complete, package complete)
  */
 export class InstallOrchestrator {
-  readonly installBus: InstallEventBus;
-  readonly orchestrationBus: OrchestrationEventBus<InstallResult>;
-  private readonly graph: ProjectGraph;
-  private readonly logger?: Logger;
-  private readonly options: InstallOrchestratorOptions;
-  private readonly orchestrator: Orchestrator<InstallResult>;
-  private readonly targetOrg: Org;
+  private orchestrator: Orchestrator<InstallResult>;
 
-  constructor(
-    targetOrg: Org,
-    provider: ProjectDefinitionProvider,
-    graph: ProjectGraph,
-    options: InstallOrchestratorOptions,
-    logger?: Logger,
-  ) {
-    this.targetOrg = targetOrg;
-    this.graph = graph;
-    this.options = options;
-    this.logger = logger;
-    this.installBus = new InstallEventBus();
-    this.orchestrationBus = new OrchestrationEventBus(randomUUID());
-    const task = new InstallOrchestrationTask(targetOrg, provider, options, logger, this.installBus);
-    this.orchestrator = new Orchestrator(graph, options, task, logger, this.orchestrationBus);
+  constructor(graph: ProjectGraph, installer: PackageInstaller, options: OrchestratorOptions, logger?: Logger) {
+    const orchestrationBus = new OrchestrationEventBus(randomUUID());
+    const task = new InstallOrchestrationTask(installer, logger);
+
+    this.orchestrator = new Orchestrator(graph, options, task, logger, orchestrationBus) as Orchestrator<InstallResult>;
   }
 
   // ========================================================================
@@ -179,18 +123,13 @@ export class InstallOrchestrator {
    */
   static forArtifact(
     targetOrg: Org,
-    provider: ProjectDefinitionProvider,
+    provider: ArtifactProvider,
     graph: ProjectGraph,
-    options: Omit<InstallOrchestratorOptions, 'source'> & {source?: never},
+    options: InstallOptions,
     logger?: Logger,
   ): InstallOrchestrator {
-    return new InstallOrchestrator(
-      targetOrg,
-      provider,
-      graph,
-      {...options, includeManagedPackages: true, origin: PackageOrigin.Artifact},
-      logger,
-    );
+    const installer = new PackageInstaller(targetOrg, provider, options, logger);
+    return new InstallOrchestrator(graph, installer, {includeManagedPackages: true}, logger);
   }
 
   /**
@@ -199,25 +138,14 @@ export class InstallOrchestrator {
    */
   static forSource(
     targetOrg: Org,
-    provider: ProjectDefinitionProvider,
+    provider: WorkspaceProvider,
     graph: ProjectGraph,
-    options: Omit<InstallOrchestratorOptions, 'mode' | 'source'> & {mode?: never; source?: never},
+    options: InstallOptions,
     logger?: Logger,
   ): InstallOrchestrator {
-    return new InstallOrchestrator(
-      targetOrg,
-      provider,
-      graph,
-      {
-        ...options, includeManagedPackages: false, origin: PackageOrigin.Local, unlocked: {sourceOnly: true},
-      },
-      logger,
-    );
+    const installer = new PackageInstaller(targetOrg, provider, {...options, unlocked: {sourceOnly: true}}, logger);
+    return new InstallOrchestrator(graph, installer, {includeManagedPackages: true}, logger);
   }
-
-  // ========================================================================
-  // Public entry point
-  // ========================================================================
 
   /**
    * Install multiple packages in dependency order.
@@ -233,10 +161,13 @@ export class InstallOrchestrator {
    *   are resolved and installed first.
    * @returns InstallOrchestrationResult with per-package outcomes and optional regression tests.
    */
-  public async installAll(packageNames: string[]): Promise<InstallOrchestrationResult> {
+  public async installAll(
+    packageNames: string[],
+    options?: {regressionTest: boolean},
+  ): Promise<InstallOrchestrationResult> {
     const orchestrationResult = await this.orchestrator.executeAll(packageNames);
 
-    if (!this.options.regressionTest) {
+    if (!options?.regressionTest) {
       return orchestrationResult;
     }
 
@@ -253,14 +184,17 @@ export class InstallOrchestrator {
    * read their test classes from artifact metadata, fire all test runs
    * concurrently, then await all results.
    */
-  private async runRegressionTests(orchestrationResult: OrchestrationResult<InstallResult>): Promise<RegressionTestResult[]> {
+  private async runRegressionTests(
+    orchestrationResult: OrchestrationResult<InstallResult>,
+    logger?: Logger,
+  ): Promise<RegressionTestResult[]> {
     const installedPackages = orchestrationResult.results
     .filter(r => r.success && !r.skipped)
     .map(r => r.packageName);
 
     if (installedPackages.length === 0) return [];
 
-    const dependents = this.graph.getDirectDependents(installedPackages);
+    const dependents = this.orchestrator.graph.getDirectDependents(installedPackages);
     if (dependents.length === 0) return [];
 
     // Map installed package name for each dependent (for result attribution)
@@ -270,25 +204,25 @@ export class InstallOrchestrator {
     for (const dep of dependents) {
       if (!dep.path) continue;
 
-      const repo = new ArtifactRepository(dep.path, this.logger, dep.name);
+      const repo = new ArtifactRepository(dep.path, logger, dep.name);
       const metadata = repo.getMetadata();
       const testClasses = (metadata as any)?.content?.apex?.tests as string[] | undefined;
       if (!testClasses?.length) continue;
 
       // Find which installed package this dependent consumes
-      const installedPackage = [...dep.dependencies]
-      .find(d => installedSet.has(d.name))?.name ?? installedPackages[0];
+      const installedPackage
+        = [...dep.dependencies].find(d => installedSet.has(d.name))?.name ?? installedPackages[0];
 
       dependentEntries.push({installedPackage, packageName: dep.name, testClasses});
     }
 
     if (dependentEntries.length === 0) return [];
 
-    const testService = new ApexTestService(this.targetOrg.getConnection(), this.logger);
+    const testService = new ApexTestService((this.orchestrator.task as InstallOrchestrationTask).installer.targetOrg.getConnection(), logger);
 
-    this.logger?.info(`Regression testing ${dependentEntries.length} dependent package(s): ${dependentEntries.map(e => e.packageName).join(', ')}`);
+    logger?.info(`Regression testing ${dependentEntries.length} dependent package(s): ${dependentEntries.map(e => e.packageName).join(', ')}`);
 
-    this.orchestrationBus.regressionStart({
+    this.orchestrator.bus.regressionStart({
       packages: dependentEntries.map(e => e.packageName),
     });
 
@@ -307,10 +241,13 @@ export class InstallOrchestrator {
     // Await all results concurrently
     const results = await Promise.all(pending.map(async p => {
       if ('error' in p) {
-        this.orchestrationBus.regressionPackageComplete({
+        this.orchestrator.bus.regressionPackageComplete({
           error: p.error,
-          failed: 0, packageName: p.entry.packageName,
-          passed: 0, success: false, total: 0,
+          failed: 0,
+          packageName: p.entry.packageName,
+          passed: 0,
+          success: false,
+          total: 0,
         });
         return {
           error: p.error,
@@ -322,9 +259,12 @@ export class InstallOrchestrator {
 
       try {
         const result = await testService.awaitTests(p.testRunId);
-        this.orchestrationBus.regressionPackageComplete({
-          failed: result.failed, packageName: p.entry.packageName,
-          passed: result.passed, success: result.failed === 0, total: result.total,
+        this.orchestrator.bus.regressionPackageComplete({
+          failed: result.failed,
+          packageName: p.entry.packageName,
+          passed: result.passed,
+          success: result.failed === 0,
+          total: result.total,
         });
         return {
           installedPackage: p.entry.installedPackage,
@@ -334,9 +274,13 @@ export class InstallOrchestrator {
         } satisfies RegressionTestResult;
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        this.orchestrationBus.regressionPackageComplete({
-          error: msg, failed: 0, packageName: p.entry.packageName,
-          passed: 0, success: false, total: 0,
+        this.orchestrator.bus.regressionPackageComplete({
+          error: msg,
+          failed: 0,
+          packageName: p.entry.packageName,
+          passed: 0,
+          success: false,
+          total: 0,
         });
         return {
           error: msg,
@@ -350,16 +294,16 @@ export class InstallOrchestrator {
     const passed = results.filter(r => r.success).map(r => r.packageName);
     const failed = results.filter(r => !r.success).map(r => r.packageName);
 
-    this.orchestrationBus.regressionComplete({
+    this.orchestrator.bus.regressionComplete({
       duration: Date.now() - regressionStart,
       failed,
       passed,
     });
 
     if (failed.length > 0) {
-      this.logger?.warn(`Regression tests failed in ${failed.length} package(s): ${failed.join(', ')}`);
+      logger?.warn(`Regression tests failed in ${failed.length} package(s): ${failed.join(', ')}`);
     } else {
-      this.logger?.info(`Regression tests passed in all ${results.length} dependent package(s)`);
+      logger?.info(`Regression tests passed in all ${results.length} dependent package(s)`);
     }
 
     return results;
