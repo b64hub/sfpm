@@ -29,6 +29,19 @@ function findProjectRoot(startDir: string): string | undefined {
 }
 
 /**
+ * Like findSfpmRoot, but throws error if not found
+ * @param startDir
+ */
+export function resolveSfpmRoot(startDir: string): string {
+  const rootDir = findSfpmRoot(startDir);
+  if (!rootDir) {
+    throw new Error('Could not resolve project root. Please add a sfpm.config.{js,ts,mjs} to the project root dir.');
+  }
+
+  return rootDir;
+}
+
+/**
  * Walk up from `startDir` to find the sfpm project root.
  *
  * Priority order:
