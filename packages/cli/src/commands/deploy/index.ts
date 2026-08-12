@@ -1,6 +1,7 @@
 import {
   InstallOrchestrator, LifecycleEngine, Logger,
-  type ProjectDefinitionProvider, type ProjectGraph, ProjectService, type TestLevel, WorkspaceProvider,
+  type ProjectDefinitionProvider, type ProjectGraph, ProjectService, resolveSfpmRoot, type TestLevel,
+  WorkspaceProvider,
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
 import {ConfigAggregator, Org} from '@salesforce/core'
@@ -45,7 +46,7 @@ export default class Deploy extends SfpmCommand {
     '<%= config.bin %> <%= command.id %> package-a package-b -o my-sandbox',
   ]
   static override flags = {
-    force: Flags.boolean({char: 'f', description: 'force deploy even if already installed'}),
+    force: Flags.boolean({char: 'f', default: true, description: 'force deploy even if already installed'}),
     'no-dependencies': Flags.boolean({description: 'only deploy the specified packages, skip transitive dependencies'}),
     'no-hooks': Flags.boolean({description: 'skip lifecycle hooks'}),
     'regression-test': Flags.boolean({description: 'run tests in direct dependents after deploy to detect regressions'}),
@@ -140,7 +141,8 @@ export default class Deploy extends SfpmCommand {
   }
 
   protected async resolveFlags(packages: string[], flags: Record<string, any>): Promise<ResolvedDeployFlags> {
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectDir = resolveSfpmRoot(process.env.SFPM_PROJECT_DIR || process.cwd());
+
     const projectService = await this.createProjectService(projectDir, packages);
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();

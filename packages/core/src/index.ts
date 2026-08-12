@@ -66,7 +66,7 @@ export {
 export {type ResolveOptions, ValidationResolver} from './package/validation/validation-resolver.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export * from './project/project-graph.js';
-export {findSfpmRoot, default as ProjectService} from './project/project-service.js';
+export {findSfpmRoot, default as ProjectService, resolveSfpmRoot} from './project/project-service.js';
 export {ArtifactProvider, type ArtifactProviderOptions} from './project/providers/artifact-provider.js';
 export {
   type ProjectDefinitionProvider,
