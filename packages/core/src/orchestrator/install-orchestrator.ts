@@ -21,7 +21,7 @@ import {WorkspaceProvider} from '../project/providers/workspace-provider.js';
 import Logger from '../types/logger.js';
 import {type InstallOptions} from '../types/package.js';
 import {
-  isSkipStage, OrchestrationTask, Orchestrator, OrchestratorOptions,
+  OrchestrationTask, Orchestrator, OrchestratorOptions,
 } from './orchestrator.js';
 
 /** Regression test outcome for a single dependent package. */

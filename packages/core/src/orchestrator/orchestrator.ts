@@ -6,9 +6,11 @@ import {
   OrchestrationResult,
   PackageResult,
 } from '../events/orchestration-event-bus.js';
+import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
 import {DependencyResolution, PackageNode, ProjectGraph} from '../project/project-graph.js';
 import {DependencyError} from '../types/errors.js';
 import Logger from '../types/logger.js';
+import {PackageDefinition} from '../types/project.js';
 
 // ============================================================================
 // Public types
@@ -75,6 +77,21 @@ interface LevelOutcome<TResult> {
 // Orchestrator
 // ============================================================================
 
+export function isSkipStage(packageDefinition: PackageDefinition): boolean {
+  if (!LifecycleEngine.isInitialized()) {
+    return false;
+  }
+
+  const lifecycle = LifecycleEngine.getInstance();
+  const skipStages = packageDefinition?.packageOptions?.skip ?? [];
+
+  if (skipStages.includes(lifecycle.stage)) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Dependency-aware orchestration engine.
  *
@@ -87,10 +104,10 @@ interface LevelOutcome<TResult> {
  */
 export class Orchestrator<TResult> {
   readonly bus: OrchestrationEventBus<TResult>;
-  private readonly graph: ProjectGraph;
+  public readonly graph: ProjectGraph;
+  public readonly options: OrchestratorOptions;
+  public readonly task: OrchestrationTask<TResult>;
   private readonly logger: Logger | undefined;
-  private readonly options: OrchestratorOptions;
-  private readonly task: OrchestrationTask<TResult>;
 
   constructor(
     graph: ProjectGraph,
@@ -273,7 +290,8 @@ export class Orchestrator<TResult> {
     levelIndex: number,
     tracker: LevelTracker<TResult>,
   ): Promise<void> {
-    const eligible = this.skipFailedDependents(level, levelIndex, tracker);
+    const stageEligible = this.skipStagePackages(level, levelIndex, tracker);
+    const eligible = this.skipFailedDependents(stageEligible, levelIndex, tracker);
     if (eligible.length === 0) return;
 
     this.bus.levelStart({
@@ -388,6 +406,33 @@ export class Orchestrator<TResult> {
         packageName: node.name,
         skipped: true,
         success: false,
+      });
+      return false;
+    });
+  }
+
+  /**
+   * Filter out packages whose PackageDefinition marks the current lifecycle
+   * stage as skipped (`packageOptions.skip`). Applies regardless of
+   * `continueOnError` — this is package configuration, not failure
+   * propagation. The definition already lives on the graph's PackageNode,
+   * so no ProjectDefinitionProvider lookup is needed here.
+   */
+  private skipStagePackages(
+    level: PackageNode[],
+    levelIndex: number,
+    tracker: LevelTracker<TResult>,
+  ): PackageNode[] {
+    return level.filter(node => {
+      if (!isSkipStage(node.definition)) return true;
+
+      const reason = `Stage '${LifecycleEngine.getInstance().stage}' is in skip list`;
+      tracker.skippedPackages.add(node.name);
+      tracker.results.push({
+        duration: 0, error: reason, packageName: node.name, skipped: true, success: true,
+      });
+      this.bus.packageComplete({
+        duration: 0, error: reason, level: levelIndex, packageName: node.name, skipped: true, success: true,
       });
       return false;
     });
