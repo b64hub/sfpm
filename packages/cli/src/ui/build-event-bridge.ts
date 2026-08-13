@@ -1,5 +1,5 @@
 import type {
-  BuildEventBus, OrchestrationEventBus, PendingValidationDescriptor, ValidationEventBus,
+  BuildEventBus, OrchestrationEventBus, PackageBuildResult, ValidationEventBus,
 } from '@b64hub/sfpm-core';
 import type EventEmitter from 'node:events';
 
@@ -23,7 +23,7 @@ import type EventEmitter from 'node:events';
  */
 export function attachBuildBridge(
   buildBus: BuildEventBus,
-  orchestrationBus: OrchestrationEventBus<PendingValidationDescriptor>,
+  orchestrationBus: OrchestrationEventBus<PackageBuildResult>,
   uiBus: EventEmitter,
   validationBus?: ValidationEventBus,
 ): void {

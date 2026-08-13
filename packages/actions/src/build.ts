@@ -132,10 +132,10 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   // ------------------------------------------------------------------
   // 3. Run BuildOrchestrator (default mode with full validation)
   // ------------------------------------------------------------------
-  const orchestrator = new BuildOrchestrator(
+  const orchestrator = BuildOrchestrator.create(
     projectConfig,
-    projectGraph,
     {},
+    projectGraph,
     {
       buildNumber: options.buildNumber,
       force: options.force,
@@ -160,8 +160,8 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   // ------------------------------------------------------------------
   // 4. Build per-package state from orchestrator results
   // ------------------------------------------------------------------
-  // `r.result` is the PendingValidationDescriptor an unlocked package
-  // returns when it queues async validation — present only on success,
+  // `r.result.pendingValidation` is the PendingValidationDescriptor an unlocked
+  // package returns when it queues async validation — present only on success,
   // absent for build-skips and non-unlocked packages.
   const packageStates: PackageBuildState[] = orchResult.results.map(r => {
     const pkgDef = projectConfig.getPackageDefinition(r.packageName);
@@ -169,7 +169,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
     return {
       packageName: r.packageName,
       packageType: (pkgDef?.type ?? '') as string,
-      pendingValidation: r.result,
+      pendingValidation: r.result?.pendingValidation,
       skipped: r.skipped,
       success: r.success,
     };

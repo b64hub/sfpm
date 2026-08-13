@@ -47,8 +47,8 @@ interface RunInstallerOptions {
  */
 export {PackageInstaller};
 export default class PackageInstaller {
+  public readonly bus: InstallEventBus;
   public readonly targetOrg: Org;
-  private bus?: InstallEventBus;
   private options: InstallOptions;
   private provider: ProjectDefinitionProvider;
   private readonly rootLogger: Logger | undefined;
@@ -64,7 +64,7 @@ export default class PackageInstaller {
     this.rootLogger = logger;
     this.provider = provider;
     this.targetOrg = targetOrg;
-    this.bus = bus;
+    this.bus = bus ?? new InstallEventBus();
   }
 
   /**
@@ -160,7 +160,7 @@ export default class PackageInstaller {
    */
   public async installManagedPackage(managedRef: ManagedPackageRef, logger?: Logger): Promise<InstallResult> {
     const {packageName} = managedRef;
-    const sink = this.bus?.forPackage(packageName);
+    const sink = this.bus.forPackage(packageName);
 
     const installer = installerFactory(managedRef, this.options, logger, sink);
     await installer.connect(this.targetOrg);
@@ -287,7 +287,7 @@ export default class PackageInstaller {
    * Managed packages bypass this method — see {@link installManagedPackage}.
    */
   private async runInstaller(sfpmPackage: SfpmPackage, options: RunInstallerOptions, logger?: Logger): Promise<InstallResult> {
-    const sink = this.bus?.forPackage(sfpmPackage.name);
+    const sink = this.bus.forPackage(sfpmPackage.name);
 
     const installer = installerFactory(sfpmPackage, this.options, logger, sink, options.installAs);
     await installer.connect(this.targetOrg);

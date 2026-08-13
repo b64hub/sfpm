@@ -56,7 +56,7 @@ export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
 export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from './package/org-alias-resolver.js';
-export {PackageBuilder} from './package/package-builder.js';
+export {PackageBuilder, type PackageBuildResult} from './package/package-builder.js';
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
 export {type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService} from './package/package-service.js';

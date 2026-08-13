@@ -226,7 +226,7 @@ export default class Build extends SfpmCommand {
       }
 
       const pendingValidations = result.results
-      .map(r => r.result)
+      .map(r => r.result?.pendingValidation)
       .filter((r): r is PendingValidationDescriptor => r !== null && r !== undefined)
 
       if (isInk && validationBus && !resolved.async) {

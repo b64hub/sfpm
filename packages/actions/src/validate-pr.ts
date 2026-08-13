@@ -4,6 +4,7 @@ import {
   BuildOrchestrator,
   GitService,
   LifecycleEngine,
+  type PackageBuildResult,
   type PackageResult,
   type PendingValidationDescriptor,
   type ProjectDefinitionProvider,
@@ -162,10 +163,10 @@ export async function validatePr(options: ValidatePrOptions): Promise<ValidatePr
   // as a warn-only signal alongside org validation — see ValidationLevel).
   const localValidator = createLocalValidator(projectConfig, logger);
 
-  const orchestrator = new BuildOrchestrator(
+  const orchestrator = BuildOrchestrator.create(
     projectConfig,
-    projectGraph,
     scratchOrg ? {buildOrg: scratchOrg} : {},
+    projectGraph,
     {
       continueOnError: true,
       includeDependencies: true,
@@ -359,7 +360,7 @@ function createLocalValidator(projectConfig: ProjectDefinitionProvider, logger: 
 // ============================================================================
 
 async function resolvePendingValidations(
-  results: Array<PackageResult<PendingValidationDescriptor>>,
+  results: Array<PackageResult<PackageBuildResult>>,
   projectConfig: ProjectDefinitionProvider,
   projectGraph: ProjectGraph,
   logger: GitHubActionsLogger,
@@ -367,7 +368,7 @@ async function resolvePendingValidations(
   const validationResults = new Map<string, PendingValidationOutcome>();
 
   const pending = results
-  .map(r => r.result)
+  .map(r => r.result?.pendingValidation)
   .filter((r): r is PendingValidationDescriptor => r !== null && r !== undefined);
 
   if (pending.length === 0) {

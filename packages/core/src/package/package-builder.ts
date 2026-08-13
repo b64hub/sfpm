@@ -99,8 +99,8 @@ export interface PackageBuildResult {
  */
 export {PackageBuilder};
 export default class PackageBuilder {
+  public readonly bus: BuildEventBus;
   private buildOrg?: BuildOrg;
-  private bus?: BuildEventBus;
   private localValidator?: LocalValidator;
   private options: BuildOptions;
   private provider: ProjectDefinitionProvider;
@@ -115,7 +115,7 @@ export default class PackageBuilder {
     bus?: BuildEventBus,
   ) {
     this.buildOrg = buildOrg;
-    this.bus = bus;
+    this.bus = bus ?? new BuildEventBus();
     this.localValidator = localValidator;
     this.rootLogger = logger;
     this.options = options || {};
@@ -269,7 +269,7 @@ export default class PackageBuilder {
     const packageFactory = new PackageFactory(this.provider);
     const sfpmPackage = packageFactory.createFromName(packageName);
 
-    const sink = this.bus?.forPackage(sfpmPackage.name);
+    const sink = this.bus.forPackage(sfpmPackage.name);
 
     sink?.start({
       buildNumber: options.buildNumber,

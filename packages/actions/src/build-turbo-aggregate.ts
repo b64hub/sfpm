@@ -2,7 +2,7 @@ import * as core from '@actions/core';
 import {
   DIST_DIR,
   type OrchestrationResult,
-  type PendingValidationDescriptor,
+  type PackageBuildResult,
   ProjectService,
 } from '@b64hub/sfpm-core';
 import fs from 'node:fs';
@@ -85,7 +85,7 @@ export async function buildTurboAggregate(options: BuildTurboAggregateOptions): 
       continue;
     }
 
-    const orchestration = JSON.parse(fs.readFileSync(resultPath, 'utf8')) as OrchestrationResult<PendingValidationDescriptor>;
+    const orchestration = JSON.parse(fs.readFileSync(resultPath, 'utf8')) as OrchestrationResult<PackageBuildResult>;
     const packageResult = orchestration.results.find(r => r.packageName === packageName) ?? orchestration.results[0];
 
     const npmPackageJsonPath = path.join(projectDir, packageDir, 'package.json');
@@ -106,7 +106,7 @@ export async function buildTurboAggregate(options: BuildTurboAggregateOptions): 
       : {
         packageName,
         packageType,
-        pendingValidation: packageResult.result,
+        pendingValidation: packageResult.result?.pendingValidation,
         skipped: packageResult.skipped,
         success: packageResult.success,
       };

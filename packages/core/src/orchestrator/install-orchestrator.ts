@@ -104,23 +104,17 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
  * - {@link orchestrationBus} for orchestration events (level start/complete, package complete)
  */
 export class InstallOrchestrator {
-  readonly installBus: InstallEventBus;
   readonly orchestrationBus: OrchestrationEventBus<InstallResult>;
   private readonly installer: PackageInstaller;
   private readonly orchestrator: Orchestrator<InstallResult>;
 
-  constructor(graph: ProjectGraph, installer: PackageInstaller, installBus: InstallEventBus, options: OrchestratorOptions, logger?: Logger) {
+  constructor(graph: ProjectGraph, installer: PackageInstaller, options: OrchestratorOptions, logger?: Logger) {
     this.installer = installer;
-    this.installBus = installBus;
     this.orchestrationBus = new OrchestrationEventBus(randomUUID());
     const task = new InstallOrchestrationTask(installer, logger);
 
     this.orchestrator = new Orchestrator(graph, options, task, logger, this.orchestrationBus);
   }
-
-  // ========================================================================
-  // Static factory methods
-  // ========================================================================
 
   /**
    * Create an orchestrator for installing from built artifacts.
@@ -133,10 +127,13 @@ export class InstallOrchestrator {
     options: InstallOrchestratorOptions,
     logger?: Logger,
   ): InstallOrchestrator {
-    const installBus = new InstallEventBus();
-    const installer = new PackageInstaller(targetOrg, provider, options, logger, installBus);
-    return new InstallOrchestrator(graph, installer, installBus, {...options, includeManagedPackages: true}, logger);
+    const installer = new PackageInstaller(targetOrg, provider, options, logger);
+    return new InstallOrchestrator(graph, installer, {...options, includeManagedPackages: true}, logger);
   }
+
+  // ========================================================================
+  // Static factory methods
+  // ========================================================================
 
   /**
    * Create an orchestrator for installing directly from project source.
@@ -158,9 +155,18 @@ export class InstallOrchestrator {
       throw new TypeError('InstallOrchestrator.forSource() requires a project-source provider, not an ArtifactProvider. Use forArtifact() to install from node_modules artifacts.');
     }
 
-    const installBus = new InstallEventBus();
-    const installer = new PackageInstaller(targetOrg, provider, {...options, unlocked: {sourceOnly: true}}, logger, installBus);
-    return new InstallOrchestrator(graph, installer, installBus, {...options, includeManagedPackages: false}, logger);
+    const installer = new PackageInstaller(targetOrg, provider, {...options, unlocked: {sourceOnly: true}}, logger);
+    return new InstallOrchestrator(graph, installer, {...options, includeManagedPackages: false}, logger);
+  }
+
+  /**
+   * Install domain events (start, complete, deploy, version, etc.) --
+   * routes straight to the shared {@link PackageInstaller}'s bus. Not a
+   * separate instance: the installer and orchestrator always point at the
+   * same bus, so there is nothing to keep in sync here.
+   */
+  get installBus(): InstallEventBus {
+    return this.installer.bus;
   }
 
   /**

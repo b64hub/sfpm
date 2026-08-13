@@ -3,6 +3,7 @@ import {
   InstallOrchestrator,
   Logger,
   OrchestrationResult,
+  PackageBuildResult,
   PackageCreator,
   PackageService,
   PendingValidationDescriptor,
@@ -175,7 +176,7 @@ export default class Bootstrap extends SfpmCommand {
           }
         }
 
-        const pendingValidations = buildResult.results.map(packageResult => packageResult.result).filter(descriptor => descriptor && descriptor.operationType === 'package-version-request') as PendingValidationDescriptor[];
+        const pendingValidations = buildResult.results.map(packageResult => packageResult.result?.pendingValidation).filter(descriptor => descriptor && descriptor.operationType === 'package-version-request') as PendingValidationDescriptor[];
 
         const resolver = new ValidationResolver(
           projectService.getDefinitionProvider(),
@@ -242,7 +243,7 @@ export default class Bootstrap extends SfpmCommand {
     packageNames: string[],
     force: boolean,
     ctx: BootstrapContext,
-  ): Promise<OrchestrationResult<PendingValidationDescriptor>> {
+  ): Promise<OrchestrationResult<PackageBuildResult>> {
     if (ctx.isInteractive) {
       this.log(chalk.bold('\nBuilding packages...\n'))
     }
