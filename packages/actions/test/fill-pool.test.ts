@@ -1,9 +1,9 @@
 import {OrgTypes} from '@salesforce/core';
 import {describe, expect, it} from 'vitest';
 
-import {buildPoolConfig, type ProvisionPoolOptions} from '../src/provision-pool.js';
+import {buildPoolConfig, type FillPoolOptions} from '../src/fill-pool.js';
 
-const baseOptions: ProvisionPoolOptions = {
+const baseOptions: FillPoolOptions = {
     devhubUsername: 'hub',
     tag: 'dev',
 };

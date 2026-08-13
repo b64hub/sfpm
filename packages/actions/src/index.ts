@@ -14,6 +14,13 @@ export {
   type PackageBuildState,
 } from './build.js';
 
+// Pool provisioning
+export {
+  fillPool,
+  type FillPoolOptions,
+  type FillPoolResult,
+} from './fill-pool.js';
+
 // Install
 export {
   install,
@@ -38,13 +45,6 @@ export {
 
 // Progress rendering
 export {ActionsProgressRenderer} from './progress-renderer.js';
-
-// Pool provisioning
-export {
-  provisionPool,
-  type ProvisionPoolOptions,
-  type ProvisionPoolResult,
-} from './provision-pool.js';
 
 // PR validation
 export {

@@ -6,7 +6,7 @@
 # convenience image, not a requirement — swap `container:` for any `node:22`
 # image and add back `pnpm/action-setup`, `actions/setup-node`, and
 # `npm install --global @salesforce/cli` if you'd rather not depend on it.
-name: SFPM Provision Pool
+name: SFPM Fill Pool
 
 on:
   schedule:
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  provision:
+  fill:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/b64hub/sfpm-actions:latest
@@ -35,9 +35,9 @@ jobs:
             --alias devhub
           rm server.key
 
-      - name: Provision pool
-        id: provision
-        uses: ./packages/actions/provision-pool
+      - name: Fill pool
+        id: fill
+        uses: ./packages/actions/fill-pool
         with:
           devhub-username: devhub
           pool-tag: ci-pool
@@ -46,5 +46,5 @@ jobs:
       - name: Report outcome
         if: always()
         run: |
-          echo "Succeeded: ${{ steps.provision.outputs.succeeded }}"
-          echo "Failed: ${{ steps.provision.outputs.failed }}"
+          echo "Succeeded: ${{ steps.fill.outputs.succeeded }}"
+          echo "Failed: ${{ steps.fill.outputs.failed }}"

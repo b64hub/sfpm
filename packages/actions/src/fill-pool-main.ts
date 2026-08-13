@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import {OrgTypes} from '@salesforce/core';
 
-import {provisionPool} from './provision-pool.js';
+import {fillPool} from './fill-pool.js';
 
 // ============================================================================
 // Action Entry Point
@@ -28,7 +28,7 @@ try {
   const sandboxNamePattern = core.getInput('sandbox-name-pattern') || undefined;
   const useLocalSource = core.getInput('use-local-source') === 'true';
 
-  const result = await provisionPool({
+  const result = await fillPool({
     batchSize,
     definitionFile,
     devhubUsername,
@@ -42,7 +42,7 @@ try {
   });
 
   if (!result.success) {
-    // core.setFailed is already called inside provisionPool
+    // core.setFailed is already called inside fillPool
     process.exitCode = 1;
   }
 } catch (error) {

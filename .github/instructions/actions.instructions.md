@@ -230,7 +230,7 @@ vi.mock('@actions/core', () => ({
 
 1. Create `src/my-action.ts` with the pipeline logic
 2. Create `src/my-action-main.ts` as the entry point
-3. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `provision-pool/` convention) with `main: '../dist/my-action-main.js'`
+3. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) with `main: '../dist/my-action-main.js'`
 4. Add esbuild entry point if separate bundle needed
 5. Export from `src/index.ts` for library use
 6. Add tests with mocked `@actions/*` dependencies

@@ -30,7 +30,7 @@ with an 'sfpm' field found" — expected, since this repo builds the sfpm tool
 itself and has no fixture Salesforce project. That's as far as testing goes
 without a real (or fixture) SF project checked out alongside it.
 
-`build.yml` and `provision-pool.yml` need real secrets (`SFDX_CONSUMER_KEY`,
+`build.yml` and `fill-pool.yml` need real secrets (`SFDX_CONSUMER_KEY`,
 `SFDX_JWT_KEY`, `DEVHUB_USERNAME`, `TARGET_ORG_USERNAME`, `NPM_TOKEN`) to get
 past the `sf org login jwt` step — pass them with `-s NAME=value` or a
 `--secret-file` (see `act`'s docs). Without them they'll fail at that step,
@@ -121,7 +121,7 @@ is running against unexpectedly old code.
 
 ## Debugging an action inside a consuming project
 
-`act-tests/` has bind-mount-flavored copies of `build.yml`, `provision-pool.yml`,
+`act-tests/` has bind-mount-flavored copies of `build.yml`, `fill-pool.yml`,
 and `validate-pr.yml` meant to be dropped into a *consuming* project's
 `.github/act-tests/` — they skip the `sfpm-actions` container entirely (a
 container job can't be reached by a debugger the same way) and install the

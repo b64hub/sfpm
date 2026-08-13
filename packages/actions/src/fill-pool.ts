@@ -18,7 +18,7 @@ import {ActionsProgressRenderer} from './progress-renderer.js';
 // Types
 // ============================================================================
 
-export interface ProvisionPoolOptions {
+export interface FillPoolOptions {
   /** Max concurrent org creations (default: 5) */
   batchSize?: number;
   /** Org definition file path (scratch org or sandbox) */
@@ -41,7 +41,7 @@ export interface ProvisionPoolOptions {
   useLocalSource?: boolean;
 }
 
-export interface ProvisionPoolResult {
+export interface FillPoolResult {
   /** Duration in milliseconds */
   duration: number;
   /** Error messages from failed provisioning attempts */
@@ -72,8 +72,8 @@ export interface ProvisionPoolResult {
  *    packages — on each before marking it Available)
  * 5. Report results via GitHub Actions outputs
  */
-export async function provisionPool(options: ProvisionPoolOptions): Promise<ProvisionPoolResult> {
-  const logger = createGitHubActionsLogger({prefix: 'provision-pool'});
+export async function fillPool(options: FillPoolOptions): Promise<FillPoolResult> {
+  const logger = createGitHubActionsLogger({prefix: 'fill-pool'});
   const startTime = Date.now();
   const projectDir = options.projectDir ?? process.env.GITHUB_WORKSPACE ?? process.cwd();
   const sfpmConfig = await loadSfpmConfig(projectDir, logger);
@@ -130,7 +130,7 @@ export async function provisionPool(options: ProvisionPoolOptions): Promise<Prov
   // 6. Set outputs and return result
   // ------------------------------------------------------------------
   const duration = Date.now() - startTime;
-  const result: ProvisionPoolResult = {
+  const result: FillPoolResult = {
     duration,
     errors: provisionResult.errors,
     failed: provisionResult.failed,
@@ -156,7 +156,7 @@ export async function provisionPool(options: ProvisionPoolOptions): Promise<Prov
 // Helpers
 // ============================================================================
 
-export function buildPoolConfig(options: ProvisionPoolOptions, poolType: OrgTypes, projectDir: string, poolConfig?: PoolConfig): PoolConfig {
+export function buildPoolConfig(options: FillPoolOptions, poolType: OrgTypes, projectDir: string, poolConfig?: PoolConfig): PoolConfig {
   // Workflow inputs take precedence over sfpm.config.ts pool config.
   const sizing = {
     batch: options.batchSize ?? poolConfig?.sizing?.batch,
@@ -191,7 +191,7 @@ export function buildPoolConfig(options: ProvisionPoolOptions, poolType: OrgType
   } as PoolConfig;
 }
 
-function setActionOutputs(result: ProvisionPoolResult, provisionResult: PoolProvisionResult): void {
+function setActionOutputs(result: FillPoolResult, provisionResult: PoolProvisionResult): void {
   core.setOutput('success', String(result.success));
   core.setOutput('tag', result.tag);
   core.setOutput('succeeded', String(result.succeeded));

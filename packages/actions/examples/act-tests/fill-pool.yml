@@ -1,20 +1,20 @@
-# Local-only test of the sfpm-actions provision-pool action against this
+# Local-only test of the sfpm-actions fill-pool action against this
 # project's real packages. Not a real workflow — lives outside
 # .github/workflows/ so GitHub never picks it up. Doesn't use the sfpm
 # container so a debugger can attach directly to the act runner container
 # (see packages/actions/DEBUGGING.md in the sfpm checkout). Run with:
 #
 #   act workflow_dispatch \
-#     -W .github/act-tests/provision-pool.yml \
+#     -W .github/act-tests/fill-pool.yml \
 #     --container-options "-v /path/to/sfpm:/path/to/this-project/.sfpm-actions" \
-#     -j provision
+#     -j fill
 #
 # Requires .sfpm-actions to exist (symlink to a local sfpm checkout, or a
 # real `actions/checkout` with `repository: b64hub/sfpm` for actual CI —
 # see packages/actions/examples/README.md) and repo secrets
 # SFDX_CONSUMER_KEY, SFDX_JWT_KEY, DEVHUB_USERNAME (pass with -s NAME=value
 # or --secret-file).
-name: SFPM Provision Pool Test (local act only)
+name: SFPM Fill Pool Test (local act only)
 
 on:
   schedule:
@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  provision:
+  fill:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,11 +58,11 @@ jobs:
             --alias devhub
           rm server.key
 
-      - name: Provision pool
-        id: provision
+      - name: Fill pool
+        id: fill
         env:
           NODE_OPTIONS: --inspect-brk=0.0.0.0:9229
-        uses: ./.sfpm-actions/packages/actions/provision-pool
+        uses: ./.sfpm-actions/packages/actions/fill-pool
         with:
           devhub-username: devhub
           pool-tag: ci-pool
@@ -71,5 +71,5 @@ jobs:
       - name: Report outcome
         if: always()
         run: |
-          echo "Succeeded: ${{ steps.provision.outputs.succeeded }}"
-          echo "Failed: ${{ steps.provision.outputs.failed }}"
+          echo "Succeeded: ${{ steps.fill.outputs.succeeded }}"
+          echo "Failed: ${{ steps.fill.outputs.failed }}"

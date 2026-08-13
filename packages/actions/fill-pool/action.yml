@@ -1,5 +1,5 @@
-name: 'SFPM Provision Pool'
-description: 'Provision scratch orgs or sandboxes to fill a pool'
+name: 'SFPM Fill Pool'
+description: 'Fill a pool with scratch orgs or sandboxes'
 author: 'b64'
 
 branding:
@@ -57,4 +57,4 @@ outputs:
 
 runs:
   using: 'node20'
-  main: '../dist/provision-pool-main.js'
+  main: '../dist/fill-pool-main.js'
