@@ -47,11 +47,11 @@ interface RunInstallerOptions {
  */
 export {PackageInstaller};
 export default class PackageInstaller {
+  public readonly targetOrg: Org;
   private bus?: InstallEventBus;
   private options: InstallOptions;
   private provider: ProjectDefinitionProvider;
   private readonly rootLogger: Logger | undefined;
-  private targetOrg: Org;
 
   constructor(
     targetOrg: Org,

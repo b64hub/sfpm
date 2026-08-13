@@ -1,5 +1,4 @@
 import {Org} from '@salesforce/core';
-import {Package} from '@salesforce/packaging';
 import {randomUUID} from 'node:crypto';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
@@ -16,8 +15,6 @@ import {
 } from '../events/orchestration-event-bus.js';
 import PackageInstaller, {InstallResult} from '../package/package-installer.js';
 import {ProjectGraph} from '../project/project-graph.js';
-import {ArtifactProvider} from '../project/providers/artifact-provider.js';
-import {WorkspaceProvider} from '../project/providers/workspace-provider.js';
 import Logger from '../types/logger.js';
 import {type InstallOptions} from '../types/package.js';
 import {
@@ -42,6 +39,8 @@ export interface RegressionTestResult {
 export interface InstallOrchestrationResult extends OrchestrationResult<InstallResult> {
   regressionTests?: RegressionTestResult[];
 }
+
+export type InstallOrchestratorOptions = InstallOptions & OrchestratorOptions;
 
 /**
  * {@link OrchestrationTask} for package installations.
@@ -97,20 +96,25 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
  * Orchestrates installing multiple packages in parallel, respecting dependency order.
  *
  * Composes the shared {@link Orchestrator} engine with an {@link InstallOrchestrationTask}
- * to handle install-specific setup and per-package processing.
+ * wrapping one {@link PackageInstaller} instance, reused across every package in the run.
  *
  * All events are emitted on typed buses:
  * - {@link installBus} for install domain events (start, complete, deploy, version, etc.)
  * - {@link orchestrationBus} for orchestration events (level start/complete, package complete)
  */
 export class InstallOrchestrator {
-  private orchestrator: Orchestrator<InstallResult>;
+  readonly installBus: InstallEventBus;
+  readonly orchestrationBus: OrchestrationEventBus<InstallResult>;
+  private readonly installer: PackageInstaller;
+  private readonly orchestrator: Orchestrator<InstallResult>;
 
-  constructor(graph: ProjectGraph, installer: PackageInstaller, options: OrchestratorOptions, logger?: Logger) {
-    const orchestrationBus = new OrchestrationEventBus(randomUUID());
+  constructor(graph: ProjectGraph, installer: PackageInstaller, installBus: InstallEventBus, options: OrchestratorOptions, logger?: Logger) {
+    this.installer = installer;
+    this.installBus = installBus;
+    this.orchestrationBus = new OrchestrationEventBus(randomUUID());
     const task = new InstallOrchestrationTask(installer, logger);
 
-    this.orchestrator = new Orchestrator(graph, options, task, logger, orchestrationBus) as Orchestrator<InstallResult>;
+    this.orchestrator = new Orchestrator(graph, options, task, logger, this.orchestrationBus);
   }
 
   // ========================================================================
@@ -123,13 +127,14 @@ export class InstallOrchestrator {
    */
   static forArtifact(
     targetOrg: Org,
-    provider: ArtifactProvider,
+    provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
-    options: InstallOptions,
+    options: InstallOrchestratorOptions,
     logger?: Logger,
   ): InstallOrchestrator {
-    const installer = new PackageInstaller(targetOrg, provider, options, logger);
-    return new InstallOrchestrator(graph, installer, {includeManagedPackages: true}, logger);
+    const installBus = new InstallEventBus();
+    const installer = new PackageInstaller(targetOrg, provider, options, logger, installBus);
+    return new InstallOrchestrator(graph, installer, installBus, {...options, includeManagedPackages: true}, logger);
   }
 
   /**
@@ -138,13 +143,14 @@ export class InstallOrchestrator {
    */
   static forSource(
     targetOrg: Org,
-    provider: WorkspaceProvider,
+    provider: ProjectDefinitionProvider,
     graph: ProjectGraph,
-    options: InstallOptions,
+    options: InstallOrchestratorOptions,
     logger?: Logger,
   ): InstallOrchestrator {
-    const installer = new PackageInstaller(targetOrg, provider, {...options, unlocked: {sourceOnly: true}}, logger);
-    return new InstallOrchestrator(graph, installer, {includeManagedPackages: true}, logger);
+    const installBus = new InstallEventBus();
+    const installer = new PackageInstaller(targetOrg, provider, {...options, unlocked: {sourceOnly: true}}, logger, installBus);
+    return new InstallOrchestrator(graph, installer, installBus, {...options, includeManagedPackages: false}, logger);
   }
 
   /**
@@ -218,7 +224,7 @@ export class InstallOrchestrator {
 
     if (dependentEntries.length === 0) return [];
 
-    const testService = new ApexTestService((this.orchestrator.task as InstallOrchestrationTask).installer.targetOrg.getConnection(), logger);
+    const testService = new ApexTestService(this.installer.targetOrg.getConnection(), logger);
 
     logger?.info(`Regression testing ${dependentEntries.length} dependent package(s): ${dependentEntries.map(e => e.packageName).join(', ')}`);
 

@@ -21,16 +21,6 @@ export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Sour
  */
 export type VersionFormat = 'salesforce' | 'semver';
 
-/**
- * Where the package code comes from for installation.
- * - `local`: Install from built ./dist
- * - `artifact`: Install from node_modules
- */
-export const enum PackageOrigin {
-  Artifact = 'artifact',
-  Local = 'local',
-}
-
 export interface BuildOrg {
   /** Scratch/sandbox org for validation (deploy + test). Optional for assemble-only builds. */
   buildOrg?: Org;
@@ -72,10 +62,6 @@ export interface UnlockedBuildOptions {
 export interface InstallOptions {
   /** Force reinstall even if already installed with matching version/hash */
   force?: boolean;
-  /**
-   * Where to install from: 'local' (project source ./dist) or 'artifact' (installed node_modules).
-   */
-  origin?: PackageOrigin;
   /** Run tests in direct dependents of installed packages after orchestration completes. */
   regressionTest?: boolean;
   testLevel?: TestLevel;

@@ -1,7 +1,6 @@
 import {
   InstallOrchestrator,
   type Logger,
-  PackageOrigin,
   ProjectService,
   type TestLevel,
 } from '@b64hub/sfpm-core';
@@ -81,12 +80,14 @@ export class DeploymentTask implements PoolOrgTask {
 
     logger.info(`Deploying ${packages.length} package(s) to ${username}`);
 
-    const origin = this.options.useLocalSource ? PackageOrigin.Local : PackageOrigin.Artifact;
-
-    const orchestrator = new InstallOrchestrator(targetOrg, provider, graph, {
+    // ponytail: `useLocalSource` is currently a no-op. ProjectService.getInstance()
+    // never resolves a dist-aware or artifact-backed provider here, so this file
+    // never actually swapped "downloaded artifacts" vs "local source" content --
+    // it only toggled the now-removed deploySource() gates (build precondition,
+    // always-skip-installed-check). Revisit: either wire this to a real
+    // ArtifactProvider swap, or drop the flag.
+    const orchestrator = InstallOrchestrator.forArtifact(targetOrg, provider, graph, {
       force: true,
-      includeManagedPackages: true,
-      origin,
       testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel,
       unlocked: {sourceOnly: true},
     }, logger);

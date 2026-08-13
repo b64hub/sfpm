@@ -165,10 +165,10 @@ export default class Build extends SfpmCommand {
       );
     }
 
-    const orchestrator = new BuildOrchestrator(
+    const orchestrator = BuildOrchestrator.create(
       projectConfig,
-      projectGraph,
       buildOrg,
+      projectGraph,
       {...resolved.buildOptions, includeDependencies: !resolved.noDependencies},
       pinoLogger,
       localValidator,

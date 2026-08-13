@@ -249,10 +249,10 @@ export default class Bootstrap extends SfpmCommand {
 
     const devhubOrg = await Org.create({aliasOrUsername: ctx.targetOrg})
 
-    const buildOrchestrator = new BuildOrchestrator(
+    const buildOrchestrator = BuildOrchestrator.create(
       projectService.getDefinitionProvider(),
-      projectService.getProjectGraph(),
       {devhub: devhubOrg},
+      projectService.getProjectGraph(),
       {
         force, includeDependencies: true,
         validation: 'org',
@@ -390,7 +390,7 @@ export default class Bootstrap extends SfpmCommand {
 
     const targetOrg = await Org.create({aliasOrUsername: ctx.targetOrg})
 
-    const installOrchestrator = new InstallOrchestrator(
+    const installOrchestrator = InstallOrchestrator.forArtifact(
       targetOrg,
       projectService.getDefinitionProvider(),
       projectService.getProjectGraph(),
