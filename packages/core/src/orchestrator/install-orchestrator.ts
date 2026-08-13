@@ -15,6 +15,7 @@ import {
 } from '../events/orchestration-event-bus.js';
 import PackageInstaller, {InstallResult} from '../package/package-installer.js';
 import {ProjectGraph} from '../project/project-graph.js';
+import {ArtifactProvider} from '../project/providers/artifact-provider.js';
 import Logger from '../types/logger.js';
 import {type InstallOptions} from '../types/package.js';
 import {
@@ -123,7 +124,7 @@ export class InstallOrchestrator {
 
   /**
    * Create an orchestrator for installing from built artifacts.
-   * Uses artifact resolution (local or npm) to find the best version.
+   * Uses artifact resolution to find the best version.
    */
   static forArtifact(
     targetOrg: Org,
@@ -148,6 +149,15 @@ export class InstallOrchestrator {
     options: InstallOrchestratorOptions,
     logger?: Logger,
   ): InstallOrchestrator {
+    // ArtifactProvider resolves from immutable node_modules build output --
+    // structurally incompatible with "deploy from live project source".
+    // Can't express this as a type narrowing (ProjectDefinitionProvider is a
+    // structural interface, not a union, and forArtifact() legitimately needs
+    // to accept WorkspaceProvider/SfdxProjectProvider too), so guard at runtime.
+    if (provider instanceof ArtifactProvider) {
+      throw new TypeError('InstallOrchestrator.forSource() requires a project-source provider, not an ArtifactProvider. Use forArtifact() to install from node_modules artifacts.');
+    }
+
     const installBus = new InstallEventBus();
     const installer = new PackageInstaller(targetOrg, provider, {...options, unlocked: {sourceOnly: true}}, logger, installBus);
     return new InstallOrchestrator(graph, installer, installBus, {...options, includeManagedPackages: false}, logger);
