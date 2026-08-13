@@ -4,14 +4,12 @@ import {
 
 import type {DependencyResolution} from '../../src/project/project-graph.js';
 
-import {ArtifactService} from '../../src/artifacts/artifact-service.js';
 import {InstallOrchestrator} from '../../src/orchestrator/install-orchestrator.js';
 import PackageInstaller from '../../src/package/package-installer.js';
 import {DependencyError} from '../../src/types/errors.js';
 
 // Mock external dependencies
 vi.mock('../../src/package/package-installer.js');
-vi.mock('../../src/artifacts/artifact-service.js');
 vi.mock('@salesforce/core', () => ({
   Org: {
     create: vi.fn().mockResolvedValue({
@@ -78,7 +76,6 @@ describe('InstallOrchestrator', () => {
   let mockProvider: any;
   let mockResolution: DependencyResolution;
   let mockInstallPackage: ReturnType<typeof vi.fn>;
-  let mockArtifactInstance: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,22 +85,6 @@ describe('InstallOrchestrator', () => {
     // Default: single level, two packages
     mockResolution = createResolution([['pkg-a', 'pkg-b']]);
 
-    // Mock ArtifactService with singleton pattern
-    mockArtifactInstance = {
-      clearCache: vi.fn(),
-      setLogger: vi.fn().mockReturnThis(),
-      setOrg: vi.fn().mockReturnThis(),
-      setProjectDir: vi.fn().mockReturnThis(),
-    };
-    
-    vi.mocked(ArtifactService).mockImplementation(function (this: any) {
-      Object.assign(this, mockArtifactInstance);
-      return this;
-    } as any);
-    
-    // Mock the static getInstance method
-    (ArtifactService as any).getInstance = vi.fn().mockReturnValue(mockArtifactInstance);
-
     // Mock PackageInstaller
     mockInstallPackage = vi.fn().mockResolvedValue({skipped: false});
     vi.mocked(PackageInstaller).mockImplementation(function (this: any) {
@@ -112,9 +93,9 @@ describe('InstallOrchestrator', () => {
     } as any);
 
     orchestrator = new InstallOrchestrator(
-      mockProvider,
       {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
-      {targetOrg: 'test@example.com'},
+      new PackageInstaller({} as any, mockProvider, {}, mockLogger),
+      {},
       mockLogger,
     );
   });
@@ -141,11 +122,11 @@ describe('InstallOrchestrator', () => {
       );
 
       orchestrator = new InstallOrchestrator(
-        mockProvider,
-        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
-        {targetOrg: 'test@example.com'},
-        mockLogger,
-      );
+      {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
+      new PackageInstaller({} as any, mockProvider, {}, mockLogger),
+      {},
+      mockLogger,
+    );
 
       const result = await orchestrator.installAll(['pkg-b']);
 
@@ -161,11 +142,11 @@ describe('InstallOrchestrator', () => {
       );
 
       orchestrator = new InstallOrchestrator(
-        mockProvider,
-        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
-        {targetOrg: 'test@example.com'},
-        mockLogger,
-      );
+      {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
+      new PackageInstaller({} as any, mockProvider, {}, mockLogger),
+      {},
+      mockLogger,
+    );
 
       // Make pkg-a fail
       mockInstallPackage.mockRejectedValue(new Error('Install failed'));
@@ -188,11 +169,11 @@ describe('InstallOrchestrator', () => {
       };
 
       const circularOrchestrator = new InstallOrchestrator(
-        mockProvider,
-        {resolveDependencies: vi.fn().mockReturnValue(circularResolution)} as any,
-        {targetOrg: 'test@example.com'},
-        mockLogger,
-      );
+      {resolveDependencies: vi.fn().mockReturnValue(circularResolution)} as any,
+      new PackageInstaller({} as any, mockProvider, {}, mockLogger),
+      {},
+      mockLogger,
+    );
 
       await expect(circularOrchestrator.installAll(['pkg-a'])).rejects.toThrow(DependencyError);
     });
@@ -204,37 +185,20 @@ describe('InstallOrchestrator', () => {
       );
 
       const noDepsOrchestrator = new InstallOrchestrator(
-        mockProvider,
-        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
-        {includeDependencies: false, targetOrg: 'test@example.com'},
-        mockLogger,
-      );
+      {
+        getNode: vi.fn((name: string) => mockResolution.allPackages.find(n => n.name === name)),
+        resolveDependencies: vi.fn().mockReturnValue(mockResolution),
+      } as any,
+      new PackageInstaller({} as any, mockProvider, {}, mockLogger),
+      {includeDependencies: false},
+      mockLogger,
+    );
 
       const result = await noDepsOrchestrator.installAll(['pkg-b']);
 
       expect(result.results).toHaveLength(1);
       expect(result.results[0].packageName).toBe('pkg-b');
       expect(mockInstallPackage).toHaveBeenCalledTimes(1);
-    });
-
-    it('should create and share artifact service with lazy-loaded cache', async () => {
-      await orchestrator.installAll(['pkg-a']);
-
-      // getInstance should have been called to get the singleton
-      expect(ArtifactService.getInstance).toHaveBeenCalled();
-      // setOrg and setLogger should be called to configure the singleton
-      expect(mockArtifactInstance.setOrg).toHaveBeenCalled();
-      expect(mockArtifactInstance.setLogger).toHaveBeenCalled();
-      // Note: Cache is now lazy-loaded on first access, not preloaded explicitly
-    });
-
-    it('should share org and artifact service across all installers', async () => {
-      await orchestrator.installAll(['pkg-a', 'pkg-b']);
-
-      // getInstance should be called once (singleton pattern)
-      expect(ArtifactService.getInstance).toHaveBeenCalledTimes(1);
-      // Two installers created, both receiving the same org and artifact service
-      expect(PackageInstaller).toHaveBeenCalledTimes(2);
     });
   });
 

@@ -132,6 +132,7 @@ describe('validatePr', () => {
     };
 
     vi.mocked(BuildOrchestrator).mockImplementation(function () { return mockBuildOrchestrator; } as any);
+    (BuildOrchestrator as any).create = vi.fn().mockReturnValue(mockBuildOrchestrator);
 
     // Mock LifecycleEngine
     vi.mocked(LifecycleEngine.stage).mockReturnValue({use: vi.fn()} as any);
@@ -213,10 +214,10 @@ describe('validatePr', () => {
     it('runs BuildOrchestrator with no buildOrg and validation: local', async () => {
       await validatePr(localOptions);
 
-      expect(BuildOrchestrator).toHaveBeenCalledWith(
+      expect((BuildOrchestrator as any).create).toHaveBeenCalledWith(
         expect.anything(), // provider
-        expect.anything(), // graph
         {},
+        expect.anything(), // graph
         expect.objectContaining({
           continueOnError: true,
           includeDependencies: true,
@@ -246,10 +247,10 @@ describe('validatePr', () => {
     it('fetches/authenticates the scratch org and runs BuildOrchestrator with sourceOnly forced', async () => {
       await validatePr(orgOptions);
 
-      expect(BuildOrchestrator).toHaveBeenCalledWith(
+      expect((BuildOrchestrator as any).create).toHaveBeenCalledWith(
         expect.anything(), // provider
-        expect.anything(), // graph
         expect.objectContaining({buildOrg: expect.anything()}),
+        expect.anything(), // graph
         expect.objectContaining({
           continueOnError: true,
           includeDependencies: true,
@@ -293,10 +294,10 @@ describe('validatePr', () => {
         failedPackages: [],
         results: [
           {
-            duration: 100, packageName: 'pkg-a', result: {operationType: 'deploy', packageName: 'pkg-a', targetOrg: 'test@scratch.org', testLevel: 'RunSpecifiedTests'}, skipped: false, success: true,
+            duration: 100, packageName: 'pkg-a', result: {pendingValidation: {operationType: 'deploy', packageName: 'pkg-a', targetOrg: 'test@scratch.org', testLevel: 'RunSpecifiedTests'}, skipped: false}, skipped: false, success: true,
           },
           {
-            duration: 200, packageName: 'pkg-b', result: {operationType: 'deploy', packageName: 'pkg-b', targetOrg: 'test@scratch.org', testLevel: 'RunSpecifiedTests'}, skipped: false, success: true,
+            duration: 200, packageName: 'pkg-b', result: {pendingValidation: {operationType: 'deploy', packageName: 'pkg-b', targetOrg: 'test@scratch.org', testLevel: 'RunSpecifiedTests'}, skipped: false}, skipped: false, success: true,
           },
         ],
         skippedPackages: [],
@@ -354,10 +355,10 @@ describe('validatePr', () => {
     it('includes includeDependencies: true in orchestrator options', async () => {
       await validatePr(orgOptions);
 
-      expect(BuildOrchestrator).toHaveBeenCalledWith(
+      expect((BuildOrchestrator as any).create).toHaveBeenCalledWith(
         expect.anything(), // provider
-        expect.anything(), // graph
         expect.anything(), // buildOrg opts
+        expect.anything(), // graph
         expect.objectContaining({
           includeDependencies: true,
         }),

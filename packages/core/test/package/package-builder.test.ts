@@ -40,6 +40,7 @@ const {SfpmMetadataPackageStub, mockBuilderInstance, mockPackageFactoryFn, mockR
         projectDirectory: '/project',
         scope: '@test',
         setBuildNumber: vi.fn(),
+        setComponentSet: vi.fn(),
         source: {},
         type: _packageType,
         updateContent: vi.fn(),
@@ -106,12 +107,16 @@ vi.mock('../../src/package/assemblers/package-assembler.js', () => ({
   },
 }));
 
-vi.mock('../../src/lifecycle/lifecycle-engine.js', () => ({
-  LifecycleEngine: {
+vi.mock('../../src/lifecycle/lifecycle-engine.js', () => {
+  const mockLifecycleEngine = {
     getInstance: vi.fn(),
     isInitialized: vi.fn().mockReturnValue(false),
-  },
-}));
+  };
+  return {
+    default: mockLifecycleEngine,
+    LifecycleEngine: mockLifecycleEngine,
+  };
+});
 
 vi.mock('../../src/package/analyzers/analyzer-registry.js', () => ({
   AnalyzerRegistry: {
@@ -129,6 +134,12 @@ vi.mock('@salesforce/core', () => ({
   },
 }));
 
+vi.mock('@salesforce/source-deploy-retrieve', () => ({
+  ComponentSet: {
+    fromSource: vi.fn().mockReturnValue({}),
+  },
+}));
+
 import {Org} from '@salesforce/core';
 import {builderFactory} from '../../src/package/builders/builder-registry.js';
 
@@ -137,12 +148,15 @@ import {builderFactory} from '../../src/package/builders/builder-registry.js';
 // ============================================================================
 
 const mockProvider: any = {
+  getPackageBuildDirectory: vi.fn().mockReturnValue('/project/packages/my-pkg/dist'),
+  getPackageBuiltSourceDirectory: vi.fn().mockReturnValue('/project/packages/my-pkg/dist/force-app'),
   getPackageDefinition: vi.fn().mockReturnValue({
     name: 'my-pkg',
     path: 'force-app',
     type: 'source',
     version: '1.0.0',
   }),
+  getPackageDir: vi.fn().mockReturnValue('/project/packages/my-pkg'),
   projectDir: '/project',
 };
 
@@ -175,64 +189,65 @@ describe('PackageBuilder', () => {
     it('should route unlocked packages through source builder when sourceOnly is true', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
-      const builder = new PackageBuilder(mockProvider, {
-        sourceOnly: true,
+      const builder = new PackageBuilder(mockProvider, {}, {
+        unlocked: {sourceOnly: true},
         validation: 'org',
       }, mockLogger);
 
       await builder.build('my-pkg');
 
-      expect((builderFactory as any).mock.calls[0][4]).toBe(PackageType.Source);
+      expect((builderFactory as any).mock.calls[0][5]).toBe(PackageType.Source);
     });
 
     it('should NOT route source packages differently when sourceOnly is true', async () => {
       mockPackageFactoryFn.packageType = PackageType.Source;
 
-      const builder = new PackageBuilder(mockProvider, {
-        sourceOnly: true,
+      const builder = new PackageBuilder(mockProvider, {}, {
+        unlocked: {sourceOnly: true},
         validation: 'org',
       }, mockLogger);
 
       await builder.build('my-pkg');
 
-      expect((builderFactory as any).mock.calls[0][4]).toBe(undefined);
+      expect((builderFactory as any).mock.calls[0][5]).toBe(undefined);
     });
 
     it('should route unlocked through source builder when validation is local (no org)', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
-      const builder = new PackageBuilder(mockProvider, {
+      const builder = new PackageBuilder(mockProvider, {}, {
         validation: 'local',
       }, mockLogger);
 
       await builder.build('my-pkg');
 
-      expect((builderFactory as any).mock.calls[0][4]).toBe(PackageType.Source);
+      expect((builderFactory as any).mock.calls[0][5]).toBe(PackageType.Source);
     });
 
     it('should route unlocked through source builder when validation is none', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
-      const builder = new PackageBuilder(mockProvider, {
+      const builder = new PackageBuilder(mockProvider, {}, {
         validation: 'none',
       }, mockLogger);
 
       await builder.build('my-pkg');
 
-      expect((builderFactory as any).mock.calls[0][4]).toBe(PackageType.Source);
+      expect((builderFactory as any).mock.calls[0][5]).toBe(PackageType.Source);
     });
 
     it('should use normal unlocked builder when validation is org and sourceOnly is false', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
-      const builder = new PackageBuilder(mockProvider, {
-        devhubUsername: 'hub@test.com',
+      const devhub = await Org.create({aliasOrUsername: 'hub@test.com'});
+
+      const builder = new PackageBuilder(mockProvider, {devhub}, {
         validation: 'org',
       }, mockLogger);
 
       await builder.build('my-pkg');
 
-      expect((builderFactory as any).mock.calls[0][4]).toBe(undefined);
+      expect((builderFactory as any).mock.calls[0][5]).toBe(undefined);
     });
   });
 
@@ -244,49 +259,49 @@ describe('PackageBuilder', () => {
     it('should resolve DevHub for unlocked packages with org validation', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
-      const builder = new PackageBuilder(mockProvider, {
-        devhubUsername: 'hub@test.com',
+      const devhub = await Org.create({aliasOrUsername: 'hub@test.com'});
+
+      const builder = new PackageBuilder(mockProvider, {devhub}, {
         validation: 'org',
       }, mockLogger);
 
       await builder.build('my-pkg');
 
-      const resolvedOrg = await (Org.create as any).mock.results[0]?.value;
-      expect(mockBuilderInstance.connect).toHaveBeenCalledWith(resolvedOrg);
+      expect(mockBuilderInstance.connect).toHaveBeenCalledWith(devhub);
     });
 
     it('should resolve buildOrg for source packages with org validation', async () => {
       mockPackageFactoryFn.packageType = PackageType.Source;
 
-      const builder = new PackageBuilder(mockProvider, {
-        buildOrg: 'build@test.com',
+      const buildOrg = await Org.create({aliasOrUsername: 'build@test.com'});
+
+      const builder = new PackageBuilder(mockProvider, {buildOrg}, {
         validation: 'org',
       }, mockLogger);
 
       await builder.build('my-pkg');
 
-      const resolvedOrg = await (Org.create as any).mock.results[0]?.value;
-      expect(mockBuilderInstance.connect).toHaveBeenCalledWith(resolvedOrg);
+      expect(mockBuilderInstance.connect).toHaveBeenCalledWith(buildOrg);
     });
 
     it('should resolve buildOrg for unlocked packages when sourceOnly is true', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
 
-      const builder = new PackageBuilder(mockProvider, {
-        buildOrg: 'build@test.com',
-        sourceOnly: true,
+      const buildOrg = await Org.create({aliasOrUsername: 'build@test.com'});
+
+      const builder = new PackageBuilder(mockProvider, {buildOrg}, {
+        unlocked: {sourceOnly: true},
         validation: 'org',
       }, mockLogger);
 
       await builder.build('my-pkg');
 
-      // Should use buildOrg (not devhubUsername) because sourceOnly
-      const resolvedOrg = await (Org.create as any).mock.results[0]?.value;
-      expect(mockBuilderInstance.connect).toHaveBeenCalledWith(resolvedOrg);
+      // Should use buildOrg (not devhub) because sourceOnly
+      expect(mockBuilderInstance.connect).toHaveBeenCalledWith(buildOrg);
     });
 
     it('should not connect to org when validation is local', async () => {
-      const builder = new PackageBuilder(mockProvider, {
+      const builder = new PackageBuilder(mockProvider, {}, {
         validation: 'local',
       }, mockLogger);
 
@@ -296,7 +311,7 @@ describe('PackageBuilder', () => {
     });
 
     it('should not connect to org when validation is none', async () => {
-      const builder = new PackageBuilder(mockProvider, {
+      const builder = new PackageBuilder(mockProvider, {}, {
         validation: 'none',
       }, mockLogger);
 
@@ -317,7 +332,7 @@ describe('PackageBuilder', () => {
         latestVersion: '1.0.0',
       });
 
-      const builder = new PackageBuilder(mockProvider, {}, mockLogger);
+      const builder = new PackageBuilder(mockProvider, {}, {}, mockLogger);
       await builder.build('my-pkg');
 
       expect(builderFactory).not.toHaveBeenCalled();
@@ -326,7 +341,7 @@ describe('PackageBuilder', () => {
     it('should proceed when source hash differs', async () => {
       mockRepo.checkSourceHash.mockResolvedValue(undefined);
 
-      const builder = new PackageBuilder(mockProvider, {}, mockLogger);
+      const builder = new PackageBuilder(mockProvider, {}, {}, mockLogger);
       await builder.build('my-pkg');
 
       expect(builderFactory).toHaveBeenCalled();
@@ -338,7 +353,7 @@ describe('PackageBuilder', () => {
         latestVersion: '1.0.0',
       });
 
-      const builder = new PackageBuilder(mockProvider, {force: true}, mockLogger);
+      const builder = new PackageBuilder(mockProvider, {}, {force: true}, mockLogger);
       await builder.build('my-pkg');
 
       expect(builderFactory).toHaveBeenCalled();
@@ -359,8 +374,7 @@ describe('PackageBuilder', () => {
       });
       mockRepo.getPackageVersionId.mockReturnValue(undefined);
 
-      const builder = new PackageBuilder(mockProvider, {
-        devhubUsername: 'hub@test.com',
+      const builder = new PackageBuilder(mockProvider, {devhub: 'hub@test.com'}, {
         validation: 'org',
       }, mockLogger);
 
@@ -381,8 +395,7 @@ describe('PackageBuilder', () => {
       });
       mockRepo.getPackageVersionId.mockReturnValue(undefined);
 
-      const builder = new PackageBuilder(mockProvider, {
-        devhubUsername: 'hub@test.com',
+      const builder = new PackageBuilder(mockProvider, {devhub: 'hub@test.com'}, {
         validation: 'full',
       }, mockLogger);
 
@@ -400,8 +413,7 @@ describe('PackageBuilder', () => {
       });
       mockRepo.getPackageVersionId.mockReturnValue('04tXXXXXXXXXXXXX');
 
-      const builder = new PackageBuilder(mockProvider, {
-        devhubUsername: 'hub@test.com',
+      const builder = new PackageBuilder(mockProvider, {devhub: 'hub@test.com'}, {
         validation: 'org',
       }, mockLogger);
 
@@ -420,8 +432,8 @@ describe('PackageBuilder', () => {
       // No packageVersionId — but sourceOnly doesn't need one
       mockRepo.getPackageVersionId.mockReturnValue(undefined);
 
-      const builder = new PackageBuilder(mockProvider, {
-        sourceOnly: true,
+      const builder = new PackageBuilder(mockProvider, {}, {
+        unlocked: {sourceOnly: true},
         validation: 'org',
       }, mockLogger);
 
@@ -440,7 +452,7 @@ describe('PackageBuilder', () => {
       });
       mockRepo.getPackageVersionId.mockReturnValue(undefined);
 
-      const builder = new PackageBuilder(mockProvider, {
+      const builder = new PackageBuilder(mockProvider, {}, {
         validation: 'local',
       }, mockLogger);
 
@@ -458,8 +470,7 @@ describe('PackageBuilder', () => {
       });
       mockRepo.getPackageVersionId.mockReturnValue(undefined);
 
-      const builder = new PackageBuilder(mockProvider, {
-        buildOrg: 'build@test.com',
+      const builder = new PackageBuilder(mockProvider, {buildOrg: 'build@test.com'}, {
         validation: 'org',
       }, mockLogger);
 
@@ -478,7 +489,7 @@ describe('PackageBuilder', () => {
     it('should run analyzers when validation is full', async () => {
       const {AnalyzerRegistry} = await import('../../src/package/analyzers/analyzer-registry.js');
 
-      const builder = new PackageBuilder(mockProvider, {
+      const builder = new PackageBuilder(mockProvider, {}, {
         validation: 'full',
       }, mockLogger);
 
@@ -490,7 +501,7 @@ describe('PackageBuilder', () => {
     it('should run analyzers when validation is local', async () => {
       const {AnalyzerRegistry} = await import('../../src/package/analyzers/analyzer-registry.js');
 
-      const builder = new PackageBuilder(mockProvider, {
+      const builder = new PackageBuilder(mockProvider, {}, {
         validation: 'local',
       }, mockLogger);
 
@@ -502,8 +513,7 @@ describe('PackageBuilder', () => {
     it('should run analyzers when validation is org', async () => {
       const {AnalyzerRegistry} = await import('../../src/package/analyzers/analyzer-registry.js');
 
-      const builder = new PackageBuilder(mockProvider, {
-        buildOrg: 'build@test.com',
+      const builder = new PackageBuilder(mockProvider, {buildOrg: 'build@test.com'}, {
         validation: 'org',
       }, mockLogger);
 
@@ -516,7 +526,7 @@ describe('PackageBuilder', () => {
       const {AnalyzerRegistry} = await import('../../src/package/analyzers/analyzer-registry.js');
       vi.mocked(AnalyzerRegistry.getAnalyzers).mockClear();
 
-      const builder = new PackageBuilder(mockProvider, {
+      const builder = new PackageBuilder(mockProvider, {}, {
         validation: 'none',
       }, mockLogger);
 
