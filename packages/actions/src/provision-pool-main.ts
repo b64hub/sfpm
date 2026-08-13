@@ -26,6 +26,7 @@ try {
     : undefined;
   const projectDir = core.getInput('project-dir') || undefined;
   const sandboxNamePattern = core.getInput('sandbox-name-pattern') || undefined;
+  const useLocalSource = core.getInput('use-local-source') === 'true';
 
   const result = await provisionPool({
     batchSize,
@@ -37,6 +38,7 @@ try {
     projectDir,
     sandboxNamePattern,
     tag,
+    useLocalSource,
   });
 
   if (!result.success) {

@@ -35,6 +35,9 @@ inputs:
   sandbox-name-pattern:
     description: 'Sandbox name prefix (e.g., SB → SB1, SB2, ...)'
     required: false
+  use-local-source:
+    description: 'Deploy from local project source instead of downloaded artifacts'
+    required: false
 
 outputs:
   success:

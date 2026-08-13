@@ -37,6 +37,8 @@ export interface ProvisionPoolOptions {
   sandboxNamePattern?: string;
   /** Pool tag */
   tag: string;
+  /** Deploy from local project source instead of downloaded artifacts */
+  useLocalSource?: boolean;
 }
 
 export interface ProvisionPoolResult {
@@ -93,7 +95,7 @@ export async function provisionPool(options: ProvisionPoolOptions): Promise<Prov
   // 2. Build pool config and provisioning tasks
   // ------------------------------------------------------------------
   const config = buildPoolConfig(options, poolType, projectDir, poolConfig);
-  const tasks = buildTasks(config, devhub, projectDir);
+  const tasks = buildTasks(config, devhub, projectDir, options.useLocalSource);
 
   const {manager} = createPoolServices({
     devhub,
@@ -204,7 +206,7 @@ function setActionOutputs(result: ProvisionPoolResult, provisionResult: PoolProv
  * it's marked Available — mirrors `PoolFill.buildTasks()` in the CLI so
  * both entry points deploy project packages to freshly provisioned orgs.
  */
-function buildTasks(config: PoolConfig, devhub: Org, projectDir: string): PoolOrgTask[] {
+function buildTasks(config: PoolConfig, devhub: Org, projectDir: string, useLocalSource?: boolean): PoolOrgTask[] {
   const tasks: PoolOrgTask[] = [];
 
   // Scratch orgs need the artifact tracking package installed first
@@ -216,6 +218,7 @@ function buildTasks(config: PoolConfig, devhub: Org, projectDir: string): PoolOr
   tasks.push(new DeploymentTask({
     continueOnError: config.deployment?.continueOnError ?? true,
     testLevel: config.deployment?.testLevel,
+    useLocalSource,
     workingDirectory: projectDir,
   }));
 
