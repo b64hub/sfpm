@@ -132,7 +132,7 @@ export default class UnlockedPackageBuilder implements Builder {
   }
 
   private buildValidationDescriptor(requestId: string | undefined): PackageVersionValidationDescriptor | undefined {
-    if (!this.options.validation && this.options.validation === 'none') return undefined;
+    if (!this.options.validation || this.options.validation === 'none') return undefined;
     if (!requestId) return undefined;
 
     return {

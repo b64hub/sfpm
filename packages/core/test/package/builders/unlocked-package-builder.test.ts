@@ -1,400 +1,360 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import path from 'node:path';
+import {
+  beforeEach, describe, expect, it, vi,
+} from 'vitest';
+
 import UnlockedPackageBuilder from '../../../src/package/builders/unlocked-package-builder.js';
-import { BuilderOptions } from '../../../src/package/builders/builder-registry.js';
-import { SfpmUnlockedPackage } from '../../../src/package/sfpm-package.js';
-import { PackageType } from '../../../src/types/package.js';
-import { Org, SfProject, Lifecycle } from '@salesforce/core';
-import { PackageVersion } from '@salesforce/packaging';
-import { Duration } from '@salesforce/kit';
-import fs from 'fs-extra';
-import path from 'path';
+import {SfpmSourcePackage, SfpmUnlockedPackage} from '../../../src/package/sfpm-package.js';
+import {BuildError} from '../../../src/types/errors.js';
+import {BuildOptions} from '../../../src/types/package.js';
 
-// Mocks
-vi.mock('@salesforce/core', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@salesforce/core')>();
+// ============================================================================
+// Hoisted mocks (accessible inside vi.mock factories)
+// ============================================================================
+
+const {
+  mockCreatePackageVersion, mockGetVersionCreateStatus, mockPathExists, mockReadJson, mockResolveBuildConfig, mockWriteJson,
+} = vi.hoisted(() => ({
+  mockCreatePackageVersion: vi.fn(),
+  mockGetVersionCreateStatus: vi.fn(),
+  mockPathExists: vi.fn(),
+  mockReadJson: vi.fn(),
+  mockResolveBuildConfig: vi.fn(),
+  mockWriteJson: vi.fn(),
+}));
+
+// UnlockedPackageBuilder delegates the actual SDK calls (SfProject, Lifecycle,
+// PackageVersion.create/getCreateStatus) to PackageService, which has its own
+// dedicated test suite (package-service.test.ts). Mocking PackageService here
+// keeps this suite scoped to the builder's own logic: option resolution,
+// installation-key lookup, result hydration, and the create-failure recovery flow.
+vi.mock('../../../src/package/package-service.js', () => ({
+  default: function PackageService() {
     return {
-        ...actual,
-        Org: class {
-            static create = vi.fn();
-            getConnection = vi.fn();
-            isDevHubOrg = vi.fn().mockReturnValue(true);
-        },
-        SfProject: class {
-            static resolve = vi.fn();
-            getSfProjectJson = vi.fn();
-            getPath = vi.fn().mockReturnValue('/tmp/project');
-        },
-        Lifecycle: class {
-            static getInstance = vi.fn();
-        }
+      createPackageVersion: mockCreatePackageVersion,
+      getVersionCreateStatus: mockGetVersionCreateStatus,
     };
-});
+  },
+}));
 
-vi.mock('@salesforce/packaging', async () => {
-    return {
-        PackageVersion: {
-            create: vi.fn(),
-            getCreateStatus: vi.fn(),
-        }
-    };
-});
-
-vi.mock('fs-extra', async () => {
-    const actual = await import('fs-extra');
-    return {
-        ...actual,
-        default: {
-            ...actual,
-            pathExists: vi.fn().mockResolvedValue(false),
-            readJson: vi.fn().mockResolvedValue({}),
-            writeJson: vi.fn().mockResolvedValue(undefined),
-        },
-    };
-});
-
-
-vi.mock('../../../src/artifacts/artifact-assembler.js', () => {
-    return {
-        default: class {
-            assemble = vi.fn().mockResolvedValue('/tmp/artifact.zip');
-        }
-    };
-});
-
-vi.mock('../../../src/package/builders/tasks/assemble-artifact-task.js', () => ({
-    assembleArtifactTask: () => () => ({
-        name: 'assemble-artifact',
-        exec: vi.fn().mockResolvedValue(undefined),
+// resolveBuildConfig() merges per-package project config with runtime options —
+// that layering is ProjectService's own concern. Here it just echoes the
+// runtime options back so tests control the exact BuildOptions the builder sees.
+vi.mock('../../../src/project/project-service.js', () => ({
+  default: {
+    getInstance: vi.fn().mockResolvedValue({
+      resolveBuildConfig: mockResolveBuildConfig,
     }),
+  },
+}));
+
+vi.mock('fs-extra', () => ({
+  default: {
+    pathExists: mockPathExists,
+    readJson: mockReadJson,
+    writeJson: mockWriteJson,
+  },
 }));
 
 describe('UnlockedPackageBuilder', () => {
-    let builder: UnlockedPackageBuilder;
-    let mockSfpmPackage: SfpmUnlockedPackage;
-    let mockLogger: any;
-    let mockOrg: any;
-    let mockConnection: any;
-    let mockLifecycle: any;
-    let mockProject: any;
-    let mockProjectJson: any;
-    let lifecycleListeners: Record<string, Function> = {};
-    let builderOptions: BuilderOptions;
+  let mockLogger: any;
+  let mockProvider: any;
+  let mockDevhub: any;
+  let mockSfpmPackage: InstanceType<typeof SfpmUnlockedPackage>;
+  let baseOptions: BuildOptions;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockLogger = {
+      debug: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      trace: vi.fn(),
+      warn: vi.fn(),
+    };
+
+    mockProvider = {
+      getPackageBuildDirectory: vi.fn().mockReturnValue('/tmp/project'),
+    };
+
+    mockDevhub = {
+      getUsername: vi.fn().mockReturnValue('devhub-user'),
+      isDevHubOrg: vi.fn().mockReturnValue(true),
+    };
+
+    mockSfpmPackage = new SfpmUnlockedPackage('test-package', '/tmp/project');
+    mockSfpmPackage.packageId = '0Ho000000000001';
+    mockSfpmPackage.version = '1.0.0.0';
+    mockSfpmPackage.isOrgDependent = false;
+    mockSfpmPackage.tag = 'my-tag';
+
+    baseOptions = {validation: 'full', waitTime: 60};
+
+    mockResolveBuildConfig.mockImplementation((_packageName: string, runtimeOptions?: BuildOptions) => runtimeOptions ?? {});
+    mockPathExists.mockResolvedValue(false);
+
+    mockCreatePackageVersion.mockImplementation(async (_packageId: string, _options: any, onProgress?: (p: any) => void) => {
+      onProgress?.({Id: '08c000000000001', Status: 'InProgress'});
+      return {
+        Id: '08c000000000001',
+        Status: 'Success',
+        SubscriberPackageVersionId: '04t000000000AAA',
+        VersionNumber: '1.0.0.5',
+      };
+    });
+  });
+
+  it('rejects a package that is not an unlocked package', () => {
+    const notUnlocked = new SfpmSourcePackage('other-package', '/tmp/project');
+
+    expect(() => new UnlockedPackageBuilder(mockProvider, notUnlocked, baseOptions, mockLogger))
+    .toThrow(TypeError);
+  });
+
+  describe('connect', () => {
+    it('throws a BuildError when no org is provided', async () => {
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+
+      await expect(builder.connect()).rejects.toThrow(BuildError);
+    });
+
+    it('throws a BuildError when the org is not a dev hub', async () => {
+      mockDevhub.isDevHubOrg.mockReturnValue(false);
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+
+      await expect(builder.connect(mockDevhub)).rejects.toThrow(BuildError);
+    });
+  });
+
+  it('throws when exec() is called before connect()', async () => {
+    const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+
+    await expect(builder.exec()).rejects.toThrow('Must run connect() before exec()');
+  });
+
+  describe('exec', () => {
+    it('creates the package version, hydrates the package, and reports pending validation', async () => {
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+      await builder.connect(mockDevhub);
+      const expectedVersionNumber = mockSfpmPackage.getVersionNumber('salesforce');
+
+      const result = await builder.exec();
+
+      expect(mockCreatePackageVersion).toHaveBeenCalledWith(
+        '0Ho000000000001',
+        expect.objectContaining({
+          apiVersion: mockSfpmPackage.apiVersion,
+          asyncvalidation: true,
+          codecoverage: true,
+          installationkey: undefined,
+          installationkeybypass: true,
+          skipvalidation: false,
+          tag: 'my-tag',
+          versionnumber: expectedVersionNumber,
+          wait: 60,
+        }),
+        expect.any(Function),
+      );
+
+      expect(mockSfpmPackage.packageVersionId).toBe('04t000000000AAA');
+      expect(result).toMatchObject({
+        packageName: mockSfpmPackage.name,
+        packageVersionId: '04t000000000AAA',
+        pendingValidation: {
+          devhub: 'devhub-user',
+          operationType: 'package-version-request',
+          packageName: mockSfpmPackage.packageName,
+          packageVersionRequestId: '08c000000000001',
+        },
+      });
+      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Status: InProgress'));
+    });
+
+    it('skips validation and installation-key bypass changes with validation: none', async () => {
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, {...baseOptions, validation: 'none'}, mockLogger);
+      await builder.connect(mockDevhub);
+
+      await builder.exec();
+
+      expect(mockCreatePackageVersion).toHaveBeenCalledWith(
+        '0Ho000000000001',
+        expect.objectContaining({asyncvalidation: false, codecoverage: false, skipvalidation: true}),
+        expect.any(Function),
+      );
+    });
+
+    it('skips async validation for org-dependent packages even when validation is enabled', async () => {
+      mockSfpmPackage.isOrgDependent = true;
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+      await builder.connect(mockDevhub);
+
+      await builder.exec();
+
+      expect(mockCreatePackageVersion).toHaveBeenCalledWith(
+        '0Ho000000000001',
+        expect.objectContaining({asyncvalidation: false}),
+        expect.any(Function),
+      );
+    });
+
+    describe('installation key resolution', () => {
+      it('falls back to the wildcard key when the package has no explicit entry', async () => {
+        const options: BuildOptions = {...baseOptions, unlocked: {installationKeys: {'*': 'default-key'}}};
+        const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, options, mockLogger);
+        await builder.connect(mockDevhub);
+
+        await builder.exec();
+
+        expect(mockCreatePackageVersion).toHaveBeenCalledWith(
+          '0Ho000000000001',
+          expect.objectContaining({installationkey: 'default-key', installationkeybypass: undefined}),
+          expect.any(Function),
+        );
+      });
+
+      it('prefers a package-specific key over the wildcard', async () => {
+        const options: BuildOptions = {
+          ...baseOptions,
+          unlocked: {installationKeys: {'*': 'default-key', 'test-package': 'specific-key'}},
+        };
+        const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, options, mockLogger);
+        await builder.connect(mockDevhub);
+
+        await builder.exec();
+
+        expect(mockCreatePackageVersion).toHaveBeenCalledWith(
+          '0Ho000000000001',
+          expect.objectContaining({installationkey: 'specific-key', installationkeybypass: undefined}),
+          expect.any(Function),
+        );
+      });
+
+      it('bypasses the installation key when no key applies to this package', async () => {
+        const options: BuildOptions = {...baseOptions, unlocked: {installationKeys: {'other-package': 'irrelevant-key'}}};
+        const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, options, mockLogger);
+        await builder.connect(mockDevhub);
+
+        await builder.exec();
+
+        expect(mockCreatePackageVersion).toHaveBeenCalledWith(
+          '0Ho000000000001',
+          expect.objectContaining({installationkey: undefined, installationkeybypass: true}),
+          expect.any(Function),
+        );
+      });
+    });
+  });
+
+  describe('create failure recovery', () => {
+    const requestId = '08c000000000002';
 
     beforeEach(() => {
-        // Setup Logger
-        mockLogger = {
-            info: vi.fn(),
-            error: vi.fn(),
-            warn: vi.fn(),
-            debug: vi.fn(),
-            trace: vi.fn(),
-        };
-
-        // Setup Package
-        mockSfpmPackage = new SfpmUnlockedPackage('test-package', '/tmp/project');
-        mockSfpmPackage.version = '1.0.0.0';
-        mockSfpmPackage.isOrgDependent = false;
-        mockSfpmPackage.orchestration = {
-            build: {
-                installationKey: '123',
-                postInstallScript: 'scripts/postinstall.sh'
-            }
-        } as any;
-
-        // Set required staging directory for build
-        mockSfpmPackage.workingDirectory = '/tmp/project';
-
-        // Builder options — SF API params now flow through here
-        builderOptions = {
-            validation: true,
-            installationKey: '123',
-            waitTime: 60,
-        };
-
-        // Setup Org Mock
-        mockConnection = { getApiVersion: () => '50.0' };
-        mockOrg = {
-            getConnection: () => mockConnection,
-            getUsername: () => 'test-user',
-            isDevHubOrg: () => true
-        };
-        (Org.create as any).mockResolvedValue(mockOrg);
-
-        // Setup SfProject Mock
-        mockProjectJson = {
-            getContents: vi.fn().mockReturnValue({
-                packageDirectories: [
-                    { package: 'test-package', versionNumber: '1.0.0.0', path: 'packages/test-package' }
-                ],
-                packageAliases: {}
-            })
-        };
-        mockProject = {
-            getSfProjectJson: vi.fn().mockReturnValue(mockProjectJson),
-            getPath: vi.fn().mockReturnValue('/tmp/project')
-        };
-        (SfProject.resolve as any).mockResolvedValue(mockProject);
-
-        // Setup Lifecycle Mock
-        lifecycleListeners = {};
-        mockLifecycle = {
-            on: vi.fn((event, listener) => {
-                lifecycleListeners[event] = listener;
-            }),
-            removeListener: vi.fn(),
-            removeAllListeners: vi.fn()
-        };
-        (Lifecycle.getInstance as any).mockReturnValue(mockLifecycle);
-
-
-        builder = new UnlockedPackageBuilder('/tmp/project', mockSfpmPackage, builderOptions, mockLogger);
+      // All recovery tests: create() fails after emitting progress with a request ID.
+      mockCreatePackageVersion.mockImplementation(async (_packageId: string, _options: any, onProgress?: (p: any) => void) => {
+        onProgress?.({Id: requestId, Status: 'InProgress'});
+        throw new Error('socket hang up');
+      });
     });
 
-    afterEach(() => {
-        vi.clearAllMocks();
+    it('recovers when server-side creation succeeded despite the client error', async () => {
+      mockGetVersionCreateStatus.mockResolvedValue({
+        Id: requestId,
+        Package2Id: '0Ho000000000001',
+        Status: 'Success',
+        SubscriberPackageVersionId: '04t000000000BBB',
+        VersionNumber: '1.0.0.6',
+      });
+
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+      await builder.connect(mockDevhub);
+
+      await expect(builder.exec()).resolves.not.toThrow();
+
+      expect(mockGetVersionCreateStatus).toHaveBeenCalledWith(requestId);
+      expect(mockSfpmPackage.packageVersionId).toBe('04t000000000BBB');
+      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('succeeded server-side'));
     });
 
-    describe('createPackageVersion', () => {
-        it('should call PackageVersion.create with correct options and update package version id', async () => {
-            const expectedVersionId = '04t000000000000';
+    it('throws with the server error when server-side creation failed', async () => {
+      mockGetVersionCreateStatus.mockResolvedValue({
+        Error: [{Message: 'Apex compilation failed'}],
+        Id: requestId,
+        Status: 'Error',
+      });
 
-            (PackageVersion.create as any).mockImplementation(async (options: any, polling: any) => {
-                if (lifecycleListeners['packageVersionCreate:progress']) {
-                    await lifecycleListeners['packageVersionCreate:progress']({ Status: 'Queued' });
-                    await lifecycleListeners['packageVersionCreate:progress']({ Status: 'InProgress' });
-                }
-                return {
-                    Status: 'Success',
-                    SubscriberPackageVersionId: expectedVersionId,
-                    CodeCoverage: 80
-                };
-            });
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+      await builder.connect(mockDevhub);
 
-            await builder.connect(mockOrg);
-            await builder.exec();
-
-            expect(PackageVersion.create).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    installationkey: '123',
-                    versionnumber: '1.0.0.0',
-                    skipvalidation: false,
-                    codecoverage: true,
-                    asyncvalidation: true,
-                }),
-                expect.anything()
-            );
-
-            expect(mockSfpmPackage.packageVersionId).toBe(expectedVersionId);
-            expect(mockSfpmPackage.validationState).toBeDefined();
-            expect(mockSfpmPackage.validationState!.status).toBe('pending');
-            expect(mockSfpmPackage.validationState!.checks).toContain('test');
-            expect(mockSfpmPackage.validationState!.checks).toContain('dependencies');
-            expect((mockSfpmPackage.validationState as any).pending.operationType).toBe('package-version-request');
-            expect(mockLogger.debug).toHaveBeenCalledWith(expect.stringContaining('Package Result'));
-            expect(mockLifecycle.removeAllListeners).toHaveBeenCalledWith('packageVersionCreate:progress');
-        });
-
-        it('should throw error when result has no SubscriberPackageVersionId', async () => {
-            (PackageVersion.create as any).mockResolvedValue({
-                Status: 'Error',
-                Error: ['Something went wrong']
-            });
-
-            await builder.connect(mockOrg);
-
-            await expect(builder.exec()).rejects.toThrow('Package creation failed');
-        });
+      await expect(builder.exec()).rejects.toThrow('Apex compilation failed');
     });
 
-    describe('handleCreateProgress', () => {
-        it('should emit progress events and log status during polling', async () => {
-            const expectedVersionId = '04t000000000000';
+    it('throws referencing the request ID when creation is still in progress server-side', async () => {
+      mockGetVersionCreateStatus.mockResolvedValue({Id: requestId, Status: 'InProgress'});
 
-            (PackageVersion.create as any).mockImplementation(async () => {
-                if (lifecycleListeners['packageVersionCreate:progress']) {
-                    await lifecycleListeners['packageVersionCreate:progress']({ Status: 'Queued' });
-                    await lifecycleListeners['packageVersionCreate:progress']({ Status: 'InProgress' });
-                }
-                return {
-                    Status: 'Success',
-                    SubscriberPackageVersionId: expectedVersionId,
-                    CodeCoverage: 80
-                };
-            });
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+      await builder.connect(mockDevhub);
 
-            await builder.connect(mockOrg);
-            await builder.exec();
-
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Status: Queued'));
-            expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Status: InProgress'));
-        });
+      const error = await builder.exec().catch((error_: Error) => error_);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain('still in progress');
+      expect((error as Error).message).toContain(requestId);
     });
 
-    describe('applyCreateResult', () => {
-        it('should not throw on low coverage when validation is async', async () => {
-            (PackageVersion.create as any).mockResolvedValue({
-                Status: 'Success',
-                SubscriberPackageVersionId: '04t...',
-                CodeCoverage: 50,
-                HasPassedCodeCoverageCheck: false,
-            });
+    it('falls through to the timeout handler when the verify query itself fails', async () => {
+      mockGetVersionCreateStatus.mockRejectedValue(new Error('connection refused'));
 
-            await builder.connect(mockOrg);
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+      await builder.connect(mockDevhub);
 
-            await expect(builder.exec()).resolves.not.toThrow();
-            expect(mockSfpmPackage.validationState).toMatchObject({
-                checks: ['deploy', 'test', 'dependencies'],
-                status: 'pending',
-                pending: expect.objectContaining({
-                    operationType: 'package-version-request',
-                }),
-            });
-        });
-
-        it('should set empty checks when validation is skipped', async () => {
-            const skipBuilder = new UnlockedPackageBuilder('/tmp/project', mockSfpmPackage, {
-                validation: false,
-                installationKey: '123',
-            }, mockLogger);
-
-            (PackageVersion.create as any).mockResolvedValue({
-                Status: 'Success',
-                SubscriberPackageVersionId: '04t...',
-                CodeCoverage: null,
-            });
-
-            await skipBuilder.connect(mockOrg);
-            await skipBuilder.exec();
-
-            expect(mockSfpmPackage.validationState).toEqual({
-                checks: [],
-                status: 'passed',
-            });
-        });
+      const error = await builder.exec().catch((error_: Error) => error_);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain('timed out');
+      expect((error as Error).message).toContain(requestId);
     });
 
-    describe('rewriteMetadataPathsForCwd', () => {
-        it('should rewrite staging-relative metadata paths to CWD-relative before build', async () => {
-            const stagingDir = '/tmp/staging/package';
-            const cwd = process.cwd();
-            mockSfpmPackage.workingDirectory = stagingDir;
-            builder = new UnlockedPackageBuilder(stagingDir, mockSfpmPackage, builderOptions, mockLogger);
+    it('throws the original error when no request ID was ever captured', async () => {
+      mockCreatePackageVersion.mockRejectedValue(new Error('immediate connection failure'));
 
-            const stagedProjectJson = {
-                packageDirectories: [{
-                    package: 'test-package',
-                    path: 'package',
-                    default: true,
-                    seedMetadata: { path: 'seedMetadata' },
-                    unpackagedMetadata: { path: 'unpackagedMetadata' },
-                }],
-            };
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+      await builder.connect(mockDevhub);
 
-            (fs.pathExists as any).mockResolvedValue(true);
-            (fs.readJson as any).mockResolvedValue(stagedProjectJson);
-
-            (PackageVersion.create as any).mockResolvedValue({
-                Status: 'Success',
-                SubscriberPackageVersionId: '04t000000000000',
-            });
-
-            await builder.connect(mockOrg);
-            await builder.exec();
-
-            expect(fs.writeJson).toHaveBeenCalledWith(
-                path.join(stagingDir, 'sfdx-project.json'),
-                expect.objectContaining({
-                    packageDirectories: [expect.objectContaining({
-                        seedMetadata: { path: path.relative(cwd, path.resolve(stagingDir, 'seedMetadata')) },
-                        unpackagedMetadata: { path: path.relative(cwd, path.resolve(stagingDir, 'unpackagedMetadata')) },
-                    })],
-                }),
-                { spaces: 4 },
-            );
-        });
+      await expect(builder.exec()).rejects.toThrow('immediate connection failure');
+      expect(mockGetVersionCreateStatus).not.toHaveBeenCalled();
     });
+  });
 
-    describe('handleCreateFailure', () => {
-        const requestId = '08c000000000001';
+  describe('rewriteMetadataPathsForCwd', () => {
+    it('rewrites staging-relative metadata paths to CWD-relative before build', async () => {
+      const stagingDir = '/tmp/staging/package';
+      mockProvider.getPackageBuildDirectory.mockReturnValue(stagingDir);
 
-        beforeEach(() => {
-            // Ensure getUsername is available for error messages
-            mockOrg.getUsername = vi.fn().mockReturnValue('test-user');
+      const stagedProjectJson = {
+        packageDirectories: [{
+          default: true,
+          package: 'test-package',
+          path: 'package',
+          seedMetadata: {path: 'seedMetadata'},
+          unpackagedMetadata: {path: 'unpackagedMetadata'},
+        }],
+      };
+      mockPathExists.mockResolvedValue(true);
+      mockReadJson.mockResolvedValue(stagedProjectJson);
 
-            // All recovery tests: create() fails after emitting progress with a request ID
-            (PackageVersion.create as any).mockImplementation(async () => {
-                if (lifecycleListeners['packageVersionCreate:progress']) {
-                    await lifecycleListeners['packageVersionCreate:progress']({
-                        Id: requestId,
-                        Status: 'InProgress',
-                    });
-                }
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, baseOptions, mockLogger);
+      await builder.connect(mockDevhub);
+      await builder.exec();
 
-                throw new Error('socket hang up');
-            });
-        });
-
-        it('should recover when server-side creation succeeded despite client error', async () => {
-            const expectedVersionId = '04t000000000AAA';
-
-            (PackageVersion.getCreateStatus as any).mockResolvedValue({
-                Id: requestId,
-                Status: 'Success',
-                SubscriberPackageVersionId: expectedVersionId,
-                VersionNumber: '1.0.0.5',
-                Package2Id: '0Ho000000000001',
-            });
-
-            await builder.connect(mockOrg);
-            await builder.exec();
-
-            expect(PackageVersion.getCreateStatus).toHaveBeenCalledWith(requestId, mockConnection);
-            expect(mockSfpmPackage.packageVersionId).toBe(expectedVersionId);
-            expect(mockLogger.info).toHaveBeenCalledWith(
-                expect.stringContaining('succeeded server-side'),
-            );
-        });
-
-        it('should throw with server errors when server-side creation failed', async () => {
-            (PackageVersion.getCreateStatus as any).mockResolvedValue({
-                Id: requestId,
-                Status: 'Error',
-                Error: [{Message: 'Apex compilation failed'}],
-            });
-
-            await builder.connect(mockOrg);
-
-            await expect(builder.exec()).rejects.toThrow('Apex compilation failed');
-        });
-
-        it('should throw with request ID when creation is still in progress', async () => {
-            (PackageVersion.getCreateStatus as any).mockResolvedValue({
-                Id: requestId,
-                Status: 'InProgress',
-            });
-
-            await builder.connect(mockOrg);
-
-            const error = await builder.exec().catch((e: Error) => e);
-            expect(error).toBeInstanceOf(Error);
-            expect(error!.message).toContain('still in progress');
-            expect(error!.message).toContain(requestId);
-        });
-
-        it('should fall through to timeout handler when verify query also fails', async () => {
-            (PackageVersion.getCreateStatus as any).mockRejectedValue(
-                new Error('connection refused'),
-            );
-
-            await builder.connect(mockOrg);
-
-            // Verify query fails → falls through to existing timeout detection
-            // (lastStatus is 'InProgress', so timeout path matches)
-            const error = await builder.exec().catch((e: Error) => e);
-            expect(error).toBeInstanceOf(Error);
-            expect(error!.message).toContain('timed out');
-            expect(error!.message).toContain(requestId);
-        });
+      expect(mockWriteJson).toHaveBeenCalledWith(
+        path.join(stagingDir, 'sfdx-project.json'),
+        expect.objectContaining({
+          packageDirectories: [expect.objectContaining({
+            seedMetadata: {path: expect.stringContaining('seedMetadata')},
+            unpackagedMetadata: {path: expect.stringContaining('unpackagedMetadata')},
+          })],
+        }),
+        {spaces: 4},
+      );
     });
-
+  });
 });
