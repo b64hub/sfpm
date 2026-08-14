@@ -1,9 +1,11 @@
 import * as core from '@actions/core';
 import {
+
   BuildOrchestrator,
   LifecycleEngine,
   type PendingValidationDescriptor,
   ProjectService,
+  ValidationLevel,
 } from '@b64hub/sfpm-core';
 import {createTracer} from '@b64hub/sfpm-telemetry';
 
@@ -24,11 +26,13 @@ export interface BuildOptions {
   /** Also build transitive dependencies of requested packages */
   includeDependencies?: boolean;
   /** Installation key for unlocked packages */
-  installationKey?: string;
+  installationKeys?: Record<string, string>;
   /** Packages to build (empty = all) */
   packages?: string[];
   /** Project directory (default: workspace root) */
   projectDir?: string;
+
+  validation?: ValidationLevel;
 }
 
 /**
@@ -140,8 +144,8 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
       buildNumber: options.buildNumber,
       force: options.force,
       includeDependencies: options.includeDependencies,
-      unlocked: options.installationKey ? {installationKey: options.installationKey} : undefined,
-      validation: 'full',
+      unlocked: options.installationKeys ? {installationKey: options.installationKeys} : undefined,
+      validation: options.validation,
     },
     logger,
   );

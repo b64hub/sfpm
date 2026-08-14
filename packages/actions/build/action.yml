@@ -30,12 +30,14 @@ inputs:
   project-dir:
     description: 'Path to the SFPM project directory (defaults to workspace root)'
     required: false
+  validation:
+    description: 'Validation mode: `none`, `local`, `org` or `full`'
+    required: false
+    default: 'org'
 
 outputs:
   success:
     description: 'Whether all builds succeeded (true/false)'
-  artifacts-dir:
-    description: 'Path to the artifacts directory containing built tarballs'
   duration:
     description: 'Total build duration in milliseconds'
   failed-packages:
