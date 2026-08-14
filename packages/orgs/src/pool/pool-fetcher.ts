@@ -92,8 +92,13 @@ export default class PoolFetcher {
 
         this.logger?.info(`Claimed org ${org.auth.username} from pool "${tag}"`);
 
-        // eslint-disable-next-line no-await-in-loop -- post-claim runs only once (we return immediately after)
-        await this.handlePostClaims([org], postClaimActions);
+        // A single claimed org must not be silently dropped on post-claim
+        // failure (that's only correct for fetchAll's best-effort batch) —
+        // let errors (e.g. login failures) propagate to the caller.
+        for (const action of postClaimActions) {
+          // eslint-disable-next-line no-await-in-loop -- actions run in order, once, for this org
+          await action(org);
+        }
 
         this.bus.emit('pool:fetch:complete', {
           count: 1,

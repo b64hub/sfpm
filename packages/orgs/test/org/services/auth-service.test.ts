@@ -13,6 +13,12 @@ vi.mock('@salesforce/core', () => {
   return {
     AuthInfo: {
       create: vi.fn().mockResolvedValue(mockAuthInfo),
+      parseSfdxAuthUrl: vi.fn().mockReturnValue({
+        clientId: 'parsed-client-id',
+        clientSecret: 'parsed-client-secret',
+        loginUrl: 'https://parsed.salesforce.com',
+        refreshToken: 'parsed-refresh-token',
+      }),
     },
     Org: {
       create: vi.fn().mockResolvedValue({}),
@@ -93,24 +99,46 @@ describe('AuthService', () => {
   // --------------------------------------------------------------------------
 
   describe('login — auth URL', () => {
-    it('should authenticate using auth URL when present', async () => {
+    it('should authenticate using auth URL when not already authenticated locally', async () => {
+      (AuthInfo.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('NamedOrgNotFoundError'));
+
       const service = new AuthService('hub@example.com');
       const org = createOrg({authUrl: 'force://token@instance.salesforce.com', username: 'user@test.org'});
 
       await service.login(org);
 
-      expect(AuthInfo.create).toHaveBeenCalledWith({
-        authUrl: 'force://token@instance.salesforce.com',
+      expect(AuthInfo.parseSfdxAuthUrl).toHaveBeenCalledWith('force://token@instance.salesforce.com');
+      expect(AuthInfo.create).toHaveBeenNthCalledWith(1, {username: 'user@test.org'});
+      expect(AuthInfo.create).toHaveBeenNthCalledWith(2, {
+        oauth2Options: {
+          clientId: 'parsed-client-id',
+          clientSecret: 'parsed-client-secret',
+          loginUrl: 'https://parsed.salesforce.com',
+          refreshToken: 'parsed-refresh-token',
+        },
         username: 'user@test.org',
       });
 
-      const mockAuthInfo = await (AuthInfo.create as ReturnType<typeof vi.fn>).mock.results[0].value;
+      const mockAuthInfo = await (AuthInfo.create as ReturnType<typeof vi.fn>).mock.results[1].value;
       expect(mockAuthInfo.save).toHaveBeenCalled();
       expect(Org.create).toHaveBeenCalledWith({aliasOrUsername: 'user@test.org'});
     });
 
+    it('should skip re-authentication when the org is already authenticated locally', async () => {
+      const service = new AuthService('hub@example.com');
+      const org = createOrg({authUrl: 'force://token@instance.salesforce.com', username: 'user@test.org'});
+
+      await service.login(org);
+
+      expect(AuthInfo.create).toHaveBeenCalledTimes(1);
+      expect(AuthInfo.create).toHaveBeenCalledWith({username: 'user@test.org'});
+      expect(Org.create).toHaveBeenCalledWith({aliasOrUsername: 'user@test.org'});
+    });
+
     it('should throw wrapped error when auth URL login fails', async () => {
-      (AuthInfo.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Invalid auth URL'));
+      (AuthInfo.create as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('NamedOrgNotFoundError'))
+      .mockRejectedValueOnce(new Error('Invalid auth URL'));
 
       const service = new AuthService('hub@example.com');
       const org = createOrg({authUrl: 'force://bad@url', username: 'user@test.org'});
@@ -125,12 +153,14 @@ describe('AuthService', () => {
 
   describe('login — JWT fallback', () => {
     it('should fall back to JWT when no auth URL is present', async () => {
+      (AuthInfo.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('NamedOrgNotFoundError'));
+
       const service = new AuthService('hub@example.com', jwtConfig);
       const org = createOrg({username: 'user@test.org'});
 
       await service.login(org);
 
-      expect(AuthInfo.create).toHaveBeenCalledWith({
+      expect(AuthInfo.create).toHaveBeenNthCalledWith(2, {
         oauth2Options: {
           clientId: 'PlatformCLI',
           loginUrl: 'https://login.salesforce.com',
@@ -142,7 +172,9 @@ describe('AuthService', () => {
     });
 
     it('should throw wrapped error when JWT login fails', async () => {
-      (AuthInfo.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('JWT expired'));
+      (AuthInfo.create as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('NamedOrgNotFoundError'))
+      .mockRejectedValueOnce(new Error('JWT expired'));
 
       const service = new AuthService('hub@example.com', jwtConfig);
       const org = createOrg({username: 'user@test.org'});
@@ -157,6 +189,8 @@ describe('AuthService', () => {
 
   describe('login — no auth method', () => {
     it('should throw when no auth URL and no JWT config', async () => {
+      (AuthInfo.create as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('NamedOrgNotFoundError'));
+
       const service = new AuthService('hub@example.com');
       const org = createOrg({username: 'user@test.org'});
 
