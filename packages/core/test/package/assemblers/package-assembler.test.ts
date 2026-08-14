@@ -36,16 +36,11 @@ vi.mock('../../../src/package/assemblers/steps/mdapi-conversion-step.js', () => 
 vi.mock('../../../src/project/project-service.js', () => ({
     default: {
         getInstance: vi.fn().mockResolvedValue({
-            resolveForPackage: vi.fn().mockReturnValue({
-                packageDirectories: [{ path: 'force-app', package: 'core', versionNumber: '1.0.0.0' }]
+            getProjectGraph: vi.fn().mockReturnValue({
+                getNode: vi.fn().mockReturnValue({ dependencies: new Set() }),
             }),
         }),
     },
-}));
-
-// Mock workspace path resolution so staging resolves to a predictable path
-vi.mock('../../../src/utils/workspace-path.js', () => ({
-    resolvePackageWorkspacePath: vi.fn().mockReturnValue('/root/packages/core'),
 }));
 
 import fs from 'fs-extra';
@@ -68,10 +63,11 @@ describe('PackageAssembler', () => {
                 type: 'unlocked',
                 version: '1.0.0',
             }),
+            getPackageDir: vi.fn().mockReturnValue('/root/packages/core'),
             getProjectDefinition: vi.fn().mockReturnValue({
                 packages: [{ path: 'force-app', name: 'core', type: 'unlocked', version: '1.0.0' }]
             }),
-            resolveForPackage: vi.fn().mockReturnValue({
+            resolveSingleProjectDefinition: vi.fn().mockReturnValue({
                 packages: [{ path: 'force-app', name: 'core', type: 'unlocked', version: '1.0.0' }]
             }),
         };

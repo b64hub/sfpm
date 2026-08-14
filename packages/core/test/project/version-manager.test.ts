@@ -1,15 +1,10 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { VersionManager, SinglePackageStrategy, AllPackagesStrategy, OrgDiffStrategy, GitDiffStrategy } from '../../src/project/version-manager.js';
 import { GitService } from '../../src/git/git-service.js';
-import type { ProjectDefinitionProvider } from '../../src/project/providers/project-definition-provider.js';
 import { ProjectDefinition } from '../../src/types/project.js';
+import { PackageType } from '../../src/types/package.js';
 import { OrgPackageVersionFetcher } from '../../src/types/org.js';
 import { ProjectGraph } from '../../src/project/project-graph.js';
-
-/** Wraps a ProjectDefinition in a minimal ProjectDefinitionProvider for testing. */
-function asProvider(definition: ProjectDefinition): ProjectDefinitionProvider {
-    return { getProjectDefinition: () => definition } as unknown as ProjectDefinitionProvider;
-}
 
 describe('VersionManager', () => {
     let mockProject: ProjectDefinition;
@@ -17,15 +12,15 @@ describe('VersionManager', () => {
     beforeEach(() => {
         mockProject = {
             packages: [
-                { name: 'pkg-a', path: 'packages/pkg-a', version: '1.0.0', type: 'unlocked' },
-                { name: 'pkg-b', path: 'packages/pkg-b', version: '1.0.0', type: 'unlocked', dependencies: { 'pkg-a': '1.0.0' } },
-                { name: 'pkg-c', path: 'packages/pkg-c', version: '2.0.0', type: 'source', dependencies: { 'pkg-b': '1.0.0' } }
+                { name: 'pkg-a', path: 'packages/pkg-a', version: '1.0.0', type: PackageType.Unlocked },
+                { name: 'pkg-b', path: 'packages/pkg-b', version: '1.0.0', type: PackageType.Unlocked, dependencies: { 'pkg-a': '1.0.0' } },
+                { name: 'pkg-c', path: 'packages/pkg-c', version: '2.0.0', type: PackageType.Source, dependencies: { 'pkg-b': '1.0.0' } }
             ],
         };
     });
 
     test('should update single package (minor bump) and propagate to dependencies', async () => {
-        const graph = new ProjectGraph(asProvider(mockProject));
+        const graph = ProjectGraph.buildGraph(mockProject.packages);
         const vm = VersionManager.create(graph, mockProject);
         const result = await vm.bump(
             'minor',
@@ -46,7 +41,7 @@ describe('VersionManager', () => {
     });
 
     test('should update all packages (patch bump)', async () => {
-        const graph = new ProjectGraph(asProvider(mockProject));
+        const graph = ProjectGraph.buildGraph(mockProject.packages);
         const vm = VersionManager.create(graph, mockProject);
         const result = await vm.bump(
             'patch',
@@ -67,7 +62,7 @@ describe('VersionManager', () => {
             })
         };
 
-        const graph = new ProjectGraph(asProvider(mockProject));
+        const graph = ProjectGraph.buildGraph(mockProject.packages);
         const vm = VersionManager.create(graph, mockProject);
         const result = await vm.bump(
             'patch',
@@ -82,7 +77,7 @@ describe('VersionManager', () => {
     });
 
     test('should return updated definition after bump', async () => {
-        const graph = new ProjectGraph(asProvider(mockProject));
+        const graph = ProjectGraph.buildGraph(mockProject.packages);
         const vm = VersionManager.create(graph, mockProject);
 
         await vm.bump('minor', { strategy: new SinglePackageStrategy('pkg-a') });
@@ -93,7 +88,7 @@ describe('VersionManager', () => {
     });
 
     test('should write updated dependency versions to definition', async () => {
-        const graph = new ProjectGraph(asProvider(mockProject));
+        const graph = ProjectGraph.buildGraph(mockProject.packages);
         const vm = VersionManager.create(graph, mockProject);
 
         // Bump only pkg-a; pkg-b depends on pkg-a so its dependency ref should update
@@ -117,7 +112,7 @@ describe('VersionManager', () => {
         test('should identify changed packages from git diff', async () => {
             const gitService = createMockGitService(['packages/pkg-a']);
 
-            const graph = new ProjectGraph(asProvider(mockProject));
+            const graph = ProjectGraph.buildGraph(mockProject.packages);
             const vm = VersionManager.create(graph, mockProject);
             const result = await vm.bump('patch', {
                 strategy: new GitDiffStrategy('main', gitService),
@@ -135,7 +130,7 @@ describe('VersionManager', () => {
         test('should return no packages when no files changed', async () => {
             const gitService = createMockGitService([]);
 
-            const graph = new ProjectGraph(asProvider(mockProject));
+            const graph = ProjectGraph.buildGraph(mockProject.packages);
             const vm = VersionManager.create(graph, mockProject);
             const result = await vm.bump('patch', {
                 strategy: new GitDiffStrategy('main', gitService),
@@ -147,7 +142,7 @@ describe('VersionManager', () => {
         test('should identify multiple changed packages', async () => {
             const gitService = createMockGitService(['packages/pkg-a', 'packages/pkg-c']);
 
-            const graph = new ProjectGraph(asProvider(mockProject));
+            const graph = ProjectGraph.buildGraph(mockProject.packages);
             const vm = VersionManager.create(graph, mockProject);
             const result = await vm.bump('minor', {
                 strategy: new GitDiffStrategy('main', gitService),

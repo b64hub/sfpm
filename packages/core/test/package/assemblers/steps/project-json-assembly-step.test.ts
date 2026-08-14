@@ -21,13 +21,9 @@ vi.mock('@salesforce/source-deploy-retrieve', () => ({
     },
 }));
 
-const { mockResolveForPackage } = vi.hoisted(() => ({
-    mockResolveForPackage: vi.fn(),
-}));
 vi.mock('../../../../src/project/project-service.js', () => ({
     default: {
         getInstance: vi.fn().mockResolvedValue({
-            resolveForPackage: mockResolveForPackage,
             getProjectGraph: vi.fn().mockReturnValue({
                 getNode: vi.fn().mockReturnValue({
                     dependencies: new Set(),
@@ -57,7 +53,7 @@ describe('ProjectJsonAssemblyStep', () => {
                 type: 'unlocked',
                 version: '1.0.0',
             }),
-            resolveForPackage: vi.fn().mockReturnValue({
+            resolveSingleProjectDefinition: vi.fn().mockReturnValue({
                 packages: [{
                     path: 'force-app',
                     name: 'core',

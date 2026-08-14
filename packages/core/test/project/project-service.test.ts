@@ -159,7 +159,7 @@ describe('ProjectService', () => {
 
             vi.spyOn(SfProject, 'resolve').mockResolvedValue(mockSfProject as any);
 
-            const pkg = await ProjectService.getPackageDefinition('pkg-a');
+            const pkg = await ProjectService.getPackageDefinition('pkg-a', '/mock/path');
             expect(pkg.name).toBe('pkg-a');
             expect(pkg.path).toBe('packages/pkg-a');
         });
@@ -184,7 +184,7 @@ describe('ProjectService', () => {
 
             vi.spyOn(SfProject, 'resolve').mockResolvedValue(mockSfProject as any);
 
-            const type = await ProjectService.getPackageType('pkg-a');
+            const type = await ProjectService.getPackageType('pkg-a', '/mock/path');
             expect(type).toBe(PackageType.Data);
         });
 
@@ -212,12 +212,12 @@ describe('ProjectService', () => {
 
             vi.spyOn(SfProject, 'resolve').mockResolvedValue(mockSfProject as any);
 
-            const deps = await ProjectService.getPackageDependencies('pkg-a');
+            const deps = await ProjectService.getPackageDependencies('pkg-a', '/mock/path');
 
             // Should return pkg-c and pkg-b (topological order: dependencies before dependents)
             expect(deps).toHaveLength(2);
-            expect(deps[0].package).toBe('pkg-c');
-            expect(deps[1].package).toBe('pkg-b');
+            expect(deps[0].name).toBe('pkg-c');
+            expect(deps[1].name).toBe('pkg-b');
         });
     });
 });

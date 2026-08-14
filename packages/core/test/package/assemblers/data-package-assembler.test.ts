@@ -24,7 +24,7 @@ vi.mock('@salesforce/source-deploy-retrieve', () => ({
   },
 }));
 
-vi.mock('../../../../src/package/assemblers/steps/mdapi-conversion-step.js', () => {
+vi.mock('../../../src/package/assemblers/steps/mdapi-conversion-step.js', () => {
   return {
     MDAPIConversionStep: class {
       execute = vi.fn().mockResolvedValue(undefined);
@@ -35,21 +35,16 @@ vi.mock('../../../../src/package/assemblers/steps/mdapi-conversion-step.js', () 
 vi.mock('../../../src/project/project-service.js', () => ({
   default: {
     getInstance: vi.fn().mockResolvedValue({
-      resolveForPackage: vi.fn().mockReturnValue({
-        packages: [{name: 'my-data', path: 'data', type: 'data', version: '1.0.0'}],
+      getProjectGraph: vi.fn().mockReturnValue({
+        getNode: vi.fn().mockReturnValue({dependencies: new Set()}),
       }),
     }),
   },
 }));
 
-// Mock workspace path resolution
-vi.mock('../../../src/utils/workspace-path.js', () => ({
-  resolvePackageWorkspacePath: vi.fn().mockReturnValue('/root/packages/my-data'),
-}));
-
 import fs from 'fs-extra';
 import path from 'path';
-import PackageAssembler from '../../../../src/package/assemblers/package-assembler.js';
+import PackageAssembler from '../../../src/package/assemblers/package-assembler.js';
 
 const mockedFs = fs as any;
 
@@ -68,10 +63,11 @@ describe('PackageAssembler — Data packages', () => {
         type: 'data',
         version: '1.0.0',
       }),
+      getPackageDir: vi.fn().mockReturnValue('/root/packages/my-data'),
       getProjectDefinition: vi.fn().mockReturnValue({
         packages: [{name: 'my-data', path: 'data', type: 'data', version: '1.0.0'}],
       }),
-      resolveForPackage: vi.fn().mockReturnValue({
+      resolveSingleProjectDefinition: vi.fn().mockReturnValue({
         packages: [{name: 'my-data', path: 'data', type: 'data', version: '1.0.0'}],
       }),
     };
