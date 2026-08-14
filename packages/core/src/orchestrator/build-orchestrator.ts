@@ -77,7 +77,7 @@ export class BuildOrchestrator {
   private readonly builder: PackageBuilder;
   private readonly orchestrator: Orchestrator<PackageBuildResult>;
 
-  constructor(
+  public constructor(
     graph: ProjectGraph,
     builder: PackageBuilder,
     options: OrchestratorOptions,

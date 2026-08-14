@@ -24,8 +24,8 @@ inputs:
   build-number:
     description: 'Build number for package versions'
     required: false
-  installation-key:
-    description: 'Installation key for unlocked packages'
+  installation-keys:
+    description: 'Installation key(s) for unlocked packages. One entry per line as <package-name>=<key>, or a bare value on its own line to use as the default for all packages.'
     required: false
   project-dir:
     description: 'Path to the SFPM project directory (defaults to workspace root)'

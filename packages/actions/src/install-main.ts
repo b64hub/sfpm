@@ -1,5 +1,5 @@
 import * as core from '@actions/core';
-import {type TestLevel} from '@b64hub/sfpm-core';
+import {parseInstallationKeys, type TestLevel} from '@b64hub/sfpm-core';
 
 import {install} from './install.js';
 
@@ -13,7 +13,10 @@ try {
   const packages = packagesInput.split(',').map(p => p.trim()).filter(Boolean);
 
   const projectDir = core.getInput('project-dir') || undefined;
-  const installationKey = core.getInput('installation-key') || undefined;
+  const installationKeysInput = core.getInput('installation-keys') || '';
+  const installationKeys = installationKeysInput
+    ? parseInstallationKeys(installationKeysInput.split('\n').map(l => l.trim()).filter(Boolean))
+    : undefined;
   const testLevel = core.getInput('test-level') || undefined;
   const origin = core.getInput('origin') || undefined;
 
@@ -28,7 +31,7 @@ try {
   const result = await install({
     force,
     includeDependencies,
-    installationKey,
+    installationKeys,
     origin: origin as 'local' | 'registry' | undefined,
     packages,
     projectDir,

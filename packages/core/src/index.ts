@@ -113,6 +113,7 @@ export {
 export * from './types/watcher.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
+export {parseInstallationKeys, resolveInstallationKey} from './utils/installation-key.js';
 export {getPipelineRunId} from './utils/pipeline.js';
 export {resolvePackageName, stripScope} from './utils/scope-utils.js';
 export {escapeSOQL, soql} from './utils/soql.js';

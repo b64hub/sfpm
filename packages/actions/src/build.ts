@@ -144,7 +144,7 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
       buildNumber: options.buildNumber,
       force: options.force,
       includeDependencies: options.includeDependencies,
-      unlocked: options.installationKeys ? {installationKey: options.installationKeys} : undefined,
+      unlocked: options.installationKeys ? {installationKeys: options.installationKeys} : undefined,
       validation: options.validation,
     },
     logger,

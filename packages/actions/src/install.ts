@@ -26,8 +26,8 @@ export interface InstallOptions {
   force?: boolean;
   /** Install transitive dependencies of requested packages (default: true) */
   includeDependencies?: boolean;
-  /** Installation key for unlocked packages */
-  installationKey?: string;
+  /** Package name -> installation key overrides for unlocked packages. `'*'` is the default for any package without an explicit entry. */
+  installationKeys?: Record<string, string>;
   /**
    * Where to resolve packages from:
    * - `'registry'` (default) — fetch published packages from the npm
@@ -155,8 +155,8 @@ export async function install(options: InstallOptions): Promise<InstallResult> {
   // ------------------------------------------------------------------
   const targetOrg = await Org.create({aliasOrUsername: options.targetOrg});
 
-  const unlocked = (options.installationKey || options.sourceOnly)
-    ? {installationKey: options.installationKey, sourceOnly: options.sourceOnly}
+  const unlocked = (options.installationKeys || options.sourceOnly)
+    ? {installationKeys: options.installationKeys, sourceOnly: options.sourceOnly}
     : undefined;
 
   const orchestrator = InstallOrchestrator.forArtifact(

@@ -25,8 +25,8 @@ inputs:
     description: 'Install transitive dependencies of requested packages (default: true)'
     required: false
     default: 'true'
-  installation-key:
-    description: 'Installation key for unlocked packages'
+  installation-keys:
+    description: 'Installation key(s) for unlocked packages. One entry per line as <package-name>=<key>, or a bare value on its own line to use as the default for all packages.'
     required: false
   test-level:
     description: 'Deployment test level (for source deployments): NoTestRun, RunSpecifiedTests, RunLocalTests, RunAllTestsInOrg'

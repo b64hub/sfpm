@@ -51,7 +51,7 @@ export interface BuildOptions {
 export interface UnlockedBuildOptions {
   /** Scratch org definition file for package version creation */
   definitionFile?: string;
-  installationKey?: string;
+  installationKeys?: Record<string, string>;
   /**
    * Unlocked packages are built as source instead of creating a package version.
    * No DevHub required. Designed for PR validation against scratch orgs.
@@ -72,8 +72,8 @@ export interface InstallOptions {
 }
 
 export interface UnlockedInstallOptions {
-  /** Installation key for unlocked packages */
-  installationKey?: string;
+  /** Package name -> installation key overrides. `'*'` is the default for any package without an explicit entry. */
+  installationKeys?: Record<string, string>;
   /**
    * Unlocked packages are deployed as source instead of installing a package version.
    */

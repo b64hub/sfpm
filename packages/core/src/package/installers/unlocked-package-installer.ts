@@ -4,6 +4,7 @@ import type {InstallEventSink} from '../../events/install-event-bus.js';
 
 import Logger from '../../types/logger.js';
 import {type InstallOptions, PackageType} from '../../types/package.js';
+import {resolveInstallationKey} from '../../utils/installation-key.js';
 import {resolveOrgType} from '../../utils/org-utils.js';
 import PackageManager from '../package-manager.js';
 import {SfpmUnlockedPackage} from '../sfpm-package.js';
@@ -81,7 +82,7 @@ export default class UnlockedPackageInstaller implements Installer {
 
     const packageService = PackageManager.getInstance(this.targetOrg!).getPackageService();
 
-    const installationKey = this.options?.unlocked?.installationKey;
+    const installationKey = resolveInstallationKey(this.options?.unlocked?.installationKeys, packageName);
 
     const result = await packageService.installPackage(packageVersionId, {
       installationKey,
