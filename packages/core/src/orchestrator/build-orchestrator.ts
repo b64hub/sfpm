@@ -86,7 +86,7 @@ export class BuildOrchestrator {
     this.builder = builder;
     this.orchestrationBus = new OrchestrationEventBus(randomUUID());
     const task = new BuildOrchestrationTask(builder);
-    this.orchestrator = new Orchestrator(graph, options, task, logger, this.orchestrationBus);
+    this.orchestrator = new Orchestrator(graph, {...options, includeManagedPackages: false}, task, logger, this.orchestrationBus);
   }
 
   /**
@@ -103,7 +103,7 @@ export class BuildOrchestrator {
     localValidator?: LocalValidator,
   ): BuildOrchestrator {
     const builder = new PackageBuilder(provider, buildOrg, options, logger, localValidator);
-    return new BuildOrchestrator(graph, builder, {...options, includeManagedPackages: false}, logger);
+    return new BuildOrchestrator(graph, builder, options, logger);
   }
 
   /**
