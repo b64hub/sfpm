@@ -12,7 +12,7 @@ import {
 } from '@b64hub/sfpm-core';
 import {createTracer} from '@b64hub/sfpm-telemetry';
 import {Org} from '@salesforce/core';
-import {execSync} from 'node:child_process';
+import {execFileSync} from 'node:child_process';
 
 import {createGitHubActionsLogger} from './logger.js';
 import {ActionsProgressRenderer} from './progress-renderer.js';
@@ -118,8 +118,7 @@ export async function install(options: InstallOptions): Promise<InstallResult> {
 
   if (origin === 'registry') {
     // Fetch published artifacts into node_modules
-    const pkgArgs = options.packages.map(p => `'${p}'`).join(' ');
-    execSync(`npm install --no-save ${pkgArgs}`, {cwd: projectDir, stdio: 'inherit'});
+    execFileSync('npm', ['install', '--no-save', ...options.packages], {cwd: projectDir, stdio: 'inherit'});
 
     const artifactProvider = new ArtifactProvider({logger, packages: options.packages, projectDir});
     const projectService = await ProjectService.create(projectDir, artifactProvider);

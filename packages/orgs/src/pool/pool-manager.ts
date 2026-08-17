@@ -144,7 +144,7 @@ export interface PoolManagerOptions {
  *   poolInfo: poolInfoProvider,
  *   tasks: [deployTask, scriptTask],
  * });
- * manager.events.on('pool:org:created', (p) => console.log(`Created ${p.alias}`));
+ * manager.bus.on('pool:org:created', (p) => console.log(`Created ${p.alias}`));
  *
  * const result = await manager.provision(poolConfig);
  * console.log(`${result.succeeded.length} orgs provisioned`);

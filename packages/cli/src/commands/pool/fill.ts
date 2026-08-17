@@ -44,7 +44,6 @@ export default class PoolFill extends SfpmCommand {
       description: 'pool type: scratch or sandbox (inferred from config if omitted)',
       options: [OrgTypes.Scratch, OrgTypes.Sandbox],
     }),
-    'use-local-source': Flags.boolean({description: 'deploy from local project source instead of downloaded artifacts'}),
   }
 
   public async execute(): Promise<any> {
@@ -72,7 +71,7 @@ export default class PoolFill extends SfpmCommand {
         {
           label: 'Validating prerequisites...',
           run: async hub => {
-            const tasks = this.buildTasks(config, hub, projectDir, flags['use-local-source']);
+            const tasks = this.buildTasks(config, hub, projectDir);
             deployTask = tasks.find((t): t is DeploymentTask => t instanceof DeploymentTask);
             const services = createPoolServices({
               devhub: hub,
@@ -168,7 +167,7 @@ export default class PoolFill extends SfpmCommand {
     } as PoolConfig;
   }
 
-  private buildTasks(config: PoolConfig, devhub: Org, projectDir: string, useLocalSource?: boolean): PoolOrgTask[] {
+  private buildTasks(config: PoolConfig, devhub: Org, projectDir: string): PoolOrgTask[] {
     const tasks: PoolOrgTask[] = [];
     const isScratch = config.type === OrgTypes.Scratch;
 
@@ -181,7 +180,6 @@ export default class PoolFill extends SfpmCommand {
     tasks.push(new DeploymentTask({
       continueOnError: config.deployment?.continueOnError ?? true,
       testLevel: config.deployment?.testLevel,
-      useLocalSource,
       workingDirectory: projectDir,
     }));
 

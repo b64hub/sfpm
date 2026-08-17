@@ -46,7 +46,9 @@ export default class Deploy extends SfpmCommand {
     '<%= config.bin %> <%= command.id %> package-a package-b -o my-sandbox',
   ]
   static override flags = {
-    force: Flags.boolean({char: 'f', default: true, description: 'force deploy even if already installed'}),
+    force: Flags.boolean({
+      allowNo: true, char: 'f', default: true, description: 'force deploy even if already installed',
+    }),
     'no-dependencies': Flags.boolean({description: 'only deploy the specified packages, skip transitive dependencies'}),
     'no-hooks': Flags.boolean({description: 'skip lifecycle hooks'}),
     'regression-test': Flags.boolean({description: 'run tests in direct dependents after deploy to detect regressions'}),

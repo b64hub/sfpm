@@ -86,7 +86,15 @@ export async function buildTurboAggregate(options: BuildTurboAggregateOptions): 
     }
 
     const orchestration = JSON.parse(fs.readFileSync(resultPath, 'utf8')) as OrchestrationResult<PackageBuildResult>;
-    const packageResult = orchestration.results.find(r => r.packageName === packageName) ?? orchestration.results[0];
+    const packageResult = orchestration.results.find(r => r.packageName === packageName);
+    if (!packageResult) {
+      logger.error(`Build result at ${resultPath} has no entry for '${packageName}'`);
+      failedPackages.push(packageName);
+      packages.push({
+        packageName, packageType, skipped: false, success: false,
+      });
+      continue;
+    }
 
     const npmPackageJsonPath = path.join(projectDir, packageDir, 'package.json');
     const npmName = fs.existsSync(npmPackageJsonPath)

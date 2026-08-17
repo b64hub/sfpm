@@ -18,7 +18,7 @@ inputs:
     description: 'Pool tag to fetch orgs from. Required when mode is org.'
     required: false
   pool-type:
-    description: 'Pool type: scratch or sandbox (inferred from sfpm.config.ts orgs.pools[tag] if omitted, default scratch)'
+    description: 'Pool type: scratch or sandbox (inferred from sfpm.config.ts orgs[tag] if omitted, default scratch)'
     required: false
   cache-ttl-hours:
     description: 'How long to cache an org for this PR (hours). Set to 0 to disable caching. Only used when mode is org.'

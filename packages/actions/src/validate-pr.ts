@@ -53,7 +53,7 @@ export interface ValidatePrOptions {
   packages?: string[];
   /** Pool tag to fetch scratch orgs from. Required when mode is 'org'. */
   poolTag?: string;
-  /** Pool type: scratch or sandbox (inferred from sfpm.config.ts orgs.pools[tag] if omitted, default scratch) */
+  /** Pool type: scratch or sandbox (inferred from sfpm.config.ts orgs[tag] if omitted, default scratch) */
   poolType?: OrgTypes;
   /** Project directory (default: workspace root) */
   projectDir?: string;
@@ -292,7 +292,7 @@ async function resolveChangedPackageNames(
 
 /**
  * Resolves the pool type for `poolTag`, preferring (in order): the explicit
- * `poolType` option, `sfpm.config.ts` orgs.pools[tag].type, then 'scratch'.
+ * `poolType` option, `sfpm.config.ts` orgs[tag].type, then 'scratch'.
  */
 export function resolvePoolType(sfpmConfig: SfpmConfig, poolTag: string | undefined, explicitType: OrgTypes | undefined): OrgTypes {
   const poolConfig = (sfpmConfig.orgs as undefined | {[tag: string]: {type?: OrgTypes}})?.[poolTag ?? ''];

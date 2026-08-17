@@ -4,7 +4,7 @@ import {describe, expect, it} from 'vitest';
 import {resolvePoolType} from '../src/validate-pr.js';
 
 describe('resolvePoolType', () => {
-    it('falls back to sfpm.config.ts orgs.pools[tag].type', () => {
+    it('falls back to sfpm.config.ts orgs[tag].type', () => {
         const sfpmConfig = {orgs: {ci: {type: OrgTypes.Sandbox}}};
         expect(resolvePoolType(sfpmConfig, 'ci', undefined)).toBe(OrgTypes.Sandbox);
     });
