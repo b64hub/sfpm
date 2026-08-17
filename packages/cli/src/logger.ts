@@ -3,13 +3,13 @@ import type EventEmitter from 'node:events';
 import type {Logger as PinoLogger} from 'pino';
 import type PinoPretty from 'pino-pretty';
 
-import {findSfpmRoot} from '@b64hub/sfpm-core';
 import {randomBytes} from 'node:crypto';
 import {mkdirSync} from 'node:fs';
 import path from 'node:path';
 import pino from 'pino';
 
 import {createPinoBridge} from './ui/pino-bridge.js';
+import {resolveCliProjectDir} from './utils/project-dir.js';
 
 // ============================================================================
 // CLI Logger Factory
@@ -82,13 +82,14 @@ export class CliLoggerFactory {
    *   - interactive path: routes logs to the ink UI via `log:append` events
    *   - non-interactive path: mirrors logs to stderr at the configured level
    *
-   * The project root is resolved by walking up from CWD looking for
-   * `sfpm.config.{ts,js,mjs}`. Falls back to CWD if none is found.
+   * The project root is resolved via {@link resolveCliProjectDir} —
+   * `SFPM_PROJECT_DIR` if set, otherwise walking up from CWD looking for
+   * `sfpm.config.{ts,js,mjs}`.
    *
    * @returns the logger and the absolute path to the log file.
    */
   static forRun(options: ForRunOptions): {logger: CliLogger; logPath: string} {
-    const projectRoot = findSfpmRoot(process.cwd()) ?? process.cwd();
+    const projectRoot = resolveCliProjectDir();
     const logDir = path.join(projectRoot, '.sfpm', 'logs');
     mkdirSync(logDir, {recursive: true});
 

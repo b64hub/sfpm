@@ -13,6 +13,7 @@ import SfpmCommand from '../sfpm-command.js'
 import {attachInstallBridge} from '../ui/install-event-bridge.js'
 import {InstallProgressRenderer} from '../ui/install-progress-renderer.js'
 import {renderApp} from '../ui/run.js'
+import {resolveCliProjectDir} from '../utils/project-dir.js'
 
 export default class Install extends SfpmCommand {
   static override args = {
@@ -69,8 +70,7 @@ export default class Install extends SfpmCommand {
       flags.force = true
     }
 
-    // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectDir = resolveCliProjectDir();
 
     // Fetch specified packages (and transitive deps) from registry into node_modules.
     // Uses npm (not pnpm) to bypass workspace symlink resolution.

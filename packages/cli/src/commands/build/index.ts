@@ -2,7 +2,6 @@ import {
   BuildOrchestrator,
   type BuildOrchestratorOptions, type BuildOrg,
   type BuildWatcherPayload,
-  findSfpmRoot,
   LifecycleEngine,
   noopLogger,
   PackageType,
@@ -29,6 +28,7 @@ import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-rendere
 import {renderApp} from '../../ui/run.js'
 import {ValidationProgressRenderer} from '../../ui/validation-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
+import {resolveCliProjectDir} from '../../utils/project-dir.js'
 import {forkWatcher, validationRunnerScript} from '../../utils/watcher.js'
 
 interface ResolvedBuildFlags {
@@ -410,10 +410,7 @@ export default class Build extends SfpmCommand {
       flags['no-dependencies'] = true
     }
 
-    const projectDir = process.env.SFPM_PROJECT_DIR || findSfpmRoot(process.cwd());
-    if (!projectDir) {
-      this.error('Unable to locate any project root files like sfpm.config.{ts,mjs,js}', {exit: 1})
-    }
+    const projectDir = resolveCliProjectDir();
 
     const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getDefinitionProvider();

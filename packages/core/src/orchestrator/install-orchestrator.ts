@@ -146,11 +146,6 @@ export class InstallOrchestrator {
     options: InstallOrchestratorOptions,
     logger?: Logger,
   ): InstallOrchestrator {
-    // ArtifactProvider resolves from immutable node_modules build output --
-    // structurally incompatible with "deploy from live project source".
-    // Can't express this as a type narrowing (ProjectDefinitionProvider is a
-    // structural interface, not a union, and forArtifact() legitimately needs
-    // to accept WorkspaceProvider/SfdxProjectProvider too), so guard at runtime.
     if (provider instanceof ArtifactProvider) {
       throw new TypeError('InstallOrchestrator.forSource() requires a project-source provider, not an ArtifactProvider. Use forArtifact() to install from node_modules artifacts.');
     }

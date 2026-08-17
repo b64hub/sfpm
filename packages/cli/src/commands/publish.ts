@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import SfpmCommand from '../sfpm-command.js'
+import {resolveCliProjectDir} from '../utils/project-dir.js'
 
 export default class Publish extends SfpmCommand {
   static override args = {
@@ -29,7 +30,7 @@ export default class Publish extends SfpmCommand {
     const {argv, flags} = await this.parse(Publish)
     const packages = argv as string[]
 
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd()
+    const projectDir = resolveCliProjectDir()
     const projectService = await ProjectService.getInstance(projectDir)
     const provider = projectService.getDefinitionProvider()
 

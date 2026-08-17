@@ -1,6 +1,6 @@
 import {
   InstallOrchestrator, LifecycleEngine, Logger,
-  type ProjectDefinitionProvider, type ProjectGraph, ProjectService, resolveSfpmRoot, type TestLevel,
+  type ProjectDefinitionProvider, type ProjectGraph, ProjectService, type TestLevel,
   WorkspaceProvider,
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
@@ -14,6 +14,7 @@ import {attachInstallBridge} from '../../ui/install-event-bridge.js'
 import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
 import {renderApp} from '../../ui/run.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
+import {resolveCliProjectDir} from '../../utils/project-dir.js'
 
 export interface ResolvedDeployFlags {
   flags: Record<string, any>;
@@ -143,7 +144,7 @@ export default class Deploy extends SfpmCommand {
   }
 
   protected async resolveFlags(packages: string[], flags: Record<string, any>): Promise<ResolvedDeployFlags> {
-    const projectDir = resolveSfpmRoot(process.env.SFPM_PROJECT_DIR || process.cwd());
+    const projectDir = resolveCliProjectDir();
 
     const projectService = await this.createProjectService(projectDir, packages);
     const projectConfig = projectService.getDefinitionProvider();

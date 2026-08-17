@@ -18,6 +18,7 @@ import ora from 'ora'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {infoBox, successBox} from '../../ui/boxes.js'
+import {resolveCliProjectDir} from '../../utils/project-dir.js'
 
 interface PackageCreateResult {
   created: boolean;
@@ -62,7 +63,7 @@ export default class PackageCreate extends SfpmCommand {
     const isOrgDependent = await this.resolveOrgDependent(flags['org-dependent'], packageType, isInteractive)
     const npmScope = await this.resolveNpmScope(flags.scope, isInteractive)
 
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd()
+    const projectDir = resolveCliProjectDir()
     const projectService = await ProjectService.getInstance(projectDir)
     const provider = projectService.getDefinitionProvider()
 
