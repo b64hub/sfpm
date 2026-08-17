@@ -1,6 +1,7 @@
 import {
   InstallOrchestrator, LifecycleEngine, Logger,
-  type ProjectDefinitionProvider, type ProjectGraph, ProjectService, type TestLevel, WorkspaceProvider,
+  type ProjectDefinitionProvider, type ProjectGraph, ProjectService, type TestLevel,
+  WorkspaceProvider,
 } from '@b64hub/sfpm-core'
 import {Args, Flags} from '@oclif/core'
 import {ConfigAggregator, Org} from '@salesforce/core'
@@ -13,6 +14,7 @@ import {attachInstallBridge} from '../../ui/install-event-bridge.js'
 import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
 import {renderApp} from '../../ui/run.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
+import {resolveCliProjectDir} from '../../utils/project-dir.js'
 
 export interface ResolvedDeployFlags {
   flags: Record<string, any>;
@@ -45,7 +47,9 @@ export default class Deploy extends SfpmCommand {
     '<%= config.bin %> <%= command.id %> package-a package-b -o my-sandbox',
   ]
   static override flags = {
-    force: Flags.boolean({char: 'f', description: 'force deploy even if already installed'}),
+    force: Flags.boolean({
+      allowNo: true, char: 'f', default: true, description: 'force deploy even if already installed',
+    }),
     'no-dependencies': Flags.boolean({description: 'only deploy the specified packages, skip transitive dependencies'}),
     'no-hooks': Flags.boolean({description: 'skip lifecycle hooks'}),
     'regression-test': Flags.boolean({description: 'run tests in direct dependents after deploy to detect regressions'}),
@@ -140,7 +144,8 @@ export default class Deploy extends SfpmCommand {
   }
 
   protected async resolveFlags(packages: string[], flags: Record<string, any>): Promise<ResolvedDeployFlags> {
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectDir = resolveCliProjectDir();
+
     const projectService = await this.createProjectService(projectDir, packages);
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();

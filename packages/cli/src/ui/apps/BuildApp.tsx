@@ -7,6 +7,7 @@ import {useEventBusWiring} from '../hooks/use-event-bus-wiring.js';
 import {initialState, reducer} from '../state/reducer.js';
 import {countPackages} from '../state/selectors.js';
 import {Footer} from '../components/base/Footer.js';
+import {OrgBadge} from '../components/base/OrgBadge.js';
 import {OrchestrationView} from '../components/OrchestrationView.js';
 import {PackageRow} from '../components/PackageRow.js';
 import type {MetaColSpec} from '../components/PackageRow.js';
@@ -17,7 +18,12 @@ const META_COLS: MetaColSpec[] = [
   {key: 'hash',       width: 8,  label: 'hash'},
 ];
 
-export function App({bus, logPath, onAdvance}: {bus: EventEmitter; logPath?: string; onAdvance?: (key: string) => void}) {
+export interface ConnectedOrg {
+  alias: string;
+  username?: string;
+}
+
+export function App({bus, logPath, onAdvance, org}: {bus: EventEmitter; logPath?: string; onAdvance?: (key: string) => void; org?: ConnectedOrg}) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const {exit} = useApp();
   useEventBusWiring(bus, dispatch);
@@ -34,6 +40,7 @@ export function App({bus, logPath, onAdvance}: {bus: EventEmitter; logPath?: str
 
   return (
     <Box flexDirection="column">
+      {org && <OrgBadge alias={org.alias} username={org.username} />}
       {state.levels.length > 0 && (
         <OrchestrationView
           levels={state.levels}

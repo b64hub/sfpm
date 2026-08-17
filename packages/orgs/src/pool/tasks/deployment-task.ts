@@ -1,9 +1,10 @@
 import {
+  ArtifactProvider,
   InstallOrchestrator,
   type Logger,
-  PackageOrigin,
   ProjectService,
   type TestLevel,
+  WorkspaceProvider,
 } from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 
@@ -53,6 +54,7 @@ export class DeploymentTask implements PoolOrgTask {
   public readonly name = 'deploy-packages';
   private forwarder?: PoolPackageForwarder;
   private readonly options: DeploymentTaskOptions;
+  private projectServicePromise?: Promise<ProjectService>;
 
   constructor(options: DeploymentTaskOptions) {
     this.options = options;
@@ -68,7 +70,7 @@ export class DeploymentTask implements PoolOrgTask {
 
     const targetOrg = await Org.create({aliasOrUsername: username});
 
-    const projectService = await ProjectService.getInstance(this.options.workingDirectory);
+    const projectService = await this.getProjectService();
     const provider = projectService.getDefinitionProvider();
     const graph = projectService.getProjectGraph();
 
@@ -81,15 +83,16 @@ export class DeploymentTask implements PoolOrgTask {
 
     logger.info(`Deploying ${packages.length} package(s) to ${username}`);
 
-    const origin = this.options.useLocalSource ? PackageOrigin.Local : PackageOrigin.Artifact;
-
-    const orchestrator = new InstallOrchestrator(targetOrg, provider, graph, {
-      force: true,
-      includeManagedPackages: true,
-      origin,
-      testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel,
-      unlocked: {sourceOnly: true},
-    }, logger);
+    const orchestrator = this.options.useLocalSource
+      ? InstallOrchestrator.forSource(targetOrg, provider, graph, {
+        force: true,
+        testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel,
+      }, logger)
+      : InstallOrchestrator.forArtifact(targetOrg, provider, graph, {
+        force: true,
+        testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel,
+        unlocked: {sourceOnly: true},
+      }, logger);
 
     if (this.forwarder) {
       let total = 0;
@@ -129,6 +132,22 @@ export class DeploymentTask implements PoolOrgTask {
 
   public setPackageForwarder(forwarder: PoolPackageForwarder): void {
     this.forwarder = forwarder;
+  }
+
+  /**
+   * Resolve the provider matching `useLocalSource`:
+   * - `true` — {@link WorkspaceProvider} (dist-aware) deploying live project source.
+   * - `false` (default) — {@link ArtifactProvider} reading published artifacts
+   *   already installed into `workingDirectory`'s `node_modules`.
+   *
+   * Cached per task instance since the same task runs once per pool org.
+   */
+  private getProjectService(): Promise<ProjectService> {
+    this.projectServicePromise ??= this.options.useLocalSource
+      ? ProjectService.create(this.options.workingDirectory, new WorkspaceProvider({distAware: true, projectDir: this.options.workingDirectory}))
+      : ProjectService.create(this.options.workingDirectory, new ArtifactProvider({projectDir: this.options.workingDirectory}));
+
+    return this.projectServicePromise;
   }
 
   /**

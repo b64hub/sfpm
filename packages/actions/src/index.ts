@@ -1,25 +1,32 @@
-// Build cache
+// Build validation
 export {
-  type BuildCacheOptions,
-  BuildCacheService,
-  type CachedBuildState,
-  type PackageBuildState,
-} from './build-cache.js';
-
-// Build resume
-export {
-  buildResume,
-  type BuildResumeOptions,
-  type BuildResumeResult,
-  type PackageValidationResult,
-} from './build-resume.js';
+  buildValidation,
+  type BuildValidationOptions,
+  type BuildValidationResult,
+  type PackageValidationOutcome,
+} from './build-validation.js';
 
 // Build
 export {
   build,
   type BuildOptions,
   type BuildResult,
+  type PackageBuildState,
 } from './build.js';
+
+// Pool provisioning
+export {
+  fillPool,
+  type FillPoolOptions,
+  type FillPoolResult,
+} from './fill-pool.js';
+
+// Install
+export {
+  install,
+  type InstallOptions,
+  type InstallResult,
+} from './install.js';
 
 // Logger
 export {
@@ -38,13 +45,6 @@ export {
 
 // Progress rendering
 export {ActionsProgressRenderer} from './progress-renderer.js';
-
-// Pool provisioning
-export {
-  provisionPool,
-  type ProvisionPoolOptions,
-  type ProvisionPoolResult,
-} from './provision-pool.js';
 
 // PR validation
 export {

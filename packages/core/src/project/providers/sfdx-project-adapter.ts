@@ -271,7 +271,7 @@ export function fromSalesforceProjectJson(projectJson: Record<string, unknown>):
         // Check for managed dependency first — a 04t alias always wins,
         // even if the name matches a local packageDirectory stub.
         const aliasValue = packageAliases[dep.package];
-        if (aliasValue?.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX) && !localPackageNames.has(dep.package)) {
+        if (aliasValue?.startsWith(SUBSCRIBER_PKG_VERSION_ID_PREFIX)) {
           managedDeps[dep.package] = aliasValue;
         } else if (localPackageNames.has(dep.package)) {
           // Local workspace dependency

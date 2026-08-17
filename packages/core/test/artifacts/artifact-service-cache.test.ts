@@ -2,7 +2,7 @@ import {
   afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
-import {ArtifactService} from '../../src/artifacts/artifact-service.js';
+import ArtifactService from '../../src/artifacts/artifact-service.js';
 
 // Mock @salesforce/core
 vi.mock('@salesforce/core', () => ({
@@ -50,7 +50,7 @@ describe('ArtifactService caching', () => {
       getUsername: vi.fn().mockReturnValue('test@example.com'),
     };
 
-    service = new ArtifactService(mockLogger, mockOrg);
+    service = new ArtifactService(mockOrg, mockLogger);
   });
 
   afterEach(() => {
@@ -78,7 +78,7 @@ describe('ArtifactService caching', () => {
     });
 
     it('should require org connection for cache-dependent operations', async () => {
-      const serviceNoOrg = new ArtifactService(mockLogger);
+      const serviceNoOrg = new ArtifactService(undefined, mockLogger);
 
       // Methods that need cache require org
       await expect(serviceNoOrg.getInstalledPackages()).rejects.toThrow('Org connection required for getInstalledPackages');

@@ -1,0 +1,15 @@
+# Slim variant: same tools as Dockerfile, no native deps so alpine works fine.
+FROM node:22-alpine
+
+RUN apk add --no-cache ca-certificates curl tar
+
+# Local validation binary used by @b64hub/sfpm-validation (NimbusLocalValidator).
+RUN curl -fsSL https://install.testnimbus.dev | sh
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable && corepack prepare pnpm@10.28.1 --activate
+
+RUN pnpm add -g turbo @salesforce/cli @b64hub/sfpm-cli
+
+WORKDIR /workspace

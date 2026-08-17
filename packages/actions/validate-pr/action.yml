@@ -1,0 +1,55 @@
+name: 'SFPM Validate PR'
+description: 'Validate a pull request via local nimbus checks or a deploy against a pooled scratch org'
+author: 'b64'
+
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
+inputs:
+  devhub-username:
+    description: 'DevHub username or alias for org pool access. Required when mode is org.'
+    required: false
+  mode:
+    description: 'Validation mode: local (default, nimbus compile + dependency checks, no scratch org) or org (deploy to a pooled scratch org, unlocked packages forced source-only)'
+    required: false
+    default: 'local'
+  pool-tag:
+    description: 'Pool tag to fetch orgs from. Required when mode is org.'
+    required: false
+  pool-type:
+    description: 'Pool type: scratch or sandbox (inferred from sfpm.config.ts orgs[tag] if omitted, default scratch)'
+    required: false
+  cache-ttl-hours:
+    description: 'How long to cache an org for this PR (hours). Set to 0 to disable caching. Only used when mode is org.'
+    required: false
+    default: '4'
+  project-dir:
+    description: 'Path to the SFPM project directory (defaults to workspace root)'
+    required: false
+  packages:
+    description: 'Comma-separated list of packages to deploy. Defaults to only packages changed against base-ref (or all packages if no base ref is available).'
+    required: false
+  base-ref:
+    description: 'Git ref to diff against for changed-package detection (default: PR base SHA). Only used when packages is not set. Requires checkout with fetch-depth: 0 or otherwise fetching the PR base ref.'
+    required: false
+
+outputs:
+  success:
+    description: 'Whether all validations succeeded (true/false)'
+  org-username:
+    description: 'Username of the scratch org used for validation'
+  org-id:
+    description: 'Org ID of the scratch org used'
+  cache-hit:
+    description: 'Whether a cached org was reused (true/false)'
+  pr-number:
+    description: 'PR number that was validated'
+  duration:
+    description: 'Total validation duration in milliseconds'
+  result:
+    description: 'Full JSON result with per-package outcomes including coverage'
+
+runs:
+  using: 'node20'
+  main: '../dist/validate-main.js'

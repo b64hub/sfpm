@@ -1,5 +1,5 @@
-name: 'SFPM Provision Pool'
-description: 'Provision scratch orgs or sandboxes to fill a pool'
+name: 'SFPM Fill Pool'
+description: 'Fill a pool with scratch orgs or sandboxes'
 author: 'b64'
 
 branding:
@@ -14,14 +14,17 @@ inputs:
     description: 'Pool tag to provision orgs for'
     required: true
   max-allocation:
-    description: 'Maximum number of orgs to allocate'
-    required: true
+    description: 'Maximum number of orgs to allocate (overrides sfpm.config.ts sizing.max)'
+    required: false
   pool-type:
     description: 'Pool type: scratch or sandbox (default: scratch)'
     required: false
     default: 'scratch'
   definition-file:
-    description: 'Org definition file path (scratch org or sandbox)'
+    description: 'Org definition file path (scratch org or sandbox); overrides sfpm.config.ts'
+    required: false
+  project-dir:
+    description: 'Project root directory, used to resolve sfpm.config.ts (default: GITHUB_WORKSPACE)'
     required: false
   expiry-days:
     description: 'Scratch org expiry in days (default: 7)'
@@ -31,6 +34,9 @@ inputs:
     required: false
   sandbox-name-pattern:
     description: 'Sandbox name prefix (e.g., SB → SB1, SB2, ...)'
+    required: false
+  use-local-source:
+    description: 'Deploy from local project source instead of downloaded artifacts'
     required: false
 
 outputs:
@@ -51,4 +57,4 @@ outputs:
 
 runs:
   using: 'node20'
-  main: 'dist/provision-pool-main.js'
+  main: '../dist/fill-pool-main.js'

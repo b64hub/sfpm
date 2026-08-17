@@ -1,15 +1,19 @@
 import * as core from '@actions/core';
 
-import {buildResume} from './build-resume.js';
+import {buildValidation} from './build-validation.js';
 
 // ============================================================================
 // Action Entry Point
 // ============================================================================
 
 try {
-  const devhubUsername = core.getInput('devhub-username') || undefined;
+  const buildResult = core.getInput('build-result', {required: true});
   const projectDir = core.getInput('project-dir') || undefined;
-  const runId = core.getInput('run-id') || undefined;
+
+  const packagesInput = core.getInput('packages') || '';
+  const packages = packagesInput
+    ? packagesInput.split(',').map(p => p.trim()).filter(Boolean)
+    : undefined;
 
   const maxWaitMinutes = core.getInput('max-wait-minutes')
     ? Number.parseInt(core.getInput('max-wait-minutes'), 10)
@@ -18,12 +22,12 @@ try {
     ? Number.parseInt(core.getInput('polling-interval-seconds'), 10)
     : undefined;
 
-  const result = await buildResume({
-    devhubUsername,
+  const result = await buildValidation({
+    buildResult,
     maxWaitMinutes,
+    packages,
     pollingIntervalSeconds,
     projectDir,
-    runId,
   });
 
   if (!result.success) {

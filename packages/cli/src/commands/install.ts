@@ -1,5 +1,5 @@
 import {
-  ArtifactProvider, InstallOrchestrator, LifecycleEngine, ProjectService, type TestLevel,
+  ArtifactProvider, InstallOrchestrator, LifecycleEngine, parseInstallationKeys, ProjectService, type TestLevel,
 } from '@b64hub/sfpm-core'
 import {createTracer} from '@b64hub/sfpm-telemetry'
 import {Args, Flags} from '@oclif/core'
@@ -13,6 +13,7 @@ import SfpmCommand from '../sfpm-command.js'
 import {attachInstallBridge} from '../ui/install-event-bridge.js'
 import {InstallProgressRenderer} from '../ui/install-progress-renderer.js'
 import {renderApp} from '../ui/run.js'
+import {resolveCliProjectDir} from '../utils/project-dir.js'
 
 export default class Install extends SfpmCommand {
   static override args = {
@@ -37,7 +38,7 @@ export default class Install extends SfpmCommand {
   ]
   static override flags = {
     force: Flags.boolean({char: 'f', description: 'force reinstall even if already installed'}),
-    'installation-key': Flags.string({char: 'k', description: 'installation key for unlocked packages'}),
+    'installation-key': Flags.string({char: 'k', description: 'installation key for unlocked packages; repeat as <package>=<key>, or a bare value as the default', multiple: true}),
     'no-dependencies': Flags.boolean({description: 'only install the specified packages, skip transitive dependencies'}),
     'regression-test': Flags.boolean({description: 'run tests in direct dependents after install to detect regressions'}),
     'target-org': Flags.string({
@@ -69,8 +70,7 @@ export default class Install extends SfpmCommand {
       flags.force = true
     }
 
-    // Use SFPM_PROJECT_DIR env var if set (for debugging from different directory), otherwise use cwd
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+    const projectDir = resolveCliProjectDir();
 
     // Fetch specified packages (and transitive deps) from registry into node_modules.
     // Uses npm (not pnpm) to bypass workspace symlink resolution.
@@ -99,10 +99,8 @@ export default class Install extends SfpmCommand {
     }
 
     const installOptions = {
-      deployment: flags['test-level'] ? {testLevel: flags['test-level'] as TestLevel} : undefined,
-      force: flags.force,
-      targetOrg: flags['target-org'],
-      versionInstall: flags['installation-key'] ? {installationKeys: {'*': flags['installation-key']}} : undefined,
+      testLevel: flags['test-level'] as TestLevel,
+      unlocked: flags['installation-key']?.length ? {installationKeys: parseInstallationKeys(flags['installation-key'])} : undefined,
     }
 
     const targetOrg = await Org.create({aliasOrUsername: flags['target-org']})
@@ -115,7 +113,9 @@ export default class Install extends SfpmCommand {
       targetOrg,
       projectConfig,
       projectGraph,
-      {...installOptions, includeDependencies: !flags['no-dependencies'], regressionTest: flags['regression-test']},
+      {
+        ...installOptions, force: flags.force, includeDependencies: !flags['no-dependencies'], regressionTest: flags['regression-test'],
+      },
       pinoLogger,
     )
 

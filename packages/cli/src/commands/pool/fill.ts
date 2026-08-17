@@ -1,5 +1,5 @@
 import {
-  findSfpmRoot, LifecycleEngine, loadSfpmConfig, type Logger,
+  LifecycleEngine, loadSfpmConfig, type Logger,
 } from '@b64hub/sfpm-core';
 import {
   ArtifactPackageInstallTask, createPoolServices, DeploymentTask, type PoolConfig, type PoolOrgTask,
@@ -11,6 +11,7 @@ import path from 'node:path';
 import SfpmCommand from '../../sfpm-command.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
 import {renderPoolFill} from '../../ui/run-pool-fill.js';
+import {resolveCliProjectDir} from '../../utils/project-dir.js';
 
 import '@b64hub/sfpm-sfdmu';
 
@@ -44,7 +45,6 @@ export default class PoolFill extends SfpmCommand {
       description: 'pool type: scratch or sandbox (inferred from config if omitted)',
       options: [OrgTypes.Scratch, OrgTypes.Sandbox],
     }),
-    'use-local-source': Flags.boolean({description: 'deploy from local project source instead of downloaded artifacts'}),
   }
 
   public async execute(): Promise<any> {
@@ -53,14 +53,10 @@ export default class PoolFill extends SfpmCommand {
 
     LifecycleEngine.stage('pool');
 
-    const orgConfig = await this.loadOrgConfig(this.sfpmLogger);
-    const config = this.buildPoolConfig(flags, orgConfig);
-    const projectDir = process.env.SFPM_PROJECT_DIR || findSfpmRoot(process.cwd());
+    const projectDir = resolveCliProjectDir();
+    const orgConfig = await this.loadOrgConfig(this.sfpmLogger, projectDir);
+    const config = this.buildPoolConfig(flags, projectDir, orgConfig);
     const {logger: runLogger} = this.createRunLogger();
-
-    if (!projectDir) {
-      throw new Error('Unable to locate any project root files like sfpm.config.{ts,mjs,js}');
-    }
 
     let manager: Awaited<ReturnType<typeof createPoolServices>>['manager'];
     let deployTask: DeploymentTask | undefined;
@@ -72,7 +68,7 @@ export default class PoolFill extends SfpmCommand {
         {
           label: 'Validating prerequisites...',
           run: async hub => {
-            const tasks = this.buildTasks(config, hub, projectDir, flags['use-local-source']);
+            const tasks = this.buildTasks(config, hub, projectDir);
             deployTask = tasks.find((t): t is DeploymentTask => t instanceof DeploymentTask);
             const services = createPoolServices({
               devhub: hub,
@@ -92,11 +88,11 @@ export default class PoolFill extends SfpmCommand {
     if (mode === 'interactive') {
       // Wire per-package events from DeploymentTask through the pool manager
       deployTask?.setPackageForwarder({
-        packageComplete: p => manager!.emit('pool:package:complete', {...p, timestamp: new Date()}),
-        packageStart: p => manager!.emit('pool:package:start',    {...p, timestamp: new Date()}),
+        packageComplete: p => manager!.bus.emit('pool:package:complete', {...p, timestamp: new Date()}),
+        packageStart: p => manager!.bus.emit('pool:package:start',    {...p, timestamp: new Date()}),
       });
 
-      const inkInstance = renderPoolFill(manager!, alias);
+      const inkInstance = renderPoolFill(manager!.bus, alias);
       try {
         result = await manager!.provision(flags.tag as string, config);
         await inkInstance.waitUntilExit();
@@ -121,8 +117,7 @@ export default class PoolFill extends SfpmCommand {
     return {...result, events: [], success: result.failed === 0};
   }
 
-  private buildPoolConfig(flags: Record<string, any>, orgConfig?: {[tag: string]: PoolConfig}): PoolConfig {
-    const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd();
+  private buildPoolConfig(flags: Record<string, any>, projectDir: string, orgConfig?: {[tag: string]: PoolConfig}): PoolConfig {
     const tag = flags.tag as string;
 
     // Resolved pool config from defineOrgConfig (already merged with defaults)
@@ -168,7 +163,7 @@ export default class PoolFill extends SfpmCommand {
     } as PoolConfig;
   }
 
-  private buildTasks(config: PoolConfig, devhub: Org, projectDir: string, useLocalSource?: boolean): PoolOrgTask[] {
+  private buildTasks(config: PoolConfig, devhub: Org, projectDir: string): PoolOrgTask[] {
     const tasks: PoolOrgTask[] = [];
     const isScratch = config.type === OrgTypes.Scratch;
 
@@ -181,16 +176,15 @@ export default class PoolFill extends SfpmCommand {
     tasks.push(new DeploymentTask({
       continueOnError: config.deployment?.continueOnError ?? true,
       testLevel: config.deployment?.testLevel,
-      useLocalSource,
       workingDirectory: projectDir,
     }));
 
     return tasks;
   }
 
-  private async loadOrgConfig(logger: Logger): Promise<undefined | {[tag: string]: PoolConfig}> {
+  private async loadOrgConfig(logger: Logger, projectDir: string): Promise<undefined | {[tag: string]: PoolConfig}> {
     try {
-      const sfpmConfig = await loadSfpmConfig(process.env.SFPM_PROJECT_DIR || process.cwd(), logger);
+      const sfpmConfig = await loadSfpmConfig(projectDir, logger);
       return sfpmConfig.orgs as undefined | {[tag: string]: PoolConfig};
     } catch {
       return undefined;

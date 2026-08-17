@@ -11,10 +11,10 @@ applyTo: 'packages/actions/src/**/*.ts'
 
 ```
 packages/actions/
-  action.yml              # GitHub Action definition
-  esbuild.config.mjs      # Bundler for single-file dist/main.js
+  validate-pr/action.yml  # GitHub Action definition for the validate-pr action
+  esbuild.config.mjs      # Bundler for single-file dist/validate-main.js
   src/
-    main.ts               # Action entry point (reads inputs, runs validatePr)
+    validate-main.ts     # Action entry point (reads inputs, runs validatePr)
     index.ts              # Library exports
     logger.ts             # GitHubActionsLogger implementing StructuredLogger
     org-cache.ts          # OrgCacheService for PR-scoped scratch org caching
@@ -32,7 +32,7 @@ packages/actions/
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────────┐
-│  action.yml  │ ──> │   main.ts    │ ──> │   validate-pr.ts    │
+│  action.yml  │ ──> │validate-main.ts│ ──> │   validate-pr.ts    │
 │  (inputs)    │     │  (wiring)    │     │  (pipeline)         │
 └─────────────┘     └──────────────┘     └─────────────────────┘
                                               │
@@ -45,7 +45,7 @@ packages/actions/
                                                            └────────────┘
 ```
 
-- **`main.ts`** — reads `@actions/core` inputs, calls `validatePr()`, sets outputs
+- **`validate-main.ts`** — reads `@actions/core` inputs, calls `validatePr()`, sets outputs
 - **`validate-pr.ts`** — orchestrates the full pipeline (org resolution → deployment)
 - **`org-cache.ts`** — manages `@actions/cache` for PR-scoped scratch org reuse
 - **`logger.ts`** — `GitHubActionsLogger` with buffered child registry (see below)
@@ -95,13 +95,22 @@ This is injected into all core and orgs services. See [logging.instructions.md](
 
 ### Flow
 
+Two modes, selected via the `mode` option (default: `'local'`):
+
+**`local` mode** (default — no scratch org, no DevHub):
+1. **Resolve PR number** from `github.context.payload.pull_request.number`
+2. **Build** with `validation: 'local'` and a `NimbusLocalValidator` (compile + dependency checks only)
+3. **Set outputs** (success, per-package results; org fields left empty)
+
+**`org` mode** (deploy to a pooled scratch org):
 1. **Resolve PR number** from `github.context.payload.pull_request.number`
 2. **Restore cached org** via `OrgCacheService.restore()` (keyed by PR number)
 3. **If no cache hit**, fetch fresh org from pool via `PoolFetcher.fetch()`
 4. **Authenticate** to the scratch org via JWT (parent username mechanism)
-5. **Deploy source** via `InstallOrchestrator.forSource()`
-6. **Cache the org** for subsequent pushes via `OrgCacheService.save()`
-7. **Set outputs** (success, org-username, org-id, cache-hit, etc.)
+5. **Build** with `validation: 'org'` and `unlocked: {sourceOnly: true}` forced — PR validation must never create a real unlocked package version (that only happens on push to main, via the `build` action), so concurrent PRs never race for conflicting build numbers
+6. **Resolve pending deploy validations** via `ValidationResolver` (actually deploys + reports pass/fail — `buildAll()` alone only confirms staging succeeded)
+7. **Cache the org** for subsequent pushes via `OrgCacheService.save()`
+8. **Set outputs** (success, org-username, org-id, cache-hit, etc.)
 
 ### Scratch Org Caching
 
@@ -143,8 +152,9 @@ jobs:
         run: sf org login jwt ...
 
       - name: Validate PR
-        uses: ./packages/actions
+        uses: ./packages/actions/validate-pr
         with:
+          mode: org
           devhub-username: devhub@myorg.com
           pool-tag: ci-pool
           cache-ttl-hours: '6'
@@ -163,9 +173,10 @@ jobs:
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `devhub-username` | Yes | — | DevHub username or alias |
-| `pool-tag` | Yes | — | Pool tag to fetch orgs from |
-| `cache-ttl-hours` | No | `4` | How long to cache org per PR |
+| `mode` | No | `local` | `local` (nimbus checks only) or `org` (deploy to a pooled scratch org) |
+| `devhub-username` | Only if `mode: org` | — | DevHub username or alias |
+| `pool-tag` | Only if `mode: org` | — | Pool tag to fetch orgs from |
+| `cache-ttl-hours` | No | `4` | How long to cache org per PR (org mode only) |
 | `project-dir` | No | workspace root | SFPM project directory |
 | `packages` | No | all | Comma-separated package names |
 
@@ -187,10 +198,10 @@ The action requires bundling into a single file for GitHub Actions:
 
 ```bash
 pnpm build       # TypeScript compilation
-pnpm bundle      # esbuild → dist/main.js (single bundled file)
+pnpm bundle      # esbuild → dist/validate-main.js (single bundled file)
 ```
 
-The `action.yml` points to `dist/main.js` as the entry point.
+The `action.yml` points to `dist/validate-main.js` as the entry point.
 
 ## Testing
 
@@ -219,7 +230,7 @@ vi.mock('@actions/core', () => ({
 
 1. Create `src/my-action.ts` with the pipeline logic
 2. Create `src/my-action-main.ts` as the entry point
-3. Add a new `action.yml` (or a composite action pointing to the entry point)
+3. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) with `main: '../dist/my-action-main.js'`
 4. Add esbuild entry point if separate bundle needed
 5. Export from `src/index.ts` for library use
 6. Add tests with mocked `@actions/*` dependencies

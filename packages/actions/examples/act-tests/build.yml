@@ -1,0 +1,196 @@
+# Local-only test of the sfpm-actions build/install/build-validation actions
+# against this project's real packages. Not a real workflow — lives outside
+# .github/workflows/ so GitHub never picks it up. Doesn't use the sfpm
+# container so a debugger can attach directly to the act runner container
+# (see packages/actions/DEBUGGING.md in the sfpm checkout). Mirrors
+# packages/actions/examples/build.yml's job graph — see that file's header
+# comment for the build → {install, build-validation} → publish rationale.
+# Run with (needs a local artifact store for upload/download-artifact to
+# work across jobs):
+#
+#   act push \
+#     -W .github/act-tests/build.yml \
+#     --container-options "-v /path/to/sfpm:/path/to/this-project/.sfpm-actions" \
+#     --artifact-server-path /tmp/act-artifacts
+#
+# Requires .sfpm-actions to exist (symlink to a local sfpm checkout, or a
+# real `actions/checkout` with `repository: b64hub/sfpm` for actual CI —
+# see packages/actions/examples/README.md), a scratch org pool, and repo
+# secrets SFDX_CONSUMER_KEY, SFDX_JWT_KEY, DEVHUB_USERNAME,
+# TARGET_ORG_USERNAME, NPM_TOKEN (pass with -s NAME=value or --secret-file).
+name: SFPM Build Test (local act only)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.build.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install CLI toolchain (mirrors sfpm-actions image)
+        env:
+          PNPM_HOME: /pnpm
+        run: |
+          export PATH="$PNPM_HOME:$PATH"
+          echo "$PNPM_HOME" >> "$GITHUB_PATH"
+          corepack enable
+          corepack prepare pnpm@10.28.1 --activate
+          curl -fsSL https://install.testnimbus.dev | sh
+          pnpm add -g turbo @salesforce/cli @b64hub/sfpm-cli
+
+      - run: |
+          cd .sfpm-actions
+          pnpm install --ignore-scripts
+          pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Authenticate DevHub
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.DEVHUB_USERNAME }}" \
+            --set-default-dev-hub \
+            --alias devhub
+          rm server.key
+
+      - name: Build packages
+        id: build
+        env:
+          NODE_OPTIONS: --inspect-brk=0.0.0.0:9229
+        uses: ./.sfpm-actions/packages/actions/build
+        with:
+          devhub-username: devhub
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: sfpm-dist
+          path: |
+            **/dist/**
+            !node_modules/**
+          retention-days: 1
+
+  install:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install CLI toolchain (mirrors sfpm-actions image)
+        env:
+          PNPM_HOME: /pnpm
+        run: |
+          export PATH="$PNPM_HOME:$PATH"
+          echo "$PNPM_HOME" >> "$GITHUB_PATH"
+          corepack enable
+          corepack prepare pnpm@10.28.1 --activate
+          curl -fsSL https://install.testnimbus.dev | sh
+          pnpm add -g turbo @salesforce/cli @b64hub/sfpm-cli
+
+      - run: |
+          cd .sfpm-actions
+          pnpm install --ignore-scripts
+          pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: sfpm-dist
+
+      - name: Authenticate target org
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.TARGET_ORG_USERNAME }}" \
+            --alias target
+          rm server.key
+
+      - name: Install packages
+        id: install
+        env:
+          NODE_OPTIONS: --inspect-brk=0.0.0.0:9229
+        uses: ./.sfpm-actions/packages/actions/install
+        with:
+          origin: local
+          packages: my-package
+          target-org: target
+
+  build-validation:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install CLI toolchain (mirrors sfpm-actions image)
+        env:
+          PNPM_HOME: /pnpm
+        run: |
+          export PATH="$PNPM_HOME:$PATH"
+          echo "$PNPM_HOME" >> "$GITHUB_PATH"
+          corepack enable
+          corepack prepare pnpm@10.28.1 --activate
+          curl -fsSL https://install.testnimbus.dev | sh
+          pnpm add -g turbo @salesforce/cli @b64hub/sfpm-cli
+
+      - run: |
+          cd .sfpm-actions
+          pnpm install --ignore-scripts
+          pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: sfpm-dist
+
+      - name: Authenticate DevHub
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.DEVHUB_USERNAME }}" \
+            --set-default-dev-hub \
+            --alias devhub
+          rm server.key
+
+      - name: Resume validation
+        id: resume
+        env:
+          NODE_OPTIONS: --inspect-brk=0.0.0.0:9229
+        uses: ./.sfpm-actions/packages/actions/build-validation
+        with:
+          build-result: ${{ needs.build.outputs.result }}
+          max-wait-minutes: '60'
+
+      - name: Report outcome
+        if: always()
+        run: |
+          echo "Validated: ${{ steps.resume.outputs.validated-count }}"
+          echo "Failed: ${{ steps.resume.outputs.failed-count }}"
+
+      - name: Publish packages
+        if: steps.resume.outputs.publishable-packages != ''
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          sfpm publish $(echo "${{ steps.resume.outputs.publishable-packages }}" | tr ',' ' ')

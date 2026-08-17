@@ -1,7 +1,7 @@
 import {
   beforeEach, describe, expect, it, vi,
 } from 'vitest';
-import {OrgTypes} from '@salesforce/core';
+import {OrgTypes, SfError} from '@salesforce/core';
 
 import type {
   PoolConfig, PoolOrgTask, PoolOrgTaskResult,
@@ -18,6 +18,7 @@ import PoolManager from '../../src/pool/pool-manager.js';
 function createMockProvider(): {[K in keyof OrgProvider]: ReturnType<typeof vi.fn>} {
   return {
     claimOrg: vi.fn(),
+    cleanupOrgs: vi.fn(),
     createOrg: vi.fn(),
     deleteOrgs: vi.fn(),
     getActiveCountByTag: vi.fn(),
@@ -111,7 +112,7 @@ describe('PoolManager', () => {
 
       const manager = new PoolManager({provider: provider as any});
       const events: any[] = [];
-      manager.on('pool:allocation:computed', e => events.push(e));
+      manager.bus.on('pool:allocation:computed', e => events.push(e));
 
       await manager.computeAllocation('test-pool', createPoolConfig());
 
@@ -199,6 +200,28 @@ describe('PoolManager', () => {
       expect(result.errors[0]).toContain('Creation timed out');
     });
 
+    it('should surface the named SfError and its action hints in the error message', async () => {
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
+
+      const org1 = createScratchOrg({username: 'org1@scratch.org'});
+      provider.createOrg
+      .mockResolvedValueOnce(org1)
+      .mockRejectedValueOnce(new SfError('No org shape exists for the specified sourceOrg.', 'RemoteOrgSignupFailed', ['Create an org shape and try again.']));
+
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue(undefined);
+
+      const manager = new PoolManager({provider: provider as any});
+      const config = createPoolConfig({sizing: {batch: 5, max: 2}});
+      const result = await manager.provision('test-pool', config);
+
+      expect(result.errors[0]).toContain('No org shape exists for the specified sourceOrg.');
+      expect(result.errors[0]).toContain('RemoteOrgSignupFailed');
+      expect(result.errors[0]).toContain('Create an org shape and try again.');
+    });
+
     it('should throw when all creation attempts fail', async () => {
       provider.getRemainingCapacity.mockResolvedValue(100);
       provider.getActiveCountByTag.mockResolvedValue(0);
@@ -250,6 +273,25 @@ describe('PoolManager', () => {
       await expect(manager.provision('test-pool', config)).rejects.toThrow('All provisioned orgs were found to be inactive');
     });
 
+    it('should clean up created orgs when registerInPool fails, then rethrow', async () => {
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
+
+      const org = createScratchOrg({username: 'unregistered@scratch.org'});
+      provider.createOrg.mockResolvedValue(org);
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockRejectedValue(new Error('SOQL query failed'));
+      provider.cleanupOrgs.mockResolvedValue(undefined);
+
+      const manager = new PoolManager({provider: provider as any});
+      const config = createPoolConfig({sizing: {batch: 5, max: 1}});
+
+      await expect(manager.provision('test-pool', config)).rejects.toThrow('Failed to register provisioned orgs in pool "test-pool"');
+
+      expect(provider.cleanupOrgs).toHaveBeenCalledWith([expect.objectContaining({auth: expect.objectContaining({username: 'unregistered@scratch.org'})})]);
+      expect(provider.updatePoolMetadata).not.toHaveBeenCalled();
+    });
+
     it('should register orgs in pool with correct metadata', async () => {
       provider.getRemainingCapacity.mockResolvedValue(100);
       provider.getActiveCountByTag.mockResolvedValue(0);
@@ -289,8 +331,8 @@ describe('PoolManager', () => {
 
       const manager = new PoolManager({provider: provider as any});
       const events: string[] = [];
-      manager.on('pool:provision:start', () => events.push('start'));
-      manager.on('pool:provision:complete', () => events.push('complete'));
+      manager.bus.on('pool:provision:start', () => events.push('start'));
+      manager.bus.on('pool:provision:complete', () => events.push('complete'));
 
       await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
@@ -458,8 +500,8 @@ describe('PoolManager', () => {
       });
 
       const taskEvents: string[] = [];
-      manager.on('pool:task:start', () => taskEvents.push('start'));
-      manager.on('pool:task:complete', () => taskEvents.push('complete'));
+      manager.bus.on('pool:task:start', () => taskEvents.push('start'));
+      manager.bus.on('pool:task:complete', () => taskEvents.push('complete'));
 
       await manager.provision('test-pool', createPoolConfig({sizing: {batch: 5, max: 1}}));
 
@@ -646,9 +688,9 @@ describe('PoolManager', () => {
       });
 
       const events: string[] = [];
-      manager.on('pool:delete:start', () => events.push('start'));
-      manager.on('pool:delete:complete', () => events.push('complete'));
-      manager.on('pool:org:deleted', () => events.push('deleted'));
+      manager.bus.on('pool:delete:start', () => events.push('start'));
+      manager.bus.on('pool:delete:complete', () => events.push('complete'));
+      manager.bus.on('pool:org:deleted', () => events.push('deleted'));
 
       await manager.delete('test-pool');
 

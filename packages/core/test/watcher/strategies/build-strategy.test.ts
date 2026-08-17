@@ -35,6 +35,15 @@ describe('BuildPollingStrategy', () => {
   });
 
   describe('poll', () => {
+    function makeDescriptor(packageName: string, packageVersionRequestId: string) {
+      return {
+        devhub: 'devhub-user',
+        operationType: 'package-version-request' as const,
+        packageName,
+        packageVersionRequestId,
+      };
+    }
+
     it('should return completed when all targets succeed', async () => {
       const {PackageVersion} = await import('@salesforce/packaging');
       vi.mocked(PackageVersion.getCreateStatus).mockResolvedValue({
@@ -45,7 +54,7 @@ describe('BuildPollingStrategy', () => {
       } as any);
 
       const result = await strategy.poll(mockConnection, {
-        targets: [{packageName: 'my-pkg', packageVersionCreateRequestId: '08cXXX'}],
+        validations: [makeDescriptor('my-pkg', '08cXXX')],
       });
 
       expect(result.status).toBe('completed');
@@ -63,7 +72,7 @@ describe('BuildPollingStrategy', () => {
       } as any);
 
       const result = await strategy.poll(mockConnection, {
-        targets: [{packageName: 'my-pkg', packageVersionCreateRequestId: '08cXXX'}],
+        validations: [makeDescriptor('my-pkg', '08cXXX')],
       });
 
       expect(result.status).toBe('pending');
@@ -81,7 +90,7 @@ describe('BuildPollingStrategy', () => {
       } as any);
 
       const result = await strategy.poll(mockConnection, {
-        targets: [{packageName: 'my-pkg', packageVersionCreateRequestId: '08cXXX'}],
+        validations: [makeDescriptor('my-pkg', '08cXXX')],
       });
 
       expect(result.status).toBe('failed');
@@ -96,7 +105,7 @@ describe('BuildPollingStrategy', () => {
       vi.mocked(PackageVersion.getCreateStatus).mockResolvedValue(null as any);
 
       const result = await strategy.poll(mockConnection, {
-        targets: [{packageName: 'my-pkg', packageVersionCreateRequestId: '08cXXX'}],
+        validations: [makeDescriptor('my-pkg', '08cXXX')],
       });
 
       expect(result.status).toBe('failed');
@@ -109,9 +118,9 @@ describe('BuildPollingStrategy', () => {
         .mockResolvedValueOnce({Status: 'InProgress'} as any);
 
       const result = await strategy.poll(mockConnection, {
-        targets: [
-          {packageName: 'pkg-a', packageVersionCreateRequestId: '08c-a'},
-          {packageName: 'pkg-b', packageVersionCreateRequestId: '08c-b'},
+        validations: [
+          makeDescriptor('pkg-a', '08c-a'),
+          makeDescriptor('pkg-b', '08c-b'),
         ],
       });
 

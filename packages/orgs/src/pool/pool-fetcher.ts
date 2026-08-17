@@ -1,23 +1,11 @@
 import type {Logger} from '@b64hub/sfpm-core';
 
-import {EventEmitter} from 'node:events';
-
 import type {OrgProvider} from '../org/org-provider.js';
 import type {PoolOrg} from '../org/pool-org.js';
 import type {PoolFetchOptions, PostClaimAction} from './types.js';
 
 import {OrgError, PoolStage} from '../org/types.js';
-
-/**
- * Event map for PoolFetcher. Provides progress tracking during
- * fetch and claim operations.
- */
-export interface PoolFetcherEvents {
-  'pool:fetch:claimed': [payload: {tag: string; timestamp: Date; username: string}];
-  'pool:fetch:complete': [payload: {count: number; tag: string; timestamp: Date}];
-  'pool:fetch:skipped': [payload: {reason: string; timestamp: Date; username: string}];
-  'pool:fetch:start': [payload: {available: number; tag: string; timestamp: Date}];
-}
+import {PoolFetcherEventBus} from './pool-fetcher-event-bus.js';
 
 /**
  * Fetches and claims orgs from an existing pool.
@@ -35,7 +23,7 @@ export interface PoolFetcherEvents {
  * @example
  * ```ts
  * const fetcher = new PoolFetcher(orgSource, logger);
- * fetcher.on('pool:fetch:claimed', (p) => console.log(`Claimed ${p.username}`));
+ * fetcher.bus.on('pool:fetch:claimed', (p) => console.log(`Claimed ${p.username}`));
  *
  * const org = await fetcher.fetch('dev-pool', {
  *   postClaimActions: [
@@ -46,12 +34,16 @@ export interface PoolFetcherEvents {
  * console.log(`Got org: ${org.auth.username}`);
  * ```
  */
-export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
+export default class PoolFetcher {
+  /** Event bus for progress tracking during fetch/claim operations. */
+  public readonly bus: PoolFetcherEventBus;
+
   constructor(
     private readonly provider: OrgProvider,
     private readonly logger?: Logger,
+    eventBus?: PoolFetcherEventBus,
   ) {
-    super();
+    this.bus = eventBus ?? new PoolFetcherEventBus();
   }
 
   /**
@@ -76,7 +68,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
 
     this.logger?.info(`Pool "${tag}" has ${available.length} candidate(s)`);
 
-    this.emit('pool:fetch:start', {
+    this.bus.emit('pool:fetch:start', {
       available: available.length,
       tag,
       timestamp: new Date(),
@@ -92,7 +84,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
           org.pool.stage = PoolStage.Assigned;
         }
 
-        this.emit('pool:fetch:claimed', {
+        this.bus.emit('pool:fetch:claimed', {
           tag,
           timestamp: new Date(),
           username: org.auth.username!,
@@ -100,10 +92,15 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
 
         this.logger?.info(`Claimed org ${org.auth.username} from pool "${tag}"`);
 
-        // eslint-disable-next-line no-await-in-loop -- post-claim runs only once (we return immediately after)
-        await this.handlePostClaims([org], postClaimActions);
+        // A single claimed org must not be silently dropped on post-claim
+        // failure (that's only correct for fetchAll's best-effort batch) —
+        // let errors (e.g. login failures) propagate to the caller.
+        for (const action of postClaimActions) {
+          // eslint-disable-next-line no-await-in-loop -- actions run in order, once, for this org
+          await action(org);
+        }
 
-        this.emit('pool:fetch:complete', {
+        this.bus.emit('pool:fetch:complete', {
           count: 1,
           tag,
           timestamp: new Date(),
@@ -112,7 +109,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
         return org;
       }
 
-      this.emit('pool:fetch:skipped', {
+      this.bus.emit('pool:fetch:skipped', {
         reason: 'Claim failed (already taken by another consumer)',
         timestamp: new Date(),
         username: org.auth.username!,
@@ -148,7 +145,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
       });
     }
 
-    this.emit('pool:fetch:start', {
+    this.bus.emit('pool:fetch:start', {
       available: candidates.length,
       tag,
       timestamp: new Date(),
@@ -166,7 +163,7 @@ export default class PoolFetcher extends EventEmitter<PoolFetcherEvents> {
 
     const validOrgs = await this.handlePostClaims(orgs, postClaimActions);
 
-    this.emit('pool:fetch:complete', {
+    this.bus.emit('pool:fetch:complete', {
       count: validOrgs.length,
       tag,
       timestamp: new Date(),

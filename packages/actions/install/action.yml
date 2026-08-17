@@ -1,0 +1,54 @@
+name: 'SFPM Install'
+description: 'Install SFPM packages into a target org, from the npm registry or from local dist/ build output'
+author: 'b64'
+
+branding:
+  icon: 'download'
+  color: 'blue'
+
+inputs:
+  target-org:
+    description: 'Target org username or alias'
+    required: true
+  packages:
+    description: 'Comma-separated list of packages to install'
+    required: true
+  origin:
+    description: 'Where to resolve packages from: registry (default, npm) or local (each package dist/ output already on disk, e.g. restored via download-artifact)'
+    required: false
+    default: 'registry'
+  force:
+    description: 'Force reinstall even if already installed with matching version/hash'
+    required: false
+    default: 'false'
+  include-dependencies:
+    description: 'Install transitive dependencies of requested packages (default: true)'
+    required: false
+    default: 'true'
+  installation-keys:
+    description: 'Installation key(s) for unlocked packages. One entry per line as <package-name>=<key>, or a bare value on its own line to use as the default for all packages.'
+    required: false
+  test-level:
+    description: 'Deployment test level (for source deployments): NoTestRun, RunSpecifiedTests, RunLocalTests, RunAllTestsInOrg'
+    required: false
+  regression-test:
+    description: 'Run tests in direct dependents after install to detect regressions'
+    required: false
+    default: 'false'
+  project-dir:
+    description: 'Path to the SFPM project directory (defaults to workspace root)'
+    required: false
+
+outputs:
+  success:
+    description: 'Whether all installs succeeded (true/false)'
+  duration:
+    description: 'Total install duration in milliseconds'
+  failed-packages:
+    description: 'Comma-separated list of packages that failed to install'
+  result:
+    description: 'Full JSON result with per-package outcomes'
+
+runs:
+  using: 'node20'
+  main: '../dist/install-main.js'

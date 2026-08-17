@@ -1,5 +1,5 @@
 name: 'SFPM Build'
-description: 'Build SFPM packages with async validation for unlocked packages. Returns immediately with creation request IDs while Salesforce validates in the background. Outputs artifact tarballs and caches build state for the resume step.'
+description: 'Build SFPM packages with async validation for unlocked packages. Returns immediately with creation request IDs while Salesforce validates in the background. Outputs artifact tarballs and per-package results (including pending validation descriptors) for the resume step.'
 author: 'b64'
 
 branding:
@@ -24,27 +24,27 @@ inputs:
   build-number:
     description: 'Build number for package versions'
     required: false
-  installation-key:
-    description: 'Installation key for unlocked packages'
+  installation-keys:
+    description: 'Installation key(s) for unlocked packages. One entry per line as <package-name>=<key>, or a bare value on its own line to use as the default for all packages.'
     required: false
   project-dir:
     description: 'Path to the SFPM project directory (defaults to workspace root)'
     required: false
+  validation:
+    description: 'Validation mode: `none`, `local`, `org` or `full`'
+    required: false
+    default: 'org'
 
 outputs:
   success:
     description: 'Whether all builds succeeded (true/false)'
-  artifacts-dir:
-    description: 'Path to the artifacts directory containing built tarballs'
   duration:
     description: 'Total build duration in milliseconds'
-  state-cached:
-    description: 'Whether build state was cached for the resume step (true/false)'
   failed-packages:
     description: 'Comma-separated list of packages that failed to build'
   result:
-    description: 'Full JSON result with per-package outcomes'
+    description: "Full JSON result with per-package outcomes, including pending validation descriptors. Pass this into build-validation's build-result input as needs.build.outputs.result"
 
 runs:
   using: 'node20'
-  main: 'dist/build-main.js'
+  main: '../dist/build-main.js'

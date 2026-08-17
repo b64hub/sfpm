@@ -23,7 +23,7 @@ import type {
   OrchestrationLevelStartEvent,
   OrchestrationPackageCompleteEvent,
   OrchestrationStartEvent,
-  PendingValidationDescriptor,
+  PackageBuildResult,
   StageCompleteEvent,
   StageStartEvent,
   TaskCompleteEvent,
@@ -134,7 +134,7 @@ export class BuildProgressRenderer {
   /**
    * Attach this renderer to typed event buses.
    */
-  public attachTo(buildBus: BuildEventBus, orchestrationBus?: OrchestrationEventBus<PendingValidationDescriptor>): void {
+  public attachTo(buildBus: BuildEventBus, orchestrationBus?: OrchestrationEventBus<PackageBuildResult>): void {
     for (const [eventName, config] of Object.entries(this.eventConfigs)) {
       buildBus.on(eventName as any, (data: any) => {
         this.logEvent(eventName, data);
@@ -340,7 +340,7 @@ export class BuildProgressRenderer {
   // Orchestration Event Handlers
   // ========================================================================
 
-  private handleOrchestrationComplete(event: OrchestrationCompleteEvent<PendingValidationDescriptor>): void {
+  private handleOrchestrationComplete(event: OrchestrationCompleteEvent<PackageBuildResult>): void {
     this.logEvent('orchestration:complete', event);
 
     const succeeded = event.results.filter(r => r.success && !r.skipped).length;

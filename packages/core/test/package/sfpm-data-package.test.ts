@@ -42,7 +42,6 @@ describe('SfpmDataPackage', () => {
   it('should expose flat properties for serialization', () => {
     expect(dataPackage.packageName).toBe('my-data');
     expect(dataPackage.type).toBe(PackageType.Data);
-    expect(dataPackage.orchestration).toBeDefined();
   });
 
   it('should expose versionNumber for DataDeployable', () => {

@@ -1,0 +1,47 @@
+name: 'SFPM Deploy'
+description: 'Deploy SFPM packages from published artifacts via direct source deploy (pre-configured install variant, no package version install)'
+author: 'b64'
+
+branding:
+  icon: 'upload'
+  color: 'blue'
+
+inputs:
+  target-org:
+    description: 'Target org username or alias'
+    required: true
+  packages:
+    description: 'Comma-separated list of packages to deploy'
+    required: true
+  force:
+    description: 'Force redeploy even if already installed with matching version/hash'
+    required: false
+    default: 'false'
+  include-dependencies:
+    description: 'Deploy transitive dependencies of requested packages (default: true)'
+    required: false
+    default: 'true'
+  test-level:
+    description: 'Deployment test level: NoTestRun, RunSpecifiedTests, RunLocalTests, RunAllTestsInOrg'
+    required: false
+  regression-test:
+    description: 'Run tests in direct dependents after deploy to detect regressions'
+    required: false
+    default: 'false'
+  project-dir:
+    description: 'Path to the SFPM project directory (defaults to workspace root)'
+    required: false
+
+outputs:
+  success:
+    description: 'Whether all deploys succeeded (true/false)'
+  duration:
+    description: 'Total deploy duration in milliseconds'
+  failed-packages:
+    description: 'Comma-separated list of packages that failed to deploy'
+  result:
+    description: 'Full JSON result with per-package outcomes'
+
+runs:
+  using: 'node20'
+  main: '../dist/deploy-main.js'

@@ -21,16 +21,6 @@ export enum PackageType {Data = 'data', Diff = 'diff', Managed = 'managed', Sour
  */
 export type VersionFormat = 'salesforce' | 'semver';
 
-/**
- * Where the package code comes from for installation.
- * - `local`: Install from built ./dist
- * - `artifact`: Install from node_modules
- */
-export const enum PackageOrigin {
-  Artifact = 'artifact',
-  Local = 'local',
-}
-
 export interface BuildOrg {
   /** Scratch/sandbox org for validation (deploy + test). Optional for assemble-only builds. */
   buildOrg?: Org;
@@ -61,7 +51,7 @@ export interface BuildOptions {
 export interface UnlockedBuildOptions {
   /** Scratch org definition file for package version creation */
   definitionFile?: string;
-  installationKey?: string;
+  installationKeys?: Record<string, string>;
   /**
    * Unlocked packages are built as source instead of creating a package version.
    * No DevHub required. Designed for PR validation against scratch orgs.
@@ -72,10 +62,6 @@ export interface UnlockedBuildOptions {
 export interface InstallOptions {
   /** Force reinstall even if already installed with matching version/hash */
   force?: boolean;
-  /**
-   * Where to install from: 'local' (project source ./dist) or 'artifact' (installed node_modules).
-   */
-  origin?: PackageOrigin;
   /** Run tests in direct dependents of installed packages after orchestration completes. */
   regressionTest?: boolean;
   testLevel?: TestLevel;
@@ -86,8 +72,8 @@ export interface InstallOptions {
 }
 
 export interface UnlockedInstallOptions {
-  /** Installation key for unlocked packages */
-  installationKey?: string;
+  /** Package name -> installation key overrides. `'*'` is the default for any package without an explicit entry. */
+  installationKeys?: Record<string, string>;
   /**
    * Unlocked packages are deployed as source instead of installing a package version.
    */

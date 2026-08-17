@@ -12,6 +12,8 @@ import type {PackageType} from '../../types/package.js';
 import type {PackageDefinition, ProjectDefinition} from '../../types/project.js';
 import type {SfpmPackageConfig, WorkspacePackageJson} from './types/workspace.js';
 
+import {DIST_DIR} from '../../types/artifact.js';
+
 // ---------------------------------------------------------------------------
 // WorkspacePackageJson → PackageDefinition
 // ---------------------------------------------------------------------------
@@ -174,7 +176,11 @@ export function toWorkspacePackageJson(
     name: packageName.includes('/') ? packageName : `${options.npmScope}/${packageName}`,
     private: true,
     scripts: {
-      'sfpm:build': `sfpm build ${packageName} --turbo`,
+      // `--json` output is redirected to disk so `build-turbo-aggregate` can
+      // read it back after `turbo run sfpm:build` — the same script still
+      // works for direct/non-turbo invocation, it just also leaves this file
+      // behind (see BuildResult in @b64hub/sfpm-actions).
+      'sfpm:build': `sfpm build ${packageName} --turbo --json > ${DIST_DIR}/build-result.json`,
       'sfpm:deploy': `sfpm deploy ${packageName} --turbo`,
       'sfpm:install': `sfpm install ${packageName} --turbo`,
     },

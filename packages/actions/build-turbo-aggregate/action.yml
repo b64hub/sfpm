@@ -1,0 +1,33 @@
+name: 'SFPM Build (Turbo)'
+description: 'Aggregate per-package turbo build output into the same result shape the build action produces, for hand-off to build-validation'
+author: 'b64'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  packages:
+    description: 'Comma-separated list of packages to aggregate. Defaults to all packages.'
+    required: false
+  task-name:
+    description: "Name of the turbo task each package built as (default: 'sfpm:build')"
+    required: false
+    default: 'sfpm:build'
+  project-dir:
+    description: 'Path to the SFPM project directory (defaults to workspace root). Also where `turbo run` was invoked and `.turbo/runs/` lives.'
+    required: false
+
+outputs:
+  success:
+    description: 'Whether all builds succeeded (true/false)'
+  duration:
+    description: 'Total aggregation duration in milliseconds'
+  failed-packages:
+    description: 'Comma-separated list of packages that failed to build'
+  result:
+    description: "Full JSON result with per-package outcomes, in the same shape as the build action's result output. Pass this into build-validation's build-result input as needs.build.outputs.result"
+
+runs:
+  using: 'node20'
+  main: '../dist/build-turbo-aggregate-main.js'

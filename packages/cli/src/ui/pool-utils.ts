@@ -14,7 +14,7 @@ export function formatStage(stage?: string): string {
   case 'Allocate': {return chalk.blue('Allocate');
   }
 
-  case 'Assigned': {return chalk.cyan('Assigned');
+  case 'Assigned': {return chalk.hex('#FFA500')('Assigned');
   }
 
   case 'Available': {return chalk.green('Available');
@@ -34,7 +34,7 @@ export function stageColor(stage?: string): string {
   case 'Allocate': {return 'blue';
   }
 
-  case 'Assigned': {return 'cyan';
+  case 'Assigned': {return '#FFA500';
   }
 
   case 'Available': {return 'green';

@@ -11,12 +11,15 @@ import type {JwtAuthConfig} from '../types.js';
 /**
  * Default authenticator for pool-managed orgs.
  *
- * Supports two authentication mechanisms, tried in order:
+ * If the org is already authenticated locally (e.g. a scratch org that
+ * was auto-authed via JWT during creation), that auth is reused as-is.
+ * Otherwise, supports two authentication mechanisms, tried in order:
  *
  * 1. **Auth URL** (default) — If the org has an `auth.authUrl` (stored
  *    as `Auth_Url__c` on the hub record — `ScratchOrgInfo` for scratch
- *    orgs, `Sandbox_Pool_Org__c` for sandboxes), `AuthInfo.create({ authUrl })`
- *    is used. This works for both scratch orgs and sandboxes, and is the
+ *    orgs, `Sandbox_Pool_Org__c` for sandboxes), it's parsed via
+ *    `AuthInfo.parseSfdxAuthUrl()` and used to create the auth file.
+ *    This works for both scratch orgs and sandboxes, and is the
  *    recommended approach in CI/CD where the creating user and the
  *    claiming user are different.
  *
@@ -80,11 +83,24 @@ export default class AuthService implements PoolOrgAuthenticator {
       throw new Error('Login error: org must have a valid username');
     }
 
+    // Some scratch orgs are already authenticated locally (e.g. via JWT
+    // during creation) — reuse that rather than trying to overwrite it,
+    // since AuthInfo.create() refuses to overwrite an existing auth file.
+    try {
+      await AuthInfo.create({username: org.auth.username});
+      await Org.create({aliasOrUsername: org.auth.username});
+      return;
+    } catch {
+      // Not yet authenticated locally — fall through to auth URL / JWT below.
+    }
+
     // 1. Auth URL (preferred — works for both scratch orgs and sandboxes)
     if (org.auth.authUrl) {
       try {
+        // `authUrl` isn't a real AuthInfo option — it must be parsed into
+        // oauth2Options (clientId/clientSecret/refreshToken/loginUrl) first.
         const authInfo = await AuthInfo.create({
-          authUrl: org.auth.authUrl,
+          oauth2Options: AuthInfo.parseSfdxAuthUrl(org.auth.authUrl),
           username: org.auth.username,
         });
         await authInfo.save();

@@ -151,6 +151,22 @@ describe('PoolFetcher', () => {
       expect(authenticator.enableSourceTracking).toHaveBeenCalledWith(expect.objectContaining({auth: expect.objectContaining({username: org.auth.username})}));
     });
 
+    it('should propagate a post-claim action failure instead of returning silently', async () => {
+      const org = createScratchOrg();
+      orgSource.getAvailableByTag.mockResolvedValue([org]);
+      orgSource.claimOrg.mockResolvedValue(true);
+
+      authenticator.login.mockRejectedValue(new Error('Auth URL login failed'));
+
+      const fetcher = new PoolFetcher(orgSource as any);
+
+      await expect(fetcher.fetch('test-pool', {
+        postClaimActions: [
+          (o) => authenticator.login(o),
+        ],
+      })).rejects.toThrow('Auth URL login failed');
+    });
+
     it('should run only the share action when sending to user', async () => {
       const org = createScratchOrg();
       orgSource.getAvailableByTag.mockResolvedValue([org]);
@@ -186,9 +202,9 @@ describe('PoolFetcher', () => {
       const fetcher = new PoolFetcher(orgSource as any);
 
       const events: string[] = [];
-      fetcher.on('pool:fetch:start', () => events.push('start'));
-      fetcher.on('pool:fetch:claimed', () => events.push('claimed'));
-      fetcher.on('pool:fetch:complete', () => events.push('complete'));
+      fetcher.bus.on('pool:fetch:start', () => events.push('start'));
+      fetcher.bus.on('pool:fetch:claimed', () => events.push('claimed'));
+      fetcher.bus.on('pool:fetch:complete', () => events.push('complete'));
 
       await fetcher.fetch('test-pool');
 
@@ -265,8 +281,8 @@ describe('PoolFetcher', () => {
       const fetcher = new PoolFetcher(orgSource as any);
 
       const events: string[] = [];
-      fetcher.on('pool:fetch:start', () => events.push('start'));
-      fetcher.on('pool:fetch:complete', () => events.push('complete'));
+      fetcher.bus.on('pool:fetch:start', () => events.push('start'));
+      fetcher.bus.on('pool:fetch:complete', () => events.push('complete'));
 
       await fetcher.fetchAll('test-pool');
 

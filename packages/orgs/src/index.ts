@@ -42,9 +42,11 @@ export {
 export {default as AuthService} from './org/services/auth-service.js';
 export {default as DevHubService} from './org/services/devhub-service.js';
 
-export {createPoolServices, type CreatePoolServicesOptions, type PoolServices} from './pool/pool-factory.js';
+export {PoolEventBus, type PoolEvents} from './pool/pool-event-bus.js';
 
-export {default as PoolFetcher, type PoolFetcherEvents} from './pool/pool-fetcher.js';
+export {createPoolServices, type CreatePoolServicesOptions, type PoolServices} from './pool/pool-factory.js';
+export {PoolFetcherEventBus, type PoolFetcherEvents} from './pool/pool-fetcher-event-bus.js';
+export {default as PoolFetcher} from './pool/pool-fetcher.js';
 
 export {
   computeOrgAllocation,
@@ -53,7 +55,6 @@ export {
   type PoolAllocation,
   type PoolDeleteResult,
   default as PoolManager,
-  type PoolManagerEvents,
   type PoolManagerOptions,
   type PoolProvisionResult,
 } from './pool/pool-manager.js';

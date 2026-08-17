@@ -82,19 +82,19 @@ describe('BuildOrchestrator', () => {
     mockResolution = createResolution([['pkg-a', 'pkg-b']]);
 
     // Mock PackageBuilder
-    mockBuildPackage = vi.fn().mockResolvedValue();
+    mockBuildPackage = vi.fn().mockResolvedValue({skipped: false});
     vi.mocked(PackageBuilder).mockImplementation(function (this: any) {
       this.build = mockBuildPackage;
       return this;
     } as any);
 
-    orchestrator = new BuildOrchestrator(
-      mockProvider,
-      {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
-      {devHub: 'test-hub'},
-      mockLogger,
-      '/test/project',
-    );
+    orchestrator = BuildOrchestrator.create(
+        mockProvider,
+        {},
+        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
+        {devHub: 'test-hub'},
+        mockLogger,
+      );
   });
 
   afterEach(() => {
@@ -119,12 +119,12 @@ describe('BuildOrchestrator', () => {
         {'pkg-b': ['pkg-a']},
       );
 
-      orchestrator = new BuildOrchestrator(
+      orchestrator = BuildOrchestrator.create(
         mockProvider,
+        {},
         {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {devHub: 'test-hub'},
         mockLogger,
-        '/test/project',
       );
 
       const result = await orchestrator.buildAll(['pkg-b']);
@@ -142,12 +142,12 @@ describe('BuildOrchestrator', () => {
         {'pkg-b': ['pkg-a']},
       );
 
-      orchestrator = new BuildOrchestrator(
+      orchestrator = BuildOrchestrator.create(
         mockProvider,
+        {},
         {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {devHub: 'test-hub'},
         mockLogger,
-        '/test/project',
       );
 
       // Make pkg-a fail
@@ -170,18 +170,18 @@ describe('BuildOrchestrator', () => {
         {'pkg-b': ['pkg-a']},
       );
 
-      const continueOrchestrator = new BuildOrchestrator(
+      const continueOrchestrator = BuildOrchestrator.create(
         mockProvider,
+        {},
         {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
         {continueOnError: true, devHub: 'test-hub'},
         mockLogger,
-        '/test/project',
       );
 
       // Make pkg-a fail, pkg-b succeed
       mockBuildPackage
       .mockRejectedValueOnce(new Error('Build failed'))
-      .mockResolvedValueOnce();
+      .mockResolvedValueOnce({skipped: false});
 
       const result = await continueOrchestrator.buildAll(['pkg-b']);
 
@@ -203,12 +203,12 @@ describe('BuildOrchestrator', () => {
         levels: [],
       };
 
-      const circularOrchestrator = new BuildOrchestrator(
+      const circularOrchestrator = BuildOrchestrator.create(
         mockProvider,
+        {},
         {resolveDependencies: vi.fn().mockReturnValue(circularResolution)} as any,
         {devHub: 'test-hub'},
         mockLogger,
-        '/test/project',
       );
 
       await expect(circularOrchestrator.buildAll(['pkg-a'])).rejects.toThrow(DependencyError);
@@ -221,12 +221,15 @@ describe('BuildOrchestrator', () => {
         {'pkg-b': ['pkg-a']},
       );
 
-      const noDepsOrchestrator = new BuildOrchestrator(
+      const noDepsOrchestrator = BuildOrchestrator.create(
         mockProvider,
-        {resolveDependencies: vi.fn().mockReturnValue(mockResolution)} as any,
+        {},
+        {
+          getNode: vi.fn((name: string) => mockResolution.allPackages.find(n => n.name === name)),
+          resolveDependencies: vi.fn().mockReturnValue(mockResolution),
+        } as any,
         {devHub: 'test-hub', includeDependencies: false},
         mockLogger,
-        '/test/project',
       );
 
       const result = await noDepsOrchestrator.buildAll(['pkg-b']);
@@ -238,7 +241,7 @@ describe('BuildOrchestrator', () => {
 
     it('should handle rejected promises from package builds gracefully', async () => {
       mockBuildPackage
-      .mockResolvedValueOnce()
+      .mockResolvedValueOnce({skipped: false})
       .mockRejectedValueOnce(new Error('Unexpected error'));
 
       const result = await orchestrator.buildAll(['pkg-a', 'pkg-b']);

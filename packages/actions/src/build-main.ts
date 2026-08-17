@@ -1,4 +1,5 @@
 import * as core from '@actions/core';
+import {parseInstallationKeys} from '@b64hub/sfpm-core';
 
 import {build} from './build.js';
 
@@ -10,7 +11,10 @@ try {
   const devhubUsername = core.getInput('devhub-username') || undefined;
   const projectDir = core.getInput('project-dir') || undefined;
   const buildNumber = core.getInput('build-number') || undefined;
-  const installationKey = core.getInput('installation-key') || undefined;
+  const installationKeysInput = core.getInput('installation-keys') || '';
+  const installationKeys = installationKeysInput
+    ? parseInstallationKeys(installationKeysInput.split('\n').map(l => l.trim()).filter(Boolean))
+    : undefined;
 
   const packagesInput = core.getInput('packages') || '';
   const packages = packagesInput
@@ -25,7 +29,7 @@ try {
     devhubUsername,
     force,
     includeDependencies,
-    installationKey,
+    installationKeys,
     packages,
     projectDir,
   });

@@ -1,0 +1,75 @@
+# Local-only test of the sfpm-actions fill-pool action against this
+# project's real packages. Not a real workflow — lives outside
+# .github/workflows/ so GitHub never picks it up. Doesn't use the sfpm
+# container so a debugger can attach directly to the act runner container
+# (see packages/actions/DEBUGGING.md in the sfpm checkout). Run with:
+#
+#   act workflow_dispatch \
+#     -W .github/act-tests/fill-pool.yml \
+#     --container-options "-v /path/to/sfpm:/path/to/this-project/.sfpm-actions" \
+#     -j fill
+#
+# Requires .sfpm-actions to exist (symlink to a local sfpm checkout, or a
+# real `actions/checkout` with `repository: b64hub/sfpm` for actual CI —
+# see packages/actions/examples/README.md) and repo secrets
+# SFDX_CONSUMER_KEY, SFDX_JWT_KEY, DEVHUB_USERNAME (pass with -s NAME=value
+# or --secret-file).
+name: SFPM Fill Pool Test (local act only)
+
+on:
+  schedule:
+    - cron: '0 6 * * 1-5' # weekday mornings
+  workflow_dispatch:
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install CLI toolchain (mirrors sfpm-actions image)
+        env:
+          PNPM_HOME: /pnpm
+        run: |
+          export PATH="$PNPM_HOME:$PATH"
+          echo "$PNPM_HOME" >> "$GITHUB_PATH"
+          corepack enable
+          corepack prepare pnpm@10.28.1 --activate
+          curl -fsSL https://install.testnimbus.dev | sh
+          pnpm add -g turbo @salesforce/cli @b64hub/sfpm-cli
+
+      - run: |
+          cd .sfpm-actions
+          pnpm install --ignore-scripts
+          pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Authenticate DevHub
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.DEVHUB_USERNAME }}" \
+            --set-default-dev-hub \
+            --alias devhub
+          rm server.key
+
+      - name: Fill pool
+        id: fill
+        env:
+          NODE_OPTIONS: --inspect-brk=0.0.0.0:9229
+        uses: ./.sfpm-actions/packages/actions/fill-pool
+        with:
+          devhub-username: devhub
+          pool-tag: ci-pool
+          max-allocation: '10'
+
+      - name: Report outcome
+        if: always()
+        run: |
+          echo "Succeeded: ${{ steps.fill.outputs.succeeded }}"
+          echo "Failed: ${{ steps.fill.outputs.failed }}"

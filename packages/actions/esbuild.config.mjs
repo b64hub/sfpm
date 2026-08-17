@@ -15,13 +15,13 @@ const sharedOptions = {
 await Promise.all([
     esbuild.build({
         ...sharedOptions,
-        entryPoints: ['src/main.ts'],
-        outfile: 'dist/main.js',
+        entryPoints: ['src/validate-main.ts'],
+        outfile: 'dist/validate-main.js',
     }),
     esbuild.build({
         ...sharedOptions,
-        entryPoints: ['src/provision-pool-main.ts'],
-        outfile: 'dist/provision-pool-main.js',
+        entryPoints: ['src/fill-pool-main.ts'],
+        outfile: 'dist/fill-pool-main.js',
     }),
     esbuild.build({
         ...sharedOptions,
@@ -30,12 +30,30 @@ await Promise.all([
     }),
     esbuild.build({
         ...sharedOptions,
-        entryPoints: ['src/build-resume-main.ts'],
-        outfile: 'dist/build-resume-main.js',
+        entryPoints: ['src/build-validation-main.ts'],
+        outfile: 'dist/build-validation-main.js',
+    }),
+    esbuild.build({
+        ...sharedOptions,
+        entryPoints: ['src/build-turbo-aggregate-main.ts'],
+        outfile: 'dist/build-turbo-aggregate-main.js',
+    }),
+    esbuild.build({
+        ...sharedOptions,
+        entryPoints: ['src/install-main.ts'],
+        outfile: 'dist/install-main.js',
+    }),
+    esbuild.build({
+        ...sharedOptions,
+        entryPoints: ['src/deploy-main.ts'],
+        outfile: 'dist/deploy-main.js',
     }),
 ]);
 
-console.log('Bundled dist/main.js');
-console.log('Bundled dist/provision-pool-main.js');
+console.log('Bundled dist/validate-main.js');
+console.log('Bundled dist/fill-pool-main.js');
 console.log('Bundled dist/build-main.js');
-console.log('Bundled dist/build-resume-main.js');
+console.log('Bundled dist/build-validation-main.js');
+console.log('Bundled dist/build-turbo-aggregate-main.js');
+console.log('Bundled dist/install-main.js');
+console.log('Bundled dist/deploy-main.js');

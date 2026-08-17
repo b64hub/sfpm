@@ -15,6 +15,7 @@ import {formatExpiry, formatStage, stageColor} from '../../pool-utils.js';
  * Pass the same spec to both `<PoolOrgRow>` and the header row.
  */
 export const POOL_ORG_COLS: MetaColSpec[] = [
+  {key: 'tag',     label: 'pool',    width: 14},
   {key: 'stage',   label: 'stage',   width: 12},
   {key: 'type',    label: 'type',    width: 8},
   {key: 'expires', label: 'expires', width: 14},
@@ -37,6 +38,7 @@ function orgToProps(org: PoolOrg): PackageRowProps {
         meta={{
           expires: org.expiry ? formatExpiry(org.expiry) : '—',
           stage:   formatStage(stage),
+          tag:     org.pool?.tag ?? '—',
           type:    org.orgType,
         }}
       />
@@ -51,7 +53,7 @@ function orgToProps(org: PoolOrg): PackageRowProps {
 /**
  * A single pool org row using the PackageRow layout.
  *
- * Slots: icon (stage-coloured dot) · alias · username (dim) | stage · type · expires
+ * Slots: icon (stage-coloured dot) · alias · username (dim) | pool · stage · type · expires
  */
 export function PoolOrgRow({org, width}: {org: PoolOrg; width: number}) {
   return <PackageRow props={orgToProps(org)} width={width} />;

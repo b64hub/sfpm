@@ -2,7 +2,7 @@ import {
   afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
-import {ArtifactService} from '../../src/artifacts/artifact-service.js';
+import ArtifactService from '../../src/artifacts/artifact-service.js';
 
 // Mock @salesforce/core
 vi.mock('@salesforce/core', () => ({
@@ -60,7 +60,7 @@ describe('ArtifactService.createHistoryRecord', () => {
       getUsername: vi.fn().mockReturnValue('test@example.com'),
     };
 
-    service = new ArtifactService(mockLogger, mockOrg);
+    service = new ArtifactService(mockOrg, mockLogger);
   });
 
   afterEach(() => {
@@ -132,16 +132,13 @@ describe('ArtifactService.createHistoryRecord', () => {
     const result = await service.createHistoryRecord(mockSfpmPackage, undefined, mockSource);
 
     expect(result).toBeUndefined();
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Unable to create artifact history record'),
-    );
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Sfpm_Artifact_History__c may not be deployed'),
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      expect.stringContaining('Sfpm_Artifact_History__c is not available in this org'),
     );
   });
 
   it('should throw when org is not set', async () => {
-    const serviceNoOrg = new ArtifactService(mockLogger);
+    const serviceNoOrg = new ArtifactService(undefined, mockLogger);
 
     await expect(serviceNoOrg.createHistoryRecord(mockSfpmPackage)).rejects.toThrow(
       'Org connection required for createHistoryRecord',

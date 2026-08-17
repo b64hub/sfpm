@@ -56,20 +56,17 @@ export {
   type DataDeployable, ManagedPackageRef, type SourceDeployable, type VersionInstallable,
 } from './package/installers/types.js';
 export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from './package/org-alias-resolver.js';
-export {PackageBuilder} from './package/package-builder.js';
+export {PackageBuilder, type PackageBuildResult} from './package/package-builder.js';
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
 export {type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {type Package2, PackageService} from './package/package-service.js';
 export {
   isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';
-export {
-  type PackageValidationResult, ValidationPoller, type ValidationPollingOptions, type ValidationTarget,
-} from './package/validation/validation-poller.js';
 export {type ResolveOptions, ValidationResolver} from './package/validation/validation-resolver.js';
 export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
 export * from './project/project-graph.js';
-export {findSfpmRoot, default as ProjectService} from './project/project-service.js';
+export {findSfpmRoot, default as ProjectService, resolveSfpmRoot} from './project/project-service.js';
 export {ArtifactProvider, type ArtifactProviderOptions} from './project/providers/artifact-provider.js';
 export {
   type ProjectDefinitionProvider,
@@ -116,6 +113,7 @@ export {
 export * from './types/watcher.js';
 export {BuildStateStore} from './utils/build-state-store.js';
 export {DirectoryHasher} from './utils/directory-hasher.js';
+export {parseInstallationKeys, resolveInstallationKey} from './utils/installation-key.js';
 export {getPipelineRunId} from './utils/pipeline.js';
 export {resolvePackageName, stripScope} from './utils/scope-utils.js';
 export {escapeSOQL, soql} from './utils/soql.js';

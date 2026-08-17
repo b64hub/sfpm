@@ -2,11 +2,10 @@ import {
   BuildOrchestrator,
   type BuildOrchestratorOptions, type BuildOrg,
   type BuildWatcherPayload,
-  findSfpmRoot,
   LifecycleEngine,
   noopLogger,
-  type OrchestrationResult,
   PackageType,
+  parseInstallationKeys,
   type PendingValidationDescriptor, ProjectService, ValidationEventBus, ValidationResolver,
   type WatcherState,
 } from '@b64hub/sfpm-core'
@@ -22,7 +21,6 @@ import '@b64hub/sfpm-sfdmu'
 import chalk from 'chalk'
 import EventEmitter from 'node:events'
 import path from 'node:path'
-import ora from 'ora'
 
 import SfpmCommand from '../../sfpm-command.js'
 import {attachBuildBridge} from '../../ui/build-event-bridge.js'
@@ -30,6 +28,7 @@ import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-rendere
 import {renderApp} from '../../ui/run.js'
 import {ValidationProgressRenderer} from '../../ui/validation-progress-renderer.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
+import {resolveCliProjectDir} from '../../utils/project-dir.js'
 import {forkWatcher, validationRunnerScript} from '../../utils/watcher.js'
 
 interface ResolvedBuildFlags {
@@ -74,7 +73,7 @@ export default class Build extends SfpmCommand {
     'build-number': Flags.string({char: 'b', description: 'build number'}),
     'build-org': Flags.string({char: 'o', description: 'target org for source package validation (deploy + test)'}),
     force: Flags.boolean({char: 'f', description: 'build even if no source changes detected', env: 'SFPM_FORCE_BUILD'}),
-    'installation-key': Flags.string({char: 'k', description: 'installation key'}),
+    'installation-key': Flags.string({char: 'k', description: 'installation key for unlocked packages; repeat as <package>=<key>, or a bare value as the default', multiple: true}),
     'no-dependencies': Flags.boolean({default: false, description: 'build the specified packages without their transitive dependencies'}),
     'source-only': Flags.boolean({description: 'route all packages through source deployment (no DevHub, no package version IDs)', env: 'SFPM_SOURCE_ONLY'}),
     tag: Flags.string({char: 't', description: 'tag for the build'}),
@@ -167,10 +166,10 @@ export default class Build extends SfpmCommand {
       );
     }
 
-    const orchestrator = new BuildOrchestrator(
+    const orchestrator = BuildOrchestrator.create(
       projectConfig,
-      projectGraph,
       buildOrg,
+      projectGraph,
       {...resolved.buildOptions, includeDependencies: !resolved.noDependencies},
       pinoLogger,
       localValidator,
@@ -186,7 +185,11 @@ export default class Build extends SfpmCommand {
 
     if (uiBus) {
       attachBuildBridge(orchestrator.buildBus, orchestrator.orchestrationBus, uiBus, validationBus);
-      inkInstance = renderApp(uiBus, {logPath});
+      const orgUsername = resolved.buildOrgUsername ?? resolved.devhubUsername;
+      inkInstance = renderApp(uiBus, {
+        logPath,
+        org: orgUsername ? {alias: orgUsername} : undefined,
+      });
     } else {
       renderer = new BuildProgressRenderer({
         logger: {
@@ -224,7 +227,7 @@ export default class Build extends SfpmCommand {
       }
 
       const pendingValidations = result.results
-      .map(r => r.result)
+      .map(r => r.result?.pendingValidation)
       .filter((r): r is PendingValidationDescriptor => r !== null && r !== undefined)
 
       if (isInk && validationBus && !resolved.async) {
@@ -263,16 +266,12 @@ export default class Build extends SfpmCommand {
     if (!resolved.autoCreatedBuildOrg) return
 
     const {devhub: hubOrg, username} = resolved.autoCreatedBuildOrg
-    const spinner = resolved.mode === 'interactive'
-      ? ora(`Deleting build org ${chalk.cyan(username)}...`).start()
-      : undefined
 
     try {
       const scratchOrg = await Org.create({aliasOrUsername: username})
       await scratchOrg.deleteFrom(hubOrg)
-      spinner?.succeed(`Build org ${chalk.cyan(username)} deleted`)
+      if (resolved.mode === 'plain') this.log(`Build org ${chalk.cyan(username)} deleted`)
     } catch (error) {
-      spinner?.fail(`Failed to delete build org ${chalk.cyan(username)}`)
       this.sfpmLogger?.warn(`Failed to delete auto-created build org ${username}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
@@ -305,9 +304,7 @@ export default class Build extends SfpmCommand {
       this.error('A target dev hub is required to auto-create a build org for source validation. Specify one with --target-dev-hub (-v).', {exit: 1})
     }
 
-    const spinner = resolved.mode === 'interactive'
-      ? ora('Creating scratch org for source validation...').start()
-      : undefined
+    if (resolved.mode === 'plain') this.log('Creating scratch org for source validation...')
 
     const hubOrg = await Org.create({aliasOrUsername: resolved.devhubUsername})
     const provider = new ScratchOrgProvider(hubOrg)
@@ -315,29 +312,23 @@ export default class Build extends SfpmCommand {
     const scratchDefPath = path.join(resolved.projectDir, 'config', 'project-scratch-def.json')
     const alias = `sfpm-build-${Date.now()}`
 
-    try {
-      const scratchOrg = await provider.createOrg({
-        alias,
-        definitionfile: scratchDefPath,
-        durationDays: 1,
-        noancestors: true,
-        nonamespace: true,
-      })
+    const scratchOrg = await provider.createOrg({
+      alias,
+      definitionfile: scratchDefPath,
+      durationDays: 1,
+      noancestors: true,
+      nonamespace: true,
+    })
 
-      const {username} = scratchOrg.auth
-      if (!username) {
-        spinner?.fail('Failed to create scratch org: no username returned')
-        this.error('Failed to create scratch org: no username returned', {exit: 1})
-      }
-
-      spinner?.succeed(`Build org created: ${chalk.cyan(username)}`)
-
-      resolved.buildOrgUsername = username
-      resolved.autoCreatedBuildOrg = {devhub: hubOrg, username}
-    } catch (error) {
-      spinner?.fail('Failed to create scratch org')
-      throw error
+    const {username} = scratchOrg.auth
+    if (!username) {
+      this.error('Failed to create scratch org: no username returned', {exit: 1})
     }
+
+    if (resolved.mode === 'plain') this.log(`Build org created: ${chalk.cyan(username)}`)
+
+    resolved.buildOrgUsername = username
+    resolved.autoCreatedBuildOrg = {devhub: hubOrg, username}
   }
 
   /**
@@ -419,10 +410,7 @@ export default class Build extends SfpmCommand {
       flags['no-dependencies'] = true
     }
 
-    const projectDir = process.env.SFPM_PROJECT_DIR || findSfpmRoot(process.cwd());
-    if (!projectDir) {
-      this.error('Unable to locate any project root files like sfpm.config.{ts,mjs,js}', {exit: 1})
-    }
+    const projectDir = resolveCliProjectDir();
 
     const projectService = await ProjectService.getInstance(projectDir);
     const projectConfig = projectService.getDefinitionProvider();
@@ -452,7 +440,7 @@ export default class Build extends SfpmCommand {
     const buildOptions: BuildOrchestratorOptions = {
       buildNumber: flags['build-number'],
       force: flags.force,
-      unlocked: {installationKey: flags['installation-key'], sourceOnly: flags['source-only']},
+      unlocked: {installationKeys: flags['installation-key']?.length ? parseInstallationKeys(flags['installation-key']) : undefined, sourceOnly: flags['source-only']},
       validation,
       waitTime: flags.wait,
     }

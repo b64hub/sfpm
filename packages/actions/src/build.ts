@@ -1,16 +1,14 @@
 import * as core from '@actions/core';
-import * as github from '@actions/github';
 import {
+
   BuildOrchestrator,
-  type CreateCompleteEvent,
-  isStructuredLogger,
   LifecycleEngine,
-  type PackageType,
+  type PendingValidationDescriptor,
   ProjectService,
+  ValidationLevel,
 } from '@b64hub/sfpm-core';
 import {createTracer} from '@b64hub/sfpm-telemetry';
 
-import {BuildCacheService, type CachedBuildState, type PackageBuildState} from './build-cache.js';
 import {createGitHubActionsLogger} from './logger.js';
 import {ActionsProgressRenderer} from './progress-renderer.js';
 
@@ -28,11 +26,35 @@ export interface BuildOptions {
   /** Also build transitive dependencies of requested packages */
   includeDependencies?: boolean;
   /** Installation key for unlocked packages */
-  installationKey?: string;
+  installationKeys?: Record<string, string>;
   /** Packages to build (empty = all) */
   packages?: string[];
   /** Project directory (default: workspace root) */
   projectDir?: string;
+
+  validation?: ValidationLevel;
+}
+
+/**
+ * Per-package build outcome. Fed straight into the `result` action output —
+ * the `build-validation` action reads that output (via `needs.build.outputs.result`
+ * in the workflow) as its `build-result` input, no cache or polling involved.
+ */
+export interface PackageBuildState {
+  /** Package name */
+  packageName: string;
+  /** Package type (Unlocked, Source, Data) */
+  packageType: string;
+  /**
+   * Descriptor for in-flight async validation, present only for unlocked
+   * packages that successfully queued a package version creation request.
+   * Resolved by `build-validation` via {@link ValidationResolver}.
+   */
+  pendingValidation?: PendingValidationDescriptor;
+  /** Whether the build was skipped (no source changes) */
+  skipped: boolean;
+  /** Whether this package built successfully */
+  success: boolean;
 }
 
 export interface BuildResult {
@@ -40,10 +62,8 @@ export interface BuildResult {
   duration: number;
   /** List of package names that failed */
   failedPackages: string[];
-  /** Per-package build state (also cached for the resume step) */
+  /** Per-package build outcome, including any pending async validation */
   packages: PackageBuildState[];
-  /** Whether state was cached for a resume step */
-  stateCached: boolean;
   /** Whether all packages built successfully */
   success: boolean;
 }
@@ -58,9 +78,9 @@ export interface BuildResult {
  * Workflow:
  * 1. Initialise project and resolve packages
  * 2. Run BuildOrchestrator with async validation for unlocked packages
- * 3. Collect build results, artifact paths, and creation request IDs
- * 4. Cache build state for the `build-resume` action
- * 5. Set outputs (artifact dir, per-package results)
+ * 3. Collect per-package build outcomes, including any pending validation descriptor
+ * 4. Set outputs (per-package results, including pending validation descriptors
+ *    the `build-validation` action reads via its `build-result` input)
  *
  * Lifecycle stage: **build**
  *
@@ -70,9 +90,9 @@ export interface BuildResult {
  *
  * Unlocked packages are built with `asyncValidation: true` so that
  * the Salesforce platform starts validation in the background.
- * `PackageVersion.create()` returns immediately with a creation request ID
- * and 04t subscriber version ID. The `build-resume` action can then poll
- * for validation completion using `PackageVersion.getCreateStatus()`.
+ * `PackageVersion.create()` returns immediately with a creation request ID,
+ * captured as a {@link PendingValidationDescriptor} on the package's result.
+ * The `build-validation` action resolves these via `ValidationResolver`.
  *
  * @example
  * ```typescript
@@ -116,31 +136,19 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   // ------------------------------------------------------------------
   // 3. Run BuildOrchestrator (default mode with full validation)
   // ------------------------------------------------------------------
-  const orchestrator = new BuildOrchestrator(
+  const orchestrator = BuildOrchestrator.create(
     projectConfig,
-    projectGraph,
     {},
+    projectGraph,
     {
       buildNumber: options.buildNumber,
       force: options.force,
       includeDependencies: options.includeDependencies,
-      unlocked: options.installationKey ? {installationKey: options.installationKey} : undefined,
-      validation: 'full',
+      unlocked: options.installationKeys ? {installationKeys: options.installationKeys} : undefined,
+      validation: options.validation,
     },
     logger,
   );
-
-  // Collect creation request IDs from create:complete events
-  const createRequestIds = new Map<string, {packageVersionCreateRequestId: string; packageVersionId: string; version: string}>();
-  orchestrator.buildBus.on('create:complete', event => {
-    if (event.packageVersionCreateRequestId) {
-      createRequestIds.set(event.packageName, {
-        packageVersionCreateRequestId: event.packageVersionCreateRequestId,
-        packageVersionId: event.packageVersionId,
-        version: event.versionNumber,
-      });
-    }
-  });
 
   const renderer = new ActionsProgressRenderer(logger);
   renderer.attachToBuildOrchestrator(orchestrator.buildBus, orchestrator.orchestrationBus);
@@ -154,64 +162,31 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   await tracer.shutdown();
 
   // ------------------------------------------------------------------
-  // 4. Build per-package state and determine which need validation
+  // 4. Build per-package state from orchestrator results
   // ------------------------------------------------------------------
+  // `r.result.pendingValidation` is the PendingValidationDescriptor an unlocked
+  // package returns when it queues async validation — present only on success,
+  // absent for build-skips and non-unlocked packages.
   const packageStates: PackageBuildState[] = orchResult.results.map(r => {
     const pkgDef = projectConfig.getPackageDefinition(r.packageName);
-    const pkgType = (pkgDef?.type ?? '') as string;
-    const isUnlocked = pkgType === 'Unlocked';
-    const createInfo = createRequestIds.get(r.packageName);
-    const needsValidation = isUnlocked && r.success && !r.skipped && Boolean(createInfo);
 
     return {
-      needsValidation,
       packageName: r.packageName,
-      packageType: pkgType,
-      packageVersionCreateRequestId: createInfo?.packageVersionCreateRequestId,
-      packageVersionId: createInfo?.packageVersionId,
+      packageType: (pkgDef?.type ?? '') as string,
+      pendingValidation: r.result?.pendingValidation,
       skipped: r.skipped,
       success: r.success,
-      version: createInfo?.version,
     };
   });
 
   // ------------------------------------------------------------------
-  // 5. Cache build state for the resume step
-  // ------------------------------------------------------------------
-  let stateCached = false;
-  const pendingValidation = packageStates.filter(p => p.needsValidation);
-
-  if (pendingValidation.length > 0) {
-    if (isStructuredLogger(logger)) logger.group('Cache Build State');
-
-    const runId = String(github.context.runId);
-    const buildCache = new BuildCacheService({logger, runId});
-
-    const cacheState: CachedBuildState = {
-      cachedAt: Date.now(),
-      devhubUsername: options.devhubUsername,
-      packages: packageStates,
-      projectDir,
-      runId,
-    };
-
-    await buildCache.save(cacheState);
-    buildCache.setOutputs(cacheState);
-    stateCached = true;
-
-    logger.info(`${pendingValidation.length} unlocked package(s) pending validation`);
-    if (isStructuredLogger(logger)) logger.groupEnd();
-  }
-
-  // ------------------------------------------------------------------
-  // 6. Set outputs and return result
+  // 5. Set outputs and return result
   // ------------------------------------------------------------------
   const duration = Date.now() - startTime;
   const result: BuildResult = {
     duration,
     failedPackages: orchResult.failedPackages,
     packages: packageStates,
-    stateCached,
     success: orchResult.success,
   };
 
@@ -231,10 +206,9 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
 // Helpers
 // ============================================================================
 
-function setActionOutputs(result: BuildResult): void {
+export function setActionOutputs(result: BuildResult): void {
   core.setOutput('success', String(result.success));
   core.setOutput('duration', String(result.duration));
-  core.setOutput('state-cached', String(result.stateCached));
   core.setOutput('failed-packages', result.failedPackages.join(','));
   core.setOutput('result', JSON.stringify(result));
 }

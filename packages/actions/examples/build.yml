@@ -1,0 +1,178 @@
+# Build → {install, resume} → publish pipeline for unlocked packages using
+# async validation. `build` stages each package's dist/ output and creates
+# package versions (async validation starts in the background). Its `result`
+# output (JSON) carries each package's pending validation descriptor (devhub,
+# package version creation request ID) straight to the `build-validation` job via
+# `needs.build.outputs.result` — no cache, no run-ID lookup, and nothing
+# written back into the dist/ output itself (which stays exactly what gets
+# packed and published). `build` also uploads every package's dist/
+# directory as a workflow artifact — it's needed by both `install` (installs
+# from it directly, no registry) and `build-validation` (runs the final
+# `publish` step, which needs the same dist/ output on disk to call
+# `pnpm publish`/`sfpm publish` against).
+#
+# `install` and `build-validation` then both depend only on `build` and run in
+# parallel: `install` smoke-tests THIS run's actual build output against a
+# sandbox (via `origin: local`, resolving straight from the downloaded
+# dist/ directories — no registry round-trip, so no need to have published
+# anything yet) while `build-validation` resolves the pending validations from
+# `build`'s output via `ValidationResolver` (polls the DevHub named on each
+# descriptor directly). `publish` is the final step, gated on
+# `build-validation`'s `publishable-packages` output — a package is only
+# published once it built successfully, wasn't build-skipped (no source
+# changes), and passed validation if validation was required.
+#
+# `sfpm publish` stays a plain, unfiltered CLI call by design (surgical,
+# no side effects) — it's given the exact list of safe package names rather
+# than deciding for itself. Swap it for `npm publish`/`pnpm publish`/`jf npm`/
+# whatever your registry needs; the important part is the filtered list, not
+# which tool consumes it.
+#
+# Uses the `install` action (not `deploy`) here on purpose: async validation
+# only matters if the actual package *version* gets installed. The `deploy`
+# action is a pre-configured install variant that always source-deploys
+# instead — a better fit for packages that don't need package-version
+# validation (see packages/actions/deploy/action.yml).
+#
+# Requires repo secrets: SFDX_CONSUMER_KEY, SFDX_JWT_KEY, DEVHUB_USERNAME,
+# TARGET_ORG_USERNAME, NPM_TOKEN.
+#
+# Runs on the sfpm image (node + pnpm + turbo + sf CLI + sfpm CLI preinstalled)
+# so this workflow doesn't need to set those up itself. This is just a
+# convenience image, not a requirement — swap `container:` for any `node:22`
+# image and add back `pnpm/action-setup`, `actions/setup-node`, and
+# `npm install --global @salesforce/cli` if you'd rather not depend on it.
+name: SFPM Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/b64hub/sfpm-actions:latest
+    outputs:
+      result: ${{ steps.build.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Authenticate DevHub
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.DEVHUB_USERNAME }}" \
+            --set-default-dev-hub \
+            --alias devhub
+          rm server.key
+
+      - name: Build packages
+        id: build
+        uses: ./packages/actions/build
+        with:
+          devhub-username: devhub
+
+      # Retain <packageDir>/dist/ output across jobs — install and
+      # build-validation both need it (see header comment).
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: sfpm-dist
+          path: |
+            **/dist/**
+            !node_modules/**
+          retention-days: 1
+
+  install:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/b64hub/sfpm-actions:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: sfpm-dist
+
+      - name: Authenticate target org
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.TARGET_ORG_USERNAME }}" \
+            --alias target
+          rm server.key
+
+      # Installs straight from the downloaded dist/ output — no registry,
+      # so this is THIS run's actual build, respecting real per-package-type
+      # install semantics (e.g. unlocked packages install the exact version
+      # just created, not a source-only deploy).
+      - name: Install packages
+        uses: ./packages/actions/install
+        with:
+          origin: local
+          packages: my-package
+          target-org: target
+
+  build-validation:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/b64hub/sfpm-actions:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: sfpm-dist
+
+      - name: Authenticate DevHub
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.DEVHUB_USERNAME }}" \
+            --set-default-dev-hub \
+            --alias devhub
+          rm server.key
+
+      - name: Resume validation
+        id: resume
+        uses: ./packages/actions/build-validation
+        with:
+          build-result: ${{ needs.build.outputs.result }}
+          max-wait-minutes: '60'
+
+      - name: Report outcome
+        if: always()
+        run: |
+          echo "Validated: ${{ steps.resume.outputs.validated-count }}"
+          echo "Failed: ${{ steps.resume.outputs.failed-count }}"
+
+      # Only publish what build-validation marked safe: built successfully, not
+      # build-skipped, and validated (if validation was required). `sfpm
+      # publish` itself stays dumb — it just publishes the exact names it's
+      # given, no filtering logic of its own.
+      - name: Publish packages
+        if: steps.resume.outputs.publishable-packages != ''
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          sfpm publish $(echo "${{ steps.resume.outputs.publishable-packages }}" | tr ',' ' ')

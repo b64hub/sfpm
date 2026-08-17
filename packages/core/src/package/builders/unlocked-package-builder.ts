@@ -11,6 +11,7 @@ import {BuildError} from '../../types/errors.js';
 import Logger from '../../types/logger.js';
 import {BuildOptions, PackageType} from '../../types/package.js'
 import {PackageVersionValidationDescriptor} from '../../types/validation.js';
+import {resolveInstallationKey} from '../../utils/installation-key.js';
 import PackageService, {PackageVersionCreateReportProgress, PackageVersionCreateRequestResult} from '../package-service.js';
 import SfpmPackage, {SfpmUnlockedPackage} from '../sfpm-package.js';
 import {
@@ -103,6 +104,8 @@ export default class UnlockedPackageBuilder implements Builder {
       this.logger?.debug('Async org validation not available for org-dependent unlocked packages. Defaulting to synchronous.');
     }
 
+    const installationKey = resolveInstallationKey(buildOptions.unlocked?.installationKeys, this.sfpmPackage.packageName);
+
     try {
       result = await packageService.createPackageVersion(
         this.sfpmPackage.packageId,
@@ -111,8 +114,8 @@ export default class UnlockedPackageBuilder implements Builder {
           asyncvalidation: !this.sfpmPackage.isOrgDependent && validate,
           codecoverage: validate,
           definitionfile: buildOptions.unlocked?.definitionFile,
-          installationkey: buildOptions.unlocked?.installationKey,
-          installationkeybypass: buildOptions.unlocked?.installationKey ? undefined : true,
+          installationkey: installationKey,
+          installationkeybypass: installationKey ? undefined : true,
           projectPath: this.workingDirectory,
           skipvalidation: !validate,
           tag: this.sfpmPackage.tag,
@@ -129,7 +132,7 @@ export default class UnlockedPackageBuilder implements Builder {
   }
 
   private buildValidationDescriptor(requestId: string | undefined): PackageVersionValidationDescriptor | undefined {
-    if (!this.options.validation && this.options.validation === 'none') return undefined;
+    if (!this.options.validation || this.options.validation === 'none') return undefined;
     if (!requestId) return undefined;
 
     return {

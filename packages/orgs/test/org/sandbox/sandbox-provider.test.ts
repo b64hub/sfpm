@@ -70,11 +70,15 @@ vi.mock('@salesforce/kit', () => ({
   },
 }));
 
-vi.mock('@b64hub/sfpm-core', () => ({
-  escapeSOQL: (v: string) => v,
-  soql: (strings: TemplateStringsArray, ...values: unknown[]) =>
-    strings.reduce((acc, str, i) => acc + str + (values[i] ?? ''), ''),
-}));
+vi.mock('@b64hub/sfpm-core', async importOriginal => {
+  const actual = await importOriginal<typeof import('@b64hub/sfpm-core')>();
+  return {
+    ...actual,
+    escapeSOQL: (v: string) => v,
+    soql: (strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.reduce((acc, str, i) => acc + str + (values[i] ?? ''), ''),
+  };
+});
 
 vi.mock('../../../src/utils/password-generator.js', () => ({
   default: vi.fn().mockResolvedValue('MockPass123!'),
