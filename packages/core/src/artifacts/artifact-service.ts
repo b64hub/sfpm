@@ -133,7 +133,7 @@ export default class ArtifactService {
     } catch (error) {
       this.historyAvailable = false;
       const message = error instanceof Error ? error.message : String(error);
-      this.logger?.debug(`Sfpm_Artifact_History__c is not available in this org — skipping history tracking: ${message}`);
+      this.logger?.warn(`Sfpm_Artifact_History__c is not available in this org — skipping history tracking: ${message}`);
       return undefined;
     }
   }
@@ -326,7 +326,7 @@ export default class ArtifactService {
     } catch (error) {
       this.artifactAvailable = false;
       const message = error instanceof Error ? error.message : String(error);
-      this.logger?.debug(`SfpmArtifact__c is not available in this org — skipping artifact tracking: ${message}`);
+      this.logger?.warn(`SfpmArtifact__c is not available in this org — skipping artifact tracking: ${message}`);
       return undefined;
     }
   }

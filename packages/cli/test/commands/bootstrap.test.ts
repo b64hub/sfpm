@@ -151,7 +151,7 @@ describe('bootstrap', () => {
     describe('idempotency', () => {
       it('complete success re-run: all packages skip', () => {
         // Simulates re-running after everything succeeded — all installed at latest
-        const packages = ['@b64/sfpm-artifact', '@b64/sfpm-orgs', '@b64/sfpm-ui']
+        const packages = ['@b64hub/sfpm-artifact', '@b64hub/sfpm-orgs', '@b64hub/sfpm-ui']
         const actions = packages.map(() =>
           resolveAction(makeState({installedVersion: '1.0.0.1', latestVersion: '1.0.0.1'})),
         )
@@ -216,16 +216,16 @@ describe('bootstrap', () => {
     it('Core tier returns only sfpm-artifact', () => {
       const result = getPackagesForTier(BootstrapTier.Core)
       expect(result).to.have.lengthOf(1)
-      expect(result[0].name).to.equal('@b64/sfpm-artifact')
+      expect(result[0].name).to.equal('@b64hub/sfpm-artifact')
     })
 
     it('Pool tier returns sfpm-artifact and sfpm-orgs', () => {
       const result = getPackagesForTier(BootstrapTier.Pool)
       expect(result).to.have.lengthOf(2)
       const names = result.map(p => p.name)
-      expect(names).to.include('@b64/sfpm-artifact')
-      expect(names).to.include('@b64/sfpm-orgs')
-      expect(names).to.not.include('@b64/sfpm-ui')
+      expect(names).to.include('@b64hub/sfpm-artifact')
+      expect(names).to.include('@b64hub/sfpm-orgs')
+      expect(names).to.not.include('@b64hub/sfpm-ui')
     })
 
     it('Full tier returns all 3 packages', () => {
@@ -246,28 +246,28 @@ describe('bootstrap', () => {
 
   describe('BOOTSTRAP_PACKAGES dependency structure', () => {
     it('sfpm-artifact is the root (no dependencies)', () => {
-      const artifact = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64/sfpm-artifact')!
+      const artifact = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64hub/sfpm-artifact')!
       expect(artifact.dependencies).to.deep.equal([])
     })
 
     it('sfpm-orgs depends on sfpm-artifact', () => {
-      const orgs = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64/sfpm-orgs')!
-      expect(orgs.dependencies).to.deep.equal(['@b64/sfpm-artifact'])
+      const orgs = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64hub/sfpm-orgs')!
+      expect(orgs.dependencies).to.deep.equal(['@b64hub/sfpm-artifact'])
     })
 
     it('sfpm-ui depends on sfpm-artifact', () => {
-      const ui = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64/sfpm-ui')!
-      expect(ui.dependencies).to.deep.equal(['@b64/sfpm-artifact'])
+      const ui = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64hub/sfpm-ui')!
+      expect(ui.dependencies).to.deep.equal(['@b64hub/sfpm-artifact'])
     })
 
     it('sfpm-orgs is org-dependent (sandboxes inherit it)', () => {
-      const orgs = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64/sfpm-orgs')!
+      const orgs = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64hub/sfpm-orgs')!
       expect(orgs.isOrgDependent).to.equal(true)
     })
 
     it('sfpm-artifact and sfpm-ui are not org-dependent', () => {
-      const artifact = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64/sfpm-artifact')!
-      const ui = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64/sfpm-ui')!
+      const artifact = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64hub/sfpm-artifact')!
+      const ui = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64hub/sfpm-ui')!
       expect(artifact.isOrgDependent).to.equal(false)
       expect(ui.isOrgDependent).to.equal(false)
     })

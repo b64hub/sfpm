@@ -1,6 +1,10 @@
+import type {Connection} from '@salesforce/core';
+
 import {
+  escapeSOQL,
   type Logger,
   PackageService,
+  soql,
 } from '@b64hub/sfpm-core';
 import {Org} from '@salesforce/core';
 
@@ -11,6 +15,13 @@ import type {PoolOrgTask, PoolOrgTaskResult} from '../types.js';
  * The unscoped Package2 name for the SFPM artifact custom setting package.
  */
 const SFPM_PACKAGE_NAME = 'sfpm-artifact';
+
+/**
+ * Permission set (shipped in the `sfpm-artifact` package) that grants access
+ * to the `Sfpm_Artifact__c` custom setting. Without it, the running user
+ * can't read/write artifact tracking records even though the object exists.
+ */
+const MANAGE_ARTIFACTS_PERMSET = 'Manage_Artifacts';
 
 /**
  * Options for the {@link SfpmPackageInstallTask}.
@@ -35,8 +46,7 @@ export interface SfpmPackageInstallTaskOptions {
  *    the `sfpm-artifact` package.
  * 2. Connect to the scratch org.
  * 3. Check whether that version is already installed.
- * 4. If not, create a `PackageInstallRequest` via the Tooling API
- *    and poll until complete.
+ * 4. If not, install it via {@link PackageService.installPackage}.
  *
  * This task is only relevant for scratch orgs. Sandboxes inherit
  * installed packages from their source org.
@@ -79,64 +89,67 @@ export class SfpmPackageInstallTask implements PoolOrgTask {
 
     if (alreadyInstalled) {
       logger.info(`${SFPM_PACKAGE_NAME} (${subscriberVersionId}) already installed — skipping`);
+      await this.assignManageArtifactsPermSet(connection, username, logger);
       return {success: true};
     }
 
-    // 4. Install via PackageInstallRequest
+    // 4. Install via PackageService — wraps PackageInstallRequest creation
+    // and polling (create/status/timeout) so we don't hand-roll it here.
     logger.info(`Installing ${SFPM_PACKAGE_NAME} (${subscriberVersionId}) to ${username}...`);
 
-    const installRequest = {
-      ApexCompileType: 'package',
-      NameConflictResolution: 'Block',
-      Password: '',
-      SecurityType: 'Full',
-      SubscriberPackageVersionKey: subscriberVersionId,
-    };
-
-    const result = await connection.tooling.create('PackageInstallRequest', installRequest);
-
-    if (!result.success || !result.id) {
-      return {
-        error: `Failed to create install request: ${JSON.stringify(result.errors ?? [])}`,
-        success: false,
-      };
+    try {
+      await packageService.installPackage(subscriberVersionId, {
+        apexCompile: 'package',
+        securityType: 'AllUsers',
+        wait: 10,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {error: `Package installation failed: ${message}`, success: false};
     }
 
-    const requestId = result.id as string;
-    logger.debug(`PackageInstallRequest created: ${requestId}`);
+    logger.info(`${SFPM_PACKAGE_NAME} installed successfully`);
+    await this.assignManageArtifactsPermSet(connection, username, logger);
+    return {success: true};
+  }
 
-    // Poll for completion (max ~10 minutes)
-    const maxAttempts = 120;
-    let attempts = 0;
-
-    while (attempts < maxAttempts) {
-      // eslint-disable-next-line no-await-in-loop
-      const record = await connection.tooling.retrieve('PackageInstallRequest', requestId);
-
-      if (!record) {
-        return {error: `Could not retrieve PackageInstallRequest: ${requestId}`, success: false};
+  /**
+   * Assign the `Manage_Artifacts` permission set to the running user, so
+   * they can actually access `Sfpm_Artifact__c` (object exists once the
+   * package is installed, but access still requires the permission set).
+   *
+   * Idempotent — checks for an existing assignment first. Degrades
+   * gracefully (logs a warning, doesn't fail the task) if the permission
+   * set isn't found or the assignment otherwise fails.
+   */
+  private async assignManageArtifactsPermSet(connection: Connection, username: string, logger: Logger): Promise<void> {
+    try {
+      const userResult = await connection.query<{Id: string}>(soql`SELECT Id FROM User WHERE Username = '${escapeSOQL(username)}' LIMIT 1`);
+      const userId = userResult.records[0]?.Id;
+      if (!userId) {
+        logger.warn(`Could not resolve user Id for ${username} — skipping ${MANAGE_ARTIFACTS_PERMSET} assignment`);
+        return;
       }
 
-      const status = (record as Record<string, unknown>).Status as string;
-
-      if (status === 'SUCCESS') {
-        logger.info(`${SFPM_PACKAGE_NAME} installed successfully`);
-        return {success: true};
+      const permSetResult = await connection.query<{Id: string}>(soql`SELECT Id FROM PermissionSet WHERE Name = '${escapeSOQL(MANAGE_ARTIFACTS_PERMSET)}' LIMIT 1`);
+      const permSetId = permSetResult.records[0]?.Id;
+      if (!permSetId) {
+        logger.warn(`Permission set "${MANAGE_ARTIFACTS_PERMSET}" not found in org — skipping assignment`);
+        return;
       }
 
-      if (status === 'ERROR') {
-        const errors = (record as any).Errors?.errors
-        ?.map((e: {message: string}) => e.message)
-        .join('\n') || 'Unknown error';
-        return {error: `Package installation failed:\n${errors}`, success: false};
+      const existing = await connection.query<{Id: string}>(soql`SELECT Id FROM PermissionSetAssignment WHERE AssigneeId = '${userId}' AND PermissionSetId = '${permSetId}' LIMIT 1`);
+      if (existing.records.length > 0) {
+        logger.debug(`${MANAGE_ARTIFACTS_PERMSET} already assigned to ${username}`);
+        return;
       }
 
-      // eslint-disable-next-line no-await-in-loop, no-promise-executor-return
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      attempts++;
+      await connection.sobject('PermissionSetAssignment').create({AssigneeId: userId, PermissionSetId: permSetId});
+      logger.info(`Assigned "${MANAGE_ARTIFACTS_PERMSET}" permission set to ${username}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`Failed to assign "${MANAGE_ARTIFACTS_PERMSET}" permission set to ${username}: ${message}`);
     }
-
-    return {error: `Package installation timed out after ${maxAttempts * 5} seconds`, success: false};
   }
 
   /**

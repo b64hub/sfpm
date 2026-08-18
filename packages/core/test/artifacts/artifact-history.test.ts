@@ -132,7 +132,7 @@ describe('ArtifactService.createHistoryRecord', () => {
     const result = await service.createHistoryRecord(mockSfpmPackage, undefined, mockSource);
 
     expect(result).toBeUndefined();
-    expect(mockLogger.debug).toHaveBeenCalledWith(
+    expect(mockLogger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Sfpm_Artifact_History__c is not available in this org'),
     );
   });

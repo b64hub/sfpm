@@ -19,7 +19,7 @@ vi.mock('@salesforce/core', () => ({
 }));
 
 const {
-  ArtifactProviderMock, forArtifact, forSource, projectServiceCreate, WorkspaceProviderMock,
+  ArtifactProviderMock, InstallOrchestratorMock, PackageInstallerMock, projectServiceCreate, WorkspaceProviderMock,
 } = vi.hoisted(() => {
   const mockProjectService = {
     getDefinitionProvider: vi.fn().mockReturnValue({getAllPackageNames: () => ['pkg-a']}),
@@ -36,8 +36,12 @@ const {
       this.options = options;
       this.type = 'artifact';
     }),
-    forArtifact: vi.fn().mockReturnValue(mockOrchestrator),
-    forSource: vi.fn().mockReturnValue(mockOrchestrator),
+    InstallOrchestratorMock: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+      Object.assign(this, mockOrchestrator);
+    }),
+    PackageInstallerMock: vi.fn().mockImplementation(function (this: {type: string}) {
+      this.type = 'installer';
+    }),
     projectServiceCreate: vi.fn().mockResolvedValue(mockProjectService),
     WorkspaceProviderMock: vi.fn().mockImplementation(function (this: {options: unknown; type: string}, options: unknown) {
       this.options = options;
@@ -48,7 +52,8 @@ const {
 
 vi.mock('@b64hub/sfpm-core', () => ({
   ArtifactProvider: ArtifactProviderMock,
-  InstallOrchestrator: {forArtifact, forSource},
+  InstallOrchestrator: InstallOrchestratorMock,
+  PackageInstaller: PackageInstallerMock,
   ProjectService: {create: projectServiceCreate},
   WorkspaceProvider: WorkspaceProviderMock,
 }));
@@ -83,27 +88,62 @@ describe('DeploymentTask', () => {
     logger = createMockLogger();
   });
 
-  it('defaults to ArtifactProvider + forArtifact (downloaded artifacts)', async () => {
+  it('defaults to ArtifactProvider (downloaded artifacts)', async () => {
     const task = new DeploymentTask({continueOnError: false, workingDirectory: '/proj'});
 
     await task.execute(createMockOrg(), logger);
 
     expect(ArtifactProviderMock).toHaveBeenCalledWith({projectDir: '/proj'});
     expect(WorkspaceProviderMock).not.toHaveBeenCalled();
-    expect(forArtifact).toHaveBeenCalled();
-    expect(forSource).not.toHaveBeenCalled();
     expect(projectServiceCreate).toHaveBeenCalledWith('/proj', expect.objectContaining({type: 'artifact'}));
   });
 
-  it('uses a dist-aware WorkspaceProvider + forSource when useLocalSource is true', async () => {
+  it('uses a dist-aware WorkspaceProvider when useLocalSource is true', async () => {
     const task = new DeploymentTask({continueOnError: false, useLocalSource: true, workingDirectory: '/proj'});
 
     await task.execute(createMockOrg(), logger);
 
     expect(WorkspaceProviderMock).toHaveBeenCalledWith({distAware: true, projectDir: '/proj'});
     expect(ArtifactProviderMock).not.toHaveBeenCalled();
-    expect(forSource).toHaveBeenCalled();
-    expect(forArtifact).not.toHaveBeenCalled();
+  });
+
+  it('constructs the PackageInstaller with force + sourceOnly and the resolved test level', async () => {
+    const task = new DeploymentTask({continueOnError: false, testLevel: 'RunLocalTests', workingDirectory: '/proj'});
+
+    await task.execute(createMockOrg(), logger);
+
+    expect(PackageInstallerMock).toHaveBeenCalledWith(
+      {username: 'test@scratch.org'},
+      expect.objectContaining({getAllPackageNames: expect.any(Function)}),
+      {force: true, testLevel: 'RunLocalTests', unlocked: {sourceOnly: true}},
+      logger,
+    );
+  });
+
+  it('defaults testLevel to NoTestRun', async () => {
+    const task = new DeploymentTask({continueOnError: false, workingDirectory: '/proj'});
+
+    await task.execute(createMockOrg(), logger);
+
+    expect(PackageInstallerMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({testLevel: 'NoTestRun'}),
+      logger,
+    );
+  });
+
+  it('wraps the installer in an InstallOrchestrator that includes managed packages', async () => {
+    const task = new DeploymentTask({continueOnError: false, workingDirectory: '/proj'});
+
+    await task.execute(createMockOrg(), logger);
+
+    expect(InstallOrchestratorMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({type: 'installer'}),
+      {continueOnError: true, includeManagedPackages: true},
+      logger,
+    );
   });
 
   it('resolves the project service once per task instance across multiple org executions', async () => {

@@ -6,6 +6,7 @@ import {
 } from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
+import EventEmitter from 'node:events';
 import path from 'node:path';
 
 import SfpmCommand from '../../sfpm-command.js';
@@ -57,7 +58,8 @@ export default class PoolFill extends SfpmCommand {
     const projectDir = resolveCliProjectDir();
     const orgConfig = await this.loadOrgConfig(this.sfpmLogger, projectDir);
     const config = this.buildPoolConfig(flags, projectDir, orgConfig);
-    const {logger: runLogger} = this.createRunLogger();
+    const uiBus = mode === 'interactive' ? new EventEmitter() : undefined;
+    const {logger: runLogger} = this.createRunLogger(uiBus);
 
     let manager: Awaited<ReturnType<typeof createPoolServices>>['manager'];
     let deployTask: DeploymentTask | undefined;
@@ -93,7 +95,7 @@ export default class PoolFill extends SfpmCommand {
         packageStart: p => manager!.bus.emit('pool:package:start',    {...p, timestamp: new Date()}),
       });
 
-      const inkInstance = renderPoolFill(manager!.bus, alias);
+      const inkInstance = renderPoolFill(uiBus!, manager!.bus, alias);
       try {
         result = await manager!.provision(flags.tag as string, config);
         await inkInstance.waitUntilExit();

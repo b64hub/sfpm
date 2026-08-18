@@ -108,7 +108,7 @@ export function resolveAction(state: PackageResolveState): BootstrapAction {
 export function getPackagesForTier(tier: BootstrapTier): BootstrapPackageConfig[] {
   switch (tier) {
   case BootstrapTier.Core: {
-    return BOOTSTRAP_PACKAGES.filter(p => p.name === '@b64/sfpm-artifact')
+    return BOOTSTRAP_PACKAGES.filter(p => p.name === '@b64hub/sfpm-artifact')
   }
 
   case BootstrapTier.Full: {
@@ -116,7 +116,7 @@ export function getPackagesForTier(tier: BootstrapTier): BootstrapPackageConfig[
   }
 
   case BootstrapTier.Pool: {
-    return BOOTSTRAP_PACKAGES.filter(p => p.name !== '@b64/sfpm-ui')
+    return BOOTSTRAP_PACKAGES.filter(p => p.name !== '@b64hub/sfpm-ui')
   }
   }
 }

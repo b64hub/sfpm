@@ -2,6 +2,7 @@ import {
   ArtifactProvider,
   InstallOrchestrator,
   type Logger,
+  PackageInstaller,
   ProjectService,
   type TestLevel,
   WorkspaceProvider,
@@ -16,7 +17,13 @@ import type {PoolOrgTask, PoolOrgTaskResult} from '../types.js';
  * Injected via `setPackageForwarder()` before task execution.
  */
 export interface PoolPackageForwarder {
-  packageComplete(payload: {packageName: string; success: boolean; total: number; username: string; version?: string}): void;
+  packageComplete(payload: {
+    packageName: string;
+    success: boolean;
+    total: number;
+    username: string;
+    version?: string;
+  }): void;
   packageStart(payload: {packageName: string; total: number; username: string}): void;
 }
 
@@ -83,16 +90,22 @@ export class DeploymentTask implements PoolOrgTask {
 
     logger.info(`Deploying ${packages.length} package(s) to ${username}`);
 
-    const orchestrator = this.options.useLocalSource
-      ? InstallOrchestrator.forSource(targetOrg, provider, graph, {
-        force: true,
-        testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel,
-      }, logger)
-      : InstallOrchestrator.forArtifact(targetOrg, provider, graph, {
-        force: true,
-        testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel,
-        unlocked: {sourceOnly: true},
-      }, logger);
+    const installer = new PackageInstaller(
+      targetOrg,
+      provider,
+      {force: true, testLevel: (this.options.testLevel ?? 'NoTestRun') as TestLevel, unlocked: {sourceOnly: true}},
+      logger,
+    );
+
+    const orchestrator = new InstallOrchestrator(
+      graph,
+      installer,
+      {
+        continueOnError: true,
+        includeManagedPackages: true,
+      },
+      logger,
+    );
 
     if (this.forwarder) {
       let total = 0;
@@ -144,8 +157,14 @@ export class DeploymentTask implements PoolOrgTask {
    */
   private getProjectService(): Promise<ProjectService> {
     this.projectServicePromise ??= this.options.useLocalSource
-      ? ProjectService.create(this.options.workingDirectory, new WorkspaceProvider({distAware: true, projectDir: this.options.workingDirectory}))
-      : ProjectService.create(this.options.workingDirectory, new ArtifactProvider({projectDir: this.options.workingDirectory}));
+      ? ProjectService.create(
+        this.options.workingDirectory,
+        new WorkspaceProvider({distAware: true, projectDir: this.options.workingDirectory}),
+      )
+      : ProjectService.create(
+        this.options.workingDirectory,
+        new ArtifactProvider({projectDir: this.options.workingDirectory}),
+      );
 
     return this.projectServicePromise;
   }
