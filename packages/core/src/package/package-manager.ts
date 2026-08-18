@@ -94,7 +94,7 @@ export default class PackageManager {
 
     let manager = this.instances.get(username);
     if (!manager) {
-      const artifactService = new ArtifactService(targetOrg);
+      const artifactService = new ArtifactService(targetOrg, logger);
       const packageService = new PackageService(targetOrg, logger);
       manager = new PackageManager(artifactService, packageService, logger);
       this.instances.set(username, manager);
