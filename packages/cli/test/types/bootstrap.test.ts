@@ -15,9 +15,9 @@ describe('bootstrap types', () => {
 
     it('includes sfpm-artifact, sfpm-orgs, and sfpm-ui', () => {
       const names = BOOTSTRAP_PACKAGES.map(p => p.name)
-      expect(names).to.include('@b64/sfpm-artifact')
-      expect(names).to.include('@b64/sfpm-orgs')
-      expect(names).to.include('@b64/sfpm-ui')
+      expect(names).to.include('@b64hub/sfpm-artifact')
+      expect(names).to.include('@b64hub/sfpm-orgs')
+      expect(names).to.include('@b64hub/sfpm-ui')
     })
 
     it('each package has required fields', () => {

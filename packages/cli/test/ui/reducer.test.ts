@@ -98,7 +98,7 @@ describe('ui: reducer', () => {
       expect(p.currentState().phase).to.equal('done');
     });
 
-    it('stays in running on failure (leaves partial-failure state visible)', () => {
+    it('transitions to failed on failure (exit + log-path hint gate on this)', () => {
       const p = new ScenarioPlayer();
       p.play([
         init([['pkg-a']]),
@@ -107,7 +107,7 @@ describe('ui: reducer', () => {
           type: 'orchestration:complete',
         },
       ]);
-      expect(p.currentState().phase).to.equal('running');
+      expect(p.currentState().phase).to.equal('failed');
     });
   });
 
@@ -430,10 +430,10 @@ describe('ui: reducer', () => {
       expect(p.pkg('core-utils')?.status).to.equal('success');
     });
 
-    it('orchestration:complete with success:false does not change phase', () => {
+    it('orchestration:complete with success:false transitions phase to failed', () => {
       const p = new ScenarioPlayer();
       p.play(partialFailureEvents);
-      expect(p.currentState().phase).to.equal('running');
+      expect(p.currentState().phase).to.equal('failed');
     });
 
     it('does not mutate a still-running step when the package fails', () => {
