@@ -51,10 +51,7 @@ export type InstallOrchestratorOptions = InstallOptions & OrchestratorOptions;
  * Installers emit events directly on the shared InstallEventBus.
  */
 export class InstallOrchestrationTask implements OrchestrationTask<InstallResult> {
-  constructor(
-    public readonly installer: PackageInstaller,
-    public logger?: Logger,
-  ) {}
+  constructor(public readonly installer: PackageInstaller) {}
 
   async processSinglePackage(packageName: string, _level: number): Promise<PackageResult<InstallResult>> {
     const start = Date.now();
@@ -111,7 +108,7 @@ export class InstallOrchestrator {
   constructor(graph: ProjectGraph, installer: PackageInstaller, options: OrchestratorOptions, logger?: Logger) {
     this.installer = installer;
     this.orchestrationBus = new OrchestrationEventBus(randomUUID());
-    const task = new InstallOrchestrationTask(installer, logger);
+    const task = new InstallOrchestrationTask(installer);
 
     this.orchestrator = new Orchestrator(graph, options, task, logger, this.orchestrationBus);
   }
