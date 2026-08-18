@@ -109,7 +109,7 @@ export default class PackageInstaller {
     }
 
     try {
-      return await this.installArtifact(sfpmPackage, logger);
+      return await this.installPackage(sfpmPackage, logger);
     } catch (error) {
       logger?.error(`Failed to install ${packageName}: ${error instanceof Error ? error.message : String(error)}`);
 
@@ -118,36 +118,6 @@ export default class PackageInstaller {
         cause: error instanceof Error ? error : new Error(String(error)),
       });
     }
-  }
-
-  /**
-   * Install from a built artifact in node_modules.
-   *
-   * The ArtifactProvider has already set packageDefinition with all build-time
-   * metadata (packageVersionId, sourceHash, apiVersion). PackageFactory has
-   * already hydrated the SfpmPackage from the definition. Just run the installer.
-   */
-  public async installArtifact(sfpmPackage: SfpmPackage, logger?: Logger): Promise<InstallResult> {
-    const packageName = sfpmPackage.name;
-
-    if (!packageName) {
-      throw new Error(`Package "${packageName}" has no npm name. `
-        + 'In workspace mode, this is set from the package.json "name" field. '
-        + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
-    }
-
-    logger?.info(`Installing ${packageName}@${sfpmPackage.version}`);
-
-    return this.runInstaller(sfpmPackage, {
-      checkInstalled: !this.options.force,
-      installAs: this.resolveInstallAs(sfpmPackage),
-      tasks: [
-        {
-          factory: ctx => new UpdateArtifactTask(ctx),
-          phase: 'post',
-        },
-      ],
-    }, logger);
   }
 
   /**
@@ -238,6 +208,32 @@ export default class PackageInstaller {
         {cause: error instanceof Error ? error : new Error(String(error))},
       );
     }
+  }
+
+  /**
+   * Install sfpmPackage
+   */
+  public async installPackage(sfpmPackage: SfpmPackage, logger?: Logger): Promise<InstallResult> {
+    const packageName = sfpmPackage.name;
+
+    if (!packageName) {
+      throw new Error(`Package "${packageName}" has no npm name. `
+        + 'In workspace mode, this is set from the package.json "name" field. '
+        + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
+    }
+
+    logger?.info(`Installing ${packageName}@${sfpmPackage.version}`);
+
+    return this.runInstaller(sfpmPackage, {
+      checkInstalled: !this.options.force,
+      installAs: this.resolveInstallAs(sfpmPackage),
+      tasks: [
+        {
+          factory: ctx => new UpdateArtifactTask(ctx),
+          phase: 'post',
+        },
+      ],
+    }, logger);
   }
 
   /**
