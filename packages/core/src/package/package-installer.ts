@@ -224,15 +224,15 @@ export default class PackageInstaller {
 
     logger?.info(`Installing ${packageName}@${sfpmPackage.version}`);
 
+    // Update sfpm artifact tracking records after install (default: on).
+    const tasks: InstallTaskRegistration[] = this.options.updateArtifact === false
+      ? []
+      : [{factory: ctx => new UpdateArtifactTask(ctx), phase: 'post'}];
+
     return this.runInstaller(sfpmPackage, {
       checkInstalled: !this.options.force,
       installAs: this.resolveInstallAs(sfpmPackage),
-      tasks: [
-        {
-          factory: ctx => new UpdateArtifactTask(ctx),
-          phase: 'post',
-        },
-      ],
+      tasks,
     }, logger);
   }
 
@@ -377,8 +377,13 @@ export default class PackageInstaller {
       return;
     }
 
+    // `ctx` doesn't carry `logger` from its call sites — attach it here, once,
+    // so every task actually receives the same (package-scoped) logger the
+    // rest of the install pipeline uses, instead of always seeing `undefined`.
+    const taskCtx: InstallTaskContext = {...ctx, logger};
+
     for (const registration of tasks) {
-      const task = registration.factory(ctx);
+      const task = registration.factory(taskCtx);
       const taskName = task.name;
 
       // Check runtime precondition
