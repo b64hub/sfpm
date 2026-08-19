@@ -1,0 +1,45 @@
+name: 'SFPM Clean Pool'
+description: 'Delete orgs from a scratch org or sandbox pool'
+author: 'b64'
+
+branding:
+  icon: 'trash-2'
+  color: 'red'
+
+inputs:
+  devhub-username:
+    description: 'DevHub (or production org for sandboxes) username or alias'
+    required: true
+  pool-tag:
+    description: 'Pool tag to delete orgs from'
+    required: true
+  pool-type:
+    description: 'Pool type: scratch or sandbox (default: scratch)'
+    required: false
+    default: 'scratch'
+  in-progress-only:
+    description: 'Only delete orgs with "In Progress" status'
+    required: false
+    default: 'false'
+  my-pool:
+    description: 'Only delete orgs created by the current user'
+    required: false
+    default: 'false'
+
+outputs:
+  success:
+    description: 'Whether all matching orgs were deleted successfully (true/false)'
+  tag:
+    description: 'The pool tag'
+  deleted:
+    description: 'Number of orgs deleted'
+  duration:
+    description: 'Total cleanup duration in milliseconds'
+  org-usernames:
+    description: 'Comma-separated list of deleted org usernames'
+  result:
+    description: 'Full JSON result'
+
+runs:
+  using: 'node20'
+  main: '../dist/clean-pool-main.js'

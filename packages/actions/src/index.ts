@@ -14,6 +14,13 @@ export {
   type PackageBuildState,
 } from './build.js';
 
+// Pool cleanup
+export {
+  cleanPool,
+  type CleanPoolOptions,
+  type CleanPoolResult,
+} from './clean-pool.js';
+
 // Pool provisioning
 export {
   fillPool,
