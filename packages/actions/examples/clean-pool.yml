@@ -1,0 +1,49 @@
+# Sweeps stale/in-progress orgs out of a scratch org pool on a schedule.
+# Requires repo secrets: SFDX_CONSUMER_KEY, SFDX_JWT_KEY, DEVHUB_USERNAME.
+#
+# Runs on the sfpm image (node + pnpm + turbo + sf CLI + sfpm CLI preinstalled)
+# so this workflow doesn't need to set those up itself. This is just a
+# convenience image, not a requirement — swap `container:` for any `node:22`
+# image and add back `pnpm/action-setup`, `actions/setup-node`, and
+# `npm install --global @salesforce/cli` if you'd rather not depend on it.
+name: SFPM Clean Pool
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # nightly
+  workflow_dispatch:
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/b64hub/sfpm-actions:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+
+      - name: Authenticate DevHub
+        run: |
+          echo "${{ secrets.SFDX_JWT_KEY }}" > server.key
+          sf org login jwt \
+            --client-id "${{ secrets.SFDX_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ secrets.DEVHUB_USERNAME }}" \
+            --set-default-dev-hub \
+            --alias devhub
+          rm server.key
+
+      - name: Clean pool
+        id: clean
+        uses: ./packages/actions/clean-pool
+        with:
+          devhub-username: devhub
+          pool-tag: ci-pool
+          in-progress-only: 'true'
+
+      - name: Report outcome
+        if: always()
+        run: |
+          echo "Deleted: ${{ steps.clean.outputs.deleted }}"

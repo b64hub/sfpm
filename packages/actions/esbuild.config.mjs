@@ -25,6 +25,11 @@ await Promise.all([
     }),
     esbuild.build({
         ...sharedOptions,
+        entryPoints: ['src/clean-pool-main.ts'],
+        outfile: 'dist/clean-pool-main.js',
+    }),
+    esbuild.build({
+        ...sharedOptions,
         entryPoints: ['src/build-main.ts'],
         outfile: 'dist/build-main.js',
     }),
@@ -52,6 +57,7 @@ await Promise.all([
 
 console.log('Bundled dist/validate-main.js');
 console.log('Bundled dist/fill-pool-main.js');
+console.log('Bundled dist/clean-pool-main.js');
 console.log('Bundled dist/build-main.js');
 console.log('Bundled dist/build-validation-main.js');
 console.log('Bundled dist/build-turbo-aggregate-main.js');
