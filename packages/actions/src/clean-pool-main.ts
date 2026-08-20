@@ -9,7 +9,8 @@ import {cleanPool} from './clean-pool.js';
 
 try {
   const devhubUsername = core.getInput('devhub-username', {required: true});
-  const tag = core.getInput('pool-tag', {required: true});
+  // Accepts multiple pool tags, one per line or comma-separated, to clean several pools in one run.
+  const tag = core.getInput('pool-tag', {required: true}).split(/[\n,]/).map(t => t.trim()).filter(Boolean);
 
   const poolTypeInput = core.getInput('pool-type') || undefined;
   const poolType = poolTypeInput === 'sandbox' ? OrgTypes.Sandbox : poolTypeInput === 'scratch' ? OrgTypes.Scratch : undefined;

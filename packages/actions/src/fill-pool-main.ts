@@ -9,7 +9,8 @@ import {fillPool} from './fill-pool.js';
 
 try {
   const devhubUsername = core.getInput('devhub-username', {required: true});
-  const tag = core.getInput('pool-tag', {required: true});
+  // Accepts multiple pool tags, one per line or comma-separated, to fill several pools in one run.
+  const tag = core.getInput('pool-tag', {required: true}).split(/[\n,]/).map(t => t.trim()).filter(Boolean);
   const maxAllocation = core.getInput('max-allocation')
     ? Number.parseInt(core.getInput('max-allocation'), 10)
     : undefined;

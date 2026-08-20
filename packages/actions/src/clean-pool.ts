@@ -17,8 +17,8 @@ export interface CleanPoolOptions {
   myPool?: boolean;
   /** Pool type: scratch or sandbox (default: scratch) */
   poolType?: OrgTypes;
-  /** Pool tag to delete orgs from */
-  tag: string;
+  /** Pool tag(s) to delete orgs from — pass an array to clean multiple pools in one run */
+  tag: string | string[];
 }
 
 export interface CleanPoolResult {
@@ -36,6 +36,17 @@ export interface CleanPoolResult {
   tag: string;
 }
 
+export interface CleanPoolReport {
+  /** Total number of orgs deleted across all pools */
+  deleted: number;
+  /** Total duration across all pools, in milliseconds */
+  duration: number;
+  /** Per-pool deletion results */
+  results: CleanPoolResult[];
+  /** Whether every pool was cleaned successfully */
+  success: boolean;
+}
+
 // ============================================================================
 // Pool Cleanup
 // ============================================================================
@@ -45,12 +56,12 @@ export interface CleanPoolResult {
  * pool. Mirrors the CLI's `pool delete` command (see `PoolDelete` in
  * `@b64hub/sfpm-cli`).
  */
-export async function cleanPool(options: CleanPoolOptions): Promise<CleanPoolResult> {
+export async function cleanPool(options: CleanPoolOptions): Promise<CleanPoolReport> {
   const logger = createGitHubActionsLogger({prefix: 'clean-pool'});
   const startTime = Date.now();
   const poolType = options.poolType ?? OrgTypes.Scratch;
+  const tags = Array.isArray(options.tag) ? options.tag : [options.tag];
 
-  logger.info(`Pool tag: ${options.tag}`);
   logger.info(`Pool type: ${poolType}`);
   logger.info(`DevHub: ${options.devhubUsername}`);
 
@@ -59,43 +70,60 @@ export async function cleanPool(options: CleanPoolOptions): Promise<CleanPoolRes
 
   const {manager} = createPoolServices({devhub, logger, poolType});
 
-  const deleteResult = await manager.delete(options.tag, {
-    inProgressOnly: options.inProgressOnly,
-    myPool: options.myPool,
-  });
+  const results: CleanPoolResult[] = [];
+  for (const tag of tags) {
+    logger.info(`Pool tag: ${tag}`);
+    // eslint-disable-next-line no-await-in-loop -- pools are cleaned sequentially
+    const deleteResult = await manager.delete(tag, {
+      inProgressOnly: options.inProgressOnly,
+      myPool: options.myPool,
+    });
 
-  const duration = Date.now() - startTime;
-  const result: CleanPoolResult = {
-    deleted: deleteResult.deleted.length,
-    duration,
-    errors: deleteResult.errors,
-    orgUsernames: deleteResult.deleted.map(org => org.auth.username).filter(Boolean),
-    success: deleteResult.errors.length === 0,
-    tag: deleteResult.tag,
-  };
-
-  setActionOutputs(result);
-
-  if (result.success) {
-    logger.info(`Pool "${options.tag}" cleaned: deleted ${result.deleted} org(s) in ${Math.round(duration / 1000)}s`);
-  } else if (result.deleted > 0) {
-    core.warning(`Pool cleanup partially failed: ${result.deleted} deleted, ${result.errors.length} error(s)`);
-  } else {
-    core.setFailed(`Pool cleanup failed: ${result.errors.join(', ')}`);
+    results.push({
+      deleted: deleteResult.deleted.length,
+      duration: deleteResult.elapsedMs,
+      errors: deleteResult.errors,
+      orgUsernames: deleteResult.deleted.map(org => org.auth.username).filter(Boolean),
+      success: deleteResult.errors.length === 0,
+      tag: deleteResult.tag,
+    });
   }
 
-  return result;
+  const report: CleanPoolReport = {
+    deleted: results.reduce((sum, r) => sum + r.deleted, 0),
+    duration: Date.now() - startTime,
+    results,
+    success: results.every(r => r.success),
+  };
+
+  setActionOutputs(report);
+
+  for (const result of results) {
+    if (result.success) {
+      logger.info(`Pool "${result.tag}" cleaned: deleted ${result.deleted} org(s) in ${Math.round(result.duration / 1000)}s`);
+    } else if (result.deleted > 0) {
+      core.warning(`Pool "${result.tag}" cleanup partially failed: ${result.deleted} deleted, ${result.errors.length} error(s)`);
+    } else {
+      core.error(`Pool "${result.tag}" cleanup failed: ${result.errors.join(', ')}`);
+    }
+  }
+
+  if (!report.success) {
+    core.setFailed(`Pool cleanup failed for: ${results.filter(r => !r.success).map(r => r.tag).join(', ')}`);
+  }
+
+  return report;
 }
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
-function setActionOutputs(result: CleanPoolResult): void {
-  core.setOutput('success', String(result.success));
-  core.setOutput('tag', result.tag);
-  core.setOutput('deleted', String(result.deleted));
-  core.setOutput('duration', String(result.duration));
-  core.setOutput('org-usernames', result.orgUsernames.join(','));
-  core.setOutput('result', JSON.stringify(result));
+function setActionOutputs(report: CleanPoolReport): void {
+  core.setOutput('success', String(report.success));
+  core.setOutput('tag', report.results.map(r => r.tag).join(','));
+  core.setOutput('deleted', String(report.deleted));
+  core.setOutput('duration', String(report.duration));
+  core.setOutput('org-usernames', report.results.flatMap(r => r.orgUsernames).join(','));
+  core.setOutput('result', JSON.stringify(report));
 }
