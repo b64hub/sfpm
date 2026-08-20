@@ -48,10 +48,18 @@ export const poolHappyPathEvents: Event[] = [
   {tag: 'dev-pool', total: 4, type: 'pool:start'},
 
   // ── Org creation (staggered) ────────────────────────────────────────────────
-  {alias: ORGS[0].alias, type: 'org:appeared', username: ORGS[0].username},
-  {alias: ORGS[1].alias, type: 'org:appeared', username: ORGS[1].username},
-  {alias: ORGS[2].alias, type: 'org:appeared', username: ORGS[2].username},
-  {alias: ORGS[3].alias, type: 'org:appeared', username: ORGS[3].username},
+  {
+    alias: ORGS[0].alias, tag: 'dev-pool', type: 'org:appeared', username: ORGS[0].username,
+  },
+  {
+    alias: ORGS[1].alias, tag: 'dev-pool', type: 'org:appeared', username: ORGS[1].username,
+  },
+  {
+    alias: ORGS[2].alias, tag: 'dev-pool', type: 'org:appeared', username: ORGS[2].username,
+  },
+  {
+    alias: ORGS[3].alias, tag: 'dev-pool', type: 'org:appeared', username: ORGS[3].username,
+  },
 
   // ── Prerequisites (sfpm-artifact package) ──────────────────────────────────
   {type: 'org:prereqs', username: ORGS[0].username},
@@ -81,5 +89,5 @@ export const poolHappyPathEvents: Event[] = [
   {type: 'org:done', username: ORGS[2].username},
   {type: 'org:done', username: ORGS[3].username},
 
-  {type: 'pool:done'},
+  {tag: 'dev-pool', type: 'pool:done'},
 ];

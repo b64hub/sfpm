@@ -7,18 +7,18 @@ import type EventEmitter from 'node:events';
  * The bridge owns the translation from pool domain events to the
  * flat uiBus vocabulary consumed by PoolFillApp's reducer.
  */
-export function attachPoolFillBridge(eventBus: PoolEventBus, uiBus: EventEmitter): void {
+export function attachPoolFillBridge(eventBus: PoolEventBus, uiBus: EventEmitter, tag: string): void {
   eventBus.on('pool:provision:start', p => {
-    uiBus.emit('pool:start', {tag: p.tag, total: p.toAllocate});
+    uiBus.emit('pool:start', {tag, total: p.toAllocate});
   });
 
   eventBus.on('pool:org:created', p => {
-    uiBus.emit('org:appeared', {alias: p.alias, username: p.username});
+    uiBus.emit('org:appeared', {alias: p.alias, tag, username: p.username});
   });
 
   // Creation failure — org never provisioned, forward alias for display
   eventBus.on('pool:org:failed', p => {
-    uiBus.emit('pool:creation:failed', {alias: p.alias});
+    uiBus.emit('pool:creation:failed', {alias: p.alias, tag});
   });
 
   eventBus.on('pool:task:start', p => {
@@ -56,6 +56,6 @@ export function attachPoolFillBridge(eventBus: PoolEventBus, uiBus: EventEmitter
   });
 
   eventBus.on('pool:provision:complete', () => {
-    uiBus.emit('pool:done');
+    uiBus.emit('pool:done', {tag});
   });
 }

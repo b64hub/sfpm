@@ -2,7 +2,7 @@ import {
   LifecycleEngine, loadSfpmConfig, type Logger,
 } from '@b64hub/sfpm-core';
 import {
-  ArtifactPackageInstallTask, createPoolServices, DeploymentTask, type PoolConfig, type PoolOrgTask,
+  ArtifactPackageInstallTask, createPoolServices, DeploymentTask, type PoolConfig, type PoolOrgTask, type PoolProvisionResult,
 } from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {ConfigAggregator, Org, OrgTypes} from '@salesforce/core';
@@ -11,6 +11,7 @@ import path from 'node:path';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
+import {attachPoolFillBridge} from '../../ui/pool-fill-event-bridge.js';
 import {renderPoolFill} from '../../ui/run-pool-fill.js';
 import {resolveCliProjectDir} from '../../utils/project-dir.js';
 
@@ -21,6 +22,7 @@ export default class PoolFill extends SfpmCommand {
   static override examples = [
     '<%= config.bin %> pool fill --tag dev-pool --max 10 -d config/project-scratch-def.json -v my-devhub',
     '<%= config.bin %> pool fill --tag sb-pool --max 5 --type sandbox -d config/sandbox-def.json -v my-prod-org',
+    '<%= config.bin %> pool fill --tag dev-pool --tag qa-pool --max 10 -d config/project-scratch-def.json -v my-devhub',
     '<%= config.bin %> pool fill --tag dev-pool --max 10 -d config/project-scratch-def.json -v my-devhub --json',
   ]
   static override flags = {
@@ -29,7 +31,9 @@ export default class PoolFill extends SfpmCommand {
     'expiry-days': Flags.integer({description: 'scratch org expiry in days (default: 7)', min: 1}),
     max: Flags.integer({description: 'maximum number of orgs to allocate (overrides config)', min: 1}),
     'name-pattern': Flags.string({description: 'override sandbox name prefix from definition file (e.g., SB → SB1, SB2, ...)'}),
-    tag: Flags.string({char: 't', description: 'pool tag', required: true}),
+    tag: Flags.string({
+      char: 't', description: 'pool tag (repeat to fill multiple pools)', multiple: true, required: true,
+    }),
     'target-dev-hub': Flags.string({
       char: 'v',
       async defaultHelp() {
@@ -57,72 +61,51 @@ export default class PoolFill extends SfpmCommand {
 
     const projectDir = resolveCliProjectDir();
     const orgConfig = await this.loadOrgConfig(this.sfpmLogger, projectDir);
-    const config = this.buildPoolConfig(flags, projectDir, orgConfig);
+    const tags = flags.tag as string[];
     const uiBus = mode === 'interactive' ? new EventEmitter() : undefined;
     const {logger: runLogger} = this.createRunLogger(uiBus);
 
-    let manager: Awaited<ReturnType<typeof createPoolServices>>['manager'];
-    let deployTask: DeploymentTask | undefined;
-
-    const {alias} = await connectDevHub({
+    const {alias, devhub} = await connectDevHub({
       alias: flags['target-dev-hub'],
-      showSpinner: false,
-      validate: [
-        {
-          label: 'Validating prerequisites...',
-          run: async hub => {
-            const tasks = this.buildTasks(config, hub, projectDir, flags['use-local-source']);
-            deployTask = tasks.find((t): t is DeploymentTask => t instanceof DeploymentTask);
-            const services = createPoolServices({
-              devhub: hub,
-              logger: runLogger,
-              poolType: config.type as OrgTypes,
-              tasks,
-            });
-            manager = services.manager;
-            await manager.validatePrerequisites();
-          },
-        },
-      ],
+      showSpinner: mode === 'interactive',
     });
 
-    let result: Awaited<ReturnType<typeof manager.provision>>;
+    // One Ink instance for the whole run — every tag's manager bridges its
+    // events onto the same uiBus, tagged, so pools provision concurrently
+    // and appear side by side instead of one after another.
+    const inkInstance = mode === 'interactive' ? renderPoolFill(uiBus!, alias) : undefined;
 
-    if (mode === 'interactive') {
-      // Wire per-package events from DeploymentTask through the pool manager
-      deployTask?.setPackageForwarder({
-        packageComplete: p => manager!.bus.emit('pool:package:complete', {...p, timestamp: new Date()}),
-        packageStart: p => manager!.bus.emit('pool:package:start',    {...p, timestamp: new Date()}),
-      });
-
-      const inkInstance = renderPoolFill(uiBus!, manager!.bus, alias);
-      try {
-        result = await manager!.provision(flags.tag as string, config);
-        await inkInstance.waitUntilExit();
-      } catch (error) {
-        inkInstance.unmount();
-        throw error;
-      }
-    } else {
-      result = await manager!.provision(flags.tag as string, config);
-
-      if (result.failed > 0 && result.succeeded.length === 0) {
-        this.error(`Pool provisioning failed: ${result.errors.join(', ')}`, {exit: 1});
-      }
-
-      return {...result, events: [], success: result.failed === 0};
+    let results: Array<Awaited<ReturnType<typeof this.provisionTag>>>;
+    try {
+      results = await Promise.all(tags.map(tag => this.provisionTag({
+        config: this.buildPoolConfig(flags, tag, projectDir, orgConfig),
+        devhub,
+        mode,
+        projectDir,
+        runLogger: runLogger.child({tag}),
+        tag,
+        uiBus,
+        useLocalSource: flags['use-local-source'],
+      })));
+    } catch (error) {
+      inkInstance?.unmount();
+      throw error;
     }
 
-    if (result.failed > 0 && result.succeeded.length === 0) {
-      this.error(`Pool provisioning failed: ${result.errors.join(', ')}`, {exit: 1});
+    if (inkInstance) {
+      await inkInstance.waitUntilExit();
     }
 
-    return {...result, events: [], success: result.failed === 0};
+    const failures = results.filter(r => r.failed > 0 && r.succeeded.length === 0);
+    if (failures.length > 0) {
+      this.error(`Pool provisioning failed for ${failures.map(r => r.tag).join(', ')}: ${failures.flatMap(r => r.errors).join(', ')}`, {exit: 1});
+    }
+
+    const enriched = results.map(r => ({...r, events: [], success: r.failed === 0}));
+    return tags.length === 1 ? enriched[0] : {results: enriched, success: enriched.every(r => r.success)};
   }
 
-  private buildPoolConfig(flags: Record<string, any>, projectDir: string, orgConfig?: {[tag: string]: PoolConfig}): PoolConfig {
-    const tag = flags.tag as string;
-
+  private buildPoolConfig(flags: Record<string, any>, tag: string, projectDir: string, orgConfig?: {[tag: string]: PoolConfig}): PoolConfig {
     // Resolved pool config from defineOrgConfig (already merged with defaults)
     const poolConfig = orgConfig?.[tag];
 
@@ -166,24 +149,20 @@ export default class PoolFill extends SfpmCommand {
     } as PoolConfig;
   }
 
-  private buildTasks(config: PoolConfig, devhub: Org, projectDir: string, useLocalSource?: boolean): PoolOrgTask[] {
-    const tasks: PoolOrgTask[] = [];
-    const isScratch = config.type === OrgTypes.Scratch;
-
-    // Scratch orgs need the artifact tracking package installed first
-    if (isScratch) {
-      tasks.push(new ArtifactPackageInstallTask({devhub}));
-    }
-
-    // Deploy packages to the provisioned org
-    tasks.push(new DeploymentTask({
+  private buildTasks(config: PoolConfig, devhub: Org, projectDir: string, useLocalSource?: boolean): {deployTask: DeploymentTask; tasks: PoolOrgTask[]} {
+    const deployTask = new DeploymentTask({
       continueOnError: config.deployment?.continueOnError ?? true,
       testLevel: config.deployment?.testLevel,
       useLocalSource,
       workingDirectory: projectDir,
-    }));
+    });
 
-    return tasks;
+    // Scratch orgs need the artifact tracking package installed first, then packages deployed
+    const tasks: PoolOrgTask[] = config.type === OrgTypes.Scratch
+      ? [new ArtifactPackageInstallTask({devhub}), deployTask]
+      : [deployTask];
+
+    return {deployTask, tasks};
   }
 
   private async loadOrgConfig(logger: Logger, projectDir: string): Promise<undefined | {[tag: string]: PoolConfig}> {
@@ -193,5 +172,31 @@ export default class PoolFill extends SfpmCommand {
     } catch {
       return undefined;
     }
+  }
+
+  private async provisionTag(options: {
+    config: PoolConfig; devhub: Org; mode: string; projectDir: string; runLogger: Logger; tag: string; uiBus?: EventEmitter; useLocalSource?: boolean;
+  }): Promise<PoolProvisionResult> {
+    const {config, devhub, mode, projectDir, runLogger, tag, uiBus, useLocalSource} = options;
+
+    const {deployTask, tasks} = this.buildTasks(config, devhub, projectDir, useLocalSource);
+    const {manager} = createPoolServices({
+      devhub,
+      logger: runLogger,
+      poolType: config.type as OrgTypes,
+      tasks,
+    });
+
+    if (mode === 'interactive') {
+      attachPoolFillBridge(manager.bus, uiBus!, tag);
+      // Wire per-package events from DeploymentTask through the pool manager
+      deployTask.setPackageForwarder({
+        packageComplete: p => manager.bus.emit('pool:package:complete', {...p, timestamp: new Date()}),
+        packageStart: p => manager.bus.emit('pool:package:start',    {...p, timestamp: new Date()}),
+      });
+    }
+
+    await manager.validatePrerequisites();
+    return manager.provision(tag, config);
   }
 }
