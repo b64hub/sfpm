@@ -11,7 +11,7 @@ inputs:
     description: 'DevHub (or production org for sandboxes) username or alias'
     required: true
   pool-tag:
-    description: 'Pool tag to delete orgs from'
+    description: 'Pool tag to delete orgs from. Accepts multiple tags, one per line or comma-separated, to clean several pools in one run'
     required: true
   pool-type:
     description: 'Pool type: scratch or sandbox (default: scratch)'

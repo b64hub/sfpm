@@ -1,7 +1,7 @@
 import {createPoolServices, setAlias} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {
-  AuthInfo, ConfigAggregator, Org, OrgTypes,
+  AuthInfo, Config, ConfigAggregator, Org, OrgConfigProperties, OrgTypes,
 } from '@salesforce/core';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -26,6 +26,7 @@ export default class PoolFetch extends SfpmCommand {
     limit: Flags.integer({description: 'max orgs to return when using --all', min: 1}),
     'my-pool': Flags.boolean({description: 'only fetch from orgs created by the current user'}),
     'send-to': Flags.string({description: 'email org details to this address instead of local login'}),
+    'set-default': Flags.boolean({allowNo: true, default: true, description: 'set the fetched org as the default target org'}),
     'source-tracking': Flags.boolean({default: false, description: 'enable source tracking after fetch'}),
     tag: Flags.string({char: 't', description: 'pool tag to fetch from', required: true}),
     'target-dev-hub': Flags.string({
@@ -96,6 +97,11 @@ export default class PoolFetch extends SfpmCommand {
       if (flags.alias && org.auth.username) {
         await setAlias(org.auth.username, flags.alias);
         org.auth.alias = flags.alias;
+      }
+
+      // Set as default target org
+      if (flags['set-default'] && !flags['send-to'] && org.auth.username) {
+        await Config.update(false, OrgConfigProperties.TARGET_ORG, org.auth.username);
       }
 
       // Build frontdoor login URL with access token

@@ -11,7 +11,7 @@ inputs:
     description: 'DevHub (or production org for sandboxes) username or alias'
     required: true
   pool-tag:
-    description: 'Pool tag to provision orgs for'
+    description: 'Pool tag to provision orgs for. Accepts multiple tags, one per line or comma-separated, to fill several pools in one run'
     required: true
   max-allocation:
     description: 'Maximum number of orgs to allocate (overrides sfpm.config.ts sizing.max)'

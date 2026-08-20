@@ -6,7 +6,6 @@ import {
   DeploymentTask,
   type PoolConfig,
   type PoolOrgTask,
-  type PoolProvisionResult,
 } from '@b64hub/sfpm-orgs';
 import {Org, OrgTypes} from '@salesforce/core';
 import path from 'node:path';
@@ -35,8 +34,8 @@ export interface FillPoolOptions {
   projectDir?: string;
   /** Sandbox name prefix (e.g., SB → SB1, SB2, ...) */
   sandboxNamePattern?: string;
-  /** Pool tag */
-  tag: string;
+  /** Pool tag(s) — pass an array to provision multiple pools in one run */
+  tag: string | string[];
   /** Deploy from local project source instead of downloaded artifacts */
   useLocalSource?: boolean;
 }
@@ -48,12 +47,23 @@ export interface FillPoolResult {
   errors: string[];
   /** Number of orgs that failed to provision */
   failed: number;
+  /** Usernames of successfully provisioned orgs */
+  orgUsernames: string[];
   /** Number of orgs that succeeded */
   succeeded: number;
   /** Whether all orgs were provisioned successfully */
   success: boolean;
   /** The pool tag */
   tag: string;
+}
+
+export interface FillPoolReport {
+  /** Total duration across all pools, in milliseconds */
+  duration: number;
+  /** Per-pool provisioning results */
+  results: FillPoolResult[];
+  /** Whether every pool was provisioned successfully */
+  success: boolean;
 }
 
 // ============================================================================
@@ -72,29 +82,85 @@ export interface FillPoolResult {
  *    packages — on each before marking it Available)
  * 5. Report results via GitHub Actions outputs
  */
-export async function fillPool(options: FillPoolOptions): Promise<FillPoolResult> {
+export async function fillPool(options: FillPoolOptions): Promise<FillPoolReport> {
   const logger = createGitHubActionsLogger({prefix: 'fill-pool'});
   const startTime = Date.now();
   const projectDir = options.projectDir ?? process.env.GITHUB_WORKSPACE ?? process.cwd();
   const sfpmConfig = await loadSfpmConfig(projectDir, logger);
-  const poolConfig = (sfpmConfig.orgs as undefined | {[tag: string]: PoolConfig})?.[options.tag];
-  const poolType = options.poolType ?? poolConfig?.type as OrgTypes | undefined ?? OrgTypes.Scratch;
+  const tags = Array.isArray(options.tag) ? options.tag : [options.tag];
 
-  logger.info(`Pool tag: ${options.tag}`);
-  logger.info(`Pool type: ${poolType}`);
-  logger.info(`Max allocation: ${options.maxAllocation}`);
   logger.info(`DevHub: ${options.devhubUsername}`);
+  logger.info(`Max allocation: ${options.maxAllocation}`);
 
   // ------------------------------------------------------------------
   // 1. Connect to DevHub
   // ------------------------------------------------------------------
   logger.info('Connecting to hub org...');
   const devhub = await Org.create({aliasOrUsername: options.devhubUsername});
+  logger.info('Connected to hub org');
 
   // ------------------------------------------------------------------
-  // 2. Build pool config and provisioning tasks
+  // 2. Provision each pool in turn
   // ------------------------------------------------------------------
-  const config = buildPoolConfig(options, poolType, projectDir, poolConfig);
+  const results: FillPoolResult[] = [];
+  for (const tag of tags) {
+    // eslint-disable-next-line no-await-in-loop -- pools are provisioned sequentially
+    results.push(await fillOnePool({
+      devhub, options, projectDir, sfpmConfig, tag,
+    }));
+  }
+
+  // ------------------------------------------------------------------
+  // 3. Set outputs and return report
+  // ------------------------------------------------------------------
+  const report: FillPoolReport = {
+    duration: Date.now() - startTime,
+    results,
+    success: results.every(r => r.success),
+  };
+
+  setActionOutputs(report);
+
+  for (const result of results) {
+    if (result.success) {
+      logger.info(`Pool "${result.tag}" provisioned ${result.succeeded} org(s) in ${Math.round(result.duration / 1000)}s`);
+    } else if (result.succeeded > 0) {
+      core.warning(`Pool "${result.tag}" provisioning partially failed: ${result.succeeded} succeeded, ${result.failed} failed`);
+    } else {
+      core.error(`Pool "${result.tag}" provisioning failed: ${result.errors.join(', ')}`);
+    }
+  }
+
+  if (!report.success) {
+    core.setFailed(`Pool provisioning failed for: ${results.filter(r => !r.success).map(r => r.tag).join(', ')}`);
+  }
+
+  return report;
+}
+
+/**
+ * Provision a single pool — connects tasks/config for one tag and runs it
+ * through the pool manager. Extracted so `fillPool()` can loop over
+ * multiple tags in one action run.
+ */
+async function fillOnePool(context: {
+  devhub: Org;
+  options: FillPoolOptions;
+  projectDir: string;
+  sfpmConfig: Awaited<ReturnType<typeof loadSfpmConfig>>;
+  tag: string;
+}): Promise<FillPoolResult> {
+  const {devhub, options, projectDir, sfpmConfig, tag} = context;
+  // Tag-scoped logger — a fresh prefixed instance rather than `.child()`,
+  // since `GitHubActionsLogger.child()` buffers for the package-flush
+  // mechanism below and is never flushed for pool tags.
+  const logger = createGitHubActionsLogger({prefix: `fill-pool:${tag}`});
+  const poolConfig = (sfpmConfig.orgs as undefined | {[tag: string]: PoolConfig})?.[tag];
+  const poolType = options.poolType ?? poolConfig?.type as OrgTypes | undefined ?? OrgTypes.Scratch;
+
+  logger.info(`Pool type: ${poolType}`);
+
+  const config = buildPoolConfig({...options, tag}, poolType, projectDir, poolConfig);
   const tasks = buildTasks(config, devhub, projectDir, options.useLocalSource);
 
   const {manager} = createPoolServices({
@@ -104,52 +170,26 @@ export async function fillPool(options: FillPoolOptions): Promise<FillPoolResult
     tasks,
   });
 
-  logger.info('Connected to hub org');
-
-  // ------------------------------------------------------------------
-  // 3. Attach progress renderer
-  // ------------------------------------------------------------------
   const renderer = new ActionsProgressRenderer(logger);
   renderer.attachToManager(manager.bus);
 
-  // ------------------------------------------------------------------
-  // 4. Validate prerequisites
-  // ------------------------------------------------------------------
   logger.info('Validating hub prerequisites...');
   await manager.validatePrerequisites();
   logger.info('Hub prerequisites validated');
 
-  // ------------------------------------------------------------------
-  // 5. Provision
-  // ------------------------------------------------------------------
-  const provisionResult = await manager.provision(options.tag, config);
+  const provisionResult = await manager.provision(tag, config);
 
   renderer.printSummary();
 
-  // ------------------------------------------------------------------
-  // 6. Set outputs and return result
-  // ------------------------------------------------------------------
-  const duration = Date.now() - startTime;
-  const result: FillPoolResult = {
-    duration,
+  return {
+    duration: provisionResult.elapsedMs,
     errors: provisionResult.errors,
     failed: provisionResult.failed,
+    orgUsernames: provisionResult.succeeded.map(o => o.auth.username).filter(Boolean),
     succeeded: provisionResult.succeeded.length,
     success: provisionResult.failed === 0,
     tag: provisionResult.tag,
   };
-
-  setActionOutputs(result, provisionResult);
-
-  if (result.success) {
-    logger.info(`Pool "${options.tag}" provisioned ${result.succeeded} org(s) in ${Math.round(duration / 1000)}s`);
-  } else if (result.succeeded > 0) {
-    core.warning(`Pool provisioning partially failed: ${result.succeeded} succeeded, ${result.failed} failed`);
-  } else {
-    core.setFailed(`Pool provisioning failed: ${provisionResult.errors.join(', ')}`);
-  }
-
-  return result;
 }
 
 // ============================================================================
@@ -191,14 +231,17 @@ export function buildPoolConfig(options: FillPoolOptions, poolType: OrgTypes, pr
   } as PoolConfig;
 }
 
-function setActionOutputs(result: FillPoolResult, provisionResult: PoolProvisionResult): void {
-  core.setOutput('success', String(result.success));
-  core.setOutput('tag', result.tag);
-  core.setOutput('succeeded', String(result.succeeded));
-  core.setOutput('failed', String(result.failed));
-  core.setOutput('duration', String(result.duration));
-  core.setOutput('result', JSON.stringify(result));
-  core.setOutput('org-usernames', provisionResult.succeeded.map(o => o.auth.username).join(','));
+function setActionOutputs(report: FillPoolReport): void {
+  const succeeded = report.results.reduce((sum, r) => sum + r.succeeded, 0);
+  const failed = report.results.reduce((sum, r) => sum + r.failed, 0);
+
+  core.setOutput('success', String(report.success));
+  core.setOutput('tag', report.results.map(r => r.tag).join(','));
+  core.setOutput('succeeded', String(succeeded));
+  core.setOutput('failed', String(failed));
+  core.setOutput('duration', String(report.duration));
+  core.setOutput('result', JSON.stringify(report));
+  core.setOutput('org-usernames', report.results.flatMap(r => r.orgUsernames).join(','));
 }
 
 /**

@@ -1,168 +1,36 @@
-import type {PackageCounts} from '../state/selectors.js';
 import type EventEmitter from 'node:events';
 
-import {Box, Static, Text, useApp, useInput} from 'ink';
+import {
+  Box, Static, Text, useApp, useInput,
+} from 'ink';
 import React, {useEffect, useReducer} from 'react';
 
+import type {PackageCounts} from '../state/selectors.js';
+
+import {Divider} from '../components/base/Divider.js';
 import {ElapsedTime} from '../components/base/ElapsedTime.js';
 import {Footer} from '../components/base/Footer.js';
 import {OrgBadge} from '../components/base/OrgBadge.js';
-import {Divider} from '../components/base/Divider.js';
-import {type OrgPhase, OrgRow} from '../components/pool/OrgRow.js';
-import {colWidth, rawSym} from '../renderer-utils.js';
+import {OrgRow} from '../components/pool/OrgRow.js';
 import {useTermWidth} from '../hooks/use-term-width.js';
-
-// ── State ─────────────────────────────────────────────────────────────────────
-
-interface OrgEntry {
-  alias: string;
-  completedPackages: number;
-  currentPackage?: string;
-  currentPackageVersion?: string;
-  failedPackages: number;
-  phase: OrgPhase;
-  startedAt: number;
-  totalPackages: number;
-  username: string;
-}
-
-interface PoolFillState {
-  creationFailed: number;
-  devhubAlias: string;
-  orgs: OrgEntry[];
-  phase: 'done' | 'failed' | 'idle' | 'provisioning';
-  startedAt: number;
-  tag: string;
-  /**
-   * Append-only list of orgs in terminal state, ordered by completion time.
-   * Kept separate from `orgs` so <Static> positions never shift.
-   */
-  terminalOrgs: OrgEntry[];
-  total: number;
-}
-
-function initialState(devhubAlias: string): PoolFillState {
-  return {
-    creationFailed: 0,
-    devhubAlias,
-    orgs: [],
-    phase: 'idle',
-    startedAt: Date.now(),
-    tag: '',
-    terminalOrgs: [],
-    total: 0,
-  };
-}
-
-const TERMINAL: Set<OrgPhase> = new Set(['done', 'warning', 'failed']);
-
-// ── Reducer ───────────────────────────────────────────────────────────────────
-
-type Action =
-  | {type: 'org:appeared';       alias: string; username: string}
-  | {type: 'org:deploying';      username: string}
-  | {type: 'org:done';           username: string}
-  | {type: 'org:failed';         username: string}
-  | {type: 'org:pkg:done';       packageName: string; success: boolean; username: string; version?: string}
-  | {type: 'org:pkg:start';      packageName: string; total: number; username: string}
-  | {type: 'org:prereqs';        username: string}
-  | {type: 'pool:creation:failed'}
-  | {type: 'pool:done'}
-  | {type: 'pool:start';         tag: string; total: number};
-
-function patchOrg(orgs: OrgEntry[], username: string, patch: Partial<OrgEntry>): OrgEntry[] {
-  return orgs.map(o => o.username === username ? {...o, ...patch} : o);
-}
-
-function reducer(state: PoolFillState, action: Action): PoolFillState {
-  switch (action.type) {
-  case 'pool:start':
-    return {...state, phase: 'provisioning', startedAt: Date.now(), tag: action.tag, total: action.total};
-
-  case 'org:appeared':
-    return {
-      ...state,
-      orgs: [...state.orgs, {
-        alias: action.alias,
-        completedPackages: 0,
-        failedPackages: 0,
-        phase: 'creating',
-        startedAt: Date.now(),
-        totalPackages: 0,
-        username: action.username,
-      }],
-    };
-
-  case 'pool:creation:failed':
-    return {...state, creationFailed: state.creationFailed + 1};
-
-  case 'org:prereqs':
-    return {...state, orgs: patchOrg(state.orgs, action.username, {phase: 'prereqs'})};
-
-  case 'org:deploying':
-    return {...state, orgs: patchOrg(state.orgs, action.username, {phase: 'deploying'})};
-
-  case 'org:pkg:start':
-    return {
-      ...state,
-      orgs: patchOrg(state.orgs, action.username, {
-        currentPackage: action.packageName,
-        currentPackageVersion: undefined,
-        totalPackages: action.total,
-      }),
-    };
-
-  case 'org:pkg:done': {
-    const org = state.orgs.find(o => o.username === action.username);
-    if (!org) return state;
-    return {
-      ...state,
-      orgs: patchOrg(state.orgs, action.username, {
-        completedPackages: org.completedPackages + 1,
-        currentPackageVersion: action.version,
-        failedPackages: org.failedPackages + (action.success ? 0 : 1),
-      }),
-    };
-  }
-
-  case 'org:done': {
-    const org = state.orgs.find(o => o.username === action.username);
-    if (!org || TERMINAL.has(org.phase)) return state;
-    const phase: OrgPhase = org.failedPackages > 0 ? 'warning' : 'done';
-    const updated = {...org, phase};
-    return {
-      ...state,
-      orgs: patchOrg(state.orgs, action.username, {phase}),
-      terminalOrgs: [...state.terminalOrgs, updated],
-    };
-  }
-
-  case 'org:failed': {
-    const org = state.orgs.find(o => o.username === action.username);
-    if (!org || TERMINAL.has(org.phase)) return state;
-    const failed = {...org, phase: 'failed' as OrgPhase};
-    return {
-      ...state,
-      orgs: patchOrg(state.orgs, action.username, {phase: 'failed'}),
-      terminalOrgs: [...state.terminalOrgs, failed],
-    };
-  }
-
-  case 'pool:done':
-    return {...state, phase: 'done'};
-
-  default:
-    return state;
-  }
-}
+import {colWidth, rawSym} from '../renderer-utils.js';
+import {
+  type Action, initialState, type OrgEntry, reducer, TERMINAL,
+} from '../state/pool-fill-reducer.js';
 
 // ── Bus wiring ────────────────────────────────────────────────────────────────
 
 const BUS_EVENTS: Array<Action['type']> = [
-  'pool:start', 'org:appeared', 'pool:creation:failed',
-  'org:prereqs', 'org:deploying',
-  'org:pkg:start', 'org:pkg:done',
-  'org:done', 'org:failed', 'pool:done',
+  'pool:start',
+  'org:appeared',
+  'pool:creation:failed',
+  'org:prereqs',
+  'org:deploying',
+  'org:pkg:start',
+  'org:pkg:done',
+  'org:done',
+  'org:failed',
+  'pool:done',
 ];
 
 function useBusWiring(bus: EventEmitter, dispatch: React.Dispatch<Action>): void {
@@ -173,7 +41,9 @@ function useBusWiring(bus: EventEmitter, dispatch: React.Dispatch<Action>): void
       bus.on(name, handler);
       return [name, handler] as const;
     });
-    return () => { for (const [name, handler] of handlers) bus.off(name, handler); };
+    return () => {
+      for (const [name, handler] of handlers) bus.off(name, handler);
+    };
   }, [bus, dispatch]);
 }
 
@@ -181,11 +51,7 @@ function useBusWiring(bus: EventEmitter, dispatch: React.Dispatch<Action>): void
 
 const ALIAS_COL = 20;
 
-type StaticItem =
-  | {kind: 'header'; devhubAlias: string; id: string; tag: string; total: number}
-  | {kind: 'org';    id: string; org: OrgEntry};
-
-function StaticOrgRow({alias, completedPackages, failedPackages, phase, totalPackages}: OrgEntry) {
+function StaticOrgRow({alias, completedPackages, failedPackages, phase, showTag, tag, totalPackages}: OrgEntry & {showTag: boolean}) {
   let icon: string;
   let color: string;
   let summary: string;
@@ -210,7 +76,7 @@ function StaticOrgRow({alias, completedPackages, failedPackages, phase, totalPac
   return (
     <Box gap={1}>
       <Text color={color}>{icon}</Text>
-      <Box width={ALIAS_COL}><Text wrap="truncate">{alias}</Text></Box>
+      <Box width={ALIAS_COL}><Text wrap='truncate'>{showTag ? `${tag}/${alias}` : alias}</Text></Box>
       <Text dimColor>{summary}</Text>
     </Box>
   );
@@ -228,71 +94,66 @@ export function PoolFillApp({bus, devhubAlias, onAdvance}: {bus: EventEmitter; d
   const barWidth   = colWidth(termWidth);
 
   useBusWiring(bus, dispatch);
-  useInput((input, key) => { onAdvance?.(input || (key.escape ? '\x1b' : '')); }, {isActive: Boolean(onAdvance)});
+  useInput((input, key) => {
+    onAdvance?.(input || (key.escape ? '\u001B' : ''));
+  }, {isActive: Boolean(onAdvance)});
 
   useEffect(() => {
-    if (state.phase === 'done' || state.phase === 'failed') {
+    if (state.phase === 'done') {
       const t = setTimeout(exit, 80);
       return () => clearTimeout(t);
     }
   }, [state.phase, exit]);
 
+  const multiPool     = state.pools.length > 1;
   const activeOrgs    = state.orgs.filter(o => !TERMINAL.has(o.phase));
-  const doneOrgs      = state.terminalOrgs.filter(o => o.phase === 'done').length;
-  const warningOrgs   = state.terminalOrgs.filter(o => o.phase === 'warning').length;
-  const totalFailed   = state.terminalOrgs.filter(o => o.phase === 'failed').length + state.creationFailed;
+  const doneOrgs      = state.orgs.filter(o => o.phase === 'done').length;
+  const warningOrgs   = state.orgs.filter(o => o.phase === 'warning').length;
+  const creationFailed = state.pools.reduce((sum, p) => sum + p.creationFailed, 0);
+  const totalFailed   = state.orgs.filter(o => o.phase === 'failed').length + creationFailed;
   const totalDone     = doneOrgs + warningOrgs;
-  const pending       = Math.max(0, state.total - state.orgs.length - state.creationFailed);
+  const total         = state.pools.reduce((sum, p) => sum + p.total, 0);
+  const pending       = state.pools.reduce((sum, p) => sum + Math.max(0, p.total - state.orgs.filter(o => o.tag === p.tag).length - p.creationFailed), 0);
 
   const counts: PackageCounts = {
-    failed:    totalFailed,
+    failed: totalFailed,
     pending,
-    running:   activeOrgs.length,
-    skipped:   0,
-    success:   totalDone,
-    total:     state.total,
+    running: activeOrgs.length,
+    skipped: 0,
+    success: totalDone,
+    total,
     validating: 0,
   };
 
-  // Header is item 0 — appears once when pool:start fires.
-  // Terminal orgs accumulate after it as they finish.
-  const staticItems: StaticItem[] = [
-    ...(state.total > 0 ? [{
-      devhubAlias: state.devhubAlias,
-      id: '__header__',
-      kind: 'header' as const,
-      tag: state.tag,
-      total: state.total,
-    }] : []),
-    ...state.terminalOrgs.map(org => ({id: org.username, kind: 'org' as const, org})),
-  ];
-
   const visibleActive = activeOrgs.slice(0, MAX_ACTIVE_ROWS);
   const hiddenCount   = activeOrgs.length - visibleActive.length;
+  const startedAt     = state.pools.length > 0 ? Math.min(...state.pools.map(p => p.startedAt)) : Date.now();
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection='column'>
 
-      {/* Static block: header flushed once on start, org results flushed as each finishes */}
-      <Static items={staticItems}>
+      {/* Devhub badge — always shown once, above any pool sections */}
+      {state.pools.length > 0 && <OrgBadge alias={devhubAlias} />}
+
+      {/* Static block: one header per pool (as it starts), org rows as each finishes */}
+      <Static items={state.staticItems}>
         {item => item.kind === 'header'
           ? (
-            <Box key={item.id} flexDirection="column">
-              <OrgBadge alias={item.devhubAlias} />
+            <Box flexDirection='column' key={item.id}>
               <Text bold>
-                Provisioning {item.total} org{item.total !== 1 ? 's' : ''}{item.tag ? ` · ${item.tag}` : ''}
+                Provisioning {item.total} org{item.total === 1 ? '' : 's'} · {item.tag}
               </Text>
               <Divider width={termWidth} />
             </Box>
           )
-          : <StaticOrgRow key={item.id} {...item.org} />
+          : <StaticOrgRow key={item.id} {...item.org} showTag={multiPool} />
         }
       </Static>
 
       {/* Active org rows */}
-      <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection='column' marginTop={1}>
         {visibleActive.map(org => (
-          <OrgRow key={org.username} barWidth={barWidth} {...org} />
+          <OrgRow barWidth={barWidth} key={org.username} {...org} alias={multiPool ? `${org.tag}/${org.alias}` : org.alias} />
         ))}
         {hiddenCount > 0 && (
           <Text dimColor>  · {hiddenCount} more provisioning...</Text>
@@ -301,23 +162,23 @@ export function PoolFillApp({bus, devhubAlias, onAdvance}: {bus: EventEmitter; d
 
       {/* Footer */}
       <Footer
-        counts={counts}
-        progressBar={false}
         activeSlot={
           <Box gap={1}>
-            {activeOrgs.length > 0 && <Text color="yellow">{activeOrgs.length} provisioning</Text>}
+            {activeOrgs.length > 0 && <Text color='yellow'>{activeOrgs.length} provisioning</Text>}
             {activeOrgs.length > 0 && pending > 0 && <Text dimColor>·</Text>}
             {pending > 0 && <Text dimColor>{pending} queued</Text>}
           </Box>
         }
+        counts={counts}
+        progressBar={false}
         resultsSlot={
           <Box gap={2}>
-            {doneOrgs > 0    && <Text color="green">{doneOrgs} done</Text>}
-            {warningOrgs > 0 && <Text color="yellow">{warningOrgs} ⚠</Text>}
-            {totalFailed > 0 && <Text color="red">{totalFailed} ✗</Text>}
+            {doneOrgs > 0    && <Text color='green'>{doneOrgs} done</Text>}
+            {warningOrgs > 0 && <Text color='yellow'>{warningOrgs} ⚠</Text>}
+            {totalFailed > 0 && <Text color='red'>{totalFailed} ✗</Text>}
           </Box>
         }
-        timeSlot={<ElapsedTime startedAt={state.startedAt} dimColor />}
+        timeSlot={<ElapsedTime dimColor startedAt={startedAt} />}
       />
 
     </Box>
