@@ -68,11 +68,14 @@ export async function cleanPool(options: CleanPoolOptions): Promise<CleanPoolRep
   logger.info('Connecting to hub org...');
   const devhub = await Org.create({aliasOrUsername: options.devhubUsername});
 
-  const {manager} = createPoolServices({devhub, logger, poolType});
-
   const results: CleanPoolResult[] = [];
   for (const tag of tags) {
-    logger.info(`Pool tag: ${tag}`);
+    // Tag-scoped logger — a fresh prefixed instance rather than `.child()`,
+    // since `GitHubActionsLogger.child()` buffers for the package-flush
+    // mechanism and is never flushed for pool tags.
+    const tagLogger = createGitHubActionsLogger({prefix: `clean-pool:${tag}`});
+    const {manager} = createPoolServices({devhub, logger: tagLogger, poolType});
+
     // eslint-disable-next-line no-await-in-loop -- pools are cleaned sequentially
     const deleteResult = await manager.delete(tag, {
       inProgressOnly: options.inProgressOnly,

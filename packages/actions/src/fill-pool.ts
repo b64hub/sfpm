@@ -106,7 +106,7 @@ export async function fillPool(options: FillPoolOptions): Promise<FillPoolReport
   for (const tag of tags) {
     // eslint-disable-next-line no-await-in-loop -- pools are provisioned sequentially
     results.push(await fillOnePool({
-      devhub, logger, options, projectDir, sfpmConfig, tag,
+      devhub, options, projectDir, sfpmConfig, tag,
     }));
   }
 
@@ -145,17 +145,19 @@ export async function fillPool(options: FillPoolOptions): Promise<FillPoolReport
  */
 async function fillOnePool(context: {
   devhub: Org;
-  logger: ReturnType<typeof createGitHubActionsLogger>;
   options: FillPoolOptions;
   projectDir: string;
   sfpmConfig: Awaited<ReturnType<typeof loadSfpmConfig>>;
   tag: string;
 }): Promise<FillPoolResult> {
-  const {devhub, logger, options, projectDir, sfpmConfig, tag} = context;
+  const {devhub, options, projectDir, sfpmConfig, tag} = context;
+  // Tag-scoped logger — a fresh prefixed instance rather than `.child()`,
+  // since `GitHubActionsLogger.child()` buffers for the package-flush
+  // mechanism below and is never flushed for pool tags.
+  const logger = createGitHubActionsLogger({prefix: `fill-pool:${tag}`});
   const poolConfig = (sfpmConfig.orgs as undefined | {[tag: string]: PoolConfig})?.[tag];
   const poolType = options.poolType ?? poolConfig?.type as OrgTypes | undefined ?? OrgTypes.Scratch;
 
-  logger.info(`Pool tag: ${tag}`);
   logger.info(`Pool type: ${poolType}`);
 
   const config = buildPoolConfig({...options, tag}, poolType, projectDir, poolConfig);
