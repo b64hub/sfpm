@@ -1,6 +1,6 @@
 {
   "name": "@b64hub/sfpm-orgs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Org management, pool provisioning, and validation/pooling lifecycle stages for SFPM",
   "type": "module",
   "scripts": {
@@ -17,7 +17,7 @@
   "author": "b64",
   "license": "MIT",
   "dependencies": {
-    "@b64hub/sfpm-core": "workspace:^0.1.0",
+    "@b64hub/sfpm-core": "workspace:^0.2.0",
     "@salesforce/core": "^8.31.0",
     "@salesforce/kit": "^3.0.0"
   },

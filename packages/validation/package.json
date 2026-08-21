@@ -1,6 +1,6 @@
 {
   "name": "@b64hub/sfpm-validation",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local metadata validation for SFPM",
   "type": "module",
   "scripts": {
@@ -17,7 +17,7 @@
   "license": "MIT",
   "dependencies": {
     "semver": "^7.7.3",
-    "@b64hub/sfpm-core": "workspace:^0.1.0",
+    "@b64hub/sfpm-core": "workspace:^0.2.0",
     "@salesforce/source-deploy-retrieve": "^12.31.7",
     "fs-extra": "^11.3.3"
   },

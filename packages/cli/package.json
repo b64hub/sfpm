@@ -2,18 +2,18 @@
   "name": "@b64hub/sfpm-cli",
   "description": "Salesforce package manager - CLI",
   "release": "Seedling",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "b64",
   "bin": {
     "sfpm": "./bin/run.js"
   },
   "bugs": "https://github.com/b64hub/sfpm/issues",
   "dependencies": {
-    "@b64hub/sfpm-core": "workspace:^0.1.0",
+    "@b64hub/sfpm-core": "workspace:^0.2.0",
     "@b64hub/sfpm-orgs": "workspace:^",
     "@b64hub/sfpm-sfdmu": "workspace:^",
     "@b64hub/sfpm-validation": "workspace:*",
-    "@b64hub/sfpm-telemetry": "workspace:^0.1.0",
+    "@b64hub/sfpm-telemetry": "workspace:^0.2.0",
     "@inkjs/ui": "^2.0.0",
     "@inquirer/prompts": "^8.3.2",
     "@oclif/core": "^4",
