@@ -23,7 +23,7 @@ import {
 } from './builders/builder-registry.js';
 import {compileValidationTask} from './builders/tasks/compile-validation-task.js';
 import {dependencyAnalysisTask} from './builders/tasks/dependency-analysis-task.js';
-import SfpmPackage, {PackageFactory, SfpmMetadataPackage} from './sfpm-package.js';
+import SfpmPackage, {PackageFactory, SfpmMetadataPackage, SfpmUnlockedPackage} from './sfpm-package.js';
 
 /**
  * Internal configuration resolved from {@link ValidationLevel}.
@@ -240,20 +240,14 @@ export default class PackageBuilder {
    * Compare the current source hash against the previous build's dist/package.json.
    * Returns match info if hashes are equal, undefined otherwise.
    */
-  private async checkSourceHash(
-    sfpmPackage: SfpmMetadataPackage,
-    repo: ArtifactRepository,
-    logger?: Logger,
-  ): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
+  private async checkSourceHash(sfpmPackage: SfpmMetadataPackage): Promise<{hash: string; match: boolean,}> {
     const currentSourceHash = await SourceHasher.calculate(sfpmPackage);
-    logger?.debug(`Source hash: ${currentSourceHash}`);
 
-    const match = await repo.checkSourceHash(currentSourceHash);
-    if (!match) {
-      logger?.info('Source changes detected, proceeding with build');
+    if (sfpmPackage.sourceHash && sfpmPackage.sourceHash === currentSourceHash) {
+      return {hash: currentSourceHash, match: true};
     }
 
-    return match;
+    return {hash: currentSourceHash, match: false};
   }
 
   /**
@@ -296,34 +290,6 @@ export default class PackageBuilder {
   }
 
   /**
-   * Check whether the existing build output satisfies the current build's requirements.
-   *
-   * An unlocked package with org/full validation (not source-only) requires a
-   * packageVersionId in dist/package.json. A previous --source-only or --validation=local
-   * build won't have one, so a rebuild is needed despite matching source hash.
-   */
-  private async manifestSatisfiesBuild(
-    sfpmPackage: SfpmPackage,
-    repo: ArtifactRepository,
-    options: BuildOptions,
-    logger?: Logger,
-  ): Promise<boolean> {
-    const needsPackageVersionId = sfpmPackage.type === PackageType.Unlocked
-      && !options.unlocked?.sourceOnly
-      && (options.validation === 'org' || options.validation === 'full' || !options.validation);
-
-    if (!needsPackageVersionId) return true;
-
-    const packageVersionId = repo.getPackageVersionId();
-    if (!packageVersionId) {
-      logger?.info(`Build required for '${sfpmPackage.packageName}': existing build has no packageVersionId`);
-      return false;
-    }
-
-    return true;
-  }
-
-  /**
    * Determine whether a build is needed for this package.
    *
    * Checks two conditions:
@@ -338,35 +304,58 @@ export default class PackageBuilder {
     sfpmPackage: SfpmPackage,
     options: BuildOptions,
     logger?: Logger,
-  ): Promise<undefined | {artifactPath?: string; latestVersion?: string}> {
+  ): Promise<{needsBuild: boolean, reason?: string}> {
     if (!(sfpmPackage instanceof SfpmMetadataPackage)) {
-      return undefined;
-    }
-
-    const sourcePath = sfpmPackage.packageDefinition?.path;
-    if (!sourcePath) {
-      logger?.info('No package definition path, proceeding with build');
-      return undefined;
+      return {needsBuild: true};
     }
 
     const packageWorkspacePath = this.provider.getPackageDir(sfpmPackage.name);
     if (!packageWorkspacePath) {
       logger?.info('Could not resolve package workspace path, proceeding with build');
-      return undefined;
+      return {needsBuild: true, reason: 'unable to resolve path'};
     }
 
-    const repo = new ArtifactRepository(packageWorkspacePath, logger);
-
     // 1. Check source hash
-    const hashMatch = await this.checkSourceHash(sfpmPackage, repo, logger);
-    if (!hashMatch) return undefined;
+    const {hash, match} = await this.checkSourceHash(sfpmPackage);
+    logger?.debug(`Source hash: ${hash}`);
+    if (!match) {
+      logger?.info('Source changes detected, proceeding with build');
+      return {needsBuild: true, reason: 'source changes detected'};
+    }
 
     // 2. Check build completeness
-    if (!await this.manifestSatisfiesBuild(sfpmPackage, repo, options, logger)) return undefined;
+    if (!await this.needsPackageVersionId(sfpmPackage, options)) {
+      logger?.info(`Build required for '${sfpmPackage.packageName}': existing build has no packageVersionId`);
+      return {needsBuild: true, reason: 'packageVersionId not found'};
+    }
 
-    logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected. `
-      + `Latest version: ${hashMatch.latestVersion}`);
-    return hashMatch;
+    logger?.info(`Build skipped for '${sfpmPackage.packageName}': no source changes detected.`);
+    return {needsBuild: false, reason: 'no-changes'};
+  }
+
+  /**
+   * Check whether the existing build output satisfies the current build's requirements.
+   *
+   * An unlocked package with org/full validation (not source-only) requires a
+   * packageVersionId in dist/package.json. A previous --source-only or --validation=local
+   * build won't have one, so a rebuild is needed despite matching source hash.
+   */
+  private async needsPackageVersionId(
+    sfpmPackage: SfpmPackage,
+    options: BuildOptions,
+  ): Promise<boolean> {
+    const needsPackageVersionId = sfpmPackage.type === PackageType.Unlocked
+      && !options.unlocked?.sourceOnly
+      && (options.validation === 'org' || options.validation === 'full' || !options.validation);
+
+    if (!needsPackageVersionId) return true;
+
+    const {packageVersionId} = (sfpmPackage as SfpmUnlockedPackage);
+    if (!packageVersionId) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -421,13 +410,12 @@ export default class PackageBuilder {
 
     // Check if build is needed (source hash comparison)
     if (!options.force) {
-      const skip = await this.needsBuild(sfpmPackage, options, logger);
-      if (skip) {
+      const {needsBuild, reason} = await this.needsBuild(sfpmPackage, options, logger);
+      if (!needsBuild) {
         sink?.skip({
-          artifactPath: skip.artifactPath,
-          latestVersion: skip.latestVersion,
+          hash: sfpmPackage.sourceHash,
           packageType: sfpmPackage.type as PackageType,
-          reason: 'no-changes',
+          reason: reason ?? 'no-changes',
           version: sfpmPackage.version,
         });
         return {skipped: true, skipReason: 'no-changes'};

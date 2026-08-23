@@ -71,6 +71,7 @@ export function findSfpmRoot(startDir: string): string | undefined {
 async function detectProvider(projectDir: string, sfpmConfig: SfpmConfig): Promise<ProjectDefinitionProvider> {
   if (WorkspaceProvider.hasWorkspace(projectDir)) {
     return new WorkspaceProvider({
+      distAware: true,
       projectDir,
       sfdcLoginUrl: sfpmConfig.sfdcLoginUrl,
       sourceApiVersion: sfpmConfig.sourceApiVersion,
