@@ -4,7 +4,7 @@ import {Box, Text, useApp, useInput} from 'ink';
 import {useEffect, useReducer} from 'react';
 
 import {useEventBusWiring} from '../hooks/use-event-bus-wiring.js';
-import {initialState, reducer} from '../state/reducer.js';
+import {initialState, reducer} from '../state/orchestration-reducer.js';
 import {countPackages} from '../state/selectors.js';
 import {Footer} from '../components/base/Footer.js';
 import {OrgBadge} from '../components/base/OrgBadge.js';
