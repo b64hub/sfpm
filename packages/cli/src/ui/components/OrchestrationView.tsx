@@ -7,7 +7,7 @@ import type {TreeNode} from '../state/types.js';
 
 import {deriveStatus} from '../state/selectors.js';
 import {toRowProps} from '../state/adapters.js';
-import {rawSym} from '../renderer-utils.js';
+import {rawSym} from '../utils/renderer-utils.js';
 import {Divider} from './base/Divider.js';
 import {COL_TRAILING, PackageRow} from './PackageRow.js';
 import {ValidationView} from './ValidationView.js';

@@ -1,9 +1,9 @@
 import chalk from 'chalk';
 
-import type {OutputLogger} from '../renderer-utils.js';
+import type {OutputLogger} from '../utils/renderer-utils.js';
 import type {CompleteSummary, DisplayStrategy} from './display-strategy.js';
 
-import {sym} from '../renderer-utils.js';
+import {sym} from '../utils/renderer-utils.js';
 
 // ============================================================================
 // Plain Display Strategy

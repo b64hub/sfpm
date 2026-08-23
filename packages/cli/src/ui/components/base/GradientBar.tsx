@@ -1,5 +1,5 @@
 import { Text, Box } from "ink";
-import {Gradient, SFPM_GRADIENT} from '../../theme.js'
+import {Gradient, SFPM_GRADIENT} from '../../utils/theme.js'
 
 /** Gradient progress bar */
 export function GradientBar({gradient = SFPM_GRADIENT, value, width}: {gradient: Gradient, value: number; width: number}) {

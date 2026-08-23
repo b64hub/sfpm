@@ -3,7 +3,7 @@ import type EventEmitter from 'node:events';
 
 import {render} from 'ink';
 
-import {PoolDeleteApp} from './apps/PoolDeleteApp.js';
+import {PoolDeleteApp} from '../apps/PoolDeleteApp.js';
 
 /**
  * Mount the pool delete Ink UI.

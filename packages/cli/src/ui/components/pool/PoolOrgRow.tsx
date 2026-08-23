@@ -6,7 +6,7 @@ import {Text} from 'ink';
 import type {MetaColSpec, PackageRowProps} from '../PackageRow.js';
 
 import {PackageRow} from '../PackageRow.js';
-import {formatExpiry, formatStage, stageColor} from '../../pool-utils.js';
+import {formatExpiry, formatStage, stageColor} from '../../utils/pool-utils.js';
 
 // ── Column spec ───────────────────────────────────────────────────────────────
 

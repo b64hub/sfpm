@@ -3,7 +3,7 @@ import type EventEmitter from 'node:events';
 
 import {render} from 'ink';
 
-import {PoolFillApp} from './apps/PoolFillApp.js';
+import {PoolFillApp} from '../apps/PoolFillApp.js';
 
 /**
  * Mount the pool fill Ink UI.

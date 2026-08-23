@@ -3,7 +3,7 @@ import {Text} from 'ink';
 
 import type {NodeStatus} from '../../state/types.js';
 
-import {rawSym} from '../../renderer-utils.js';
+import {rawSym} from '../../utils/renderer-utils.js';
 
 const ICONS: Record<Exclude<NodeStatus, 'running' | 'validating'>, {char: string; color: string}> = {
   failed:  {char: rawSym.fail,    color: 'red'},

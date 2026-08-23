@@ -5,7 +5,7 @@ import {Command, Flags} from '@oclif/core';
 import chalk from 'chalk';
 import gradient from 'gradient-string';
 
-import type {OutputMode} from './ui/renderer-utils.js';
+import type {OutputMode} from './ui/utils/renderer-utils.js';
 
 import {CliLogger, CliLoggerFactory} from './logger.js';
 import {suppressStderr} from './utils/suppress.js';

@@ -9,7 +9,7 @@ import type {PackageCounts} from '../state/selectors.js';
 import {ElapsedTime} from '../components/base/ElapsedTime.js';
 import {Footer} from '../components/base/Footer.js';
 import {OrgBadge} from '../components/base/OrgBadge.js';
-import {rawSym} from '../renderer-utils.js';
+import {rawSym} from '../utils/renderer-utils.js';
 import {
   type Action, initialState, type PoolDeleteRow, reducer,
 } from '../state/pool-delete-reducer.js';
