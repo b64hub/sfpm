@@ -5,7 +5,7 @@ import {Org} from '@salesforce/core'
 import {execSync} from 'node:child_process'
 import EventEmitter from 'node:events'
 
-import {attachInstallBridge} from '../../ui/install-event-bridge.js'
+import {attachInstallBridge} from '../../ui/adapters/install-event-bridge.js'
 import {InstallProgressRenderer} from '../../ui/install-progress-renderer.js'
 import {renderApp} from '../../ui/run.js'
 import Deploy, {ResolvedDeployFlags} from './index.js'

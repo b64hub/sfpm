@@ -6,8 +6,8 @@ import {
 import EventEmitter from 'node:events';
 
 import SfpmCommand from '../../sfpm-command.js';
+import {attachPoolDeleteBridge} from '../../ui/adapters/pool-delete-event-bridge.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
-import {attachPoolDeleteBridge} from '../../ui/pool-delete-event-bridge.js';
 import {renderPoolDelete} from '../../ui/run-pool-delete.js';
 
 export default class PoolDelete extends SfpmCommand {

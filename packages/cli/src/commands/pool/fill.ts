@@ -10,8 +10,8 @@ import EventEmitter from 'node:events';
 import path from 'node:path';
 
 import SfpmCommand from '../../sfpm-command.js';
+import {attachPoolFillBridge} from '../../ui/adapters/pool-fill-event-bridge.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
-import {attachPoolFillBridge} from '../../ui/pool-fill-event-bridge.js';
 import {renderPoolFill} from '../../ui/run-pool-fill.js';
 import {resolveCliProjectDir} from '../../utils/project-dir.js';
 

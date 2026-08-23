@@ -10,7 +10,7 @@ import EventEmitter from 'node:events'
 import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../../sfpm-command.js'
-import {attachInstallBridge} from '../../ui/install-event-bridge.js'
+import {attachInstallBridge} from '../../ui/adapters/install-event-bridge.js'
 import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
 import {renderApp} from '../../ui/run.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
