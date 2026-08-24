@@ -23,7 +23,7 @@ export interface ConnectedOrg {
   username?: string;
 }
 
-export function App({bus, logPath, onAdvance, org}: {bus: EventEmitter; logPath?: string; onAdvance?: (key: string) => void; org?: ConnectedOrg}) {
+export function App({mode, bus, logPath, onAdvance, org}: {mode: 'plain' | 'interactive', bus: EventEmitter; logPath?: string; onAdvance?: (key: string) => void; org?: ConnectedOrg}) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const {exit} = useApp();
   useEventBusWiring(bus, dispatch);
@@ -45,6 +45,8 @@ export function App({bus, logPath, onAdvance, org}: {bus: EventEmitter; logPath?
         <OrchestrationView
           levels={state.levels}
           validation={state.validation}
+          mode={mode}
+          streamLog={state.streamLog}
           getColumns={node => <PackageRow.MetaCols cols={META_COLS} meta={node.meta} />}
           headerColumns={<PackageRow.MetaCols cols={META_COLS} header />}
         />

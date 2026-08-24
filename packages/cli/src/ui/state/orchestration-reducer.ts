@@ -10,10 +10,18 @@ type NodePatch = {
 
 const TERMINAL = new Set<NodeStatus>(['failed', 'skipped', 'success']);
 
+/** Statuses worth a line in the plain-mode continuous stream — 'pending' is just node creation, not a transition. */
+const STREAMABLE = new Set<NodeStatus>(['failed', 'running', 'skipped', 'success']);
+
 export function initialState(): AppState {
   return {
-    levels: [], logs: [], phase: 'idle', validation: [],
+    levels: [], logs: [], phase: 'idle', streamLog: [], validation: [],
   };
+}
+
+function pushStream(state: AppState, nodeId: string, status: NodeStatus): AppState['streamLog'] {
+  if (!STREAMABLE.has(status)) return state.streamLog;
+  return [...state.streamLog, {id: `${nodeId}:${status}`, nodeId}];
 }
 
 // ---- tree helpers ----
@@ -65,20 +73,22 @@ function updatePackage(
     levels: state.levels.map(l => updateNode(l, id, {
       detail, errorDetails, meta, status, ...timingPatch,
     })),
+    streamLog: pushStream(state, id, status),
   };
 }
 
 function upsertStep(state: AppState, packageName: string, step: string, patch: {detail?: string; status: NodeStatus;}): AppState {
   const stepId = `pkg:${packageName}/step:${step}`;
+  const streamLog = pushStream(state, stepId, patch.status);
   const exists = state.levels.some(l => nodeExists(l, stepId));
   if (exists) {
-    return {...state, levels: state.levels.map(l => updateNode(l, stepId, patch))};
+    return {...state, levels: state.levels.map(l => updateNode(l, stepId, patch)), streamLog};
   }
 
   const newStep: TreeNode = {
     id: stepId, label: step, ...patch, children: [],
   };
-  return {...state, levels: state.levels.map(l => addChildToNode(l, `pkg:${packageName}`, newStep))};
+  return {...state, levels: state.levels.map(l => addChildToNode(l, `pkg:${packageName}`, newStep)), streamLog};
 }
 
 function updateValidation(state: AppState, packageName: string, patch: {detail?: string; status?: NodeStatus;}): AppState {
