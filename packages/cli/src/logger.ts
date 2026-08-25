@@ -11,10 +11,6 @@ import pino from 'pino';
 import {createPinoBridge} from './ui/adapters/pino-bridge.js';
 import {resolveCliProjectDir} from './utils/project-dir.js';
 
-// ============================================================================
-// CLI Logger Factory
-// ============================================================================
-
 export interface CliLoggerOptions {
   /** Log level threshold (default: 'warn') */
   level?: LogLevel;

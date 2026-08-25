@@ -4,13 +4,12 @@ import {
   Logger,
   OrchestrationResult,
   PackageBuildResult,
-  PackageCreator,
+  PackageManager,
   PackageService,
   PendingValidationDescriptor,
   type ProjectDefinitionProvider,
   ProjectService,
   stripScope,
-  ValidationEventBus,
   ValidationResolver,
   WorkspaceProvider,
 } from '@b64hub/sfpm-core'
@@ -20,9 +19,12 @@ import {Org} from '@salesforce/core'
 import chalk from 'chalk'
 import fs from 'fs-extra'
 import {execSync} from 'node:child_process'
+import EventEmitter from 'node:events'
 import os from 'node:os'
 import path from 'node:path'
 import ora, {type Ora} from 'ora'
+
+import type {OutputMode} from '../ui/utils/renderer-utils.js'
 
 import SfpmCommand from '../sfpm-command.js'
 import {
@@ -34,12 +36,13 @@ import {
   getPackagesForTier,
   resolveAction,
 } from '../types/bootstrap.js'
+import {attachBuildBridge} from '../ui/adapters/build-event-bridge.js'
+import {attachInstallBridge} from '../ui/adapters/install-event-bridge.js'
 import {
   errorBox, infoBox, successBox,
 } from '../ui/boxes.js'
-import {BuildProgressRenderer, OutputMode} from '../ui/build-progress-renderer.js'
 import {connectDevHub} from '../ui/connect-devhub.js'
-import {InstallProgressRenderer} from '../ui/install-progress-renderer.js'
+import {renderApp} from '../ui/renderers/run-orchestrator.js'
 
 const BOOTSTRAP_REPO = 'https://github.com/b64hub/sfpm-bootstrap'
 
@@ -250,6 +253,12 @@ export default class Bootstrap extends SfpmCommand {
 
     const devhubOrg = await Org.create({aliasOrUsername: ctx.targetOrg})
 
+    // json is the only non-ink mode; it's fully silent during the run (the
+    // SfpmCommand base class emits the JSON envelope at the end).
+    const isInk = ctx.mode !== 'json';
+    const uiBus = isInk ? new EventEmitter() : undefined;
+    const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
+
     const buildOrchestrator = BuildOrchestrator.create(
       projectService.getDefinitionProvider(),
       {devhub: devhubOrg},
@@ -258,19 +267,26 @@ export default class Bootstrap extends SfpmCommand {
         force, includeDependencies: true,
         validation: 'org',
       },
-      ctx.logger,
+      isInk ? pinoLogger : ctx.logger,
     )
 
-    const buildRenderer = new BuildProgressRenderer({
-      logger: {
-        error: (msgOrError: Error | string) => this.error(msgOrError),
-        log: (msg: string) => this.log(msg),
-      },
-      mode: ctx.mode,
-    })
-    buildRenderer.attachTo(buildOrchestrator.buildBus, buildOrchestrator.orchestrationBus)
+    let inkInstance: ReturnType<typeof renderApp> | undefined;
+    if (uiBus) {
+      attachBuildBridge(buildOrchestrator.buildBus, buildOrchestrator.orchestrationBus, uiBus);
+      inkInstance = renderApp(uiBus, {
+        logPath,
+        mode: ctx.mode === 'interactive' ? 'interactive' : 'plain',
+        org: {alias: ctx.targetOrg},
+      });
+    }
 
-    return buildOrchestrator.buildAll(packageNames);
+    try {
+      const result = await buildOrchestrator.buildAll(packageNames);
+      if (inkInstance) await inkInstance.waitUntilExit();
+      return result;
+    } finally {
+      inkInstance?.unmount();
+    }
   }
 
   private async cleanup(tmpDir: string, isInteractive: boolean): Promise<void> {
@@ -317,8 +333,8 @@ export default class Bootstrap extends SfpmCommand {
     org: Org,
     options: {ctx: BootstrapContext; packages: BootstrapPackageConfig[]; provider: ProjectDefinitionProvider; tmpDir: string},
   ): Promise<void> {
-    const creator = new PackageCreator(org, options.ctx.logger)
-    await creator.ensurePackages(options.packages, options.provider, options.tmpDir, async name => {
+    const manager = PackageManager.getInstance(org, options.ctx.logger)
+    await manager.ensurePackages(options.packages, options.provider, options.tmpDir, async name => {
       if (!options.ctx.isInteractive) return true
       return confirm({
         default: true,
@@ -391,6 +407,12 @@ export default class Bootstrap extends SfpmCommand {
 
     const targetOrg = await Org.create({aliasOrUsername: ctx.targetOrg})
 
+    // json is the only non-ink mode; it's fully silent during the run (the
+    // SfpmCommand base class emits the JSON envelope at the end).
+    const isInk = ctx.mode !== 'json';
+    const uiBus = isInk ? new EventEmitter() : undefined;
+    const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
+
     const installOrchestrator = InstallOrchestrator.forArtifact(
       targetOrg,
       projectService.getDefinitionProvider(),
@@ -400,20 +422,26 @@ export default class Bootstrap extends SfpmCommand {
         includeDependencies: true,
         testLevel: 'RunLocalTests',
       },
-      ctx.logger,
+      isInk ? pinoLogger : ctx.logger,
     )
 
-    const installRenderer = new InstallProgressRenderer({
-      logger: {
-        error: (msgOrError: Error | string) => this.error(msgOrError),
-        log: (msg: string) => this.log(msg),
-      },
-      mode: ctx.mode,
-      targetOrg: ctx.targetOrg,
-    })
-    installRenderer.attachTo(installOrchestrator.installBus, installOrchestrator.orchestrationBus)
+    let inkInstance: ReturnType<typeof renderApp> | undefined;
+    if (uiBus) {
+      attachInstallBridge(installOrchestrator.installBus, installOrchestrator.orchestrationBus, uiBus);
+      inkInstance = renderApp(uiBus, {
+        logPath,
+        mode: ctx.mode === 'interactive' ? 'interactive' : 'plain',
+        org: {alias: ctx.targetOrg},
+      });
+    }
 
-    const installResult = await installOrchestrator.installAll(packageNames)
+    let installResult;
+    try {
+      installResult = await installOrchestrator.installAll(packageNames);
+      if (inkInstance) await inkInstance.waitUntilExit();
+    } finally {
+      inkInstance?.unmount();
+    }
 
     return installResult.results.map(p => ({
       action: 'install' as BootstrapAction,
