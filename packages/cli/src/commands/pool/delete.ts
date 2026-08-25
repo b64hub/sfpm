@@ -8,7 +8,7 @@ import EventEmitter from 'node:events';
 import SfpmCommand from '../../sfpm-command.js';
 import {attachPoolDeleteBridge} from '../../ui/adapters/pool-delete-event-bridge.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
-import {renderPoolDelete} from '../../ui/run-pool-delete.js';
+import {renderPoolDelete} from '../../ui/renderers/run-pool-delete.js';
 
 export default class PoolDelete extends SfpmCommand {
   static override description = 'delete orgs from a pool'

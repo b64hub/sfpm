@@ -6,8 +6,7 @@ import {execSync} from 'node:child_process'
 import EventEmitter from 'node:events'
 
 import {attachInstallBridge} from '../../ui/adapters/install-event-bridge.js'
-import {InstallProgressRenderer} from '../../ui/install-progress-renderer.js'
-import {renderApp} from '../../ui/run.js'
+import {renderApp} from '../../ui/renderers/run-orchestrator.js'
 import Deploy, {ResolvedDeployFlags} from './index.js'
 
 export default class DeployArtifact extends Deploy {
@@ -19,11 +18,12 @@ export default class DeployArtifact extends Deploy {
   protected override async createOrchestrator(targetOrg: Org, resolvedFlags: ResolvedDeployFlags): Promise<{
     inkInstance?: ReturnType<typeof renderApp>;
     orchestrator: InstallOrchestrator;
-    renderer?: InstallProgressRenderer;
   }> {
     const {flags, logger, mode, projectConfig, projectGraph} = resolvedFlags
 
-    const isInk = mode === 'interactive';
+    // json is the only non-ink mode left; it's fully silent during the run
+    // (the SfpmCommand base class emits the JSON envelope at the end).
+    const isInk = mode !== 'json';
     const uiBus = isInk ? new EventEmitter() : undefined;
     const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
 
@@ -42,12 +42,10 @@ export default class DeployArtifact extends Deploy {
 
     if (isInk) {
       attachInstallBridge(orchestrator.installBus, orchestrator.orchestrationBus, uiBus!);
-      return {inkInstance: renderApp(uiBus!, {logPath}), orchestrator};
+      return {inkInstance: renderApp(uiBus!, {logPath, mode: mode === 'interactive' ? 'interactive' : 'plain'}), orchestrator};
     }
 
-    const renderer = this.createRenderer(mode, flags['target-org']!)
-    renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
-    return {orchestrator, renderer}
+    return {orchestrator}
   }
 
   protected override async createProjectService(projectDir: string, packages: string[]): Promise<ProjectService> {

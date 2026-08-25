@@ -2,7 +2,7 @@ import {Flags} from '@oclif/core';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {poolListFixture} from '../../ui/fixtures/pool-list.js';
-import {renderPoolList} from '../../ui/run-pool-list.js';
+import {renderPoolList} from '../../ui/renderers/run-pool-list.js';
 
 export default class DevPoolListReplay extends SfpmCommand {
   static override description = 'Render the pool list UI with fixture data (dev only)';

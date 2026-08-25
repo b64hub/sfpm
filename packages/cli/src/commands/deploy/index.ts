@@ -9,10 +9,11 @@ import EventEmitter from 'node:events'
 // Register SFDMU data installer (side-effect import triggers decorator registration)
 import '@b64hub/sfpm-sfdmu'
 
+import type {OutputMode} from '../../ui/utils/renderer-utils.js'
+
 import SfpmCommand from '../../sfpm-command.js'
 import {attachInstallBridge} from '../../ui/adapters/install-event-bridge.js'
-import {InstallProgressRenderer, OutputMode} from '../../ui/install-progress-renderer.js'
-import {renderApp} from '../../ui/run.js'
+import {renderApp} from '../../ui/renderers/run-orchestrator.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
 import {resolveCliProjectDir} from '../../utils/project-dir.js'
 
@@ -68,11 +69,12 @@ export default class Deploy extends SfpmCommand {
   protected async createOrchestrator(targetOrg: Org, resolvedFlags: ResolvedDeployFlags): Promise<{
     inkInstance?: ReturnType<typeof renderApp>;
     orchestrator: InstallOrchestrator;
-    renderer?: InstallProgressRenderer;
   }> {
     const {flags, logger, mode, projectConfig, projectGraph} = resolvedFlags
 
-    const isInk = mode === 'interactive';
+    // json is the only non-ink mode left; it's fully silent during the run
+    // (the SfpmCommand base class emits the JSON envelope at the end).
+    const isInk = mode !== 'json';
     const uiBus = isInk ? new EventEmitter() : undefined;
     const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
 
@@ -91,12 +93,10 @@ export default class Deploy extends SfpmCommand {
 
     if (isInk) {
       attachInstallBridge(orchestrator.installBus, orchestrator.orchestrationBus, uiBus!);
-      return {inkInstance: renderApp(uiBus!, {logPath}), orchestrator};
+      return {inkInstance: renderApp(uiBus!, {logPath, mode: mode === 'interactive' ? 'interactive' : 'plain'}), orchestrator};
     }
 
-    const renderer = this.createRenderer(mode, flags['target-org'])
-    renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus)
-    return {orchestrator, renderer}
+    return {orchestrator}
   }
 
   /**
@@ -105,17 +105,6 @@ export default class Deploy extends SfpmCommand {
    */
   protected async createProjectService(projectDir: string, _packages: string[]): Promise<ProjectService> {
     return ProjectService.create(projectDir, new WorkspaceProvider({distAware: true, projectDir}));
-  }
-
-  protected createRenderer(mode: OutputMode, targetOrg: string): InstallProgressRenderer {
-    return new InstallProgressRenderer({
-      logger: {
-        error: (msgOrError: Error | string) => this.error(msgOrError),
-        log: (msg: string) => this.log(msg),
-      },
-      mode,
-      targetOrg,
-    });
   }
 
   public async execute(): Promise<void> {
@@ -139,8 +128,8 @@ export default class Deploy extends SfpmCommand {
 
     const resolvedFlags = await this.resolveFlags(packages, flags);
     const targetOrg = await Org.create({aliasOrUsername: flags['target-org']});
-    const {inkInstance, orchestrator, renderer} = await this.createOrchestrator(targetOrg, resolvedFlags)
-    await this.runOrchestrator(orchestrator, resolvedFlags.resolvedPackages, renderer, inkInstance)
+    const {inkInstance, orchestrator} = await this.createOrchestrator(targetOrg, resolvedFlags)
+    await this.runOrchestrator(orchestrator, resolvedFlags.resolvedPackages, inkInstance)
   }
 
   protected async resolveFlags(packages: string[], flags: Record<string, any>): Promise<ResolvedDeployFlags> {
@@ -181,7 +170,6 @@ export default class Deploy extends SfpmCommand {
   protected async runOrchestrator(
     orchestrator: InstallOrchestrator,
     resolvedPackages: string[],
-    renderer: InstallProgressRenderer | undefined,
     inkInstance?: ReturnType<typeof renderApp>,
   ): Promise<void> {
     try {
@@ -202,8 +190,6 @@ export default class Deploy extends SfpmCommand {
         this.error(`Deploy failed for: ${failedNames}`, {exit: 2})
       }
     } catch (error) {
-      renderer?.handleError(error as Error)
-
       if (error instanceof Error) {
         this.error(error.message, {exit: 2})
       }

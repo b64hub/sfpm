@@ -1,6 +1,6 @@
 import type {AppState, TreeNode} from '../../src/ui/state/types.js';
 
-import {initialState, reducer} from '../../src/ui/state/reducer.js';
+import {initialState, reducer} from '../../src/ui/state/orchestration-reducer.js';
 import {deriveStatus} from '../../src/ui/state/selectors.js';
 
 type Action = Record<string, unknown> & {type: string};

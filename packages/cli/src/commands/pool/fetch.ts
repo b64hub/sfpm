@@ -8,8 +8,8 @@ import ora from 'ora';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {successBox} from '../../ui/boxes.js';
-import {formatExpiry} from '../../ui/pool-utils.js';
-import {terminalLink} from '../../ui/renderer-utils.js';
+import {formatExpiry} from '../../ui/utils/pool-utils.js';
+import {terminalLink} from '../../ui/utils/renderer-utils.js';
 
 export default class PoolFetch extends SfpmCommand {
   static override description = 'fetch an org from a pool'

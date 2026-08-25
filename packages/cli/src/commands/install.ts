@@ -11,8 +11,7 @@ import '@b64hub/sfpm-sfdmu'
 
 import SfpmCommand from '../sfpm-command.js'
 import {attachInstallBridge} from '../ui/adapters/install-event-bridge.js'
-import {InstallProgressRenderer} from '../ui/install-progress-renderer.js'
-import {renderApp} from '../ui/run.js'
+import {renderApp} from '../ui/renderers/run-orchestrator.js'
 import {resolveCliProjectDir} from '../utils/project-dir.js'
 
 export default class Install extends SfpmCommand {
@@ -105,7 +104,7 @@ export default class Install extends SfpmCommand {
 
     const targetOrg = await Org.create({aliasOrUsername: flags['target-org']})
 
-    const isInk = mode === 'interactive';
+    const isInk = mode !== 'json';
     const uiBus = isInk ? new EventEmitter() : undefined;
     const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
 
@@ -119,22 +118,13 @@ export default class Install extends SfpmCommand {
       pinoLogger,
     )
 
-    let renderer: InstallProgressRenderer | undefined;
+    // json is the only non-ink mode left; it's fully silent during the run
+    // (the SfpmCommand base class emits the JSON envelope at the end).
     let inkInstance: ReturnType<typeof renderApp> | undefined;
 
     if (isInk) {
       attachInstallBridge(orchestrator.installBus, orchestrator.orchestrationBus, uiBus!);
-      inkInstance = renderApp(uiBus!, {logPath});
-    } else {
-      renderer = new InstallProgressRenderer({
-        logger: {
-          error: (msgOrError: Error | string) => this.error(msgOrError),
-          log: (msg: string) => this.log(msg),
-        },
-        mode,
-        targetOrg: flags['target-org'],
-      });
-      renderer.attachTo(orchestrator.installBus, orchestrator.orchestrationBus);
+      inkInstance = renderApp(uiBus!, {logPath, mode: mode === 'interactive' ? 'interactive' : 'plain'});
     }
 
     const tracer = createTracer({serviceName: 'sfpm-cli'})
@@ -162,8 +152,6 @@ export default class Install extends SfpmCommand {
 
       return result
     } catch (error) {
-      renderer?.handleError(error as Error)
-
       if (error instanceof Error) {
         this.error(error.message, {exit: 2})
       }

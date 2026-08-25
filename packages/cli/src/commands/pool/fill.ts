@@ -12,7 +12,7 @@ import path from 'node:path';
 import SfpmCommand from '../../sfpm-command.js';
 import {attachPoolFillBridge} from '../../ui/adapters/pool-fill-event-bridge.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
-import {renderPoolFill} from '../../ui/run-pool-fill.js';
+import {renderPoolFill} from '../../ui/renderers/run-pool-fill.js';
 import {resolveCliProjectDir} from '../../utils/project-dir.js';
 
 import '@b64hub/sfpm-sfdmu';

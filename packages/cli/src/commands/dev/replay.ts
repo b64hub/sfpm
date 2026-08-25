@@ -2,7 +2,7 @@ import {Args, Flags} from '@oclif/core';
 import EventEmitter from 'node:events';
 
 import SfpmCommand from '../../sfpm-command.js';
-import {renderApp} from '../../ui/run.js';
+import {renderApp} from '../../ui/renderers/run-orchestrator.js';
 
 // Built-in fixtures — same arrays the unit tests use.
 const FIXTURES: Record<string, Array<Record<string, unknown> & {type: string}>> = {
