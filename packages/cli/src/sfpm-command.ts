@@ -70,6 +70,14 @@ export default abstract class SfpmCommand extends Command {
   protected outputMode!: OutputMode;
   /** Pino-backed logger for diagnostic output (writes to stderr). */
   protected sfpmLogger!: CliLogger;
+  /**
+   * Directory `writeTurboResult` writes `dist/<command>-result.json` into.
+   * `process.cwd()` is only the package directory when turbo itself invokes
+   * the per-package npm script — a direct `sfpm build <pkg> --turbo` from
+   * the repo root has cwd at the project root instead. Commands that support
+   * `--turbo` must set this to the resolved package directory in `execute()`.
+   */
+  protected turboResultDir?: string;
 
   /**
    * Create a run-scoped multistream logger for the orchestrator.
@@ -112,7 +120,7 @@ export default abstract class SfpmCommand extends Command {
     }
 
     try {
-      const cap = this.outputMode === 'interactive' ? suppressStderr() : null;
+      const cap = this.outputMode === 'json' ? null : suppressStderr();
       const result = await this.execute().finally(() => {
         const captured = cap?.release() ?? '';
         if (captured) process.stderr.write(captured);
@@ -171,7 +179,7 @@ export default abstract class SfpmCommand extends Command {
    */
   private writeTurboResult(envelope: JsonEnvelope): void {
     try {
-      const dir = path.join(process.cwd(), DIST_DIR);
+      const dir = path.join(this.turboResultDir ?? process.cwd(), DIST_DIR);
       fs.mkdirSync(dir, {recursive: true});
       fs.writeFileSync(path.join(dir, `${this.id ?? 'unknown'}-result.json`), JSON.stringify(envelope));
     } catch (error) {

@@ -432,6 +432,11 @@ export default class Build extends SfpmCommand {
     // Resolve user input to canonical scoped package names
     const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: this.outputMode === 'json'})
 
+    if (flags.turbo) {
+      // getPackageDir() already returns an absolute path — don't re-join with projectDir
+      this.turboResultDir = projectConfig.getPackageDir(resolvedPackages[0]);
+    }
+
     // Resolve validation level: --no-validation → 'none', --validation=X → X, default → 'local'
     const validation = (flags.validation === 'false' ? 'none' : flags.validation ?? 'local') as 'full' | 'local' | 'none' | 'org';
 
