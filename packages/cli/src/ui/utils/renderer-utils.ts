@@ -70,6 +70,18 @@ export const sym = {
 export type OutputMode = 'interactive' | 'json' | 'plain';
 
 /**
+ * Minimal handle every renderer (build/install, pool fill, pool delete)
+ * returns, whether it mounted ink or a plain text subscriber. Callers only
+ * ever need these two methods — keeping the contract here, instead of
+ * per-renderer, is what lets each `render*()` fork between ink and plain
+ * internally without its caller branching on mode at all.
+ */
+export interface RenderHandle {
+  unmount(): void;
+  waitUntilExit(): Promise<unknown>;
+}
+
+/**
  * Logger interface for rendering output.
  */
 export interface OutputLogger {

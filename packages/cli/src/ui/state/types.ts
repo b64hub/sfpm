@@ -34,21 +34,7 @@ export interface AppState {
   logs: LogRecord[];
   phase: 'done' | 'failed' | 'idle' | 'running' | 'validating';
   startedAt?: number;
-  /**
-   * Ordered log of package/step running+terminal transitions, in the order
-   * they occurred. Used by OrchestrationView's plain-mode continuous stream —
-   * ignored in interactive mode, where everything is deferred to one atomic
-   * flush instead. Each entry references a node id; the node itself is
-   * looked up live from `levels` at render time.
-   */
-  streamLog: StreamEntry[];
   validation: TreeNode[];
-}
-
-export interface StreamEntry {
-  /** Unique per transition, e.g. `${nodeId}:${status}` — a node appears twice (running, then terminal). */
-  id: string;
-  nodeId: string;
 }
 
 export {type ErrorDetail} from '@b64hub/sfpm-core';

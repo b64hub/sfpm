@@ -62,7 +62,7 @@ export default class PoolFill extends SfpmCommand {
     const projectDir = resolveCliProjectDir();
     const orgConfig = await this.loadOrgConfig(this.sfpmLogger, projectDir);
     const tags = flags.tag as string[];
-    const uiBus = mode === 'interactive' ? new EventEmitter() : undefined;
+    const uiBus = mode === 'json' ? undefined : new EventEmitter();
     const {logger: runLogger} = this.createRunLogger(uiBus);
 
     const {alias, devhub} = await connectDevHub({
@@ -73,14 +73,13 @@ export default class PoolFill extends SfpmCommand {
     // One Ink instance for the whole run — every tag's manager bridges its
     // events onto the same uiBus, tagged, so pools provision concurrently
     // and appear side by side instead of one after another.
-    const inkInstance = mode === 'interactive' ? renderPoolFill(uiBus!, alias) : undefined;
+    const inkInstance = uiBus ? renderPoolFill(uiBus, alias, mode === 'interactive' ? 'interactive' : 'plain') : undefined;
 
     let results: Array<Awaited<ReturnType<typeof this.provisionTag>>>;
     try {
       results = await Promise.all(tags.map(tag => this.provisionTag({
         config: this.buildPoolConfig(flags, tag, projectDir, orgConfig),
         devhub,
-        mode,
         projectDir,
         runLogger: runLogger.child({tag}),
         tag,
@@ -175,9 +174,9 @@ export default class PoolFill extends SfpmCommand {
   }
 
   private async provisionTag(options: {
-    config: PoolConfig; devhub: Org; mode: string; projectDir: string; runLogger: Logger; tag: string; uiBus?: EventEmitter; useLocalSource?: boolean;
+    config: PoolConfig; devhub: Org; projectDir: string; runLogger: Logger; tag: string; uiBus?: EventEmitter; useLocalSource?: boolean;
   }): Promise<PoolProvisionResult> {
-    const {config, devhub, mode, projectDir, runLogger, tag, uiBus, useLocalSource} = options;
+    const {config, devhub, projectDir, runLogger, tag, uiBus, useLocalSource} = options;
 
     const {deployTask, tasks} = this.buildTasks(config, devhub, projectDir, useLocalSource);
     const {manager} = createPoolServices({
@@ -187,8 +186,8 @@ export default class PoolFill extends SfpmCommand {
       tasks,
     });
 
-    if (mode === 'interactive') {
-      attachPoolFillBridge(manager.bus, uiBus!, tag);
+    if (uiBus) {
+      attachPoolFillBridge(manager.bus, uiBus, tag);
       // Wire per-package events from DeploymentTask through the pool manager
       deployTask.setPackageForwarder({
         packageComplete: p => manager.bus.emit('pool:package:complete', {...p, timestamp: new Date()}),

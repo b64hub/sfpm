@@ -4,6 +4,7 @@ import {render} from 'ink';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {PoolFillApp} from '../../ui/apps/PoolFillApp.js';
+import {renderPoolFill} from '../../ui/renderers/run-pool-fill.js';
 
 const FIXTURES: Record<string, Array<Record<string, unknown> & {type: string}>> = {
   'happy-path':      (await import('../../ui/fixtures/pool-happy-path.js')).poolHappyPathEvents,
@@ -39,7 +40,7 @@ export default class DevPoolReplay extends SfpmCommand {
     if (flags.step) {
       await this.runStepMode(events, bus, flags.alias);
     } else {
-      const app = render(<PoolFillApp bus={bus} devhubAlias={flags.alias} />);
+      const app = renderPoolFill(bus, flags.alias, this.outputMode === 'plain' ? 'plain' : 'interactive');
 
       let chain = Promise.resolve();
       for (const {type, ...payload} of events) {

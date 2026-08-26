@@ -3,7 +3,7 @@ import type {ReactNode} from 'react';
 import {Box, Static, Text} from 'ink';
 import {useStdout} from 'ink';
 
-import type {StreamEntry, TreeNode} from '../state/types.js';
+import type {TreeNode} from '../state/types.js';
 
 import {deriveStatus} from '../state/selectors.js';
 import {toRowProps} from '../state/adapters.js';
@@ -30,26 +30,6 @@ export interface OrchestrationViewProps {
    * using the same spec as `getColumns`.
    */
   headerColumns?: ReactNode;
-  /**
-   * 'interactive' (default) defers everything to one atomic Static flush once
-   * every package is terminal — clean scrollback, ordered by level.
-   * 'plain' instead streams `streamLog` into Static continuously, in
-   * whatever order transitions actually happened — a live CI log, not a
-   * final dump. Ink itself never prints the live area in non-interactive
-   * mode, so plain output would otherwise be silent until the very end.
-   */
-  mode?: 'interactive' | 'plain';
-  /** Ordered package/step transitions. Required for 'plain' mode; ignored otherwise. */
-  streamLog?: StreamEntry[];
-}
-
-/** Recursively finds a package or step node by id anywhere under a level. */
-function findNode(node: TreeNode, id: string): TreeNode | undefined {
-  if (node.id === id) return node;
-  for (const child of node.children) {
-    const found = findNode(child, id);
-    if (found) return found;
-  }
 }
 
 // ---- constants --------------------------------------------------------------
@@ -108,9 +88,7 @@ export function OrchestrationView({
   getColumns,
   headerColumns,
   levels,
-  mode = 'interactive',
   showValidation = true,
-  streamLog = [],
   validation,
 }: OrchestrationViewProps) {
   const {stdout} = useStdout();
@@ -127,19 +105,9 @@ export function OrchestrationView({
 
   const rowProps = (node: TreeNode) => toRowProps(node, getColumns);
 
-  // Plain mode: stream every transition as its own Static entry, in log
-  // order, regardless of level/atomic-flush grouping. A node can appear
-  // twice (once running, once terminal) — each needs its own key.
-  const streamedPackages: StaticItem[] = mode === 'plain'
-    ? streamLog.flatMap((entry): StaticItem[] => {
-      const node = levels.map(l => findNode(l, entry.nodeId)).find(Boolean);
-      return node ? [{key: entry.id, kind: 'pkg', node}] : [];
-    })
-    : donePackages.map((node): StaticItem => ({key: node.id, kind: 'pkg', node}));
-
   const staticItems: StaticItem[] = [
     {kind: 'header', totalLevels: levels.length, totalPackages},
-    ...streamedPackages,
+    ...donePackages.map((node): StaticItem => ({key: node.id, kind: 'pkg', node})),
   ];
 
   // Live area groups — all empty when allTerminal (Static has taken over, no duplication).

@@ -505,49 +505,4 @@ describe('ui: reducer', () => {
     });
   });
 
-  // ---- streamLog (plain-mode continuous stream) -----------------------------
-
-  describe('streamLog', () => {
-    it('records running then terminal for a package, in order', () => {
-      const p = new ScenarioPlayer();
-      p.play([init([['pkg-a']]), running('pkg-a'), complete('pkg-a', 'success')]);
-      const ids = p.currentState().streamLog.map(e => e.nodeId);
-      expect(ids).to.deep.equal(['pkg:pkg-a', 'pkg:pkg-a']);
-      expect(p.currentState().streamLog.map(e => e.id)).to.deep.equal(['pkg:pkg-a:running', 'pkg:pkg-a:success']);
-    });
-
-    it('records step transitions alongside package transitions, in event order', () => {
-      const p = new ScenarioPlayer();
-      p.play([
-        init([['pkg-a']]),
-        running('pkg-a'),
-        stepStart('pkg-a', 'pre-hooks'),
-        stepComplete('pkg-a', 'pre-hooks', 'success'),
-        complete('pkg-a', 'success'),
-      ]);
-      expect(p.currentState().streamLog.map(e => e.nodeId)).to.deep.equal([
-        'pkg:pkg-a', 'pkg:pkg-a/step:pre-hooks', 'pkg:pkg-a/step:pre-hooks', 'pkg:pkg-a',
-      ]);
-    });
-
-    it('does not record pending (node creation is not a transition)', () => {
-      const p = new ScenarioPlayer();
-      p.play([init([['pkg-a', 'pkg-b']])]);
-      expect(p.currentState().streamLog).to.deep.equal([]);
-    });
-
-    it('preserves real completion order across concurrent packages, not declaration order', () => {
-      const p = new ScenarioPlayer();
-      p.play([
-        init([['pkg-a', 'pkg-b']]),
-        running('pkg-a'),
-        running('pkg-b'),
-        complete('pkg-b', 'success'), // pkg-b finishes first despite being declared second
-        complete('pkg-a', 'success'),
-      ]);
-      expect(p.currentState().streamLog.map(e => e.nodeId)).to.deep.equal([
-        'pkg:pkg-a', 'pkg:pkg-b', 'pkg:pkg-b', 'pkg:pkg-a',
-      ]);
-    });
-  });
 });

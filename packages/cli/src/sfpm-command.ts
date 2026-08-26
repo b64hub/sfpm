@@ -115,7 +115,7 @@ export default abstract class SfpmCommand extends Command {
       pretty: this.outputMode !== 'json',
     });
 
-    if (this.outputMode !== 'json') {
+    if (this.outputMode === 'interactive') {
       this.logHeader();
     }
 

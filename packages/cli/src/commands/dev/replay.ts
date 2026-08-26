@@ -50,7 +50,7 @@ export default class DevReplay extends SfpmCommand {
       await this.runStepMode(events, bus);
     } else {
       // Auto-play: chain events with a fixed delay between each.
-      const app = renderApp(bus);
+      const app = renderApp(bus, {mode: this.outputMode === 'plain' ? 'plain' : 'interactive'});
       let chain = Promise.resolve();
       for (const {type, ...payload} of events) {
         chain = chain.then(() => delay(flags.speed)).then(() => {

@@ -57,13 +57,13 @@ export default class PoolDelete extends SfpmCommand {
 
     // One Ink instance for the whole run — every tag deletes concurrently
     // against its own manager/bus, tagged, so pools appear side by side.
-    const uiBus = mode === 'interactive' ? new EventEmitter() : undefined;
-    const inkInstance = mode === 'interactive' ? renderPoolDelete(uiBus!, alias) : undefined;
+    const uiBus = mode === 'json' ? undefined : new EventEmitter();
+    const inkInstance = uiBus ? renderPoolDelete(uiBus, alias, mode === 'interactive' ? 'interactive' : 'plain') : undefined;
 
     let results: PoolDeleteResult[];
     try {
       results = await Promise.all(tags.map(tag => this.deleteTag({
-        devhub, flags, mode, tag, uiBus,
+        devhub, flags, tag, uiBus,
       })));
     } catch (error) {
       inkInstance?.unmount();
@@ -79,9 +79,9 @@ export default class PoolDelete extends SfpmCommand {
   }
 
   private async deleteTag(options: {
-    devhub: Org; flags: Record<string, any>; mode: string; tag: string; uiBus?: EventEmitter;
+    devhub: Org; flags: Record<string, any>; tag: string; uiBus?: EventEmitter;
   }): Promise<PoolDeleteResult> {
-    const {devhub, flags, mode, tag, uiBus} = options;
+    const {devhub, flags, tag, uiBus} = options;
 
     const {manager} = createPoolServices({
       devhub,
@@ -89,9 +89,9 @@ export default class PoolDelete extends SfpmCommand {
       poolType: flags.type as OrgTypes,
     });
 
-    if (mode === 'interactive') {
-      attachPoolDeleteBridge(manager.bus, uiBus!, tag);
-      uiBus!.emit('delete:start', {tag});
+    if (uiBus) {
+      attachPoolDeleteBridge(manager.bus, uiBus, tag);
+      uiBus.emit('delete:start', {tag});
     }
 
     const result = await manager.delete(tag, {
@@ -99,8 +99,8 @@ export default class PoolDelete extends SfpmCommand {
       myPool: flags['my-pool'],
     });
 
-    if (mode === 'interactive') {
-      uiBus!.emit('delete:done', {deleted: result.deleted.length, errors: result.errors, tag});
+    if (uiBus) {
+      uiBus.emit('delete:done', {deleted: result.deleted.length, errors: result.errors, tag});
     }
 
     return result;
