@@ -85,7 +85,18 @@ export async function buildTurboAggregate(options: BuildTurboAggregateOptions): 
       continue;
     }
 
-    const orchestration = JSON.parse(fs.readFileSync(resultPath, 'utf8')) as OrchestrationResult<PackageBuildResult>;
+    // `sfpm build --json` wraps the command's return value in a `{command, duration, status, result}`
+    // envelope (see SfpmCommand.run) — the OrchestrationResult itself lives under `.result`.
+    const {result: orchestration} = JSON.parse(fs.readFileSync(resultPath, 'utf8')) as {result?: OrchestrationResult<PackageBuildResult>};
+    if (!orchestration) {
+      logger.error(`Build result at ${resultPath} has no result payload — the build likely failed before producing output`);
+      failedPackages.push(packageName);
+      packages.push({
+        packageName, packageType, skipped: false, success: false,
+      });
+      continue;
+    }
+
     const packageResult = orchestration.results.find(r => r.packageName === packageName);
     if (!packageResult) {
       logger.error(`Build result at ${resultPath} has no entry for '${packageName}'`);

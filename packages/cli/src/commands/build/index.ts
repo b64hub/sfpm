@@ -111,7 +111,7 @@ export default class Build extends SfpmCommand {
   }
   static override strict = false
 
-  public async execute(): Promise<void> {
+  public async execute(): Promise<OrchestrationResult<PackageBuildResult> | void> {
     const resolved = await this.resolveFlags()
 
     // Auto-create a scratch org for source validation if needed
@@ -124,7 +124,7 @@ export default class Build extends SfpmCommand {
     }
 
     try {
-      await this.buildOrchestrated(resolved)
+      return await this.buildOrchestrated(resolved)
     } finally {
       // Clean up auto-created scratch org (skip if --async defers to watcher)
       if (resolved.autoCreatedBuildOrg && !resolved.async) {
@@ -199,6 +199,12 @@ export default class Build extends SfpmCommand {
 
       this.handleResult(result, resolved, validationBus, inkInstance);
       return result;
+    } catch (error) {
+      if (error instanceof Error) {
+        this.error(error.message, {exit: 2})
+      }
+
+      throw error
     } finally {
       inkInstance?.unmount();
     }
