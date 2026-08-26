@@ -176,11 +176,12 @@ export function toWorkspacePackageJson(
     name: packageName.includes('/') ? packageName : `${options.npmScope}/${packageName}`,
     private: true,
     scripts: {
-      // `--json` output is redirected to disk so `build-turbo-aggregate` can
-      // read it back after `turbo run sfpm:build` — the same script still
-      // works for direct/non-turbo invocation, it just also leaves this file
-      // behind (see BuildResult in @b64hub/sfpm-actions).
-      'sfpm:build': `sfpm build ${packageName} --turbo --json > ${DIST_DIR}/build-result.json`,
+      // `--turbo` implies plain (non-interactive) output and tells the CLI
+      // to persist its result to `dist/build-result.json` (see
+      // SfpmCommand.writeTurboResult) once the build has fully finished, so
+      // `build-turbo-aggregate` can read it back after `turbo run sfpm:build`
+      // without losing it to dist cleanup that happens mid-build.
+      'sfpm:build': `sfpm build ${packageName} --turbo`,
       'sfpm:deploy': `sfpm deploy ${packageName} --turbo`,
       'sfpm:install': `sfpm install ${packageName} --turbo`,
     },

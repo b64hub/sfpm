@@ -1,9 +1,11 @@
-import type {LogLevel} from '@b64hub/sfpm-core';
 import type EventEmitter from 'node:events';
 
+import {DIST_DIR, type LogLevel} from '@b64hub/sfpm-core';
 import {Command, Flags} from '@oclif/core';
 import chalk from 'chalk';
 import gradient from 'gradient-string';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import type {OutputMode} from './ui/utils/renderer-utils.js';
 
@@ -116,33 +118,35 @@ export default abstract class SfpmCommand extends Command {
         if (captured) process.stderr.write(captured);
       });
 
-      if (this.outputMode === 'json') {
-        const envelope: JsonEnvelope = {
-          command: this.id ?? 'unknown',
-          duration: Date.now() - startTime,
-          status: 'success',
-        };
+      const envelope: JsonEnvelope = {
+        command: this.id ?? 'unknown',
+        duration: Date.now() - startTime,
+        status: 'success',
+      };
 
-        if (result !== undefined) {
-          envelope.result = result;
-        }
-
-        this.log(JSON.stringify(envelope));
+      if (result !== undefined) {
+        envelope.result = result;
       }
+
+      // stdout format follows outputMode (json vs the ink UI); the turbo
+      // result file is orthogonal — `--turbo` needs it regardless of whether
+      // `--json` was also passed, so CI can render plain/interactive progress
+      // while still handing the aggregator a file to read.
+      if (this.outputMode === 'json') this.log(JSON.stringify(envelope));
+      if (flags.turbo) this.writeTurboResult(envelope);
 
       return result;
     } catch (error: unknown) {
-      if (this.outputMode === 'json') {
-        const err = error instanceof Error ? error : new Error(String(error));
-        const envelope: JsonEnvelope = {
-          command: this.id ?? 'unknown',
-          duration: Date.now() - startTime,
-          error: {message: err.message},
-          status: 'error',
-        };
+      const err = error instanceof Error ? error : new Error(String(error));
+      const envelope: JsonEnvelope = {
+        command: this.id ?? 'unknown',
+        duration: Date.now() - startTime,
+        error: {message: err.message},
+        status: 'error',
+      };
 
-        this.log(JSON.stringify(envelope));
-      }
+      if (this.outputMode === 'json') this.log(JSON.stringify(envelope));
+      if (flags.turbo) this.writeTurboResult(envelope);
 
       throw error;
     }
@@ -156,5 +160,22 @@ export default abstract class SfpmCommand extends Command {
         + chalk.gray(' • ')
         + chalk.gray(`${this.config.version}`);
     this.log(header);
+  }
+
+  /**
+   * `--turbo` mode: persist the JSON envelope to `dist/<command>-result.json`.
+   * Written here — after `execute()` has fully returned — so it lands after
+   * any dist cleanup the command does mid-run, instead of relying on a shell
+   * redirect that opens the file before the build even starts (and loses it
+   * when the build empties `dist/`).
+   */
+  private writeTurboResult(envelope: JsonEnvelope): void {
+    try {
+      const dir = path.join(process.cwd(), DIST_DIR);
+      fs.mkdirSync(dir, {recursive: true});
+      fs.writeFileSync(path.join(dir, `${this.id ?? 'unknown'}-result.json`), JSON.stringify(envelope));
+    } catch (error) {
+      this.sfpmLogger?.warn(`Failed to write turbo result file: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }

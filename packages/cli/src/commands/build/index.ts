@@ -420,6 +420,7 @@ export default class Build extends SfpmCommand {
       }
 
       flags['no-dependencies'] = true
+      flags.force = true
     }
 
     const projectDir = resolveCliProjectDir();

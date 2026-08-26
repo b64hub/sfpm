@@ -118,8 +118,6 @@ export default class Install extends SfpmCommand {
       pinoLogger,
     )
 
-    // json is the only non-ink mode left; it's fully silent during the run
-    // (the SfpmCommand base class emits the JSON envelope at the end).
     let inkInstance: ReturnType<typeof renderApp> | undefined;
 
     if (isInk) {
