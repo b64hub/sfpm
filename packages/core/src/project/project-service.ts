@@ -237,10 +237,12 @@ export default class ProjectService {
   public resolveBuildConfig(packageName: string, runtimeOptions?: BuildOptions): BuildOptions {
     const pkg = this.definitionProvider.getPackageDefinition(packageName);
     const packageBuildConfig = pkg?.packageOptions?.build;
+    const scratchDefinitionFile = (this.sfpmConfig.orgs as undefined | {scratch?: {definitionFile?: string}})?.scratch?.definitionFile;
 
     return {
       // Layer 1: global defaults
       ...(this.sfpmConfig.sourceApiVersion ? {apiVersion: this.sfpmConfig.sourceApiVersion} : {}),
+      ...(scratchDefinitionFile ? {unlocked: {definitionFile: path.resolve(this.projectDirectory, scratchDefinitionFile)}} : {}),
       // Layer 2: per-package config
       ...packageBuildConfig,
       // Layer 3: runtime overrides

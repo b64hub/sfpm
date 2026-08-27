@@ -15,6 +15,7 @@ import {Duration} from '@salesforce/kit';
 import {
   Package, PackageEvents, PackageVersion, PackageVersionEvents, SubscriberPackageVersion,
 } from '@salesforce/packaging';
+import fs from 'node:fs';
 
 import PackageService from '../../src/package/package-service.js';
 
@@ -56,7 +57,7 @@ describe('PackageService', () => {
       }),
     };
     vi.mocked(Lifecycle.getInstance).mockReturnValue(mockLifecycle as any);
-    vi.mocked(SfProject.resolve).mockResolvedValue({fake: 'project'} as any);
+    vi.mocked(SfProject.resolve).mockResolvedValue({fake: 'project', getPath: () => '/fake/project'} as any);
   });
 
   // -------------------------------------------------------------------------
@@ -96,7 +97,7 @@ describe('PackageService', () => {
 
       expect(Package.create).toHaveBeenCalledWith(
         mockConnection,
-        {fake: 'project'},
+        expect.objectContaining({fake: 'project'}),
         expect.objectContaining({
           description: '',
           name: 'my-pkg',
@@ -146,7 +147,7 @@ describe('PackageService', () => {
           connection: mockConnection,
           installationkey: 'key123',
           packageId: '0HoXXX',
-          project: {fake: 'project'},
+          project: expect.objectContaining({fake: 'project'}),
           versionnumber: '1.0.0.1',
         }),
         expect.anything(),
@@ -206,6 +207,46 @@ describe('PackageService', () => {
       const {service} = createService({determineIfDevHubOrg: vi.fn().mockReturnValue(false)});
 
       await expect(service.createPackageVersion('0HoXXX')).rejects.toThrow('devhub');
+    });
+
+    it('resolves an explicit definitionfile to an absolute path against the project root', async () => {
+      const {service} = createService();
+      vi.mocked(PackageVersion.create).mockResolvedValue({Status: 'Success'} as any);
+
+      await service.createPackageVersion('0HoXXX', {definitionfile: 'config/my-def.json'});
+
+      expect(PackageVersion.create).toHaveBeenCalledWith(
+        expect.objectContaining({definitionfile: '/fake/project/config/my-def.json'}),
+        expect.anything(),
+      );
+    });
+
+    it('falls back to the conventional definition file only when it exists', async () => {
+      const {service} = createService();
+      vi.mocked(PackageVersion.create).mockResolvedValue({Status: 'Success'} as any);
+      const existsSync = vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+
+      await service.createPackageVersion('0HoXXX');
+
+      expect(PackageVersion.create).toHaveBeenCalledWith(
+        expect.objectContaining({definitionfile: '/fake/project/config/project-scratch-def.json'}),
+        expect.anything(),
+      );
+      existsSync.mockRestore();
+    });
+
+    it('omits definitionfile when unspecified and no conventional file exists', async () => {
+      const {service} = createService();
+      vi.mocked(PackageVersion.create).mockResolvedValue({Status: 'Success'} as any);
+      const existsSync = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+
+      await service.createPackageVersion('0HoXXX');
+
+      expect(PackageVersion.create).toHaveBeenCalledWith(
+        expect.objectContaining({definitionfile: undefined}),
+        expect.anything(),
+      );
+      existsSync.mockRestore();
     });
   });
 
@@ -469,7 +510,7 @@ describe('PackageService', () => {
 
       await service.listPackageVersions({packages: ['my-pkg']} as any);
 
-      expect(Package.listVersions).toHaveBeenCalledWith(mockConnection, {fake: 'project'}, {packages: ['my-pkg']});
+      expect(Package.listVersions).toHaveBeenCalledWith(mockConnection, expect.objectContaining({fake: 'project'}), {packages: ['my-pkg']});
     });
 
     it('falls back to an undefined project when resolution fails', async () => {
