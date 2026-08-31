@@ -53,12 +53,17 @@ function resolveScriptType(script: ScriptDefinition): ScriptType {
 }
 
 /**
- * Creates lifecycle hooks for running custom scripts during installation.
+ * Creates lifecycle hooks for running custom scripts during build and installation.
  *
- * Registers hooks on `install:pre` and `install:post` that execute
- * user-defined scripts. Supports shell scripts (`.sh`), TypeScript
+ * Registers hooks on `build:pre`/`build:post` and `install:pre`/`install:post`
+ * that execute user-defined scripts. Supports shell scripts (`.sh`), TypeScript
  * (`.ts`), JavaScript (`.js`), anonymous Apex (`.apex`), and npm
  * scripts from `package.json`.
+ *
+ * `pre` scripts run against the package's project directory; `post` scripts
+ * run against the package's dist directory when `operation` is `build`
+ * (installed/artifact packages have no separate dist dir, so `install:post`
+ * still runs against the package directory).
  *
  * Scripts are resolved from **two sources** (merged):
  *
@@ -97,26 +102,24 @@ export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
   const globalPreScripts = options.scripts.filter(s => s.timing === 'pre');
   const globalPostScripts = options.scripts.filter(s => (s.timing ?? 'post') === 'post');
 
+  const preHandler = async (context: HookContext) => {
+    const scripts = resolveScripts(context, 'pre', globalPreScripts);
+    if (scripts.length === 0) return;
+    await executeScripts(scripts, 'pre', context, failOnError);
+  };
+
+  const postHandler = async (context: HookContext) => {
+    const scripts = resolveScripts(context, 'post', globalPostScripts);
+    if (scripts.length === 0) return;
+    await executeScripts(scripts, 'post', context, failOnError);
+  };
+
   return {
     hooks: [
-      {
-        async handler(context: HookContext) {
-          const scripts = resolveScripts(context, 'pre', globalPreScripts);
-          if (scripts.length === 0) return;
-          await executeScripts(scripts, 'pre', context, failOnError);
-        },
-        operation: 'install',
-        timing: 'pre' as const,
-      },
-      {
-        async handler(context: HookContext) {
-          const scripts = resolveScripts(context, 'post', globalPostScripts);
-          if (scripts.length === 0) return;
-          await executeScripts(scripts, 'post', context, failOnError);
-        },
-        operation: 'install',
-        timing: 'post' as const,
-      },
+      {handler: preHandler, operation: 'build', timing: 'pre' as const},
+      {handler: postHandler, operation: 'build', timing: 'post' as const},
+      {handler: preHandler, operation: 'install', timing: 'pre' as const},
+      {handler: postHandler, operation: 'install', timing: 'post' as const},
     ],
     name: 'scripts',
   };

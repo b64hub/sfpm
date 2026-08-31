@@ -10,21 +10,16 @@ import {join} from 'node:path';
 import type {LwcTypescriptHooksOptions} from './types.js';
 
 /**
- * Package-like shape expected on the hook context for LWC TS compilation.
- */
-interface LwcCapablePackage {
-  packageDirectory?: string;
-}
-
-/**
  * Creates lifecycle hooks for compiling LWC TypeScript to JavaScript.
  *
- * Registers a hook on `build:pre` that runs `tsc` inside the `lwc/`
- * directory of the staged package. This enables authoring LWC controllers
- * in TypeScript while keeping `.js` files out of version control.
+ * Registers a hook on `build:post` that runs `tsc` inside the `lwc/`
+ * directory of the built package's dist directory, similarly to how other
+ * TypeScript projects compile to `.js` as a build step. This enables
+ * authoring LWC controllers in TypeScript while keeping `.js` files out of
+ * version control.
  *
- * The compiled `.js` output is written to the staging directory so that
- * downstream build and deploy steps work transparently. Original `.ts`
+ * The compiled `.js` output is written to the dist directory so that
+ * downstream deploy steps work transparently. Original `.ts`
  * source files are removed by default.
  *
  * @param options - Hook configuration options
@@ -50,10 +45,10 @@ export function lwcTypescriptHooks(options?: LwcTypescriptHooksOptions): Lifecyc
     hooks: [
       {
         async handler(context: HookContext) {
-          const {logger, sfpmPackage} = context;
+          const {logger, provider, sfpmPackage} = context;
           const packageName = sfpmPackage.name;
 
-          const packageDir = (sfpmPackage as unknown as LwcCapablePackage).packageDirectory;
+          const packageDir = provider.getPackageBuildDirectory(packageName);
           if (!packageDir) {
             logger?.debug(`LWC TypeScript: no package directory for '${packageName}', skipping`);
             return;
@@ -97,7 +92,7 @@ export function lwcTypescriptHooks(options?: LwcTypescriptHooksOptions): Lifecyc
           logger?.debug(`LWC TypeScript: completed for '${packageName}'`);
         },
         operation: 'build',
-        timing: 'pre',
+        timing: 'post',
       },
     ],
 

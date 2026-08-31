@@ -83,11 +83,15 @@ describe('scriptHooks', () => {
     const hooks = scriptHooks({scripts: []});
 
     expect(hooks.name).toBe('scripts');
-    expect(hooks.hooks).toHaveLength(2);
-    expect(hooks.hooks[0].operation).toBe('install');
+    expect(hooks.hooks).toHaveLength(4);
+    expect(hooks.hooks[0].operation).toBe('build');
     expect(hooks.hooks[0].timing).toBe('pre');
-    expect(hooks.hooks[1].operation).toBe('install');
+    expect(hooks.hooks[1].operation).toBe('build');
     expect(hooks.hooks[1].timing).toBe('post');
+    expect(hooks.hooks[2].operation).toBe('install');
+    expect(hooks.hooks[2].timing).toBe('pre');
+    expect(hooks.hooks[3].operation).toBe('install');
+    expect(hooks.hooks[3].timing).toBe('post');
   });
 
   // --------------------------------------------------------------------------

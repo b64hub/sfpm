@@ -46,19 +46,25 @@ function createPackage(overrides?: Partial<HookContext['sfpmPackage']>): HookCon
   return {
     name: 'test-package',
     packageDefinition: {},
-    packageDirectory: '/project/packages/test-package',
     type: 'Source',
     ...overrides,
   } as HookContext['sfpmPackage'];
+}
+
+function createProvider(packageDir: string | undefined): HookContext['provider'] {
+  return {
+    getPackageBuildDirectory: vi.fn().mockReturnValue(packageDir),
+  } as unknown as HookContext['provider'];
 }
 
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'build',
     projectDir: '/project',
+    provider: createProvider('/project/packages/test-package'),
     sfpmPackage: createPackage(),
     stage: 'local',
-    timing: 'pre',
+    timing: 'post',
     ...overrides,
   };
 }
@@ -131,7 +137,7 @@ describe('lwcTypescriptHooks', () => {
     expect(hooks.name).toBe('lwc-typescript');
     expect(hooks.hooks).toHaveLength(1);
     expect(hooks.hooks[0].operation).toBe('build');
-    expect(hooks.hooks[0].timing).toBe('pre');
+    expect(hooks.hooks[0].timing).toBe('post');
   });
 
   // --------------------------------------------------------------------------
@@ -144,7 +150,7 @@ describe('lwcTypescriptHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      sfpmPackage: createPackage({packageDirectory: undefined}),
+      provider: createProvider(undefined),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -160,7 +166,7 @@ describe('lwcTypescriptHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
+      provider: createProvider('/pkg/dir'),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -179,7 +185,7 @@ describe('lwcTypescriptHooks', () => {
 
     await hooks.hooks[0].handler(createContext({
       logger,
-      sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
+      provider: createProvider('/pkg/dir'),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
@@ -217,7 +223,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
+        provider: createProvider('/pkg/dir'),
       }));
 
       expect(logger.info).toHaveBeenCalledWith(
@@ -251,7 +257,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
+        provider: createProvider('/pkg/dir'),
       }));
 
       // Only 1 file from 'comp', not the one from '__tests__'
@@ -280,7 +286,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
+        provider: createProvider('/pkg/dir'),
       }));
 
       expect(spawn).toHaveBeenCalledWith(
@@ -304,7 +310,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
+        provider: createProvider('/pkg/dir'),
       }));
 
       expect(spawn).toHaveBeenCalledWith(
@@ -329,7 +335,7 @@ describe('lwcTypescriptHooks', () => {
       await expect(
         hooks.hooks[0].handler(createContext({
           logger,
-          sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
+          provider: createProvider('/pkg/dir'),
         })),
       ).rejects.toThrow('compilation failed');
     });
@@ -362,7 +368,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
+        provider: createProvider('/pkg/dir'),
       }));
 
       expect(unlinkSync).toHaveBeenCalledTimes(1);
@@ -393,7 +399,7 @@ describe('lwcTypescriptHooks', () => {
 
       await hooks.hooks[0].handler(createContext({
         logger,
-        sfpmPackage: createPackage({packageDirectory: '/pkg/dir'}),
+        provider: createProvider('/pkg/dir'),
       }));
 
       expect(unlinkSync).not.toHaveBeenCalled();
