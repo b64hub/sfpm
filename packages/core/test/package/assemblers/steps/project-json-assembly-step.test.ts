@@ -53,6 +53,7 @@ describe('ProjectJsonAssemblyStep', () => {
                 type: 'unlocked',
                 version: '1.0.0',
             }),
+            getPackageDir: vi.fn().mockReturnValue('/root'),
             resolveSingleProjectDefinition: vi.fn().mockReturnValue({
                 packages: [{
                     path: 'force-app',

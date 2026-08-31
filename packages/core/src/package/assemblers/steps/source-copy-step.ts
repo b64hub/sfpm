@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
-import {FORCE_APP_DIR} from '../../../types/artifact.js';
+import {getSourceSubpath} from '../../../project/providers/project-definition-provider.js';
 import Logger from '../../../types/logger.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from '../types.js';
 
@@ -43,8 +43,11 @@ export class SourceCopyStep implements AssemblyStep {
   public async execute(options: AssemblyOptions, output: AssemblyOutput): Promise<void> {
     const packageDefinition = this.provider.getPackageDefinition(this.packageName);
     if (!packageDefinition) throw new Error(`Package "${this.packageName}" not found`);
+    const packageDir = this.provider.getPackageDir(this.packageName);
+    if (!packageDir) throw new Error(`Package directory not found for "${this.packageName}"`);
     const sourceDir = path.join(this.provider.projectDir, packageDefinition.path);
-    const destinationDir = path.join(output.stagingDirectory, FORCE_APP_DIR);
+    const sourceSubpath = getSourceSubpath(this.provider.projectDir, packageDir, packageDefinition.path);
+    const destinationDir = path.join(output.stagingDirectory, sourceSubpath);
 
     const ig = null; // ponytail: build-time ignore via .sfpmignore, add when needed
 

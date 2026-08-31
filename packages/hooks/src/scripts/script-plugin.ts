@@ -76,8 +76,9 @@ function resolveScriptType(script: ScriptDefinition): ScriptType {
  *    Paths are relative to that **package's own directory** (next to its
  *    `package.json`). Pre-build/deploy scripts resolve against the live source
  *    directory; post-build and artifact-install scripts resolve against the
- *    package's staged/packed source (`force-app`), where `SourceCopyStep`
- *    already copies them for free — no separate script-assembly step needed.
+ *    package's staged/packed source (mirroring the package's configured
+ *    `sfpm.path`), where `SourceCopyStep` already copies them for free —
+ *    no separate script-assembly step needed.
  *
  * Per-package scripts are appended after global scripts at each timing.
  * When a per-package `hooks["scripts"]` is set to `false`, the hook is
@@ -191,7 +192,8 @@ function isArtifactInstall(context: HookContext): boolean {
  * that's the live package directory. After staging (build:post) or when
  * installing a published artifact, `SourceCopyStep` has already copied the
  * package directory's content into the staged/packed source directory
- * (`force-app`) for free — so scripts resolve there instead.
+ * (mirroring the package's configured `sfpm.path`) for free — so scripts
+ * resolve there instead.
  */
 function resolvePackageScriptBaseDir(context: HookContext, timing: 'post' | 'pre'): string | undefined {
   const {operation, provider, sfpmPackage} = context;

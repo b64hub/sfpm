@@ -27,6 +27,7 @@ describe('SourceCopyStep', () => {
         package: 'core',
         path: 'force-app',
       }),
+      getPackageDir: vi.fn().mockReturnValue(path.join(tmpDir, 'project')),
     };
 
     mockLogger = {

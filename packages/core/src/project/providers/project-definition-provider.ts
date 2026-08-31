@@ -9,6 +9,8 @@
  * operations — the single abstraction for all project/workspace queries.
  */
 
+import path from 'node:path';
+
 import type {WorkspacePackageJson} from './types/workspace.js';
 
 import {PackageType} from '../../types/package.js';
@@ -76,7 +78,9 @@ export interface ProjectDefinitionProvider {
 
   /**
    * Absolute path to the staged source within the build output directory.
-   * This is where assembled source metadata lives (e.g., <packageDir>/dist/force-app).
+   * This is where assembled source metadata lives — mirrors the package's
+   * configured source path (e.g., <packageDir>/dist/force-app, or <packageDir>/dist
+   * when the source path is ".").
    * Returns undefined if the package is not found.
    */
   getPackageBuiltSourceDirectory(packageName: string): string | undefined;
@@ -174,6 +178,20 @@ export function getPackageDefinitionByPath(definition: ProjectDefinition, packag
  * Only returns dependencies that exist in the project — external/unresolvable
  * dependencies are silently skipped.
  */
+/**
+ * Relative subpath from a package's directory to its SF source directory,
+ * derived from where the package's content actually lives — the inverse of
+ * how `PackageDefinition.path` is built from `sfpm.path` (workspace mode) or
+ * used directly (legacy mode).
+ *
+ * e.g. packageDir "/repo/packages/core", pkgPath "packages/core/force-app" → "force-app"
+ *      packageDir "/repo/packages/core", pkgPath "packages/core" → "."
+ */
+export function getSourceSubpath(projectDir: string, packageDir: string, pkgPath: string): string {
+  const absoluteSourceDir = path.resolve(projectDir, pkgPath);
+  return path.relative(packageDir, absoluteSourceDir) || '.';
+}
+
 export function getDependencies(definition: ProjectDefinition, packageName: string): PackageDefinition[] {
   const pkg = getPackageDefinition(definition, packageName);
   if (!pkg?.dependencies) return [];

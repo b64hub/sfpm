@@ -23,7 +23,7 @@ import type {
   ResolveForPackageOptions,
 } from './project-definition-provider.js';
 
-import {DIST_DIR, FORCE_APP_DIR} from '../../types/artifact.js';
+import {DIST_DIR} from '../../types/artifact.js';
 import {NpmPackageJson, SfpmArtifactMetadata} from '../../types/npm.js';
 import {type PackageDefinition, type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
 import {stripScope} from '../../utils/scope-utils.js';
@@ -86,8 +86,10 @@ export class ArtifactProvider implements ProjectDefinitionProvider {
   }
 
   getPackageBuiltSourceDirectory(packageName: string): string | undefined {
-    const pkgDir = this.getPackageDir(packageName);
-    return pkgDir ? path.join(pkgDir, FORCE_APP_DIR) : undefined;
+    // pkg.path already resolves to the artifact's real source location
+    // (node_modules/<pkg>/<sfpm.path>) — no need to assume a fixed dir name.
+    const pkg = this.getPackageDefinition(packageName);
+    return pkg ? path.join(this.projectDir, pkg.path) : undefined;
   }
 
   getPackageDefinition(packageName: string): PackageDefinition | undefined {
