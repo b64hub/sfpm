@@ -49,10 +49,19 @@ function createLogger() {
   };
 }
 
+function createProvider(): HookContext['provider'] {
+  return {
+    getPackageBuildDirectory: vi.fn().mockReturnValue('/project/packages/test-package/dist'),
+    getPackageBuiltSourceDirectory: vi.fn().mockReturnValue('/project/packages/test-package/force-app'),
+    getPackageDir: vi.fn().mockReturnValue('/project/packages/test-package'),
+  } as unknown as HookContext['provider'];
+}
+
 function createContext(overrides?: Partial<HookContext>): HookContext {
   return {
     operation: 'install',
     projectDir: '/project',
+    provider: createProvider(),
     sfpmPackage: {
       name: 'test-package',
       packageDefinition: {},
@@ -362,6 +371,129 @@ describe('scriptHooks', () => {
       const instance = vi.mocked(ScriptRunner).mock.results[0].value;
       expect(instance.run).toHaveBeenCalled();
     });
+
+    it('should ignore packageName on a per-package override and warn', async () => {
+      vi.mocked(resolveHookConfig).mockReturnValue({
+        config: {post: [{packageName: 'other-package', path: 'scripts/run.sh'}]},
+        enabled: true,
+      });
+
+      vi.mocked(ScriptRunner).mockImplementation(function() { return {
+        run: vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '', success: true}),
+      }; } as any);
+
+      const hooks = scriptHooks({scripts: []});
+      const logger = createLogger();
+
+      await hooks.hooks[1].handler(createContext({logger, targetOrg: 'test@user.org', timing: 'post'}));
+
+      const instance = vi.mocked(ScriptRunner).mock.results[0].value;
+      expect(instance.run).toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("ignoring 'packageName'"),
+      );
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Per-package script path resolution
+  // --------------------------------------------------------------------------
+
+  describe('per-package script path resolution', () => {
+    it('resolves against the package dir for install from local source (pre-build)', async () => {
+      vi.mocked(resolveHookConfig).mockReturnValue({
+        config: {pre: ['scripts/setup.sh']},
+        enabled: true,
+      });
+
+      vi.mocked(ScriptRunner).mockImplementation(function() { return {
+        run: vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '', success: true}),
+      }; } as any);
+
+      const hooks = scriptHooks({scripts: []});
+      const logger = createLogger();
+
+      await hooks.hooks[0].handler(createContext({logger, timing: 'pre'}));
+
+      const instance = vi.mocked(ScriptRunner).mock.results[0].value;
+      expect(instance.run).toHaveBeenCalledWith(
+        expect.objectContaining({path: '/project/packages/test-package/scripts/setup.sh'}),
+        'shell',
+        expect.any(Object),
+      );
+    });
+
+    it('resolves against the built source dir (force-app) at build:post', async () => {
+      vi.mocked(resolveHookConfig).mockReturnValue({
+        config: {post: ['scripts/seed.ts']},
+        enabled: true,
+      });
+
+      vi.mocked(ScriptRunner).mockImplementation(function() { return {
+        run: vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '', success: true}),
+      }; } as any);
+
+      const hooks = scriptHooks({scripts: []});
+      const logger = createLogger();
+
+      await hooks.hooks[1].handler(createContext({logger, operation: 'build', timing: 'post'}));
+
+      const instance = vi.mocked(ScriptRunner).mock.results[0].value;
+      expect(instance.run).toHaveBeenCalledWith(
+        expect.objectContaining({path: '/project/packages/test-package/force-app/scripts/seed.ts'}),
+        'typescript',
+        expect.any(Object),
+      );
+    });
+
+    it('resolves against the built source dir (force-app) for an artifact install', async () => {
+      vi.mocked(resolveHookConfig).mockReturnValue({
+        config: {post: ['scripts/seed.ts']},
+        enabled: true,
+      });
+
+      vi.mocked(ScriptRunner).mockImplementation(function() { return {
+        run: vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '', success: true}),
+      }; } as any);
+
+      const hooks = scriptHooks({scripts: []});
+      const logger = createLogger();
+
+      // Artifact installs have no separate dist dir — build dir === package dir.
+      const artifactProvider = createProvider();
+      artifactProvider.getPackageBuildDirectory = vi.fn().mockReturnValue('/project/packages/test-package');
+
+      await hooks.hooks[1].handler(createContext({
+        logger, operation: 'install', provider: artifactProvider, timing: 'post',
+      }));
+
+      const instance = vi.mocked(ScriptRunner).mock.results[0].value;
+      expect(instance.run).toHaveBeenCalledWith(
+        expect.objectContaining({path: '/project/packages/test-package/force-app/scripts/seed.ts'}),
+        'typescript',
+        expect.any(Object),
+      );
+    });
+
+    it('leaves global scripts project-root-relative', async () => {
+      vi.mocked(ScriptRunner).mockImplementation(function() { return {
+        run: vi.fn().mockResolvedValue({exitCode: 0, stderr: '', stdout: '', success: true}),
+      }; } as any);
+
+      const hooks = scriptHooks({
+        scripts: [{path: 'scripts/global-seed.ts', timing: 'post'}],
+      });
+      const logger = createLogger();
+
+      await hooks.hooks[1].handler(createContext({logger, operation: 'build', timing: 'post'}));
+
+      const instance = vi.mocked(ScriptRunner).mock.results[0].value;
+      expect(instance.run).toHaveBeenCalledWith(
+        expect.objectContaining({path: 'scripts/global-seed.ts'}),
+        'typescript',
+        expect.any(Object),
+      );
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -489,7 +621,7 @@ describe('scriptHooks', () => {
 
       const instance = vi.mocked(ScriptRunner).mock.results[0].value;
       expect(instance.run).toHaveBeenCalledWith(
-        expect.objectContaining({path: 'scripts/from-pkg.sh'}),
+        expect.objectContaining({path: '/project/packages/test-package/scripts/from-pkg.sh'}),
         'shell',
         expect.any(Object),
       );
