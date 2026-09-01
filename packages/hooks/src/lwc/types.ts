@@ -1,45 +1,4 @@
 // ============================================================================
-// LWC TypeScript Hook Options
-// ============================================================================
-
-/**
- * Configuration options for the LWC TypeScript compilation hook.
- *
- * Compiles TypeScript source files to JavaScript for Lightning Web
- * Components as a pre-build step. Enables authoring LWC controllers
- * in TypeScript while producing valid JS for the Salesforce platform.
- */
-export interface LwcTypescriptHooksOptions {
-  /**
-   * Glob patterns to exclude from compilation.
-   * @default ['**\/*.d.ts', '**\/__tests__/**']
-   */
-  exclude?: string[];
-
-  /**
-   * Glob patterns for LWC TypeScript source files.
-   * When omitted, defaults to all `.ts` files under `lwc/` directories.
-   *
-   * @default ['**\/lwc/**\/*.ts']
-   */
-  include?: string[];
-
-  /**
-   * Whether to remove the original `.ts` source files from the
-   * staging directory after compilation.
-   * @default true
-   */
-  removeSourceFiles?: boolean;
-
-  /**
-   * Path to a custom tsconfig.json for LWC compilation.
-   * When omitted, the hook uses a built-in configuration
-   * suitable for LWC targets.
-   */
-  tsconfig?: string;
-}
-
-// ============================================================================
 // LWC Tailwind Hook Options
 // ============================================================================
 
