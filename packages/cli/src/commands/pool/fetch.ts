@@ -4,7 +4,6 @@ import {
   AuthInfo, Config, ConfigAggregator, Org, OrgConfigProperties, OrgTypes,
 } from '@salesforce/core';
 import chalk from 'chalk';
-import ora from 'ora';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {successBox} from '../../ui/boxes.js';
@@ -62,86 +61,77 @@ export default class PoolFetch extends SfpmCommand {
       this.error('A target dev hub is required. Specify one with --target-dev-hub (-v) or set a default with: sf config set target-dev-hub=<username>', {exit: 1});
     }
 
-    const spinner = mode === 'interactive' ? ora(`Connecting to ${devhubAlias}...`).start() : undefined;
-
     const devhub = await Org.create({aliasOrUsername: devhubAlias});
 
-    try {
-      const {authenticator, devhubService, fetcher} = await createPoolServices({
-        devhub,
-        logger: this.sfpmLogger,
-        poolType: flags.type as OrgTypes,
-      });
-      spinner?.succeed(`Connected to ${devhubAlias}`);
+    const {authenticator, devhubService, fetcher} = await createPoolServices({
+      devhub,
+      logger: this.sfpmLogger,
+      poolType: flags.type as OrgTypes,
+    });
 
-      const postClaimActions: Array<(org: any) => Promise<void>> = [];
+    const postClaimActions: Array<(org: any) => Promise<void>> = [];
 
-      if (flags['send-to']) {
-        postClaimActions.push(async org => devhubService.shareOrg(org, {emailAddress: flags['send-to']!}));
-      } else {
-        postClaimActions.push(org => authenticator.login(org));
+    if (flags['send-to']) {
+      postClaimActions.push(async org => devhubService.shareOrg(org, {emailAddress: flags['send-to']!}));
+    } else {
+      postClaimActions.push(org => authenticator.login(org));
 
-        if (flags['source-tracking']) {
-          postClaimActions.push(org => authenticator.enableSourceTracking(org));
+      if (flags['source-tracking']) {
+        postClaimActions.push(org => authenticator.enableSourceTracking(org));
+      }
+    }
+
+    const fetchOptions = {
+      myPool: flags['my-pool'],
+      postClaimActions,
+    };
+
+    const org = await fetcher.fetch(flags.tag, fetchOptions);
+
+    // Set alias if requested
+    if (flags.alias && org.auth.username) {
+      await setAlias(org.auth.username, flags.alias);
+      org.auth.alias = flags.alias;
+    }
+
+    // Set as default target org
+    if (flags['set-default'] && !flags['send-to'] && org.auth.username) {
+      await Config.update(false, OrgConfigProperties.TARGET_ORG, org.auth.username);
+    }
+
+    // Build frontdoor login URL with access token
+    let frontDoorUrl: string | undefined;
+    if (!flags['send-to'] && org.auth.username) {
+      try {
+        const authInfo = await AuthInfo.create({username: org.auth.username});
+        const fields = authInfo.getFields(true);
+        if (fields.accessToken && fields.instanceUrl) {
+          frontDoorUrl = `${fields.instanceUrl}/secur/frontdoor.jsp?sid=${fields.accessToken}`;
         }
+      } catch {
+        // Access token not available — skip frontdoor URL
       }
+    }
 
-      const fetchOptions = {
-        myPool: flags['my-pool'],
-        postClaimActions,
-      };
+    if (this.outputMode === 'json') {
+      return {data: {...org, frontDoorUrl}, success: true, tag: flags.tag};
+    }
 
-      const org = await fetcher.fetch(flags.tag, fetchOptions);
+    const loginUrl     = frontDoorUrl ?? org.auth.loginUrl;
+    const loginDisplay = loginUrl ? terminalLink('Open', loginUrl) : undefined;
+    this.log('');
+    this.log(successBox('Fetched Org', {
+      ...(org.auth.alias   ? {Alias: org.auth.alias}                   : {}),
+      ...(org.expiry       ? {Expires: formatExpiry(org.expiry)}       : {}),
+      ...(loginDisplay     ? {'Login URL': loginDisplay}               : {}),
+      ...(org.orgId        ? {'Org ID': org.orgId}                     : {}),
+      ...(org.auth.password ? {Password: org.auth.password}           : {}),
+      Type: org.orgType ?? 'scratch',
+      Username: org.auth.username ?? 'N/A',
+    }));
 
-      // Set alias if requested
-      if (flags.alias && org.auth.username) {
-        await setAlias(org.auth.username, flags.alias);
-        org.auth.alias = flags.alias;
-      }
-
-      // Set as default target org
-      if (flags['set-default'] && !flags['send-to'] && org.auth.username) {
-        await Config.update(false, OrgConfigProperties.TARGET_ORG, org.auth.username);
-      }
-
-      // Build frontdoor login URL with access token
-      let frontDoorUrl: string | undefined;
-      if (!flags['send-to'] && org.auth.username) {
-        try {
-          const authInfo = await AuthInfo.create({username: org.auth.username});
-          const fields = authInfo.getFields(true);
-          if (fields.accessToken && fields.instanceUrl) {
-            frontDoorUrl = `${fields.instanceUrl}/secur/frontdoor.jsp?sid=${fields.accessToken}`;
-          }
-        } catch {
-          // Access token not available — skip frontdoor URL
-        }
-      }
-
-      if (this.outputMode === 'json') {
-        return {data: {...org, frontDoorUrl}, success: true, tag: flags.tag};
-      }
-
-      const loginUrl     = frontDoorUrl ?? org.auth.loginUrl;
-      const loginDisplay = loginUrl ? terminalLink('Open', loginUrl) : undefined;
-      this.log('');
-      this.log(successBox('Fetched Org', {
-        ...(org.auth.alias   ? {Alias: org.auth.alias}                   : {}),
-        ...(org.expiry       ? {Expires: formatExpiry(org.expiry)}       : {}),
-        ...(loginDisplay     ? {'Login URL': loginDisplay}               : {}),
-        ...(org.orgId        ? {'Org ID': org.orgId}                     : {}),
-        ...(org.auth.password ? {Password: org.auth.password}           : {}),
-        Type: org.orgType ?? 'scratch',
-        Username: org.auth.username ?? 'N/A',
-      }));
-
-      if (flags['send-to']) {
-        this.log(chalk.green(`Org details sent to ${flags['send-to']}`));
-      }
-    } catch (error) {
-      spinner?.fail(`Failed to connect to ${devhubAlias}`);
-
-      throw error;
+    if (flags['send-to']) {
+      this.log(chalk.green(`Org details sent to ${flags['send-to']}`));
     }
   }
 }
