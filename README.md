@@ -66,6 +66,42 @@ sfpm --version
 
 Run `sfpm --help` for the current command reference — this changes frequently during the beta, so the CLI itself is the source of truth rather than this README.
 
+## GitHub Actions
+
+The actions live under `packages/actions/` and are referenced by sub-path:
+
+```yaml
+- uses: b64hub/sfpm/packages/actions/build@v0
+- uses: b64hub/sfpm/packages/actions/validate-pr@v0
+```
+
+Available: `build`, `build-validation`, `build-turbo-aggregate`, `install`,
+`deploy`, `validate-pr`, `fill-pool`, `clean-pool`. See each action's
+`action.yml` for inputs and outputs, and `packages/actions/examples/` for
+working workflows.
+
+Every action assumes the DevHub and any target orgs are **already
+authenticated in the runner** before the step runs.
+
+### Versioning
+
+| Reference | Mutability | Use for |
+| --- | --- | --- |
+| `v0.2.0` | immutable | audits, pinned production use |
+| `v0` | moved on every release | convenience |
+| commit SHA | immutable | strictest supply-chain policies |
+
+Pre-1.0, `v0` may include breaking changes between minors. Pin `v0.x.y` or a
+SHA if you need stability.
+
+### Security posture
+
+`contents: read` is sufficient for every action — none of them read
+`GITHUB_TOKEN` or call the GitHub API. Network egress is limited to Salesforce
+orgs, the npm registry, and the Actions cache; there is no telemetry endpoint.
+See [SECURITY.md](SECURITY.md) for the full statement, which is written to be
+pasted into an action-whitelisting review.
+
 ## Contributing from source
 
 ```bash
