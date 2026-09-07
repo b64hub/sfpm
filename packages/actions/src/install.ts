@@ -118,7 +118,10 @@ export async function install(options: InstallOptions): Promise<InstallResult> {
 
   if (origin === 'registry') {
     // Fetch published artifacts into node_modules
-    execFileSync('npm', ['install', '--no-save', ...options.packages], {cwd: projectDir, stdio: 'inherit'});
+    // `--ignore-scripts`: artifacts are data (source + manifests), never code to
+    // run at install time. Without it, any package in the resolved tree could
+    // execute arbitrary code in the runner.
+    execFileSync('npm', ['install', '--no-save', '--ignore-scripts', ...options.packages], {cwd: projectDir, stdio: 'inherit'});
 
     const artifactProvider = new ArtifactProvider({logger, packages: options.packages, projectDir});
     const projectService = await ProjectService.create(projectDir, artifactProvider);

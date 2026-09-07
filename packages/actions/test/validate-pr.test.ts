@@ -148,7 +148,6 @@ describe('validatePr', () => {
         cacheTtlMs: 14_400_000,
         orgId: '00D000000000000',
         prNumber: 42,
-        sfdxAuthUrl: 'force://test',
         username: 'test@scratch.org',
       }),
       save: vi.fn().mockResolvedValue(undefined),

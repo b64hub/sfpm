@@ -419,7 +419,6 @@ async function resolveOrg(
     cacheTtlMs: (options.cacheTtlHours ?? 4) * 60 * 60 * 1000,
     orgId: org.orgId,
     prNumber,
-    sfdxAuthUrl: org.auth.authUrl ?? '',
     username: org.auth.username,
   };
 
@@ -453,6 +452,10 @@ async function fetchOrgFromPool(
     postClaimActions: [org => authenticator.login(org)],
   });
 
+  // The pool record carries a refresh token in its auth URL — mask it so it
+  // cannot surface in logs via an error message or debug output.
+  if (org.auth.authUrl) core.setSecret(org.auth.authUrl);
+
   logger.info(`Fetched org: ${org.auth.username} (${org.orgId})`);
   logger.groupEnd();
 
@@ -464,8 +467,11 @@ async function fetchOrgFromPool(
 // ============================================================================
 
 /**
- * Authenticate to a scratch org using its cached SFDX auth URL
- * or via JWT through the DevHub parent.
+ * Authenticate to a scratch org through its DevHub parent.
+ *
+ * Requires the DevHub to already be authenticated in the runner (the same
+ * precondition every org-touching SFPM action has). No org credential is ever
+ * cached or passed between steps — only the username, resolved here.
  */
 async function authenticateOrg(
   connection: CachedOrgConnection,
@@ -473,22 +479,7 @@ async function authenticateOrg(
   logger: GitHubActionsLogger,
 ): Promise<void> {
   try {
-    // Try sfdxAuthUrl-based auth first (fastest path)
-    if (connection.sfdxAuthUrl) {
-      logger.debug('Authenticating via SFDX auth URL');
-      const authInfo = await AuthInfo.create({
-        parentUsername: devhubUsername,
-        username: connection.username,
-      });
-      await authInfo.save();
-      // Validate by creating an Org instance
-      await Org.create({aliasOrUsername: connection.username});
-      logger.debug('Authentication successful');
-      return;
-    }
-
-    // Fallback: JWT via parent username
-    logger.debug('Authenticating via JWT parent username');
+    logger.debug(`Authenticating to ${connection.username} via DevHub ${devhubUsername}`);
     const authInfo = await AuthInfo.create({
       parentUsername: devhubUsername,
       username: connection.username,

@@ -15,6 +15,8 @@ try {
   const installationKeys = installationKeysInput
     ? parseInstallationKeys(installationKeysInput.split('\n').map(l => l.trim()).filter(Boolean))
     : undefined;
+  // Mask before anything can log them.
+  for (const key of Object.values(installationKeys ?? {})) core.setSecret(key);
 
   const packagesInput = core.getInput('packages') || '';
   const packages = packagesInput
