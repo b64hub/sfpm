@@ -4,6 +4,9 @@ on:
     branches-ignore: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   unit-tests:
     strategy:
@@ -21,3 +24,5 @@ jobs:
       - run: npm install
       - run: npm run build
       - run: npm run test
+      - name: Verify action runtime lockfile
+        run: node scripts/sync-action-runtime.mjs --check

@@ -44,9 +44,20 @@ Actions cache, passed between steps, or emitted as an action output —
 through the DevHub. Installation keys and auth URLs are registered with
 `core.setSecret()` so they are masked in logs.
 
-**Build provenance.** The committed action bundles are built by
-`packages/actions/esbuild.config.mjs` from the TypeScript sources in the same
-commit, unminified and with sourcemaps, so they can be diffed and reproduced.
+**Distribution and pinning.** The actions are composite actions. Each
+`action.yml` installs a shared runtime
+(`packages/actions/runtime`) with `npm ci --ignore-scripts` and invokes
+`@b64hub/sfpm-actions`, published from this repository.
+
+That runtime's `package-lock.json` is committed, so the **entire transitive
+dependency tree is pinned to exact versions**, and `npm ci` verifies the
+SHA-512 integrity hash of every tarball it downloads. Nothing floats at run
+time: the same tag always installs the same bytes. Both the pin set and the
+versions it resolves to are reviewable as a normal diff in this repository at
+the matching tag.
+
+No dependency lifecycle scripts execute (`--ignore-scripts`), so installing
+the action's dependency tree cannot run third-party code.
 
 ## Versioning and pinning
 
