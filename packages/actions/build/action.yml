@@ -38,13 +38,34 @@ inputs:
 outputs:
   success:
     description: 'Whether all builds succeeded (true/false)'
+    value: ${{ steps.build.outputs.success }}
   duration:
     description: 'Total build duration in milliseconds'
+    value: ${{ steps.build.outputs.duration }}
   failed-packages:
     description: 'Comma-separated list of packages that failed to build'
+    value: ${{ steps.build.outputs.failed-packages }}
   result:
     description: "Full JSON result with per-package outcomes, including pending validation descriptors. Pass this into build-validation's build-result input as needs.build.outputs.result"
+    value: ${{ steps.build.outputs.result }}
 
 runs:
-  using: 'node20'
-  main: '../dist/build-main.js'
+  using: composite
+  steps:
+    # Version is pinned, not derived from the action ref, so the executed code
+    # is auditable from this file alone. Kept in sync with the package version
+    # by the release workflow.
+    - id: build
+      shell: bash
+      run: npx --yes --package=@b64hub/sfpm-actions@0.2.0 sfpm-action build
+      # Composite actions do not receive INPUT_* automatically, so each input
+      # is forwarded explicitly. Callers still use plain `with:`.
+      env:
+        INPUT_DEVHUB-USERNAME: ${{ inputs.devhub-username }}
+        INPUT_PACKAGES: ${{ inputs.packages }}
+        INPUT_FORCE: ${{ inputs.force }}
+        INPUT_INCLUDE-DEPENDENCIES: ${{ inputs.include-dependencies }}
+        INPUT_BUILD-NUMBER: ${{ inputs.build-number }}
+        INPUT_INSTALLATION-KEYS: ${{ inputs.installation-keys }}
+        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}
+        INPUT_VALIDATION: ${{ inputs.validation }}

@@ -29,7 +29,11 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "sfpm-action": "./bin/sfpm-action.mjs"
+  },
   "files": [
+    "bin",
     "dist"
   ],
   "exports": {
