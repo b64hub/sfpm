@@ -1,5 +1,5 @@
 name: 'SFPM Build'
-description: 'Build SFPM packages with async validation for unlocked packages. Returns immediately with creation request IDs while Salesforce validates in the background. Outputs artifact tarballs and per-package results (including pending validation descriptors) for the resume step.'
+description: 'Build SFPM packages with async validation for unlocked packages. Returns immediately with creation request IDs while Salesforce validates in the background. Outputs artifact tarballs and per-package results (including pending validation descriptors) for the resume step. Requires the DevHub to be authenticated in the runner before this step.'
 author: 'b64'
 
 branding:
@@ -52,14 +52,18 @@ outputs:
 runs:
   using: composite
   steps:
-    # Version is pinned, not derived from the action ref, so the executed code
-    # is auditable from this file alone. Kept in sync with the package version
-    # by the release workflow.
     - id: build
       shell: bash
-      run: npx --yes --package=@b64hub/sfpm-actions@0.2.0 sfpm-action build
-      # Composite actions do not receive INPUT_* automatically, so each input
-      # is forwarded explicitly. Callers still use plain `with:`.
+      # The runtime directory is shared by every SFPM action. Its committed
+      # lockfile pins the whole transitive tree, and `npm ci` verifies the
+      # integrity hash of every tarball it downloads.
+      run: |
+        runtime="$GITHUB_ACTION_PATH/../runtime"
+        # Reuse the tree when another SFPM action already installed it in this job.
+        [ -d "$runtime/node_modules" ] || npm ci --prefix "$runtime" --ignore-scripts
+        "$runtime/node_modules/.bin/sfpm-action" build
+      # Composite actions do not receive INPUT_* automatically, so each input is
+      # forwarded explicitly. Callers still use plain `with:`.
       env:
         INPUT_DEVHUB-USERNAME: ${{ inputs.devhub-username }}
         INPUT_PACKAGES: ${{ inputs.packages }}

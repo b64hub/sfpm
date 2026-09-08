@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run",
-    "bundle": "node esbuild.config.mjs"
+    "test": "vitest run"
   },
   "keywords": [
     "sfpm",
@@ -43,7 +42,6 @@
     }
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
     "vitest": "^4.0.17"
   }
 }
