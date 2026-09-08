@@ -20,6 +20,7 @@ import chalk from 'chalk'
 import fs from 'fs-extra'
 import {execSync} from 'node:child_process'
 import EventEmitter from 'node:events'
+import {createRequire} from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import ora, {type Ora} from 'ora'
@@ -45,6 +46,28 @@ import {connectDevHub} from '../ui/connect-devhub.js'
 import {renderApp} from '../ui/renderers/run-orchestrator.js'
 
 const BOOTSTRAP_REPO = 'https://github.com/b64hub/sfpm-bootstrap'
+
+/**
+ * Resolve sfpm packages from the CLI's own installation so the bootstrap
+ * repo's `sfpm.config.ts` can import them. The clone is a bare `git clone`
+ * with no `node_modules`, so nothing is resolvable from the config file
+ * itself. Packages the CLI doesn't have installed are skipped.
+ */
+function bootstrapConfigAliases(): Record<string, string> {
+  const require = createRequire(import.meta.url)
+  const alias: Record<string, string> = {}
+
+  for (const name of ['@b64hub/sfpm-core', '@b64hub/sfpm-orgs', '@b64hub/sfpm-hooks', '@b64hub/sfpm-sfdmu']) {
+    try {
+      alias[name] = require.resolve(name)
+    } catch {
+      // Not installed alongside this CLI — a config importing it will fail
+      // with jiti's own resolution error, which names the missing package.
+    }
+  }
+
+  return alias
+}
 
 const TIER_DESCRIPTIONS: Record<BootstrapTier, string> = {
   [BootstrapTier.Core]: 'sfpm-artifact only -- artifact tracking custom setting',
@@ -153,7 +176,7 @@ export default class Bootstrap extends SfpmCommand {
       let projectService: ProjectService | undefined
 
       if (needsBuild.length > 0) {
-        projectService = await ProjectService.create(tmpDir)
+        projectService = await ProjectService.create(tmpDir, undefined, {alias: bootstrapConfigAliases()})
         const provider = projectService.getDefinitionProvider()
         await this.ensurePackageContainers(org, {
           ctx, packages: selectedPackages, provider, tmpDir,
@@ -224,6 +247,7 @@ export default class Bootstrap extends SfpmCommand {
         const installService = await ProjectService.create(
           tmpDir,
           new WorkspaceProvider({distAware: true, projectDir: tmpDir}),
+          {alias: bootstrapConfigAliases()},
         )
         const installResults = await this.installPackages(installService, installNames, flags, ctx)
         for (const ir of installResults) {

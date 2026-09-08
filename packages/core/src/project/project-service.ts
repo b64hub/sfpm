@@ -9,7 +9,7 @@ import type {
   ResolveForPackageOptions,
 } from './providers/project-definition-provider.js';
 
-import {loadSfpmConfig, resolveConfigPath} from './config-loader.js';
+import {loadSfpmConfig, type LoadSfpmConfigOptions, resolveConfigPath} from './config-loader.js';
 import ProjectGraph from './project-graph.js';
 import {SfdxProjectProvider} from './providers/sfdx-project-provider.js';
 import {WorkspaceProvider} from './providers/workspace-provider.js';
@@ -110,10 +110,14 @@ export default class ProjectService {
   /**
    * Creates and initializes a new ProjectService instance from a directory path.
    */
-  public static async create(projectPath?: string, provider?: ProjectDefinitionProvider): Promise<ProjectService> {
+  public static async create(
+    projectPath?: string,
+    provider?: ProjectDefinitionProvider,
+    options?: LoadSfpmConfigOptions,
+  ): Promise<ProjectService> {
     const resolvedPath = projectPath ?? process.cwd();
     const projectRoot = findSfpmRoot(resolvedPath) ?? resolvedPath;
-    const sfpmConfig = await loadSfpmConfig(projectRoot);
+    const sfpmConfig = await loadSfpmConfig(projectRoot, undefined, options);
 
     const definitionProvider = provider ?? await detectProvider(projectRoot, sfpmConfig);
     definitionProvider.resolve();
