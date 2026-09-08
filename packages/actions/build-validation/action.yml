@@ -28,19 +28,44 @@ inputs:
 outputs:
   success:
     description: 'Whether all validations passed (true/false)'
+    value: ${{ steps.build-validation.outputs.success }}
   duration:
     description: 'Total resume duration in milliseconds'
+    value: ${{ steps.build-validation.outputs.duration }}
   validated-count:
     description: 'Number of packages that passed validation'
+    value: ${{ steps.build-validation.outputs.validated-count }}
   failed-count:
     description: 'Number of packages that failed validation'
+    value: ${{ steps.build-validation.outputs.failed-count }}
   failed-packages:
     description: 'Comma-separated list of packages that failed validation'
+    value: ${{ steps.build-validation.outputs.failed-packages }}
   publishable-packages:
     description: 'Comma-separated list of packages safe to publish: built successfully, not build-skipped, and validated if validation was required'
+    value: ${{ steps.build-validation.outputs.publishable-packages }}
   result:
     description: 'Full JSON result with per-package validation outcomes'
+    value: ${{ steps.build-validation.outputs.result }}
 
 runs:
-  using: 'node20'
-  main: '../dist/build-validation-main.js'
+  using: composite
+  steps:
+    - id: build-validation
+      shell: bash
+      # The runtime directory is shared by every SFPM action. Its committed
+      # lockfile pins the whole transitive tree, and `npm ci` verifies the
+      # integrity hash of every tarball it downloads.
+      run: |
+        runtime="$GITHUB_ACTION_PATH/../runtime"
+        # Reuse the tree when another SFPM action already installed it in this job.
+        [ -d "$runtime/node_modules" ] || npm ci --prefix "$runtime" --ignore-scripts
+        "$runtime/node_modules/.bin/sfpm-action" build-validation
+      # Composite actions do not receive INPUT_* automatically, so each input is
+      # forwarded explicitly. Callers still use plain `with:`.
+      env:
+        INPUT_BUILD-RESULT: ${{ inputs.build-result }}
+        INPUT_PACKAGES: ${{ inputs.packages }}
+        INPUT_MAX-WAIT-MINUTES: ${{ inputs.max-wait-minutes }}
+        INPUT_POLLING-INTERVAL-SECONDS: ${{ inputs.polling-interval-seconds }}
+        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}

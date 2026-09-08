@@ -42,13 +42,39 @@ inputs:
 outputs:
   success:
     description: 'Whether all installs succeeded (true/false)'
+    value: ${{ steps.install.outputs.success }}
   duration:
     description: 'Total install duration in milliseconds'
+    value: ${{ steps.install.outputs.duration }}
   failed-packages:
     description: 'Comma-separated list of packages that failed to install'
+    value: ${{ steps.install.outputs.failed-packages }}
   result:
     description: 'Full JSON result with per-package outcomes'
+    value: ${{ steps.install.outputs.result }}
 
 runs:
-  using: 'node20'
-  main: '../dist/install-main.js'
+  using: composite
+  steps:
+    - id: install
+      shell: bash
+      # The runtime directory is shared by every SFPM action. Its committed
+      # lockfile pins the whole transitive tree, and `npm ci` verifies the
+      # integrity hash of every tarball it downloads.
+      run: |
+        runtime="$GITHUB_ACTION_PATH/../runtime"
+        # Reuse the tree when another SFPM action already installed it in this job.
+        [ -d "$runtime/node_modules" ] || npm ci --prefix "$runtime" --ignore-scripts
+        "$runtime/node_modules/.bin/sfpm-action" install
+      # Composite actions do not receive INPUT_* automatically, so each input is
+      # forwarded explicitly. Callers still use plain `with:`.
+      env:
+        INPUT_TARGET-ORG: ${{ inputs.target-org }}
+        INPUT_PACKAGES: ${{ inputs.packages }}
+        INPUT_ORIGIN: ${{ inputs.origin }}
+        INPUT_FORCE: ${{ inputs.force }}
+        INPUT_INCLUDE-DEPENDENCIES: ${{ inputs.include-dependencies }}
+        INPUT_INSTALLATION-KEYS: ${{ inputs.installation-keys }}
+        INPUT_TEST-LEVEL: ${{ inputs.test-level }}
+        INPUT_REGRESSION-TEST: ${{ inputs.regression-test }}
+        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Dispatcher invoked by the composite actions:
- *   npx --package=@b64hub/sfpm-actions@<version> sfpm-action <action-name>
+ * Dispatcher invoked by the composite actions, from the shared pinned runtime:
+ *   <runtime>/node_modules/.bin/sfpm-action <action-name>
  *
  * Inputs arrive as INPUT_* environment variables mapped in each action.yml,
  * so the entrypoints keep using @actions/core `getInput`/`setOutput` unchanged.

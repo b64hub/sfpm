@@ -21,13 +21,33 @@ inputs:
 outputs:
   success:
     description: 'Whether all builds succeeded (true/false)'
+    value: ${{ steps.build-turbo-aggregate.outputs.success }}
   duration:
     description: 'Total aggregation duration in milliseconds'
+    value: ${{ steps.build-turbo-aggregate.outputs.duration }}
   failed-packages:
     description: 'Comma-separated list of packages that failed to build'
+    value: ${{ steps.build-turbo-aggregate.outputs.failed-packages }}
   result:
     description: "Full JSON result with per-package outcomes, in the same shape as the build action's result output. Pass this into build-validation's build-result input as needs.build.outputs.result"
+    value: ${{ steps.build-turbo-aggregate.outputs.result }}
 
 runs:
-  using: 'node20'
-  main: '../dist/build-turbo-aggregate-main.js'
+  using: composite
+  steps:
+    - id: build-turbo-aggregate
+      shell: bash
+      # The runtime directory is shared by every SFPM action. Its committed
+      # lockfile pins the whole transitive tree, and `npm ci` verifies the
+      # integrity hash of every tarball it downloads.
+      run: |
+        runtime="$GITHUB_ACTION_PATH/../runtime"
+        # Reuse the tree when another SFPM action already installed it in this job.
+        [ -d "$runtime/node_modules" ] || npm ci --prefix "$runtime" --ignore-scripts
+        "$runtime/node_modules/.bin/sfpm-action" build-turbo-aggregate
+      # Composite actions do not receive INPUT_* automatically, so each input is
+      # forwarded explicitly. Callers still use plain `with:`.
+      env:
+        INPUT_PACKAGES: ${{ inputs.packages }}
+        INPUT_TASK-NAME: ${{ inputs.task-name }}
+        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}

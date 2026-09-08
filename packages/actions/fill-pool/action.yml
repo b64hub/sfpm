@@ -42,19 +42,49 @@ inputs:
 outputs:
   success:
     description: 'Whether all orgs were provisioned successfully (true/false)'
+    value: ${{ steps.fill-pool.outputs.success }}
   tag:
     description: 'The pool tag'
+    value: ${{ steps.fill-pool.outputs.tag }}
   succeeded:
     description: 'Number of orgs successfully provisioned'
+    value: ${{ steps.fill-pool.outputs.succeeded }}
   failed:
     description: 'Number of orgs that failed to provision'
+    value: ${{ steps.fill-pool.outputs.failed }}
   duration:
     description: 'Total provisioning duration in milliseconds'
+    value: ${{ steps.fill-pool.outputs.duration }}
   org-usernames:
     description: 'Comma-separated list of provisioned org usernames'
+    value: ${{ steps.fill-pool.outputs.org-usernames }}
   result:
     description: 'Full JSON result'
+    value: ${{ steps.fill-pool.outputs.result }}
 
 runs:
-  using: 'node20'
-  main: '../dist/fill-pool-main.js'
+  using: composite
+  steps:
+    - id: fill-pool
+      shell: bash
+      # The runtime directory is shared by every SFPM action. Its committed
+      # lockfile pins the whole transitive tree, and `npm ci` verifies the
+      # integrity hash of every tarball it downloads.
+      run: |
+        runtime="$GITHUB_ACTION_PATH/../runtime"
+        # Reuse the tree when another SFPM action already installed it in this job.
+        [ -d "$runtime/node_modules" ] || npm ci --prefix "$runtime" --ignore-scripts
+        "$runtime/node_modules/.bin/sfpm-action" fill-pool
+      # Composite actions do not receive INPUT_* automatically, so each input is
+      # forwarded explicitly. Callers still use plain `with:`.
+      env:
+        INPUT_DEVHUB-USERNAME: ${{ inputs.devhub-username }}
+        INPUT_POOL-TAG: ${{ inputs.pool-tag }}
+        INPUT_MAX-ALLOCATION: ${{ inputs.max-allocation }}
+        INPUT_POOL-TYPE: ${{ inputs.pool-type }}
+        INPUT_DEFINITION-FILE: ${{ inputs.definition-file }}
+        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}
+        INPUT_EXPIRY-DAYS: ${{ inputs.expiry-days }}
+        INPUT_BATCH-SIZE: ${{ inputs.batch-size }}
+        INPUT_SANDBOX-NAME-PATTERN: ${{ inputs.sandbox-name-pattern }}
+        INPUT_USE-LOCAL-SOURCE: ${{ inputs.use-local-source }}
