@@ -9,7 +9,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # commit the regenerated CLI README, create the release, move v0
+  contents: write # commit the regenerated CLI README, create the release, move rolling major tag
+  id-token: write # OIDC token for npm trusted publishing (pnpm publish uses this automatically)
 
 concurrency:
   group: release
@@ -18,6 +19,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: publish
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,6 +61,7 @@ jobs:
           version=$(node -p "require('./package.json').version")
           tag="$version"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "major=v${version%%.*}" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
           if gh release view "$tag" >/dev/null 2>&1; then
@@ -95,15 +98,16 @@ jobs:
         env:
           TAG: ${{ steps.version.outputs.tag }}
 
-      - name: Create release and move rolling v0 tag
+      - name: Create release and move rolling major tag
         if: steps.version.outputs.skip == 'false'
         run: |
           # Re-read HEAD: the repin commit above may have moved it.
           sha=$(git rev-parse HEAD)
           gh release create "$TAG" --target "$sha" --title "$TAG" --generate-notes
-          # v0 is the only tag that ever moves; v0.x.y are protected create-only.
-          git tag -f -a v0 -m "Rolling tag for $TAG" "$sha"
-          git push --force origin v0
+          # vN is the only tag that ever moves; vN.x.y are protected create-only.
+          git tag -f -a "$MAJOR" -m "Rolling tag for $TAG" "$sha"
+          git push --force origin "$MAJOR"
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
+          MAJOR: ${{ steps.version.outputs.major }}
