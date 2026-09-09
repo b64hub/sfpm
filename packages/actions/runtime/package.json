@@ -4,6 +4,6 @@
   "private": true,
   "description": "Pinned runtime shared by every SFPM composite action. The lockfile freezes the full transitive dependency tree, and `npm ci` enforces the integrity hash of every tarball. Regenerated on release by scripts/sync-action-runtime.mjs.",
   "dependencies": {
-    "@b64hub/sfpm-actions": "0.2.0"
+    "@b64hub/sfpm-actions": "0.3.0"
   }
 }
