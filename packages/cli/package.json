@@ -46,7 +46,7 @@
     "@types/react": "^19.2.17",
     "chai": "^4",
     "mocha": "^10",
-    "oclif": "^4",
+    "oclif": "^5",
     "shx": "^0.3.3"
   },
   "engines": {
