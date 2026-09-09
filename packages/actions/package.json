@@ -44,5 +44,6 @@
   "devDependencies": {
     "vitest": "^4.0.17",
     "yaml": "^2.9.0"
-  }
+  },
+  "repository": "b64hub/sfpm"
 }

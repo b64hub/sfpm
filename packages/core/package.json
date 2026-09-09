@@ -48,5 +48,6 @@
     "@types/tmp": "^0.2.6",
     "ts-node": "^10.9.2",
     "vitest": "^4.0.17"
-  }
+  },
+  "repository": "b64hub/sfpm"
 }

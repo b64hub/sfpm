@@ -36,5 +36,6 @@
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
     "vitest": "^4.0.17"
-  }
+  },
+  "repository": "b64hub/sfpm"
 }

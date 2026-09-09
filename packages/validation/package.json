@@ -40,5 +40,6 @@
   },
   "optionalDependencies": {
     "@prettier-apex/apex-ast-serializer-linux-x64": "^2.2.6"
-  }
+  },
+  "repository": "b64hub/sfpm"
 }
