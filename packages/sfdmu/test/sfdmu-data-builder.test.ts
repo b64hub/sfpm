@@ -52,6 +52,7 @@ vi.mock('@b64hub/sfpm-core', () => {
       constructor() {}
       async exec() {}
     },
+    assembleArtifactTask: vi.fn(),
     Logger: undefined,
   };
 });
@@ -62,6 +63,7 @@ import {SfpmDataPackage} from '@b64hub/sfpm-core';
 describe('SfdmuDataBuilder', () => {
   let tmpDir: string;
   let dataPackage: any;
+  let provider: any;
 
   async function createTmpProject(): Promise<string> {
     const dir = path.join(os.tmpdir(), `sfdmu-builder-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -79,6 +81,9 @@ describe('SfdmuDataBuilder', () => {
       type: 'data',
       versionNumber: '1.0.0.0',
     };
+    provider = {
+      getPackageBuiltSourceDirectory: () => path.join(tmpDir, 'data'),
+    };
   });
 
   afterEach(async () => {
@@ -87,16 +92,16 @@ describe('SfdmuDataBuilder', () => {
 
   it('should throw TypeError for non-data packages', () => {
     const badPackage = {constructor: {name: 'SfpmSourcePackage'}} as any;
-    expect(() => new SfdmuDataBuilder('/tmp', badPackage, {})).toThrow('incompatible package type');
+    expect(() => new SfdmuDataBuilder(provider, badPackage, {})).toThrow('incompatible package type');
   });
 
   it('should not throw on connect (no-op)', async () => {
-    const builder = new SfdmuDataBuilder(path.join(tmpDir, 'data'), dataPackage, {});
-    await expect(builder.connect('devhub')).resolves.not.toThrow();
+    const builder = new SfdmuDataBuilder(provider, dataPackage, {});
+    await expect(builder.connect('devhub' as any)).resolves.not.toThrow();
   });
 
   it('should throw when export.json is missing', async () => {
-    const builder = new SfdmuDataBuilder(path.join(tmpDir, 'data'), dataPackage, {});
+    const builder = new SfdmuDataBuilder(provider, dataPackage, {});
     await expect(builder.exec()).rejects.toThrow('export.json not found');
   });
 
@@ -109,7 +114,7 @@ describe('SfdmuDataBuilder', () => {
       }),
     );
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
+    const builder = new SfdmuDataBuilder(provider, dataPackage, {});
     await expect(builder.exec()).resolves.not.toThrow();
   });
 
@@ -117,7 +122,7 @@ describe('SfdmuDataBuilder', () => {
     const dataDir = path.join(tmpDir, 'data');
     await fs.writeFile(path.join(dataDir, 'export.json'), 'not json');
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
+    const builder = new SfdmuDataBuilder(provider, dataPackage, {});
     await expect(builder.exec()).rejects.toThrow('invalid JSON');
   });
 
@@ -125,7 +130,7 @@ describe('SfdmuDataBuilder', () => {
     const dataDir = path.join(tmpDir, 'data');
     await fs.writeFile(path.join(dataDir, 'export.json'), JSON.stringify({objects: []}));
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
+    const builder = new SfdmuDataBuilder(provider, dataPackage, {});
     await expect(builder.exec()).rejects.toThrow('non-empty');
   });
 
@@ -133,7 +138,7 @@ describe('SfdmuDataBuilder', () => {
     const dataDir = path.join(tmpDir, 'data');
     await fs.writeFile(path.join(dataDir, 'export.json'), JSON.stringify({foo: 'bar'}));
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
+    const builder = new SfdmuDataBuilder(provider, dataPackage, {});
     await expect(builder.exec()).rejects.toThrow('non-empty');
   });
 
@@ -158,7 +163,7 @@ describe('SfdmuDataBuilder', () => {
       }),
     );
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
+    const builder = new SfdmuDataBuilder(provider, dataPackage, {});
     await expect(builder.exec()).resolves.not.toThrow();
   });
 
@@ -166,11 +171,11 @@ describe('SfdmuDataBuilder', () => {
     const dataDir = path.join(tmpDir, 'data');
     await fs.writeFile(path.join(dataDir, 'export.json'), JSON.stringify({objectSets: [{objects: []}]}));
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
+    const builder = new SfdmuDataBuilder(provider, dataPackage, {});
     await expect(builder.exec()).rejects.toThrow('non-empty');
   });
 
-  it('should emit task events during validation', async () => {
+  it('should report task start/complete on the build event sink during validation', async () => {
     const dataDir = path.join(tmpDir, 'data');
     await fs.writeFile(
       path.join(dataDir, 'export.json'),
@@ -179,15 +184,15 @@ describe('SfdmuDataBuilder', () => {
       }),
     );
 
-    const builder = new SfdmuDataBuilder(dataDir, dataPackage, {});
-    const events: string[] = [];
+    const sink = {
+      taskComplete: vi.fn(),
+      taskStart: vi.fn(),
+    };
 
-    builder.on('task:start', () => events.push('start'));
-    builder.on('task:complete', () => events.push('complete'));
-
+    const builder = new SfdmuDataBuilder(provider, dataPackage, {}, undefined, sink as any);
     await builder.exec();
 
-    expect(events).toContain('start');
-    expect(events).toContain('complete');
+    expect(sink.taskStart).toHaveBeenCalledWith(expect.objectContaining({taskName: 'SfdmuValidation'}));
+    expect(sink.taskComplete).toHaveBeenCalledWith(expect.objectContaining({taskName: 'SfdmuValidation', success: true}));
   });
 });

@@ -80,7 +80,10 @@ export function toNpmPackageJson(
   const keywords = [...new Set([...additionalKeywords, ...baseKeywords, ...sfpmKeywords])];
 
   // Source is staged mirroring the package's own configured source path
-  // (see SourceCopyStep) — defaults to "." when unset.
+  // (see SourceCopyStep) — defaults to "." when unset. Equivalent to
+  // getSourceSubpath() (project-definition-provider.ts) in workspace mode,
+  // but that helper needs packageDir/projectDir this function doesn't have
+  // access to, so the formula is duplicated here intentionally.
   const packageSourcePath = workspacePkgJson.sfpm?.path ?? '.';
 
   // Start from workspace package.json, omit workspace-only fields.

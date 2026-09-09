@@ -1,5 +1,6 @@
 import {createJiti} from 'jiti'
 import {existsSync} from 'node:fs';
+import {createRequire} from 'node:module';
 import {resolve} from 'node:path';
 
 import {SfpmConfig} from '../types/config.js';
@@ -9,14 +10,10 @@ export interface LoadSfpmConfigOptions {
   /**
    * Extra module aliases for jiti, as `package name -> absolute entry path`.
    *
-   * Only needed when the config file imports sfpm packages that are not
-   * resolvable from the config file itself — e.g. `sfpm bootstrap`, which
-   * loads config out of a bare `git clone` that has no `node_modules`.
-   * Callers that are themselves installed on disk resolve these with
-   * `createRequire(import.meta.url).resolve(name)`.
-   *
-   * Omit it and imports resolve from the project normally, which is what any
-   * project that type-checks its own config already supports.
+   * Merged over the built-in default aliases for `@b64hub/sfpm-*` packages
+   * (resolved from this module's own installation) — explicit entries here
+   * win over the defaults. Only needed for packages not covered by the
+   * default set, or to override where a default resolves from.
    */
   alias?: Record<string, string>;
 }
@@ -70,10 +67,12 @@ export async function loadSfpmConfig(
 
   try {
     // configPath is the resolution base, so imports in the config file resolve
-    // from the target project's node_modules. Callers may supply aliases for
-    // projects that have none (see LoadSfpmConfigOptions.alias).
+    // from the target project's node_modules. Projects without these packages
+    // installed fall back to resolving them from the CLI's own installation
+    // (see defaultConfigAlias). Callers may override via options.alias.
+    const alias = {...defaultConfigAlias(), ...options?.alias};
     const jiti = createJiti(configPath, {
-      alias: options?.alias,
+      alias,
       fsCache: true,
       interopDefault: true,
     });
@@ -103,6 +102,28 @@ export async function loadSfpmConfig(
       {cause: error},
     );
   }
+}
+
+/**
+ * Default jiti aliases for sfpm packages, resolved from this module's own
+ * installation. Lets a project's `sfpm.config.ts` import `@b64hub/sfpm-*`
+ * even when those packages aren't installed in the project itself. Packages
+ * not installed alongside this module are silently omitted.
+ */
+function defaultConfigAlias(): Record<string, string> {
+  const require = createRequire(import.meta.url);
+  const alias: Record<string, string> = {};
+
+  for (const name of ['@b64hub/sfpm-core', '@b64hub/sfpm-orgs', '@b64hub/sfpm-hooks', '@b64hub/sfpm-sfdmu']) {
+    try {
+      alias[name] = require.resolve(name);
+    } catch {
+      // Not installed alongside this module — a config importing it will fail
+      // with jiti's own resolution error, which names the missing package.
+    }
+  }
+
+  return alias;
 }
 
 /**

@@ -16,7 +16,7 @@ export {ApexClassifier, type ApexClassInfo} from './apex/apex-classifier.js';
 export {
   ApexTestService, type ClassCoverage, type RunTestsOptions, type TestClassResult, type TestMethodResult, type TestRunResult,
 } from './apex/apex-test-service.js';
-export {default as ArtifactAssembler, type ArtifactAssemblerOptions, type ChangelogProvider} from './artifacts/artifact-assembler.js';
+export {default as ArtifactAssembler, type ArtifactAssemblerOptions} from './artifacts/artifact-assembler.js';
 
 export {ArtifactRepository} from './artifacts/artifact-repository.js';
 export {default as ArtifactService} from './artifacts/artifact-service.js';

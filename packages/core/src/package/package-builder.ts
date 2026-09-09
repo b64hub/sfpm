@@ -6,7 +6,6 @@ import type {HookContext, HookTiming} from '../types/lifecycle.js';
 import type {LocalValidator} from '../types/local-validator.js';
 import type {PendingValidationDescriptor, ValidationLevel} from '../types/validation.js';
 
-import {ArtifactRepository} from '../artifacts/artifact-repository.js';
 import {BuildEventBus, BuildEventSink} from '../events/build-event-bus.js';
 import {extractErrorDetails} from '../events/orchestration-event-bus.js';
 import LifecycleEngine from '../lifecycle/lifecycle-engine.js';
