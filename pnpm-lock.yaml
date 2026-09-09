@@ -173,8 +173,8 @@ importers:
         version: 19.2.8
     devDependencies:
       '@oclif/test':
-        specifier: ^4
-        version: 4.1.16(@oclif/core@4.8.0)(supports-color@8.1.1)
+        specifier: ^5
+        version: 5.0.0(@oclif/core@4.8.0)(supports-color@8.1.1)
       '@types/chai':
         specifier: ^4
         version: 4.3.20
@@ -1444,11 +1444,11 @@ packages:
     resolution: {integrity: sha512-7QnG9tqVEDqRbCZGvCU1uueoLWdiSVqFmslOfEpEW++XkqLi8hKu3TX6J22yqrvgCwx9CnNeAkaOD2UZ9NoWKw==}
     engines: {node: '>=18.0.0'}
 
-  '@oclif/test@4.1.16':
-    resolution: {integrity: sha512-LPrF++WGGBE0pe3GUkzEteI5WrwTT7usGpIMSxkyJhYnFXKkwASyTcCmOhNH4QC65kqsLt1oBA88BMkCJqPtxg==}
-    engines: {node: '>=18.0.0'}
+  '@oclif/test@5.0.0':
+    resolution: {integrity: sha512-70zr4y1G4h8Sc8u5869JqpQOXHjhpc6KO4y0+0chLQNYUpCKNI8h1uBuRzqs9IH0Vhoq0ZEuJHTSm1ttAIuV0A==}
+    engines: {node: '>=22.0.0'}
     peerDependencies:
-      '@oclif/core': '>= 3.0.0'
+      '@oclif/core': ^5.0.0
 
   '@octokit/auth-token@4.0.0':
     resolution: {integrity: sha512-tY/msAuJo6ARbK6SPIxZrPBms3xPbfwBrulZe0Wtr/DIY9lje2HeV1uoebShn6mx7SjCHif6EjMvoREj+gZ+SA==}
@@ -7656,7 +7656,7 @@ snapshots:
       - react-devtools-core
       - utf-8-validate
 
-  '@oclif/test@4.1.16(@oclif/core@4.8.0)(supports-color@8.1.1)':
+  '@oclif/test@5.0.0(@oclif/core@4.8.0)(supports-color@8.1.1)':
     dependencies:
       '@oclif/core': 4.8.0
       ansis: 3.17.0
