@@ -137,17 +137,25 @@ describe('buildOwnershipIndex', () => {
     expect(index.size).toBe(3);
   });
 
-  // NOTE: buildOwnershipIndex has no try/catch around ComponentSet.fromSource(),
-  // unlike the superseded SymbolRegistry.registerPackage(), which caught errors
-  // per-package and continued. Here, a throw from one manifest aborts the whole
-  // call — later manifests are never processed. This is a real behavior
-  // difference from the old class, not a test gap; flagged for a separate
-  // decision on whether per-manifest error isolation should be added.
-  it('propagates an error from ComponentSet.fromSource() instead of skipping the manifest (documents current, non-graceful behavior)', () => {
-    mockFromSource.mockImplementationOnce(() => {
+  // buildOwnershipIndex catches errors from ComponentSet.fromSource() per manifest,
+  // matching the per-package error isolation of the superseded SymbolRegistry class:
+  // a bad manifest is skipped (its components absent from the index) and the
+  // remaining manifests are still processed.
+  it('skips a manifest whose ComponentSet.fromSource() throws, and still processes the rest', () => {
+    mockFromSource
+    .mockImplementationOnce(() => {
       throw new Error('boom');
-    });
+    })
+    .mockReturnValueOnce(
+      createComponentSet([component('MyUtility', 'apexclass')]) as never,
+    );
 
-    expect(() => buildOwnershipIndex([manifest('pkg-one', 'force-app')])).toThrow('boom');
+    const index = buildOwnershipIndex([
+      manifest('pkg-one', 'force-app'),
+      manifest('pkg-two', '/workspace/pkg-two'),
+    ]);
+
+    expect(index.get('myutility')?.packageId).toBe('pkg-two');
+    expect(index.size).toBe(1);
   });
 });

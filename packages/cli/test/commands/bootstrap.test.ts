@@ -1,5 +1,6 @@
 import {expect} from 'chai'
 
+import {foldValidationFailures} from '../../src/commands/bootstrap.js'
 import {
   BOOTSTRAP_PACKAGES,
   type BootstrapAction,
@@ -270,6 +271,59 @@ describe('bootstrap', () => {
       const ui = BOOTSTRAP_PACKAGES.find(p => p.name === '@b64hub/sfpm-ui')!
       expect(artifact.isOrgDependent).to.equal(false)
       expect(ui.isOrgDependent).to.equal(false)
+    })
+  })
+
+  // ====================================================================
+  // foldValidationFailures
+  //
+  // buildPackages() resolves any pending org validations (e.g. unlocked
+  // package version creation) before returning. Previously, the resolved
+  // validation results were discarded entirely -- a failed org validation
+  // during bootstrap never surfaced as a failure. This pure fold is what
+  // turns ValidationResolver's per-package results into failures that get
+  // merged into the overall bootstrap results array.
+  // ====================================================================
+
+  describe('foldValidationFailures', () => {
+    it('returns an empty array when there are no pending validations', () => {
+      expect(foldValidationFailures(new Map())).to.deep.equal([])
+    })
+
+    it('ignores passed validations', () => {
+      const results = new Map([
+        ['@b64hub/sfpm-artifact', {status: 'passed'}],
+      ])
+      expect(foldValidationFailures(results)).to.deep.equal([])
+    })
+
+    it('reports a failed validation with its error message', () => {
+      const results = new Map([
+        ['@b64hub/sfpm-orgs', {error: 'Package version creation failed', status: 'failed'}],
+      ])
+      expect(foldValidationFailures(results)).to.deep.equal([
+        {error: 'Package version creation failed', packageName: '@b64hub/sfpm-orgs'},
+      ])
+    })
+
+    it('falls back to a generic message when a failed validation has no error', () => {
+      const results = new Map([
+        ['@b64hub/sfpm-orgs', {status: 'failed'}],
+      ])
+      expect(foldValidationFailures(results)).to.deep.equal([
+        {error: 'Validation failed', packageName: '@b64hub/sfpm-orgs'},
+      ])
+    })
+
+    it('reports only the failures out of a mixed pass/fail set', () => {
+      const results = new Map([
+        ['@b64hub/sfpm-artifact', {status: 'passed'}],
+        ['@b64hub/sfpm-orgs', {error: 'timed out', status: 'failed'}],
+        ['@b64hub/sfpm-ui', {status: 'passed'}],
+      ])
+      expect(foldValidationFailures(results)).to.deep.equal([
+        {error: 'timed out', packageName: '@b64hub/sfpm-orgs'},
+      ])
     })
   })
 })
