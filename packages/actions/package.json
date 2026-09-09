@@ -1,6 +1,6 @@
 {
   "name": "@b64hub/sfpm-actions",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "GitHub Actions for SFPM — PR validation, scratch org pool integration, and source deployment",
   "type": "module",
   "scripts": {
@@ -19,7 +19,7 @@
     "@actions/cache": "^4.0.3",
     "@actions/core": "^1.11.1",
     "@actions/github": "^6.0.0",
-    "@b64hub/sfpm-core": "workspace:^0.2.0",
+    "@b64hub/sfpm-core": "workspace:^0.3.0",
     "@b64hub/sfpm-orgs": "workspace:^0.2.0",
     "@b64hub/sfpm-telemetry": "workspace:^0.2.0",
     "@b64hub/sfpm-validation": "workspace:^0.2.0",

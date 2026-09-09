@@ -6,8 +6,6 @@ name: release
 #   - workspace deps use pnpm's `workspace:` protocol, which `npm publish`
 #     cannot rewrite; `pnpm publish` replaces them with real versions
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -59,7 +57,7 @@ jobs:
         id: version
         run: |
           version=$(node -p "require('./package.json').version")
-          tag="v$version"
+          tag="$version"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
