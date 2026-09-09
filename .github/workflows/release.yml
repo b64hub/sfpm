@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write # commit the regenerated CLI README, create the release, move v0
+  id-token: write # OIDC token for npm trusted publishing (pnpm publish uses this automatically)
 
 concurrency:
   group: release
