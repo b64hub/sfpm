@@ -20,7 +20,7 @@ $ npm install -g @b64hub/sfpm-cli
 $ sfpm COMMAND
 running command...
 $ sfpm (--version)
-@b64hub/sfpm-cli/0.2.0 darwin-arm64 node-v25.2.1
+@b64hub/sfpm-cli/0.3.0 linux-x64 node-v22.23.2
 $ sfpm --help [COMMAND]
 USAGE
   $ sfpm COMMAND
@@ -88,7 +88,7 @@ EXAMPLES
   $ sfpm add @myorg/package-a @myorg/package-b
 ```
 
-_See code: [dist/commands/add.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/add.js)_
+_See code: [dist/commands/add.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/add.js)_
 
 ## `sfpm bootstrap`
 
@@ -122,7 +122,7 @@ EXAMPLES
   $ sfpm bootstrap -o my-prod-org --force
 ```
 
-_See code: [dist/commands/bootstrap.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/bootstrap.js)_
+_See code: [dist/commands/bootstrap.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/bootstrap.js)_
 
 ## `sfpm build PACKAGES`
 
@@ -146,7 +146,7 @@ FLAGS
                                      <options: local|org|full>
   -o, --build-org=<value>            target org for source package validation (deploy + test)
   -t, --tag=<value>                  tag for the build
-  -v, --target-dev-hub=<value>       [default: dev-niko, env: SF_DEV_HUB] target dev hub username
+  -v, --target-dev-hub=<value>       [env: SF_DEV_HUB] target dev hub username
   -w, --wait=<value>                 [default: 120] timeout in minutes for package version creation
       --async                        return immediately without waiting for validation results
       --json                         output result as JSON
@@ -173,7 +173,7 @@ EXAMPLES
   $ sfpm build package-a package-b -v my-devhub
 ```
 
-_See code: [dist/commands/build/index.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/build/index.js)_
+_See code: [dist/commands/build/index.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/build/index.js)_
 
 ## `sfpm build status`
 
@@ -201,7 +201,7 @@ EXAMPLES
   $ sfpm build status --poll
 ```
 
-_See code: [dist/commands/build/status.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/build/status.js)_
+_See code: [dist/commands/build/status.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/build/status.js)_
 
 ## `sfpm deploy PACKAGES`
 
@@ -243,7 +243,7 @@ EXAMPLES
   $ sfpm deploy package-a package-b -o my-sandbox
 ```
 
-_See code: [dist/commands/deploy/index.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/deploy/index.js)_
+_See code: [dist/commands/deploy/index.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/deploy/index.js)_
 
 ## `sfpm deploy artifact PACKAGES`
 
@@ -285,7 +285,7 @@ EXAMPLES
   $ sfpm deploy artifact package-a package-b -o my-sandbox
 ```
 
-_See code: [dist/commands/deploy/artifact.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/deploy/artifact.js)_
+_See code: [dist/commands/deploy/artifact.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/deploy/artifact.js)_
 
 ## `sfpm help [COMMAND]`
 
@@ -348,7 +348,7 @@ EXAMPLES
   $ sfpm install package-a package-b -o my-sandbox
 ```
 
-_See code: [dist/commands/install.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/install.js)_
+_See code: [dist/commands/install.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/install.js)_
 
 ## `sfpm package create`
 
@@ -385,7 +385,7 @@ EXAMPLES
   $ sfpm package create --json
 ```
 
-_See code: [dist/commands/package/create.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/package/create.js)_
+_See code: [dist/commands/package/create.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/package/create.js)_
 
 ## `sfpm plugins`
 
@@ -688,7 +688,7 @@ USAGE
 
 FLAGS
   -t, --tag=<value>...          (required) pool tag to delete from (repeat to delete from multiple pools)
-  -v, --target-dev-hub=<value>  [default: dev-niko] target hub org username or alias
+  -v, --target-dev-hub=<value>  target hub org username or alias
       --in-progress-only        only delete orgs with "In Progress" status
       --json                    output result as JSON
       --log-level=<option>      [default: error, env: SFPM_LOG_LEVEL] diagnostic log level
@@ -715,7 +715,7 @@ EXAMPLES
   $ sfpm pool delete --tag dev-pool -v my-devhub --json
 ```
 
-_See code: [dist/commands/pool/delete.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/pool/delete.js)_
+_See code: [dist/commands/pool/delete.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/pool/delete.js)_
 
 ## `sfpm pool fetch`
 
@@ -730,7 +730,7 @@ USAGE
 FLAGS
   -a, --alias=<value>           set a local alias for the fetched org
   -t, --tag=<value>             (required) pool tag to fetch from
-  -v, --target-dev-hub=<value>  [default: dev-niko] target hub org username or alias
+  -v, --target-dev-hub=<value>  target hub org username or alias
       --json                    output result as JSON
       --limit=<value>           max orgs to return when using --all
       --log-level=<option>      [default: error, env: SFPM_LOG_LEVEL] diagnostic log level
@@ -760,7 +760,7 @@ EXAMPLES
   $ sfpm pool fetch --tag dev-pool -v my-devhub --json
 ```
 
-_See code: [dist/commands/pool/fetch.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/pool/fetch.js)_
+_See code: [dist/commands/pool/fetch.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/pool/fetch.js)_
 
 ## `sfpm pool fill`
 
@@ -775,7 +775,7 @@ USAGE
 FLAGS
   -d, --definition-file=<value>  org definition file (scratch org or sandbox)
   -t, --tag=<value>...           (required) pool tag (repeat to fill multiple pools)
-  -v, --target-dev-hub=<value>   [default: dev-niko] target hub org username or alias
+  -v, --target-dev-hub=<value>   target hub org username or alias
       --batch-size=<value>       max concurrent org creations (default: 5)
       --expiry-days=<value>      scratch org expiry in days (default: 7)
       --json                     output result as JSON
@@ -801,7 +801,7 @@ EXAMPLES
   $ sfpm pool fill --tag dev-pool --max 10 -d config/project-scratch-def.json -v my-devhub --json
 ```
 
-_See code: [dist/commands/pool/fill.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/pool/fill.js)_
+_See code: [dist/commands/pool/fill.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/pool/fill.js)_
 
 ## `sfpm pool list`
 
@@ -814,7 +814,7 @@ USAGE
 
 FLAGS
   -t, --tag=<value>             pool tag to query (omit to list all pools)
-  -v, --target-dev-hub=<value>  [default: dev-niko] target hub org username or alias
+  -v, --target-dev-hub=<value>  target hub org username or alias
       --json                    output result as JSON
       --log-level=<option>      [default: error, env: SFPM_LOG_LEVEL] diagnostic log level
                                 <options: trace|debug|info|warn|error>
@@ -836,7 +836,7 @@ EXAMPLES
   $ sfpm pool list --tag dev-pool -v my-devhub --json
 ```
 
-_See code: [dist/commands/pool/list.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/pool/list.js)_
+_See code: [dist/commands/pool/list.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/pool/list.js)_
 
 ## `sfpm project`
 
@@ -860,7 +860,7 @@ EXAMPLES
   $ sfpm project
 ```
 
-_See code: [dist/commands/project/index.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/project/index.js)_
+_See code: [dist/commands/project/index.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/project/index.js)_
 
 ## `sfpm project init`
 
@@ -886,7 +886,7 @@ EXAMPLES
   $ sfpm project init --fix
 ```
 
-_See code: [dist/commands/project/init/index.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/project/init/index.js)_
+_See code: [dist/commands/project/init/index.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/project/init/index.js)_
 
 ## `sfpm project init turbo`
 
@@ -924,7 +924,7 @@ EXAMPLES
   $ sfpm project init turbo --json
 ```
 
-_See code: [dist/commands/project/init/turbo.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/project/init/turbo.js)_
+_See code: [dist/commands/project/init/turbo.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/project/init/turbo.js)_
 
 ## `sfpm project sync`
 
@@ -950,7 +950,7 @@ EXAMPLES
   $ sfpm project sync --api-version 63.0
 ```
 
-_See code: [dist/commands/project/sync.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/project/sync.js)_
+_See code: [dist/commands/project/sync.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/project/sync.js)_
 
 ## `sfpm project version bump`
 
@@ -994,7 +994,7 @@ EXAMPLES
   $ sfp project version bump --package mypackage --patch --projectfile path/to/sfdx-project.json
 ```
 
-_See code: [dist/commands/project/version/bump.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/project/version/bump.js)_
+_See code: [dist/commands/project/version/bump.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/project/version/bump.js)_
 
 ## `sfpm publish [PACKAGES]`
 
@@ -1027,7 +1027,7 @@ EXAMPLES
   $ sfpm publish all
 ```
 
-_See code: [dist/commands/publish.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/publish.js)_
+_See code: [dist/commands/publish.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/publish.js)_
 
 ## `sfpm watch cancel ID`
 
@@ -1053,7 +1053,7 @@ EXAMPLES
   $ sfpm watch cancel 1234567890-abc123
 ```
 
-_See code: [dist/commands/watch/cancel.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/watch/cancel.js)_
+_See code: [dist/commands/watch/cancel.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/watch/cancel.js)_
 
 ## `sfpm watch clean`
 
@@ -1082,7 +1082,7 @@ EXAMPLES
   $ sfpm watch clean --json
 ```
 
-_See code: [dist/commands/watch/clean.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/watch/clean.js)_
+_See code: [dist/commands/watch/clean.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/watch/clean.js)_
 
 ## `sfpm watch status`
 
@@ -1115,5 +1115,5 @@ EXAMPLES
   $ sfpm watch status --json
 ```
 
-_See code: [dist/commands/watch/status.js](https://github.com/b64hub/sfpm/blob/v0.2.0/dist/commands/watch/status.js)_
+_See code: [dist/commands/watch/status.js](https://github.com/b64hub/sfpm/blob/v0.3.0/dist/commands/watch/status.js)_
 <!-- commandsstop -->
