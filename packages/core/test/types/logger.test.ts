@@ -2,10 +2,8 @@ import {describe, expect, it, vi} from 'vitest';
 
 import {
     createConsoleLogger,
-    isStructuredLogger,
     noopLogger,
     type Logger,
-    type StructuredLogger,
 } from '../../src/types/logger.js';
 
 describe('Logger', () => {
@@ -66,32 +64,6 @@ describe('Logger', () => {
             expect(spy).toHaveBeenCalledWith('always visible');
 
             spy.mockRestore();
-        });
-    });
-
-    describe('isStructuredLogger', () => {
-        it('should return false for a plain Logger', () => {
-            const logger: Logger = {
-                debug: vi.fn(),
-                error: vi.fn(),
-                info: vi.fn(),
-                trace: vi.fn(),
-                warn: vi.fn(),
-            };
-            expect(isStructuredLogger(logger)).toBe(false);
-        });
-
-        it('should return true for a StructuredLogger', () => {
-            const logger: StructuredLogger = {
-                debug: vi.fn(),
-                error: vi.fn(),
-                group: vi.fn(),
-                groupEnd: vi.fn(),
-                info: vi.fn(),
-                trace: vi.fn(),
-                warn: vi.fn(),
-            };
-            expect(isStructuredLogger(logger)).toBe(true);
         });
     });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { ApexParser } from "../../src/apex/apex-parser.js";
-import { ApexAstSerializer } from "../../src/apex/apex-ast-serializer.js";
-import type * as jorje from "../../src/types/jorje.js";
+import { ApexParser } from "../../src/adapters/ast-serializer/apex-parser.js";
+import { ApexAstSerializer } from "../../src/adapters/ast-serializer/apex-ast-serializer.js";
+import type * as jorje from "../../src/adapters/ast-serializer/types/jorje.js";
 
 describe("ApexParser Classification", () => {
     it("should detect a test class from raw AST", async () => {

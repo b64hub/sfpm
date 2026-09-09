@@ -27,33 +27,11 @@ export interface ArtifactEventSink {
 }
 
 /**
- * Interface for providing changelogs.
- * Can be implemented later with Git or other providers.
- */
-export interface ChangelogProvider {
-  generateChangelog(pkg: SfpmPackage, provider: ProjectDefinitionProvider): Promise<any>;
-}
-
-/**
- * Stub implementation of the ChangelogProvider.
- */
-class StubChangelogProvider implements ChangelogProvider {
-  async generateChangelog(_pkg: SfpmPackage, _provider: ProjectDefinitionProvider): Promise<any> {
-    return {
-      message: 'Changelog generation is currently disabled.',
-      timestamp: Date.now(),
-    };
-  }
-}
-
-/**
  * Options for artifact assembly
  */
 export interface ArtifactAssemblerOptions {
   /** Additional keywords to append at build time */
   additionalKeywords?: string[];
-  /** Changelog provider for generating changelog.json */
-  changelogProvider?: ChangelogProvider;
   /** Pre-classified managed dependencies (alias -> packageVersionId 04t...) */
   managedDependencies?: Record<string, string>;
 }
@@ -71,7 +49,6 @@ export interface ArtifactAssemblerOptions {
  * directly cacheable by Turbo.
  */
 export default class ArtifactAssembler {
-  private changelogProvider: ChangelogProvider;
   private options: ArtifactAssemblerOptions;
   private packageVersionNumber: string;
   private sink?: ArtifactEventSink;
@@ -86,8 +63,6 @@ export default class ArtifactAssembler {
     this.options = options;
     this.sink = sink;
     this.packageVersionNumber = toVersionFormat(sfpmPackage.version || '0.0.0.1', 'semver');
-
-    this.changelogProvider = options.changelogProvider || new StubChangelogProvider();
   }
 
   /**
@@ -178,7 +153,10 @@ export default class ArtifactAssembler {
    * Generate changelog.json in the staging directory.
    */
   private async generateChangelog(stagingDir: string): Promise<void> {
-    const changelog = await this.changelogProvider.generateChangelog(this.sfpmPackage, this.provider);
+    const changelog = {
+      message: 'Changelog generation is currently disabled.',
+      timestamp: Date.now(),
+    };
     const changelogPath = path.join(stagingDir, 'changelog.json');
     await fs.writeJson(changelogPath, changelog, {spaces: 4});
   }

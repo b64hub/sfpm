@@ -41,20 +41,6 @@ export default interface Logger {
  * for environments that support them (e.g., GitHub Actions log groups,
  * CLI spinners/boxes). Falls back gracefully — consumers should check
  * for the extended interface before using these methods.
- *
- * @example
- * ```typescript
- * function logWithGroup(logger: Logger, title: string, fn: () => void): void {
- *   if (isStructuredLogger(logger)) {
- *     logger.group(title);
- *     fn();
- *     logger.groupEnd();
- *   } else {
- *     logger.info(title);
- *     fn();
- *   }
- * }
- * ```
  */
 export interface StructuredLogger extends Logger {
   /** Emit a file-level annotation (warning/error pinned to a file and line) */
@@ -82,17 +68,6 @@ export interface AnnotationProperties {
   line?: number;
   /** Annotation title */
   title?: string;
-}
-
-// ============================================================================
-// Logger Type Guards
-// ============================================================================
-
-/**
- * Check if a logger supports structured output (groups, annotations).
- */
-export function isStructuredLogger(logger: Logger): logger is StructuredLogger {
-  return 'group' in logger && 'groupEnd' in logger;
 }
 
 // ============================================================================

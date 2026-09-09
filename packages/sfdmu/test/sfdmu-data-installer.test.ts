@@ -86,14 +86,10 @@ describe('SfdmuDataInstaller', () => {
 
   it('should connect to org', async () => {
     const installer = new SfdmuDataInstaller('my-org', dataPackage);
-    const events: string[] = [];
 
-    installer.on('connection:start', () => events.push('connection:start'));
-    installer.on('connection:complete', () => events.push('connection:complete'));
-
-    await installer.connect('my-org');
-
-    expect(events).toContain('connection:start');
-    expect(events).toContain('connection:complete');
+    // connect() is currently a no-op: it stores the org for later use in
+    // run(), and emits no events. Connection handling now lives outside
+    // this installer.
+    await expect(installer.connect('my-org' as any)).resolves.toBeUndefined();
   });
 });

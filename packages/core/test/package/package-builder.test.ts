@@ -9,14 +9,7 @@ import {PackageType} from '../../src/types/package.js';
 // Hoisted mocks (accessible inside vi.mock factories)
 // ============================================================================
 
-const {SfpmMetadataPackageStub, mockBuilderInstance, mockPackageFactoryFn, mockRepo} = vi.hoisted(() => {
-  const _mockRepo = {
-    checkSourceHash: vi.fn(),
-    getDistDir: vi.fn().mockReturnValue('/project/packages/my-pkg/dist'),
-    getPackageVersionId: vi.fn(),
-    hasArtifact: vi.fn().mockReturnValue(true),
-  };
-
+const {SfpmMetadataPackageStub, mockBuilderInstance, mockPackageFactoryFn} = vi.hoisted(() => {
   const _mockBuilderInstance = {
     connect: vi.fn().mockResolvedValue(undefined),
     exec: vi.fn().mockResolvedValue({}),
@@ -25,9 +18,15 @@ const {SfpmMetadataPackageStub, mockBuilderInstance, mockPackageFactoryFn, mockR
 
   // Dynamically set by tests before each run
   let _packageType = 'source';
+  let _sourceHash: string | undefined;
+  let _packageVersionId: string | undefined;
   const _mockPackageFactoryFn = {
     get packageType() { return _packageType; },
     set packageType(v: string) { _packageType = v; },
+    get sourceHash() { return _sourceHash; },
+    set sourceHash(v: string | undefined) { _sourceHash = v; },
+    get packageVersionId() { return _packageVersionId; },
+    set packageVersionId(v: string | undefined) { _packageVersionId = v; },
     create(name: string) {
       return {
         _content: {},
@@ -37,11 +36,13 @@ const {SfpmMetadataPackageStub, mockBuilderInstance, mockPackageFactoryFn, mockR
         orchestration: {},
         packageDefinition: {path: 'force-app'},
         packageName: name,
+        packageVersionId: _packageVersionId,
         projectDirectory: '/project',
         scope: '@test',
         setBuildNumber: vi.fn(),
         setComponentSet: vi.fn(),
         source: {},
+        sourceHash: _sourceHash,
         type: _packageType,
         updateContent: vi.fn(),
         markAnalyzed: vi.fn(),
@@ -55,13 +56,8 @@ const {SfpmMetadataPackageStub, mockBuilderInstance, mockPackageFactoryFn, mockR
     SfpmMetadataPackageStub: class SfpmMetadataPackageStub {},
     mockBuilderInstance: _mockBuilderInstance,
     mockPackageFactoryFn: _mockPackageFactoryFn,
-    mockRepo: _mockRepo,
   };
 });
-
-vi.mock('../../src/artifacts/artifact-repository.js', () => ({
-  ArtifactRepository: function ArtifactRepository() { return mockRepo; },
-}));
 
 vi.mock('../../src/utils/workspace-path.js', () => ({
   resolvePackageWorkspacePath: vi.fn().mockReturnValue('/project/packages/my-pkg'),
@@ -175,10 +171,10 @@ describe('PackageBuilder', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPackageFactoryFn.packageType = PackageType.Source;
+    mockPackageFactoryFn.sourceHash = undefined;
+    mockPackageFactoryFn.packageVersionId = undefined;
     mockBuilderInstance.exec.mockResolvedValue({});
     mockBuilderInstance.tasks = [];
-    mockRepo.checkSourceHash.mockResolvedValue(undefined);
-    mockRepo.getPackageVersionId.mockReturnValue(undefined);
   });
 
   // ==========================================================================
@@ -327,10 +323,7 @@ describe('PackageBuilder', () => {
 
   describe('needsBuild — source hash', () => {
     it('should skip build when source hash matches', async () => {
-      mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/dist',
-        latestVersion: '1.0.0',
-      });
+      mockPackageFactoryFn.sourceHash = 'abc123';
 
       const builder = new PackageBuilder(mockProvider, {}, {}, mockLogger);
       await builder.build('my-pkg');
@@ -339,7 +332,7 @@ describe('PackageBuilder', () => {
     });
 
     it('should proceed when source hash differs', async () => {
-      mockRepo.checkSourceHash.mockResolvedValue(undefined);
+      mockPackageFactoryFn.sourceHash = 'different-hash';
 
       const builder = new PackageBuilder(mockProvider, {}, {}, mockLogger);
       await builder.build('my-pkg');
@@ -348,10 +341,7 @@ describe('PackageBuilder', () => {
     });
 
     it('should proceed when force is true despite hash match', async () => {
-      mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/dist',
-        latestVersion: '1.0.0',
-      });
+      mockPackageFactoryFn.sourceHash = 'abc123';
 
       const builder = new PackageBuilder(mockProvider, {}, {force: true}, mockLogger);
       await builder.build('my-pkg');
@@ -367,12 +357,8 @@ describe('PackageBuilder', () => {
   describe('needsBuild — manifest completeness', () => {
     it('should rebuild unlocked package when manifest has no packageVersionId and validation is org', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
-
-      mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/dist',
-        latestVersion: '1.0.0',
-      });
-      mockRepo.getPackageVersionId.mockReturnValue(undefined);
+      mockPackageFactoryFn.sourceHash = 'abc123';
+      mockPackageFactoryFn.packageVersionId = undefined;
 
       const builder = new PackageBuilder(mockProvider, {devhub: 'hub@test.com'}, {
         validation: 'org',
@@ -388,12 +374,8 @@ describe('PackageBuilder', () => {
 
     it('should rebuild unlocked package when manifest has no packageVersionId and validation is full', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
-
-      mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/dist',
-        latestVersion: '1.0.0',
-      });
-      mockRepo.getPackageVersionId.mockReturnValue(undefined);
+      mockPackageFactoryFn.sourceHash = 'abc123';
+      mockPackageFactoryFn.packageVersionId = undefined;
 
       const builder = new PackageBuilder(mockProvider, {devhub: 'hub@test.com'}, {
         validation: 'full',
@@ -406,12 +388,8 @@ describe('PackageBuilder', () => {
 
     it('should skip unlocked build when manifest HAS packageVersionId and hash matches', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
-
-      mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/dist',
-        latestVersion: '1.0.0',
-      });
-      mockRepo.getPackageVersionId.mockReturnValue('04tXXXXXXXXXXXXX');
+      mockPackageFactoryFn.sourceHash = 'abc123';
+      mockPackageFactoryFn.packageVersionId = '04tXXXXXXXXXXXXX';
 
       const builder = new PackageBuilder(mockProvider, {devhub: 'hub@test.com'}, {
         validation: 'org',
@@ -424,13 +402,9 @@ describe('PackageBuilder', () => {
 
     it('should NOT check packageVersionId when sourceOnly is true', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
-
-      mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/dist',
-        latestVersion: '1.0.0',
-      });
+      mockPackageFactoryFn.sourceHash = 'abc123';
       // No packageVersionId — but sourceOnly doesn't need one
-      mockRepo.getPackageVersionId.mockReturnValue(undefined);
+      mockPackageFactoryFn.packageVersionId = undefined;
 
       const builder = new PackageBuilder(mockProvider, {}, {
         unlocked: {sourceOnly: true},
@@ -445,12 +419,8 @@ describe('PackageBuilder', () => {
 
     it('should NOT check packageVersionId when validation is local', async () => {
       mockPackageFactoryFn.packageType = PackageType.Unlocked;
-
-      mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/dist',
-        latestVersion: '1.0.0',
-      });
-      mockRepo.getPackageVersionId.mockReturnValue(undefined);
+      mockPackageFactoryFn.sourceHash = 'abc123';
+      mockPackageFactoryFn.packageVersionId = undefined;
 
       const builder = new PackageBuilder(mockProvider, {}, {
         validation: 'local',
@@ -463,12 +433,8 @@ describe('PackageBuilder', () => {
 
     it('should NOT check packageVersionId for source packages', async () => {
       mockPackageFactoryFn.packageType = PackageType.Source;
-
-      mockRepo.checkSourceHash.mockResolvedValue({
-        artifactPath: '/project/packages/my-pkg/dist',
-        latestVersion: '1.0.0',
-      });
-      mockRepo.getPackageVersionId.mockReturnValue(undefined);
+      mockPackageFactoryFn.sourceHash = 'abc123';
+      mockPackageFactoryFn.packageVersionId = undefined;
 
       const builder = new PackageBuilder(mockProvider, {buildOrg: 'build@test.com'}, {
         validation: 'org',

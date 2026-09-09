@@ -2,6 +2,7 @@ import {
   BuildOrchestrator,
   InstallOrchestrator,
   Logger,
+  noopLogger,
   OrchestrationResult,
   PackageBuildResult,
   PackageManager,
@@ -10,6 +11,7 @@ import {
   type ProjectDefinitionProvider,
   ProjectService,
   stripScope,
+  ValidationEventBus,
   ValidationResolver,
   WorkspaceProvider,
 } from '@b64hub/sfpm-core'
@@ -73,6 +75,23 @@ const TIER_DESCRIPTIONS: Record<BootstrapTier, string> = {
   [BootstrapTier.Core]: 'sfpm-artifact only -- artifact tracking custom setting',
   [BootstrapTier.Full]: 'All packages -- adds artifact history & UI components',
   [BootstrapTier.Pool]: 'sfpm-artifact + sfpm-orgs -- adds scratch org & sandbox pooling',
+}
+
+/**
+ * Fold `ValidationResolver.resolve()`'s per-package results down to just the
+ * failures, in the shape `buildPackages()`'s caller merges into the overall
+ * bootstrap `results` array. Exported as a pure function so it's testable
+ * without constructing a real `ValidationResolver`/`ProjectService`.
+ */
+export function foldValidationFailures(validationResults: Map<string, {error?: string; status: string}>): Array<{error: string; packageName: string}> {
+  const failures: Array<{error: string; packageName: string}> = [];
+  for (const [packageName, validationResult] of validationResults) {
+    if (validationResult.status === 'failed') {
+      failures.push({error: validationResult.error ?? 'Validation failed', packageName});
+    }
+  }
+
+  return failures;
 }
 
 /** Per-package status determined before the pipeline runs. */
@@ -185,7 +204,7 @@ export default class Bootstrap extends SfpmCommand {
 
         // ── 3. Build packages that need it ─────────────────────────
         const buildNames = needsBuild.map(s => s.name)
-        const buildResult = await this.buildPackages(projectService, buildNames, flags.force ?? false, ctx)
+        const {result: buildResult, validationFailures} = await this.buildPackages(projectService, buildNames, flags.force ?? false, ctx)
 
         if (!buildResult.success) {
           for (const name of buildNames) {
@@ -202,15 +221,15 @@ export default class Bootstrap extends SfpmCommand {
           }
         }
 
-        const pendingValidations = buildResult.results.map(packageResult => packageResult.result?.pendingValidation).filter(descriptor => descriptor && descriptor.operationType === 'package-version-request') as PendingValidationDescriptor[];
-
-        const resolver = new ValidationResolver(
-          projectService.getDefinitionProvider(),
-          projectService.getProjectGraph(),
-          this.sfpmLogger,
-        )
-
-        const validationResults = await resolver.resolve(pendingValidations);
+        for (const failure of validationFailures) {
+          results.push({
+            action: 'build',
+            error: failure.error,
+            packageName: failure.packageName,
+            skipped: false,
+            success: false,
+          })
+        }
       }
 
       // ── 4. Promote unpromoted versions (newly built + previously built but not promoted) ──
@@ -265,12 +284,20 @@ export default class Bootstrap extends SfpmCommand {
   // Pipeline steps
   // ====================================================================
 
+  /**
+   * Build packages that need it, then resolve any pending org validations
+   * (e.g. unlocked package version creation) before ink is unmounted, so the
+   * live UI reflects validation progress instead of leaving packages stuck
+   * in a 'validating' state. Validation failures are returned alongside the
+   * build result rather than thrown, so the caller can fold them into the
+   * same results array as build/promote/install failures.
+   */
   private async buildPackages(
     projectService: ProjectService,
     packageNames: string[],
     force: boolean,
     ctx: BootstrapContext,
-  ): Promise<OrchestrationResult<PackageBuildResult>> {
+  ): Promise<{result: OrchestrationResult<PackageBuildResult>; validationFailures: Array<{error: string; packageName: string}>}> {
     if (ctx.isInteractive) {
       this.log(chalk.bold('\nBuilding packages...\n'))
     }
@@ -281,6 +308,7 @@ export default class Bootstrap extends SfpmCommand {
     // SfpmCommand base class emits the JSON envelope at the end).
     const isInk = ctx.mode !== 'json';
     const uiBus = isInk ? new EventEmitter() : undefined;
+    const validationBus = isInk ? new ValidationEventBus() : undefined;
     const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
 
     const buildOrchestrator = BuildOrchestrator.create(
@@ -296,7 +324,7 @@ export default class Bootstrap extends SfpmCommand {
 
     let inkInstance: ReturnType<typeof renderApp> | undefined;
     if (uiBus) {
-      attachBuildBridge(buildOrchestrator.buildBus, buildOrchestrator.orchestrationBus, uiBus);
+      attachBuildBridge(buildOrchestrator.buildBus, buildOrchestrator.orchestrationBus, uiBus, validationBus);
       inkInstance = renderApp(uiBus, {
         logPath,
         mode: ctx.mode === 'interactive' ? 'interactive' : 'plain',
@@ -306,8 +334,28 @@ export default class Bootstrap extends SfpmCommand {
 
     try {
       const result = await buildOrchestrator.buildAll(packageNames);
+
+      const pendingValidations = result.results
+      .map(packageResult => packageResult.result?.pendingValidation)
+      .filter((descriptor): descriptor is PendingValidationDescriptor => descriptor?.operationType === 'package-version-request');
+
+      const validationFailures: Array<{error: string; packageName: string}> = [];
+      if (pendingValidations.length > 0) {
+        // Resolve while ink is still mounted so validationBus-driven UI updates
+        // (wired above via attachBuildBridge) are visible, matching build/index.ts.
+        const resolver = new ValidationResolver(
+          projectService.getDefinitionProvider(),
+          projectService.getProjectGraph(),
+          validationBus ? noopLogger : ctx.logger,
+          validationBus,
+        )
+
+        const validationResults = await resolver.resolve(pendingValidations);
+        validationFailures.push(...foldValidationFailures(validationResults));
+      }
+
       if (inkInstance) await inkInstance.waitUntilExit();
-      return result;
+      return {result, validationFailures};
     } finally {
       inkInstance?.unmount();
     }

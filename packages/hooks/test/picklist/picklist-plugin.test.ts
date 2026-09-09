@@ -105,25 +105,25 @@ describe('picklistHooks', () => {
     expect(hooks.name).toBe('picklist');
     expect(hooks.hooks).toHaveLength(1);
     expect(hooks.hooks[0].operation).toBe('install');
-    expect(hooks.hooks[0].timing).toBe('post');
+    expect(hooks.hooks[0].timing).toBe('pre');
   });
 
   // --------------------------------------------------------------------------
   // Guard: package type
   // --------------------------------------------------------------------------
 
-  it('should skip non-unlocked packages', async () => {
+  it('should skip non-metadata packages', async () => {
     const hooks = picklistHooks();
     const logger = createLogger();
 
     await hooks.hooks[0].handler(createContext({
       logger,
       targetOrg: 'test@user.org',
-      sfpmPackage: createPackage({customFields: [], type: PackageType.Source}),
+      sfpmPackage: createPackage({customFields: [], type: PackageType.Data}),
     }));
 
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('not an unlocked package'),
+      expect.stringContaining('not a metadata package'),
     );
   });
 

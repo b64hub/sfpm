@@ -116,5 +116,21 @@ describe('config-loader', () => {
       const {loadSfpmConfig} = await import('../../src/project/config-loader.js');
       await expect(loadSfpmConfig(testDir)).rejects.toThrow('must export an object');
     });
+
+    it('should resolve a config importing @b64hub/sfpm-core even with no node_modules in the project', async () => {
+      // testDir has no node_modules at all — this simulates a real consumer
+      // project whose sfpm.config.ts imports sfpm packages it doesn't have
+      // installed itself. The default alias (resolved from this module's own
+      // installation) must make this work without any explicit options.alias.
+      writeFileSync(
+        join(testDir, 'sfpm.config.ts'),
+        'import {defineConfig} from \'@b64hub/sfpm-core\';\nexport default defineConfig({hooks: []});',
+      );
+
+      const {loadSfpmConfig} = await import('../../src/project/config-loader.js');
+      const config = await loadSfpmConfig(testDir);
+
+      expect(config).toEqual({hooks: []});
+    });
   });
 });

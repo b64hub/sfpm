@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import type * as jorje from '../../src/types/jorje.js';
-import { ApexReferenceExtractor } from '../../src/dependency/apex-reference-extractor.js';
+import type * as jorje from '../../src/adapters/ast-serializer/types/jorje.js';
+import { ApexReferenceExtractor } from '../../src/adapters/ast-serializer/apex-reference-extractor.js';
 
 const CLASS_TYPE_REF = 'apex.jorje.data.ast.TypeRefs$ClassTypeRef';
 const IDENTIFIER_CLASS = 'apex.jorje.data.Identifiers$LocationIdentifier';

@@ -4,22 +4,20 @@ import type {
 import type EventEmitter from 'node:events';
 
 /**
- * Bridges core orchestrator events onto the ink App's uiBus using the App's
- * own vocabulary (orchestration:*, package:*, step:*).
+ * Translates core orchestrator events into the ink App's vocabulary
+ * (orchestration:*, package:*, step:*). The App knows nothing about builds
+ * or installs — that translation lives here.
  *
- * The App knows nothing about builds or installs — that translation lives here.
- *
- * When `validationBus` is provided (ink interactive path):
+ * When `validationBus` is provided:
  *   - Packages with `validate:queued` enter `'validating'` status instead of
  *     flushing to terminal. They stay in the live area until the validation
  *     bus resolves them to success/failed.
  *   - The version buffer carries the build artifact version through to the
  *     final package:complete so the MetaCols can display it.
  *
- * Without `validationBus` (plain/json path):
- *   - Validation is handled separately by ValidationProgressRenderer (Listr).
- *   - Packages with pending validation still flush to terminal from the
- *     orchestrator's view — they won't appear in the App's live area post-build.
+ * Without `validationBus`:
+ *   - Packages with pending validation flush to terminal directly from the
+ *     orchestrator's view instead of entering the live validating state.
  */
 export function attachBuildBridge(
   buildBus: BuildEventBus,

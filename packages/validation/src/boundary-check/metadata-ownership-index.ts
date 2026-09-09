@@ -28,19 +28,24 @@ const SDR_TO_METADATA_TYPE: Partial<Record<string, MetadataType>> = {
 export function buildOwnershipIndex(manifests: PackageManifest[]): Map<string, MetadataOwnership> {
   const index = new Map<string, MetadataOwnership>();
   for (const manifest of manifests) {
-    const cs = ComponentSet.fromSource(manifest.packagePath);
+    try {
+      const cs = ComponentSet.fromSource(manifest.packagePath);
 
-    for (const component of cs.getSourceComponents()) {
-      const metadataType = SDR_TO_METADATA_TYPE[component.type.id];
-      if (!metadataType) continue;
-      const metadataName = component.fullName.toLowerCase();
-      index.set(metadataName, {
-        fileName: component.fullName,
-        filePath: component.xml ?? component.walkContent()[0] ?? '',
-        metadataName,
-        metadataType,
-        packageId: manifest.packageId,
-      });
+      for (const component of cs.getSourceComponents()) {
+        const metadataType = SDR_TO_METADATA_TYPE[component.type.id];
+        if (!metadataType) continue;
+        const metadataName = component.fullName.toLowerCase();
+        index.set(metadataName, {
+          fileName: component.fullName,
+          filePath: component.xml ?? component.walkContent()[0] ?? '',
+          metadataName,
+          metadataType,
+          packageId: manifest.packageId,
+        });
+      }
+    } catch {
+      // Skip this manifest and continue with the rest — matches the
+      // per-package error isolation of the superseded SymbolRegistry class.
     }
   }
 

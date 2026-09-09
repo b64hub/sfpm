@@ -111,9 +111,6 @@ describe('ArtifactAssembler', () => {
         };
 
         mockOptions = {
-            changelogProvider: {
-                generateChangelog: vi.fn().mockResolvedValue({ commits: [] })
-            },
             additionalKeywords: ['test'],
         };
 
