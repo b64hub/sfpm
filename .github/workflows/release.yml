@@ -34,7 +34,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       - run: pnpm install --frozen-lockfile
 
@@ -79,8 +78,6 @@ jobs:
       - name: Publish to npm
         if: steps.version.outputs.skip == 'false'
         run: pnpm publish -r --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Phase 2: the runtime lockfile can only pin a version that exists on the
       # registry, so it is regenerated after publishing and committed before the
