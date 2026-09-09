@@ -20,7 +20,7 @@
     "@b64hub/sfpm-core": "workspace:^0.3.0",
     "@salesforce/core": "^8.31.0",
     "@salesforce/source-deploy-retrieve": "^12.31.7",
-    "fast-xml-parser": "^5.3.3"
+    "fast-xml-parser": "^5.11.1"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
