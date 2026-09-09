@@ -1,12 +1,18 @@
 import {
   BuildOrchestrator,
-  type BuildOrchestratorOptions, type BuildOrg,
-  type BuildWatcherPayload,
-  LifecycleEngine,
+  type BuildOrchestratorOptions,
+  type BuildOrg,
+  type BuildWatcherPayload, LifecycleEngine,
+  LocalValidator,
+  Logger,
   noopLogger,
-  PackageType,
-  parseInstallationKeys,
-  type PendingValidationDescriptor, ProjectService, ValidationEventBus, ValidationResolver,
+  OrchestrationResult,
+  PackageBuildResult,
+  PackageType, parseInstallationKeys, type PendingValidationDescriptor, ProjectDefinitionProvider,
+  ProjectService,
+  ValidationEventBus,
+  ValidationLevel,
+  ValidationResolver,
   type WatcherState,
 } from '@b64hub/sfpm-core'
 import {ScratchOrgProvider} from '@b64hub/sfpm-orgs'
@@ -22,11 +28,11 @@ import chalk from 'chalk'
 import EventEmitter from 'node:events'
 import path from 'node:path'
 
+import type {OutputMode} from '../../ui/utils/renderer-utils.js'
+
 import SfpmCommand from '../../sfpm-command.js'
-import {attachBuildBridge} from '../../ui/build-event-bridge.js'
-import {BuildProgressRenderer, OutputMode} from '../../ui/build-progress-renderer.js'
-import {renderApp} from '../../ui/run.js'
-import {ValidationProgressRenderer} from '../../ui/validation-progress-renderer.js'
+import {attachBuildBridge} from '../../ui/adapters/build-event-bridge.js'
+import {renderApp} from '../../ui/renderers/run-orchestrator.js'
 import {resolvePackageInputs} from '../../utils/package-resolver.js'
 import {resolveCliProjectDir} from '../../utils/project-dir.js'
 import {forkWatcher, validationRunnerScript} from '../../utils/watcher.js'
@@ -43,6 +49,7 @@ interface ResolvedBuildFlags {
   projectDir: string;
   resolvedPackages: string[];
   sfpmConfig: any;
+  validation: ValidationLevel;
   waitMinutes: number;
 }
 
@@ -104,7 +111,7 @@ export default class Build extends SfpmCommand {
   }
   static override strict = false
 
-  public async execute(): Promise<void> {
+  public async execute(): Promise<OrchestrationResult<PackageBuildResult> | void> {
     const resolved = await this.resolveFlags()
 
     // Auto-create a scratch org for source validation if needed
@@ -117,7 +124,7 @@ export default class Build extends SfpmCommand {
     }
 
     try {
-      await this.buildOrchestrated(resolved)
+      return await this.buildOrchestrated(resolved)
     } finally {
       // Clean up auto-created scratch org (skip if --async defers to watcher)
       if (resolved.autoCreatedBuildOrg && !resolved.async) {
@@ -126,7 +133,7 @@ export default class Build extends SfpmCommand {
     }
   }
 
-  private async buildOrchestrated(resolved: ResolvedBuildFlags): Promise<void> {
+  private async buildOrchestrated(resolved: ResolvedBuildFlags): Promise<OrchestrationResult<PackageBuildResult> | void> {
     const projectService = await ProjectService.getInstance(resolved.projectDir);
     const projectConfig = projectService.getDefinitionProvider();
     const projectGraph = projectService.getProjectGraph();
@@ -141,30 +148,12 @@ export default class Build extends SfpmCommand {
       buildOrg.buildOrg = await Org.create({aliasOrUsername: resolved.buildOrgUsername})
     }
 
-    const isInk = resolved.mode === 'interactive';
+    const isInk = resolved.mode !== 'json';
     const uiBus = isInk ? new EventEmitter() : undefined;
-    const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
+    const validationBus = isInk ? new ValidationEventBus() : undefined;
 
-    // Build local validator for compile + dependency checks (all modes except 'none').
-    // Created here so it shares the run logger.
-    let localValidator: NimbusLocalValidator | undefined;
-    if (resolved.buildOptions.validation === 'local' || resolved.buildOptions.validation === 'full') {
-      const manifests = projectConfig.getAllPackageDefinitions().map(def => ({
-        declaredDependencies: new Set(projectConfig.getDependencies(def.name).map(d => d.name)),
-        packageId: def.name,
-        packagePath: path.join(projectConfig.projectDir, def.path),
-      }));
-      localValidator = new NimbusLocalValidator(
-        {
-          config: {
-            daemon: {autoStart: false, autoStop: true, enabled: false},
-          },
-          eventBus: new NimbusValidationEventBus(),
-          logger: pinoLogger,
-        },
-        manifests,
-      );
-    }
+    const {logger: pinoLogger, logPath} = this.createRunLogger(uiBus);
+    const localValidator = this.initLocalValidator(projectConfig, resolved.validation, pinoLogger);
 
     const orchestrator = BuildOrchestrator.create(
       projectConfig,
@@ -175,12 +164,6 @@ export default class Build extends SfpmCommand {
       localValidator,
     )
 
-    // For the ink path, create the ValidationEventBus here so the bridge can
-    // wire validation events before buildAll starts. The bus is passed to the
-    // resolver later if there are pending validations.
-    const validationBus = isInk ? new ValidationEventBus() : undefined;
-
-    let renderer: BuildProgressRenderer | undefined;
     let inkInstance: ReturnType<typeof renderApp> | undefined;
 
     if (uiBus) {
@@ -188,17 +171,9 @@ export default class Build extends SfpmCommand {
       const orgUsername = resolved.buildOrgUsername ?? resolved.devhubUsername;
       inkInstance = renderApp(uiBus, {
         logPath,
+        mode: resolved.mode === 'interactive' ? 'interactive' : 'plain',
         org: orgUsername ? {alias: orgUsername} : undefined,
       });
-    } else {
-      renderer = new BuildProgressRenderer({
-        logger: {
-          error: (msgOrError: Error | string) => this.error(msgOrError),
-          log: (msg: string) => this.log(msg),
-        },
-        mode: resolved.mode,
-      });
-      renderer.attachTo(orchestrator.buildBus, orchestrator.orchestrationBus)
     }
 
     const tracer = createTracer({serviceName: 'sfpm-cli'})
@@ -207,10 +182,6 @@ export default class Build extends SfpmCommand {
     try {
       const result = await orchestrator.buildAll(resolved.resolvedPackages)
       await tracer.shutdown()
-
-      if (resolved.mode === 'json') {
-        this.logJson(result)
-      }
 
       if (!result.success) {
         // Let the app self-exit after rendering its failed terminal state.
@@ -226,33 +197,13 @@ export default class Build extends SfpmCommand {
         this.error(`Build failed for: ${failedNames}`, {exit: 1})
       }
 
-      const pendingValidations = result.results
-      .map(r => r.result?.pendingValidation)
-      .filter((r): r is PendingValidationDescriptor => r !== null && r !== undefined)
-
-      if (isInk && validationBus && !resolved.async) {
-        // Ink path: validation runs while ink is still mounted.
-        // The bridge already wired validationBus → uiBus; just drive the resolver.
-        if (pendingValidations.length > 0) {
-          await this.resolveValidationsInline(pendingValidations, resolved, validationBus)
-          // Validation is async enough that React has rendered all events by now.
-          inkInstance?.unmount();
-        } else {
-          // No validation: let the app self-exit after rendering its terminal state.
-          // Calling unmount() immediately would race React's async render and drop
-          // the final package:complete update from the screen.
-          await inkInstance?.waitUntilExit();
-        }
-
-        inkInstance = undefined;
-      } else {
-        // Non-ink path or async: unmount before handing off to the existing handler.
-        inkInstance?.unmount();
-        inkInstance = undefined;
-        await this.handleValidationResults(pendingValidations, resolved)
-      }
+      this.handleResult(result, resolved, validationBus, inkInstance);
+      return result;
     } catch (error) {
-      renderer?.handleError(error as Error)
+      if (error instanceof Error) {
+        this.error(error.message, {exit: 2})
+      }
+
       throw error
     } finally {
       inkInstance?.unmount();
@@ -331,6 +282,35 @@ export default class Build extends SfpmCommand {
     resolved.autoCreatedBuildOrg = {devhub: hubOrg, username}
   }
 
+  private async handleResult(result: OrchestrationResult<PackageBuildResult>, buildFlags: ResolvedBuildFlags, validationBus?: ValidationEventBus, inkInstance?: ReturnType<typeof renderApp>): Promise<void> {
+    const pendingValidations = result.results
+    .map(r => r.result?.pendingValidation)
+    .filter((r): r is PendingValidationDescriptor => r !== null && r !== undefined)
+
+    if (inkInstance && validationBus && !buildFlags.async) {
+      // Ink path: validation runs while ink is still mounted.
+      // The bridge already wired validationBus → uiBus; just drive the resolver.
+      if (pendingValidations.length > 0) {
+        await this.resolveValidationsInline(pendingValidations, buildFlags, validationBus)
+        // Validation is async enough that React has rendered all events by now.
+        inkInstance?.unmount();
+      } else {
+        // No validation: let the app self-exit after rendering its terminal state.
+        // Calling unmount() immediately would race React's async render and drop
+        // the final package:complete update from the screen.
+        await inkInstance?.waitUntilExit();
+      }
+
+      inkInstance = undefined;
+    } else {
+      // Non-ink path or async: unmount before handing off to the existing handler.
+      inkInstance?.unmount();
+      inkInstance = undefined;
+
+      await this.handleValidationResults(pendingValidations, buildFlags)
+    }
+  }
+
   /**
    * Handle pending validations: resolve inline or fork a background watcher.
    *
@@ -391,6 +371,38 @@ export default class Build extends SfpmCommand {
   }
 
   /**
+   * Build local validator for compile + dependency checks (all modes except 'none').
+   * Created here so it shares the run logger.
+   * @param validation
+   * @param provider
+   * @param logger
+   */
+  private initLocalValidator(provider: ProjectDefinitionProvider, validation: ValidationLevel, logger: Logger): LocalValidator | undefined {
+    let localValidator: NimbusLocalValidator | undefined;
+
+    if (validation === 'local' || validation === 'full') {
+      const manifests = provider.getAllPackageDefinitions().map(def => ({
+        declaredDependencies: new Set(provider.getDependencies(def.name).map(d => d.name)),
+        packageId: def.name,
+        packagePath: path.join(provider.projectDir, def.path),
+      }));
+
+      localValidator = new NimbusLocalValidator(
+        {
+          config: {
+            daemon: {autoStart: true, autoStop: true, enabled: true},
+          },
+          eventBus: new NimbusValidationEventBus(),
+          logger,
+        },
+        manifests,
+      );
+    }
+
+    return localValidator;
+  }
+
+  /**
    * Parse and validate flags, resolve project context, compose BuildOptions.
    */
   private async resolveFlags(): Promise<ResolvedBuildFlags> {
@@ -408,6 +420,7 @@ export default class Build extends SfpmCommand {
       }
 
       flags['no-dependencies'] = true
+      flags.force = true
     }
 
     const projectDir = resolveCliProjectDir();
@@ -418,6 +431,11 @@ export default class Build extends SfpmCommand {
 
     // Resolve user input to canonical scoped package names
     const resolvedPackages = await resolvePackageInputs(packages, projectConfig, {json: this.outputMode === 'json'})
+
+    if (flags.turbo) {
+      // getPackageDir() already returns an absolute path — don't re-join with projectDir
+      this.turboResultDir = projectConfig.getPackageDir(resolvedPackages[0]);
+    }
 
     // Resolve validation level: --no-validation → 'none', --validation=X → X, default → 'local'
     const validation = (flags.validation === 'false' ? 'none' : flags.validation ?? 'local') as 'full' | 'local' | 'none' | 'org';
@@ -456,6 +474,7 @@ export default class Build extends SfpmCommand {
       projectDir,
       resolvedPackages,
       sfpmConfig,
+      validation,
       waitMinutes: flags.wait,
     }
   }
@@ -488,31 +507,17 @@ export default class Build extends SfpmCommand {
       return;
     }
 
-    // Plain / json path: Listr-based renderer with explicit begin/end lifecycle.
-    const validationBus = new ValidationEventBus()
-    const renderer = new ValidationProgressRenderer(resolved.mode, {
-      error: msg => this.error(msg),
-      log: msg => this.log(msg),
-    })
-    renderer.attachTo(validationBus)
-
-    // In interactive mode the Listr renderer owns the terminal — pass noopLogger
-    // so pino doesn't write to stderr and corrupt the cursor state.
-    const resolverLogger = resolved.mode === 'interactive' ? noopLogger : this.sfpmLogger;
+    // json path only — interactive/plain both go through the ink branch
+    // above via externalBus. json mode is fully silent during the run.
     const resolver = new ValidationResolver(
       projectService.getDefinitionProvider(),
       projectService.getProjectGraph(),
-      resolverLogger,
-      validationBus,
+      noopLogger,
     );
 
-    // Wait for the spinner to be live BEFORE starting work — otherwise the
-    // event-loop-heavy resolver starves the Listr async render setup.
-    await renderer.begin(descriptors.map(d => d.packageName));
     const results = await resolver.resolve(descriptors, {
       maxWaitMs: resolved.waitMinutes * 60 * 1000,
     });
-    await renderer.end();
 
     const failures: string[] = [];
     for (const [packageName, result] of results) {

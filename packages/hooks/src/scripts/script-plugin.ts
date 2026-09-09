@@ -1,4 +1,5 @@
 import {HookContext, LifecycleHooks, resolveHookConfig} from '@b64hub/sfpm-core';
+import path from 'node:path';
 
 import type {ScriptDefinition, ScriptHooksOptions, ScriptType} from './types.js';
 
@@ -29,6 +30,11 @@ const EXTENSION_MAP: Record<string, ScriptType> = {
  *
  * Values can be plain paths (strings), `npm:<script-name>` references, or
  * full {@link ScriptDefinition} objects.
+ *
+ * Non-npm paths here are resolved relative to the **package's own directory**
+ * (next to its `package.json`), not the project root — see {@link resolveScripts}.
+ * `packageName` is meaningless on a per-package override (it's already scoped
+ * to this package) and is ignored with a warning.
  */
 interface ScriptHookOverrides {
   /** Scripts to run after installation. */
@@ -53,17 +59,26 @@ function resolveScriptType(script: ScriptDefinition): ScriptType {
 }
 
 /**
- * Creates lifecycle hooks for running custom scripts during installation.
+ * Creates lifecycle hooks for running custom scripts during build and installation.
  *
- * Registers hooks on `install:pre` and `install:post` that execute
- * user-defined scripts. Supports shell scripts (`.sh`), TypeScript
+ * Registers hooks on `build:pre`/`build:post` and `install:pre`/`install:post`
+ * that execute user-defined scripts. Supports shell scripts (`.sh`), TypeScript
  * (`.ts`), JavaScript (`.js`), anonymous Apex (`.apex`), and npm
  * scripts from `package.json`.
  *
- * Scripts are resolved from **two sources** (merged):
+ * Scripts are resolved from **two sources** (merged), with different path rules:
  *
- * 1. **Global options** — `scriptHooks({ scripts: [...] })` in `sfpm.config.ts`
- * 2. **Per-package overrides** — `packageOptions.hooks["scripts"].pre/post`
+ * 1. **Global options** — `scriptHooks({ scripts: [...] })` in `sfpm.config.ts`.
+ *    Paths are relative to the **project root** of whichever project the CLI
+ *    is currently running against (the monorepo for build/deploy, or the
+ *    consuming project for install) — never bundled into a package artifact.
+ * 2. **Per-package overrides** — `packageOptions.hooks["scripts"].pre/post`.
+ *    Paths are relative to that **package's own directory** (next to its
+ *    `package.json`). Pre-build/deploy scripts resolve against the live source
+ *    directory; post-build and artifact-install scripts resolve against the
+ *    package's staged/packed source (mirroring the package's configured
+ *    `sfpm.path`), where `SourceCopyStep` already copies them for free —
+ *    no separate script-assembly step needed.
  *
  * Per-package scripts are appended after global scripts at each timing.
  * When a per-package `hooks["scripts"]` is set to `false`, the hook is
@@ -97,26 +112,24 @@ export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
   const globalPreScripts = options.scripts.filter(s => s.timing === 'pre');
   const globalPostScripts = options.scripts.filter(s => (s.timing ?? 'post') === 'post');
 
+  const preHandler = async (context: HookContext) => {
+    const scripts = resolveScripts(context, 'pre', globalPreScripts);
+    if (scripts.length === 0) return;
+    await executeScripts(scripts, 'pre', context, failOnError);
+  };
+
+  const postHandler = async (context: HookContext) => {
+    const scripts = resolveScripts(context, 'post', globalPostScripts);
+    if (scripts.length === 0) return;
+    await executeScripts(scripts, 'post', context, failOnError);
+  };
+
   return {
     hooks: [
-      {
-        async handler(context: HookContext) {
-          const scripts = resolveScripts(context, 'pre', globalPreScripts);
-          if (scripts.length === 0) return;
-          await executeScripts(scripts, 'pre', context, failOnError);
-        },
-        operation: 'install',
-        timing: 'pre' as const,
-      },
-      {
-        async handler(context: HookContext) {
-          const scripts = resolveScripts(context, 'post', globalPostScripts);
-          if (scripts.length === 0) return;
-          await executeScripts(scripts, 'post', context, failOnError);
-        },
-        operation: 'install',
-        timing: 'post' as const,
-      },
+      {handler: preHandler, operation: 'build', timing: 'pre' as const},
+      {handler: postHandler, operation: 'build', timing: 'post' as const},
+      {handler: preHandler, operation: 'install', timing: 'pre' as const},
+      {handler: postHandler, operation: 'install', timing: 'post' as const},
     ],
     name: 'scripts',
   };
@@ -127,20 +140,78 @@ export function scriptHooks(options: ScriptHooksOptions): LifecycleHooks {
 // ============================================================================
 
 /**
+ * A resolved script tagged with its origin, so `executeScripts` can apply
+ * origin-specific rules (e.g. ignoring `packageName` on package overrides).
+ */
+interface ResolvedScript {
+  isPackageOverride: boolean;
+  script: ScriptDefinition;
+}
+
+/**
  * Resolve the final script list for a given timing by merging:
- * 1. Global scripts from `sfpm.config.ts` options (already filtered by timing)
+ * 1. Global scripts from `sfpm.config.ts` options (already filtered by timing,
+ *    left project-root-relative — resolved later by the executors)
  * 2. Per-package overrides from `packageOptions.hooks["scripts"].pre/post`
+ *    (resolved here to an absolute path under `packageBaseDir`)
  */
 function resolveScripts(
   context: HookContext,
   timing: 'post' | 'pre',
   globalScripts: ScriptDefinition[],
-): ScriptDefinition[] {
+): ResolvedScript[] {
   const {config} = resolveHookConfig<ScriptHookOverrides>(context, 'scripts');
   const overrides = (timing === 'pre' ? config.pre : config.post) ?? [];
-  const packageScripts = normalizeToDefinitions(overrides, timing);
+  const packageBaseDir = resolvePackageScriptBaseDir(context, timing);
+  const packageScripts = normalizeToDefinitions(overrides, timing)
+  .map(script => resolvePackageScriptPath(script, packageBaseDir));
 
-  return [...globalScripts, ...packageScripts];
+  return [
+    ...globalScripts.map(script => ({isPackageOverride: false, script})),
+    ...packageScripts.map(script => ({isPackageOverride: true, script})),
+  ];
+}
+
+/**
+ * Whether `provider` represents an already-built/packed artifact rather than
+ * live source. True only for artifact installs, where `getPackageBuildDirectory`
+ * and `getPackageDir` point at the same extracted directory (no separate
+ * `dist/` staging step exists post-install).
+ */
+function isArtifactInstall(context: HookContext): boolean {
+  const {provider, sfpmPackage} = context;
+  const buildDir = provider.getPackageBuildDirectory(sfpmPackage.name);
+  return Boolean(buildDir) && buildDir === provider.getPackageDir(sfpmPackage.name);
+}
+
+/**
+ * Base directory for resolving a **per-package** script's relative path.
+ *
+ * Per-package scripts live next to the package's own `package.json`. Before
+ * the package has been built/packed (build:pre, or install from local source),
+ * that's the live package directory. After staging (build:post) or when
+ * installing a published artifact, `SourceCopyStep` has already copied the
+ * package directory's content into the staged/packed source directory
+ * (mirroring the package's configured `sfpm.path`) for free — so scripts
+ * resolve there instead.
+ */
+function resolvePackageScriptBaseDir(context: HookContext, timing: 'post' | 'pre'): string | undefined {
+  const {operation, provider, sfpmPackage} = context;
+  const useBuiltSource = (operation === 'build' && timing === 'post')
+    || (operation === 'install' && isArtifactInstall(context));
+
+  return useBuiltSource
+    ? provider.getPackageBuiltSourceDirectory(sfpmPackage.name)
+    : provider.getPackageDir(sfpmPackage.name);
+}
+
+/**
+ * Resolve a per-package script's path relative to `baseDir`. npm scripts are
+ * exempt — `path` is a `package.json` script name, not a file path.
+ */
+function resolvePackageScriptPath(script: ScriptDefinition, baseDir: string | undefined): ScriptDefinition {
+  if (!baseDir || script.type === 'npm' || path.isAbsolute(script.path)) return script;
+  return {...script, path: path.join(baseDir, script.path)};
 }
 
 /**
@@ -168,7 +239,7 @@ function normalizeToDefinitions(
  * Execute a list of scripts sequentially within a hook handler.
  */
 async function executeScripts(
-  scripts: ScriptDefinition[],
+  scripts: ResolvedScript[],
   timing: 'post' | 'pre',
   context: HookContext,
   failOnError: boolean,
@@ -183,8 +254,14 @@ async function executeScripts(
   const {projectDir} = context;
   const runner = new ScriptRunner(logger);
 
-  for (const script of scripts) {
-    if (script.packageName && script.packageName !== packageName) continue;
+  for (const {isPackageOverride, script} of scripts) {
+    if (isPackageOverride) {
+      if (script.packageName) {
+        logger?.warn(`Script [${timing}]: ignoring 'packageName' on a per-package override for '${packageName}' — already scoped to this package.`);
+      }
+    } else if (script.packageName && script.packageName !== packageName) {
+      continue;
+    }
 
     // Per-script stage filtering
     const currentStage = context.stage;

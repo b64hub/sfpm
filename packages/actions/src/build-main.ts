@@ -1,5 +1,5 @@
 import * as core from '@actions/core';
-import {parseInstallationKeys} from '@b64hub/sfpm-core';
+import {parseInstallationKeys, type ValidationLevel} from '@b64hub/sfpm-core';
 
 import {build} from './build.js';
 
@@ -15,6 +15,8 @@ try {
   const installationKeys = installationKeysInput
     ? parseInstallationKeys(installationKeysInput.split('\n').map(l => l.trim()).filter(Boolean))
     : undefined;
+  // Mask before anything can log them.
+  for (const key of Object.values(installationKeys ?? {})) core.setSecret(key);
 
   const packagesInput = core.getInput('packages') || '';
   const packages = packagesInput
@@ -23,6 +25,7 @@ try {
 
   const force = core.getInput('force') === 'true';
   const includeDependencies = core.getInput('include-dependencies') !== 'false';
+  const validation = core.getInput('validation') || undefined;
 
   const result = await build({
     buildNumber,
@@ -32,6 +35,7 @@ try {
     installationKeys,
     packages,
     projectDir,
+    validation: validation as undefined | ValidationLevel,
   });
 
   if (!result.success) {

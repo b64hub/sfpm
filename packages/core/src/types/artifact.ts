@@ -1,6 +1,9 @@
 /**
- * Standard directory name for Salesforce source inside a staged artifact.
- * All package types use this regardless of the original project path.
+ * Conventional default name for a Salesforce source directory.
+ *
+ * No longer forced by the build pipeline — staged artifacts mirror each
+ * package's own configured source path (`sfpm.path`, defaulting to `.`).
+ * Kept as the common default value for that path.
  */
 export const FORCE_APP_DIR = 'force-app';
 

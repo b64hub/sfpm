@@ -13,10 +13,6 @@ export interface AssemblyOutput {
     unpackaged?: string;
   };
   projectDefinitionPath?: string;
-  scripts?: {
-    post?: string[];
-    pre?: string[];
-  };
   stagingDirectory: string;
 }
 

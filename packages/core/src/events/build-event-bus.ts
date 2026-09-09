@@ -35,10 +35,9 @@ export interface BuildCompletePayload {
 }
 
 export interface BuildSkippedPayload {
-  artifactPath?: string;
-  latestVersion?: string;
+  hash?: string;
   packageType: PackageType;
-  reason: 'already-built' | 'empty-package' | 'no-changes';
+  reason: string;
   sourceHash?: string;
   version?: string;
 }

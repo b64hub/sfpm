@@ -13,7 +13,7 @@ import {Footer} from '../components/base/Footer.js';
 import {OrgBadge} from '../components/base/OrgBadge.js';
 import {OrgRow} from '../components/pool/OrgRow.js';
 import {useTermWidth} from '../hooks/use-term-width.js';
-import {colWidth, rawSym} from '../renderer-utils.js';
+import {colWidth, rawSym} from '../utils/renderer-utils.js';
 import {
   type Action, initialState, type OrgEntry, reducer, TERMINAL,
 } from '../state/pool-fill-reducer.js';

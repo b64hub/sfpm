@@ -11,7 +11,6 @@ import {ForceIgnoreStep} from './steps/force-ignore-step.js';
 import {MetadataDependenciesStep} from './steps/metadata-dependencies-step.js';
 import {OrgDefinitionStep} from './steps/org-definition-step.js';
 import {ProjectJsonAssemblyStep} from './steps/project-json-assembly-step.js';
-import {ScriptAssemblyStep} from './steps/script-assembly-step.js';
 import {SourceCopyStep} from './steps/source-copy-step.js';
 import {AssemblyOptions, AssemblyOutput, AssemblyStep} from './types.js';
 
@@ -28,7 +27,6 @@ import {AssemblyOptions, AssemblyOutput, AssemblyStep} from './types.js';
  * The staging area follows a standardized layout:
  * - `/[packagePath]`: Primary source metadata.
  * - `/unpackagedMetadata`: Supplemental metadata not part of the main package.
- * - `/scripts`: Pre and post-deployment scripts.
  * - `/forceignores`: Stage-specific ignore files (e.g., `.forceignore.validate`).
  * - `.forceignore`: The root ignore file used for the final artifact.
  * - `sfdx-project.json`: A pruned version of the original manifest, specifically for this package.
@@ -55,7 +53,7 @@ export default class PackageAssembler {
 
   /**
    * @description Orchestrates the package assembly process. This method executes all necessary file I/O operations,
-   * including copying source code, handling scripts, generating manifests, and managing
+   * including copying source code, generating manifests, and managing
    * the staging area lifecycle.
    *
    * @returns {Promise<string>} A promise that resolves to the absolute path of the created staging directory.
@@ -175,7 +173,6 @@ export default class PackageAssembler {
   private buildDataAssemblySteps(): AssemblyStep[] {
     return [
       new SourceCopyStep(this.packageName, this.provider, this.logger),
-      new ScriptAssemblyStep(this.packageName, this.provider, this.logger),
       new ProjectJsonAssemblyStep(this.packageName, this.provider, this.logger),
     ];
   }
@@ -188,7 +185,6 @@ export default class PackageAssembler {
     const steps: AssemblyStep[] = [
       new SourceCopyStep(this.packageName, this.provider, this.logger),
       new OrgDefinitionStep(this.packageName, this.provider, this.logger),
-      new ScriptAssemblyStep(this.packageName, this.provider, this.logger),
       new MetadataDependenciesStep(this.packageName, this.provider, this.logger),
       new ForceIgnoreStep(this.packageName, this.provider, this.logger),
     ];

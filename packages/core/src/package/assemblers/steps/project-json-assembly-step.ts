@@ -6,8 +6,8 @@ import path from 'node:path';
 import type {ProjectDefinitionProvider} from '../../../project/providers/project-definition-provider.js';
 
 import ProjectService from '../../../project/project-service.js';
+import {getSourceSubpath} from '../../../project/providers/project-definition-provider.js';
 import {toSalesforceProjectJson} from '../../../project/providers/sfdx-project-adapter.js';
-import {FORCE_APP_DIR} from '../../../types/artifact.js';
 import Logger from '../../../types/logger.js';
 import {PackageType} from '../../../types/package.js';
 import {PackageDefinition} from '../../../types/project.js';
@@ -45,9 +45,15 @@ export class ProjectJsonAssemblyStep implements AssemblyStep {
         packageDefinition.packages[0].version = toVersionFormat(options.versionNumber, 'salesforce');
       }
 
-      // In the artifact, metadata lives under ARTIFACT_SOURCE_DIR
-      // regardless of the original project path
-      packageDefinition.packages[0].path = FORCE_APP_DIR;
+      // In the artifact, metadata is staged mirroring the package's own
+      // configured source path (see SourceCopyStep) — keep the manifest in sync.
+      const packageDir = this.provider.getPackageDir(this.packageName);
+      if (!packageDir) throw new Error(`Package directory not found for "${this.packageName}"`);
+      packageDefinition.packages[0].path = getSourceSubpath(
+        this.provider.projectDir,
+        packageDir,
+        packageDefinition.packages[0].path,
+      );
 
       const pkg = packageDefinition.packages[0];
 

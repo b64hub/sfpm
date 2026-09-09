@@ -34,14 +34,12 @@ interface SvsCapablePackage {
 /**
  * Creates lifecycle hooks for deploying standard value sets post-install.
  *
- * Registers a hook on `install:post` that re-deploys standard value set
- * metadata to the target org via the Metadata API. Unlocked package
- * version installs do not always apply SVS changes — this hook performs
- * a targeted source deploy of the `standardValueSets/` directory as a
- * follow-up step.
+ * Registers a hook on `install:pre` that deploys standard value set
+ * metadata to the target org via the Metadata API ahead of the package
+ * itself, so components that reference SVS values (record types,
+ * picklist-dependent metadata) don't fail on missing values.
  *
- * Only runs for unlocked packages. Source packages are deployed
- * directly and don't need this fixup.
+ * Runs for source and unlocked packages; data/managed are skipped.
  *
  * @param options - Hook configuration options
  * @returns A LifecycleHooks instance to pass to `defineConfig({ hooks: [...] })`
@@ -67,11 +65,12 @@ export function standardValueSetHooks(options?: StandardValueSetHooksOptions): L
           const {logger, sfpmPackage} = context;
           const packageName = sfpmPackage.name;
 
-          // ── Guard: only process unlocked packages ────────────────
+          // ── Guard: metadata packages only (source / unlocked) ────
           const svsPackage = sfpmPackage as unknown as SvsCapablePackage;
 
-          if (String(svsPackage.type) !== PackageType.Unlocked) {
-            logger?.debug(`StandardValueSet: skipping '${packageName}' (not an unlocked package)`);
+          if (String(svsPackage.type) !== PackageType.Unlocked
+            && String(svsPackage.type) !== PackageType.Source) {
+            logger?.debug(`StandardValueSet: skipping '${packageName}' (not a metadata package)`);
             return;
           }
 
@@ -109,7 +108,7 @@ export function standardValueSetHooks(options?: StandardValueSetHooksOptions): L
           }
         },
         operation: 'install',
-        timing: 'post',
+        timing: 'pre',
       },
     ],
 

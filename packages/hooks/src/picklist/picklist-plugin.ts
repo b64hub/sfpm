@@ -60,9 +60,8 @@ interface PicklistCapablePackage {
  *
  * The hook reads picklist definitions from the package's
  * `ComponentSet` (exposed through `SfpmMetadataPackage.customFields`)
- * and compares them with the current org state. Only unlocked packages
- * are processed — source packages are deployed directly and don't need
- * this fixup.
+ * and compares them with the current org state. Source and unlocked
+ * packages are processed; data/managed packages are skipped.
  *
  * @param options - Hook configuration options
  * @returns A LifecycleHooks instance to pass to `defineConfig({ hooks: [...] })`
@@ -88,11 +87,12 @@ export function picklistHooks(options?: PicklistHooksOptions): LifecycleHooks {
           const {logger, sfpmPackage} = context;
           const packageName = sfpmPackage.name;
 
-          // ── Guard: only process unlocked packages ──────────────────
+          // ── Guard: metadata packages only (source / unlocked) ──────
           const picklistPackage = sfpmPackage as unknown as PicklistCapablePackage;
 
-          if (String(picklistPackage.type) !== PackageType.Unlocked) {
-            logger?.debug(`Picklist: skipping '${packageName}' (not an unlocked package)`);
+          if (String(picklistPackage.type) !== PackageType.Unlocked
+            && String(picklistPackage.type) !== PackageType.Source) {
+            logger?.debug(`Picklist: skipping '${packageName}' (not a metadata package)`);
             return;
           }
 
@@ -124,7 +124,7 @@ export function picklistHooks(options?: PicklistHooksOptions): LifecycleHooks {
           }
         },
         operation: 'install',
-        timing: 'post',
+        timing: 'pre',
       },
     ],
 

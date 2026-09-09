@@ -5,8 +5,8 @@ import {ConfigAggregator, OrgTypes} from '@salesforce/core';
 
 import SfpmCommand from '../../sfpm-command.js';
 import {connectDevHub} from '../../ui/connect-devhub.js';
-import {formatExpiry, formatStage} from '../../ui/pool-utils.js';
-import {renderPoolList} from '../../ui/run-pool-list.js';
+import {renderPoolList} from '../../ui/renderers/run-pool-list.js';
+import {formatExpiry, formatStage} from '../../ui/utils/pool-utils.js';
 
 export default class PoolList extends SfpmCommand {
   static override description = 'list orgs in a pool'

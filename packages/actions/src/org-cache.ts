@@ -11,11 +11,16 @@ import path from 'node:path';
 // ============================================================================
 
 /**
- * Cached scratch org connection info.
+ * Cached scratch org identity.
  *
- * Stored as JSON in the GitHub Actions cache, keyed by PR number.
- * Contains everything needed to re-authenticate without consuming
- * another org from the pool.
+ * Stored as JSON in the GitHub Actions cache, keyed by PR number, so a
+ * subsequent run on the same PR can re-use its org instead of consuming
+ * another from the pool.
+ *
+ * Deliberately holds no credential. The Actions cache is not a secret store —
+ * it is readable by any workflow in the repository. Auth is re-resolved
+ * through the already-authenticated DevHub on restore (see `authenticateOrg`),
+ * so the cache only needs to identify which org to reconnect to.
  */
 export interface CachedOrgConnection {
   /** When this cache entry was created */
@@ -26,9 +31,7 @@ export interface CachedOrgConnection {
   orgId: string;
   /** PR number this org is assigned to */
   prNumber: number;
-  /** Scratch org auth URL (sfdxAuthUrl format) */
-  sfdxAuthUrl: string;
-  /** Scratch org username */
+  /** Scratch org username — the handle DevHub re-authenticates against */
   username: string;
 }
 
@@ -81,7 +84,7 @@ const CACHE_FILE_NAME = 'sfpm-org-cache.json';
  * let connection = await orgCache.restore();
  * if (!connection) {
  *   const org = await fetcher.fetch('dev-pool');
- *   connection = { username: org.auth.username, sfdxAuthUrl: org.auth.authUrl!, ... };
+ *   connection = { username: org.auth.username, orgId: org.orgId, ... };
  *   await orgCache.save(connection);
  * }
  * ```

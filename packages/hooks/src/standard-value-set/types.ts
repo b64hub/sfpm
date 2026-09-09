@@ -5,14 +5,12 @@
 /**
  * Configuration options for the standard value set patching lifecycle hook.
  *
- * After an unlocked package version is installed, standard value sets
- * (e.g., Industry, AccountSource) may need to be re-deployed to the
- * target org because version installs do not always apply standard value
- * set changes. This hook performs a Metadata API deploy of the SVS files
- * as a post-install step.
+ * Standard value sets (e.g., Industry, AccountSource) are deployed to
+ * the target org via the Metadata API before the package itself, since
+ * package version installs do not always apply SVS changes and
+ * components that reference SVS values fail if the values are missing.
  *
- * Only runs for unlocked packages — source packages are deployed
- * directly and don't need this fixup.
+ * Runs for source and unlocked packages.
  */
 export interface StandardValueSetHooksOptions {
   /**

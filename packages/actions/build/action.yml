@@ -1,5 +1,5 @@
 name: 'SFPM Build'
-description: 'Build SFPM packages with async validation for unlocked packages. Returns immediately with creation request IDs while Salesforce validates in the background. Outputs artifact tarballs and per-package results (including pending validation descriptors) for the resume step.'
+description: 'Build SFPM packages with async validation for unlocked packages. Returns immediately with creation request IDs while Salesforce validates in the background. Outputs artifact tarballs and per-package results (including pending validation descriptors) for the resume step. Requires the DevHub to be authenticated in the runner before this step.'
 author: 'b64'
 
 branding:
@@ -38,13 +38,38 @@ inputs:
 outputs:
   success:
     description: 'Whether all builds succeeded (true/false)'
+    value: ${{ steps.build.outputs.success }}
   duration:
     description: 'Total build duration in milliseconds'
+    value: ${{ steps.build.outputs.duration }}
   failed-packages:
     description: 'Comma-separated list of packages that failed to build'
+    value: ${{ steps.build.outputs.failed-packages }}
   result:
     description: "Full JSON result with per-package outcomes, including pending validation descriptors. Pass this into build-validation's build-result input as needs.build.outputs.result"
+    value: ${{ steps.build.outputs.result }}
 
 runs:
-  using: 'node20'
-  main: '../dist/build-main.js'
+  using: composite
+  steps:
+    - id: build
+      shell: bash
+      # The runtime directory is shared by every SFPM action. Its committed
+      # lockfile pins the whole transitive tree, and `npm ci` verifies the
+      # integrity hash of every tarball it downloads.
+      run: |
+        runtime="$GITHUB_ACTION_PATH/../runtime"
+        # Reuse the tree when another SFPM action already installed it in this job.
+        [ -d "$runtime/node_modules" ] || npm ci --prefix "$runtime" --ignore-scripts
+        "$runtime/node_modules/.bin/sfpm-action" build
+      # Composite actions do not receive INPUT_* automatically, so each input is
+      # forwarded explicitly. Callers still use plain `with:`.
+      env:
+        INPUT_DEVHUB-USERNAME: ${{ inputs.devhub-username }}
+        INPUT_PACKAGES: ${{ inputs.packages }}
+        INPUT_FORCE: ${{ inputs.force }}
+        INPUT_INCLUDE-DEPENDENCIES: ${{ inputs.include-dependencies }}
+        INPUT_BUILD-NUMBER: ${{ inputs.build-number }}
+        INPUT_INSTALLATION-KEYS: ${{ inputs.installation-keys }}
+        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}
+        INPUT_VALIDATION: ${{ inputs.validation }}

@@ -2,7 +2,7 @@ import type {WatcherStatus} from '@b64hub/sfpm-core';
 
 import chalk from 'chalk';
 
-import {formatDuration} from './renderer-utils.js';
+import {formatDuration} from './utils/renderer-utils.js';
 
 // ============================================================================
 // Status formatting

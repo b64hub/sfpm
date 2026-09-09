@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run",
-    "bundle": "node esbuild.config.mjs"
+    "test": "vitest run"
   },
   "keywords": [
     "sfpm",
@@ -29,7 +28,11 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "sfpm-action": "./bin/sfpm-action.mjs"
+  },
   "files": [
+    "bin",
     "dist"
   ],
   "exports": {
@@ -39,7 +42,7 @@
     }
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
-    "vitest": "^4.0.17"
+    "vitest": "^4.0.17",
+    "yaml": "^2.9.0"
   }
 }

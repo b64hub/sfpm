@@ -1,30 +1,24 @@
 import {createJiti} from 'jiti'
 import {existsSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
 
 import {SfpmConfig} from '../types/config.js';
 import Logger from '../types/logger.js';
 
-/**
- * Resolve this package's own entry point so jiti can alias `@b64hub/sfpm-core`
- * even when the target project hasn't installed it (e.g. bootstrap temp dirs).
- */
-const CORE_ENTRY_POINT = fileURLToPath(new URL('../index.js', import.meta.url));
-
-/**
- * Resolve sibling sfpm packages so config files can import them
- * even when the project hasn't installed them (e.g. dev/link scenarios).
- * Works by walking up from core's dist to find sibling package dirs.
- */
-function resolveSiblingPackage(name: string): string | undefined {
-  // @b64hub/sfpm-orgs → orgs
-  const shortName = name.split('/').pop()?.replace('sfpm-', '');
-  if (!shortName) return undefined;
-
-  // core/dist/../../../<shortName>/dist/index.js
-  const candidate = resolve(fileURLToPath(new URL('..', import.meta.url)), '..', '..', shortName, 'dist', 'index.js');
-  return existsSync(candidate) ? candidate : undefined;
+export interface LoadSfpmConfigOptions {
+  /**
+   * Extra module aliases for jiti, as `package name -> absolute entry path`.
+   *
+   * Only needed when the config file imports sfpm packages that are not
+   * resolvable from the config file itself — e.g. `sfpm bootstrap`, which
+   * loads config out of a bare `git clone` that has no `node_modules`.
+   * Callers that are themselves installed on disk resolve these with
+   * `createRequire(import.meta.url).resolve(name)`.
+   *
+   * Omit it and imports resolve from the project normally, which is what any
+   * project that type-checks its own config already supports.
+   */
+  alias?: Record<string, string>;
 }
 
 /**
@@ -63,6 +57,7 @@ const CONFIG_FILES = [
 export async function loadSfpmConfig(
   projectRoot: string,
   logger?: Logger,
+  options?: LoadSfpmConfigOptions,
 ): Promise<SfpmConfig> {
   const configPath = resolveConfigPath(projectRoot);
 
@@ -74,21 +69,11 @@ export async function loadSfpmConfig(
   logger?.debug(`Loading SFPM config from: ${configPath}`);
 
   try {
-    // Use configPath as the resolution base so that imports in the config file
-    // resolve from the target project's node_modules, not from the sfpm monorepo.
-    // Alias @b64hub/sfpm-core to this package so config files can always import it,
-    // even when the project hasn't installed it (e.g. cloned bootstrap repos).
-    const alias: Record<string, string> = {
-      '@b64hub/sfpm-core': CORE_ENTRY_POINT,
-    };
-      // Resolve sibling packages so config files work without explicit installation
-    for (const sibling of ['@b64hub/sfpm-orgs', '@b64hub/sfpm-hooks', '@b64hub/sfpm-sfdmu']) {
-      const resolved = resolveSiblingPackage(sibling);
-      if (resolved) alias[sibling] = resolved;
-    }
-
+    // configPath is the resolution base, so imports in the config file resolve
+    // from the target project's node_modules. Callers may supply aliases for
+    // projects that have none (see LoadSfpmConfigOptions.alias).
     const jiti = createJiti(configPath, {
-      alias,
+      alias: options?.alias,
       fsCache: true,
       interopDefault: true,
     });

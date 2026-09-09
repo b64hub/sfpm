@@ -7,7 +7,7 @@ import type {TreeNode} from '../state/types.js';
 
 import {deriveStatus} from '../state/selectors.js';
 import {toRowProps} from '../state/adapters.js';
-import {rawSym} from '../renderer-utils.js';
+import {rawSym} from '../utils/renderer-utils.js';
 import {Divider} from './base/Divider.js';
 import {COL_TRAILING, PackageRow} from './PackageRow.js';
 import {ValidationView} from './ValidationView.js';
@@ -51,8 +51,8 @@ const ROLLUP_AT = 3;
  * components because Ink has no ordering guarantee between them.
  */
 type StaticItem =
-  | {kind: 'header'; totalLevels: number; totalPackages: number}
-  | {kind: 'pkg';    node: TreeNode};
+  | {key: string; kind: 'pkg'; node: TreeNode}
+  | {kind: 'header'; totalLevels: number; totalPackages: number};
 
 // ---- sub-components ---------------------------------------------------------
 
@@ -107,7 +107,7 @@ export function OrchestrationView({
 
   const staticItems: StaticItem[] = [
     {kind: 'header', totalLevels: levels.length, totalPackages},
-    ...donePackages.map((node): StaticItem => ({kind: 'pkg', node})),
+    ...donePackages.map((node): StaticItem => ({key: node.id, kind: 'pkg', node})),
   ];
 
   // Live area groups — all empty when allTerminal (Static has taken over, no duplication).
@@ -120,7 +120,7 @@ export function OrchestrationView({
 
   return (
     <Box flexDirection="column">
-      {/* Completed packages — flushed atomically in level order when allTerminal */}
+      {/* Completed packages — atomic level-order flush in interactive mode, continuous stream in plain mode */}
       <Static items={staticItems}>
         {item => {
           if (item.kind === 'header') {
@@ -137,7 +137,7 @@ export function OrchestrationView({
               </Box>
             );
           }
-          return <PackageRow key={item.node.id} props={rowProps(item.node)} width={termWidth} />;
+          return <PackageRow key={item.key} props={rowProps(item.node)} width={termWidth} />;
         }}
       </Static>
 

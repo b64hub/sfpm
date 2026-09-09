@@ -59,12 +59,13 @@ export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from '
 export {PackageBuilder, type PackageBuildResult} from './package/package-builder.js';
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
 export {type InstallResult, default as PackageInstaller} from './package/package-installer.js';
+export {default as PackageManager} from './package/package-manager.js';
 export {type Package2, PackageService} from './package/package-service.js';
 export {
   isOrgAliasable, type OrgAliasable, PackageFactory, SfpmDataPackage, default as SfpmPackage,
 } from './package/sfpm-package.js';
 export {type ResolveOptions, ValidationResolver} from './package/validation/validation-resolver.js';
-export {loadSfpmConfig, resolveConfigPath} from './project/config-loader.js';
+export {loadSfpmConfig, type LoadSfpmConfigOptions, resolveConfigPath} from './project/config-loader.js';
 export * from './project/project-graph.js';
 export {findSfpmRoot, default as ProjectService, resolveSfpmRoot} from './project/project-service.js';
 export {ArtifactProvider, type ArtifactProviderOptions} from './project/providers/artifact-provider.js';

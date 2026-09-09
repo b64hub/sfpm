@@ -1,2 +1,7 @@
 packages:
   - 'packages/*'
+allowBuilds:
+  esbuild: true
+  protobufjs: true
+  unrs-resolver: true
+  yarn: false

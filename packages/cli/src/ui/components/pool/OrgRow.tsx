@@ -1,8 +1,8 @@
 import {Box, Text} from 'ink';
 
 import {GradientBar} from '../base/GradientBar.js';
-import {rawSym} from '../../renderer-utils.js';
-import {SFPM_GRADIENT} from '../../theme.js';
+import {rawSym} from '../../utils/renderer-utils.js';
+import {SFPM_GRADIENT} from '../../utils/theme.js';
 
 export type OrgPhase = 'creating' | 'deploying' | 'done' | 'failed' | 'prereqs' | 'warning';
 

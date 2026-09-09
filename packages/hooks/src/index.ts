@@ -19,10 +19,6 @@ export {FlowActivator} from './flows/flow-activator.js';
 export type {FlowActivationHooksOptions, FlowDefinitionRecord, PackageFlowEntry} from './flows/types.js';
 // ── LWC Tailwind ────────────────────────────────────────────────────────────
 export {lwcTailwindHooks} from './lwc/lwc-tailwind-plugin.js';
-// ── LWC TypeScript ──────────────────────────────────────────────────────────
-export {lwcTypescriptHooks} from './lwc/lwc-typescript-plugin.js';
-export type {LwcTypescriptHooksOptions} from './lwc/types.js';
-
 export type {LwcTailwindHooksOptions} from './lwc/types.js';
 // ── Permission Set ──────────────────────────────────────────────────────────
 export {PermissionSetAssigner} from './permissionset/permset-assigner.js';

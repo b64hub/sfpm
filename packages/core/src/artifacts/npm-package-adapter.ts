@@ -13,7 +13,6 @@ import SfpmPackage, {SfpmDataPackage, SfpmMetadataPackage, SfpmUnlockedPackage} 
  *   Extracts SFPM metadata from a published artifact's package.json for
  *   artifact resolution and installation.
  */
-import {FORCE_APP_DIR} from '../types/artifact.js';
 import {NpmPackageJson, SfpmArtifactMetadata} from '../types/npm.js';
 import {
   PackageType,
@@ -80,8 +79,9 @@ export function toNpmPackageJson(
   const additionalKeywords = options.additionalKeywords ?? [];
   const keywords = [...new Set([...additionalKeywords, ...baseKeywords, ...sfpmKeywords])];
 
-  // Artifact always stages source under ARTIFACT_SOURCE_DIR regardless of original path
-  const packageSourcePath = FORCE_APP_DIR;
+  // Source is staged mirroring the package's own configured source path
+  // (see SourceCopyStep) — defaults to "." when unset.
+  const packageSourcePath = workspacePkgJson.sfpm?.path ?? '.';
 
   // Start from workspace package.json, omit workspace-only fields.
   // Keep scripts — npm lifecycle hooks (postinstall, etc.) need to travel with the artifact.

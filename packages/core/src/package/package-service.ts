@@ -22,6 +22,8 @@ import {
   PackagingSObjects,
   SubscriberPackageVersion,
 } from '@salesforce/packaging';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import Logger from '../types/logger.js';
 import {soql} from '../utils/soql.js';
@@ -74,6 +76,8 @@ export {PackageService};
  * Entrypoint service for interactions with the @salesforce/packaging sdk
  */
 export default class PackageService {
+  /** Conventional scratch org definition file path, relative to the project root. Used only when the caller doesn't supply one and the file actually exists. */
+  private static readonly DEFAULT_DEFINITION_FILE = path.join('config', 'project-scratch-def.json');
   private static readonly PACKAGE2_VERSION_FIELDS = [
     'SubscriberPackageVersionId',
     'Package2Id',
@@ -252,7 +256,7 @@ export default class PackageService {
           branch: options?.branch,
           codecoverage: options?.codecoverage,
           connection,
-          definitionfile: options?.definitionfile,
+          definitionfile: this.resolveDefinitionFile(options?.definitionfile, project.getPath()),
           installationkey: options?.installationkey,
           installationkeybypass: options?.installationkeybypass,
           packageId,
@@ -783,6 +787,26 @@ export default class PackageService {
     }
 
     return this.targetOrg.getConnection();
+  }
+
+  /**
+   * Resolve the scratch org definition file to an absolute path.
+   *
+   * The SDK reads this file via a plain `fs.readFile` (resolved against
+   * `process.cwd()`, not the project root), so a relative path only works
+   * by accident of the current working directory. We resolve it against
+   * the project root instead.
+   *
+   * When the caller doesn't supply one, fall back to the conventional
+   * `config/project-scratch-def.json` — but only if it actually exists.
+   * The definition file is optional; a missing default must not turn into
+   * an error.
+   */
+  private resolveDefinitionFile(definitionFile: string | undefined, projectPath: string): string | undefined {
+    if (definitionFile) return path.resolve(projectPath, definitionFile);
+
+    const defaultPath = path.join(projectPath, PackageService.DEFAULT_DEFINITION_FILE);
+    return fs.existsSync(defaultPath) ? defaultPath : undefined;
   }
 
   private async toolingQuery<T>(connection: Connection, query: string): Promise<T[]> {

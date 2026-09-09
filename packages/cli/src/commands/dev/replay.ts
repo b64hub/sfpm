@@ -2,7 +2,7 @@ import {Args, Flags} from '@oclif/core';
 import EventEmitter from 'node:events';
 
 import SfpmCommand from '../../sfpm-command.js';
-import {renderApp} from '../../ui/run.js';
+import {renderApp} from '../../ui/renderers/run-orchestrator.js';
 
 // Built-in fixtures — same arrays the unit tests use.
 const FIXTURES: Record<string, Array<Record<string, unknown> & {type: string}>> = {
@@ -50,7 +50,7 @@ export default class DevReplay extends SfpmCommand {
       await this.runStepMode(events, bus);
     } else {
       // Auto-play: chain events with a fixed delay between each.
-      const app = renderApp(bus);
+      const app = renderApp(bus, {mode: this.outputMode === 'plain' ? 'plain' : 'interactive'});
       let chain = Promise.resolve();
       for (const {type, ...payload} of events) {
         chain = chain.then(() => delay(flags.speed)).then(() => {

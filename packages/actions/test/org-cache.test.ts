@@ -57,7 +57,6 @@ describe('OrgCacheService', () => {
                 cacheTtlMs: 4 * 60 * 60 * 1000, // 4 hour TTL
                 orgId: '00D000000000000',
                 prNumber: 42,
-                sfdxAuthUrl: 'force://...',
                 username: 'test@scratch.org',
             };
 
@@ -82,7 +81,6 @@ describe('OrgCacheService', () => {
                 cacheTtlMs: 4 * 60 * 60 * 1000, // 4 hour TTL
                 orgId: '00D000000000000',
                 prNumber: 42,
-                sfdxAuthUrl: 'force://...',
                 username: 'test@scratch.org',
             };
 
@@ -120,7 +118,6 @@ describe('OrgCacheService', () => {
             const service = new OrgCacheService({logger: mockLogger, prNumber: 42});
             await service.save({
                 orgId: '00D000000000000',
-                sfdxAuthUrl: 'force://...',
                 username: 'test@scratch.org',
             });
 
@@ -141,7 +138,6 @@ describe('OrgCacheService', () => {
             const service = new OrgCacheService({logger: mockLogger, prNumber: 42});
             await service.save({
                 orgId: '00D000000000000',
-                sfdxAuthUrl: 'force://...',
                 username: 'test@scratch.org',
             });
 
@@ -160,7 +156,6 @@ describe('OrgCacheService', () => {
                 cacheTtlMs: 4 * 60 * 60 * 1000,
                 orgId: '00D000000000000',
                 prNumber: 42,
-                sfdxAuthUrl: 'force://...',
                 username: 'test@scratch.org',
             };
 
@@ -181,7 +176,6 @@ describe('OrgCacheService', () => {
                 cacheTtlMs: 4 * 60 * 60 * 1000,
                 orgId: '00D000000000000',
                 prNumber: 42,
-                sfdxAuthUrl: 'force://...',
                 username: 'test@scratch.org',
             };
 
@@ -208,7 +202,6 @@ describe('OrgCacheService', () => {
 
             await service.save({
                 orgId: '00D000000000000',
-                sfdxAuthUrl: 'force://...',
                 username: 'test@scratch.org',
             });
 

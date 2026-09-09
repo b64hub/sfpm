@@ -9,7 +9,7 @@ import type {
   ResolveForPackageOptions,
 } from './providers/project-definition-provider.js';
 
-import {loadSfpmConfig, resolveConfigPath} from './config-loader.js';
+import {loadSfpmConfig, type LoadSfpmConfigOptions, resolveConfigPath} from './config-loader.js';
 import ProjectGraph from './project-graph.js';
 import {SfdxProjectProvider} from './providers/sfdx-project-provider.js';
 import {WorkspaceProvider} from './providers/workspace-provider.js';
@@ -71,6 +71,7 @@ export function findSfpmRoot(startDir: string): string | undefined {
 async function detectProvider(projectDir: string, sfpmConfig: SfpmConfig): Promise<ProjectDefinitionProvider> {
   if (WorkspaceProvider.hasWorkspace(projectDir)) {
     return new WorkspaceProvider({
+      distAware: true,
       projectDir,
       sfdcLoginUrl: sfpmConfig.sfdcLoginUrl,
       sourceApiVersion: sfpmConfig.sourceApiVersion,
@@ -109,10 +110,14 @@ export default class ProjectService {
   /**
    * Creates and initializes a new ProjectService instance from a directory path.
    */
-  public static async create(projectPath?: string, provider?: ProjectDefinitionProvider): Promise<ProjectService> {
+  public static async create(
+    projectPath?: string,
+    provider?: ProjectDefinitionProvider,
+    options?: LoadSfpmConfigOptions,
+  ): Promise<ProjectService> {
     const resolvedPath = projectPath ?? process.cwd();
     const projectRoot = findSfpmRoot(resolvedPath) ?? resolvedPath;
-    const sfpmConfig = await loadSfpmConfig(projectRoot);
+    const sfpmConfig = await loadSfpmConfig(projectRoot, undefined, options);
 
     const definitionProvider = provider ?? await detectProvider(projectRoot, sfpmConfig);
     definitionProvider.resolve();
@@ -236,10 +241,12 @@ export default class ProjectService {
   public resolveBuildConfig(packageName: string, runtimeOptions?: BuildOptions): BuildOptions {
     const pkg = this.definitionProvider.getPackageDefinition(packageName);
     const packageBuildConfig = pkg?.packageOptions?.build;
+    const scratchDefinitionFile = (this.sfpmConfig.orgs as undefined | {scratch?: {definitionFile?: string}})?.scratch?.definitionFile;
 
     return {
       // Layer 1: global defaults
       ...(this.sfpmConfig.sourceApiVersion ? {apiVersion: this.sfpmConfig.sourceApiVersion} : {}),
+      ...(scratchDefinitionFile ? {unlocked: {definitionFile: path.resolve(this.projectDirectory, scratchDefinitionFile)}} : {}),
       // Layer 2: per-package config
       ...packageBuildConfig,
       // Layer 3: runtime overrides

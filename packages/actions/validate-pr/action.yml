@@ -37,19 +37,50 @@ inputs:
 outputs:
   success:
     description: 'Whether all validations succeeded (true/false)'
+    value: ${{ steps.validate-pr.outputs.success }}
   org-username:
     description: 'Username of the scratch org used for validation'
+    value: ${{ steps.validate-pr.outputs.org-username }}
   org-id:
     description: 'Org ID of the scratch org used'
+    value: ${{ steps.validate-pr.outputs.org-id }}
   cache-hit:
     description: 'Whether a cached org was reused (true/false)'
+    value: ${{ steps.validate-pr.outputs.cache-hit }}
+  cache-age-minutes:
+    description: 'Age in minutes of the reused cached org. Empty unless cache-hit is true.'
+    value: ${{ steps.validate-pr.outputs.cache-age-minutes }}
   pr-number:
     description: 'PR number that was validated'
+    value: ${{ steps.validate-pr.outputs.pr-number }}
   duration:
     description: 'Total validation duration in milliseconds'
+    value: ${{ steps.validate-pr.outputs.duration }}
   result:
     description: 'Full JSON result with per-package outcomes including coverage'
+    value: ${{ steps.validate-pr.outputs.result }}
 
 runs:
-  using: 'node20'
-  main: '../dist/validate-main.js'
+  using: composite
+  steps:
+    - id: validate-pr
+      shell: bash
+      # The runtime directory is shared by every SFPM action. Its committed
+      # lockfile pins the whole transitive tree, and `npm ci` verifies the
+      # integrity hash of every tarball it downloads.
+      run: |
+        runtime="$GITHUB_ACTION_PATH/../runtime"
+        # Reuse the tree when another SFPM action already installed it in this job.
+        [ -d "$runtime/node_modules" ] || npm ci --prefix "$runtime" --ignore-scripts
+        "$runtime/node_modules/.bin/sfpm-action" validate-pr
+      # Composite actions do not receive INPUT_* automatically, so each input is
+      # forwarded explicitly. Callers still use plain `with:`.
+      env:
+        INPUT_DEVHUB-USERNAME: ${{ inputs.devhub-username }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_POOL-TAG: ${{ inputs.pool-tag }}
+        INPUT_POOL-TYPE: ${{ inputs.pool-type }}
+        INPUT_CACHE-TTL-HOURS: ${{ inputs.cache-ttl-hours }}
+        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}
+        INPUT_PACKAGES: ${{ inputs.packages }}
+        INPUT_BASE-REF: ${{ inputs.base-ref }}

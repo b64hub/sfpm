@@ -20,7 +20,7 @@ import type {
   ResolveForPackageOptions,
 } from './project-definition-provider.js';
 
-import {DIST_DIR, FORCE_APP_DIR} from '../../types/artifact.js';
+import {DIST_DIR} from '../../types/artifact.js';
 import {type PackageDefinition, type ProjectDefinition, ProjectDefinitionSchema} from '../../types/project.js';
 import {stripScope} from '../../utils/scope-utils.js';
 import {
@@ -30,6 +30,7 @@ import {
   getPackageDefinition,
   getPackageDefinitionByPath,
   getPackageType,
+  getSourceSubpath,
 } from './project-definition-provider.js';
 import {fromSalesforceProjectJson, toSalesforceProjectJson} from './sfdx-project-adapter.js';
 
@@ -78,7 +79,9 @@ export class SfdxProjectProvider implements ProjectDefinitionProvider {
 
   getPackageBuiltSourceDirectory(packageName: string): string | undefined {
     const pkgDir = this.getPackageDir(packageName);
-    return pkgDir ? path.join(pkgDir, DIST_DIR, FORCE_APP_DIR) : undefined;
+    const pkg = this.getPackageDefinition(packageName);
+    if (!pkgDir || !pkg) return undefined;
+    return path.join(pkgDir, DIST_DIR, getSourceSubpath(this.projectDir, pkgDir, pkg.path));
   }
 
   getPackageDefinition(packageName: string): PackageDefinition | undefined {

@@ -504,4 +504,5 @@ describe('ui: reducer', () => {
       expect(p.currentState().phase).to.equal('running');
     });
   });
+
 });
