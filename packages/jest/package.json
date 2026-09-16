@@ -1,0 +1,42 @@
+{
+  "name": "@b64hub/sfpm-jest",
+  "version": "0.1.0",
+  "description": "LWC workspace-aware Jest resolver for sfpm projects",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "sfpm",
+    "salesforce",
+    "lwc",
+    "jest",
+    "typescript"
+  ],
+  "author": "b64",
+  "license": "MIT",
+  "dependencies": {
+    "@b64hub/sfpm-core": "workspace:^0.3.0",
+    "@lwc/engine-dom": "8.28.2",
+    "@lwc/jest-resolver": "^19.4.0",
+    "@salesforce/sfdx-lwc-jest": "^7.9.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./resolver": "./dist/resolver.cjs"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.17"
+  },
+  "repository": "b64hub/sfpm"
+}
