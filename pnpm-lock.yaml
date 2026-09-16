@@ -133,8 +133,8 @@ importers:
         specifier: ^5
         version: 5.4.55(supports-color@8.1.1)
       '@oclif/table':
-        specifier: ^0.5.1
-        version: 0.5.2
+        specifier: ^1.0.1
+        version: 1.0.1
       '@salesforce/core':
         specifier: ^8.31.0
         version: 8.31.0(supports-color@8.1.1)
@@ -440,10 +440,6 @@ packages:
 
   '@actions/io@1.1.3':
     resolution: {integrity: sha512-wi9JjgKLYS7U/z8PPbco+PvTb/nRWjeoFlJ1Qer83k/3C5PHQi28hiVdeE2kHXmIL99mQFawx8qt/JPjZilJ8Q==}
-
-  '@alcalzone/ansi-tokenize@0.1.3':
-    resolution: {integrity: sha512-3yWxPTq3UQ/FY9p1ErPxIyfT64elWaMvM9lIHnaqpyft63tkxodF5aUElYHrdisWve5cETkh1+KBw1yJuW0aRw==}
-    engines: {node: '>=14.13.1'}
 
   '@alcalzone/ansi-tokenize@0.3.0':
     resolution: {integrity: sha512-p+CMKJ93HFmLkjXKlXiVGlMQEuRb6H0MokBSwUsX+S6BRX8eV5naFZpQJFfJHjRZY0Hmnqy1/r6UWl3x+19zYA==}
@@ -2046,9 +2042,9 @@ packages:
     resolution: {integrity: sha512-VIEBoaoMOCjl3y+w/kdfZMODi0mVMnDuM0vkBf3nqeidhRXVXq87hBqYDdRwN1XoD+eDfE8tBbOP7qtSOONztQ==}
     engines: {node: '>=18.0.0'}
 
-  '@oclif/table@0.5.2':
-    resolution: {integrity: sha512-7QnG9tqVEDqRbCZGvCU1uueoLWdiSVqFmslOfEpEW++XkqLi8hKu3TX6J22yqrvgCwx9CnNeAkaOD2UZ9NoWKw==}
-    engines: {node: '>=18.0.0'}
+  '@oclif/table@1.0.1':
+    resolution: {integrity: sha512-Owo2j2tXfHBNuAiqmgwIADUZwyVG5LrXJMwrEt9/8m4KhI6tqAxBtvj8YlrNALhGCc/FDKOtVGc7FkJSVMeoHQ==}
+    engines: {node: '>=22.0.0'}
 
   '@oclif/test@4.1.16':
     resolution: {integrity: sha512-LPrF++WGGBE0pe3GUkzEteI5WrwTT7usGpIMSxkyJhYnFXKkwASyTcCmOhNH4QC65kqsLt1oBA88BMkCJqPtxg==}
@@ -2934,14 +2930,11 @@ packages:
     resolution: {integrity: sha512-N1uzqSzioqz8R3AkDbSJwcfDWeI3YMPNapSQQhnB2ISU4NYgUIcAh+hYT5ygqBM+klX4htpEhXMmoJv3J7GrdA==}
     deprecated: This is a stub types definition. pino-pretty provides its own type definitions, so you do not need this installed.
 
-  '@types/prop-types@15.7.15':
-    resolution: {integrity: sha512-F6bEyamV9jKGAFBEmlQnesRPGOQqS2+Uwi0Em15xenOxHaf2hv6L8YCVn3rPdPJOiJfPiCnLIRyvwVaqMY3MIw==}
-
-  '@types/react@18.3.27':
-    resolution: {integrity: sha512-cisd7gxkzjBKU2GgdYrTdtQx1SORymWyaAFhaxQPK9bYO9ot3Y5OikQRvY0VYQtvwjeQnizCINJAenh/V7MK2w==}
-
   '@types/react@19.2.17':
     resolution: {integrity: sha512-MXfmqaVPEVgkBT/aY0aGCkRWWtByiYQXo3xdQ8r5RzuFrPiRn8Gar2tQdXSUQ2GKV3bkXckek89V8wQBY2Q/Aw==}
+
+  '@types/react@19.3.0':
+    resolution: {integrity: sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==}
 
   '@types/responselike@1.0.3':
     resolution: {integrity: sha512-H/+L+UkTV33uf49PH5pCAUBVPNj2nDBXTN+qS1dOwyyg24l3CcicicCA7ca+HMvJBZcFgl5r8e+RR6elsb4Lyw==}
@@ -4867,19 +4860,6 @@ packages:
   ini@1.3.8:
     resolution: {integrity: sha512-JV/yugV2uzW5iMRSiZAyDtQd+nxtUnjeLt0acNdw98kKLrvuRVyB80tsREOE7yvGVgalhZ6RNXCmEHkUKBKxew==}
 
-  ink@5.0.1:
-    resolution: {integrity: sha512-ae4AW/t8jlkj/6Ou21H2av0wxTk8vrGzXv+v2v7j4in+bl1M5XRMVbfNghzhBokV++FjF8RBDJvYo+ttR9YVRg==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      '@types/react': '>=18.0.0'
-      react: '>=18.0.0'
-      react-devtools-core: ^4.19.1
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-      react-devtools-core:
-        optional: true
-
   ink@7.1.1:
     resolution: {integrity: sha512-Y43xxa1ZSPvpmfLHcN5o+OdP8Rf8ykkNJEuKYOUNZKT8wXVNLFTtEm1nSDMQkfBH+YANF4Xuu0hhZ4ejqAtN2w==}
     engines: {node: '>=22'}
@@ -4991,11 +4971,6 @@ packages:
   is-glob@4.0.3:
     resolution: {integrity: sha512-xelSayHH36ZgE7ZWhli7pW34hNbNl8Ojv5KVmkJD4hBdD3th8Tfk9vYasLM+mXWOZhFkgZfxhLSnrwRr4elSSg==}
     engines: {node: '>=0.10.0'}
-
-  is-in-ci@0.1.0:
-    resolution: {integrity: sha512-d9PXLEY0v1iJ64xLiQMJ51J128EYHAaOR4yZqQi8aHGfw6KgifM3/Viw1oZZ1GCVmb3gBuyhLyHj0HgR2DhSXQ==}
-    engines: {node: '>=18'}
-    hasBin: true
 
   is-in-ci@2.0.0:
     resolution: {integrity: sha512-cFeerHriAnhrQSbpAxL37W1wcJKUUX07HyLWZCW1URJT/ra3GyUTzBgUnh24TMVfNTV2Hij2HLxkPHFZfOZy5w==}
@@ -5516,10 +5491,6 @@ packages:
 
   long@5.3.2:
     resolution: {integrity: sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==}
-
-  loose-envify@1.4.0:
-    resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
-    hasBin: true
 
   loupe@2.3.7:
     resolution: {integrity: sha512-zSMINGVYkdpYSOBmLi0D1Uo7JU9nVdQKrHxC8eYlV+9YKK9WePqAlL7lSlorG/U2Fw1w0hTBmaa/jrQ3UbPHtA==}
@@ -6219,24 +6190,18 @@ packages:
   react-is@18.3.1:
     resolution: {integrity: sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==}
 
-  react-reconciler@0.29.2:
-    resolution: {integrity: sha512-zZQqIiYgDCTP/f1N/mAR10nJGrPD2ZR+jDSEsKWJHYC7Cm2wodlwbR3upZRdC3cjIjSlTLNVyO7Iu0Yy7t2AYg==}
-    engines: {node: '>=0.10.0'}
-    peerDependencies:
-      react: ^18.3.1
-
   react-reconciler@0.33.0:
     resolution: {integrity: sha512-KetWRytFv1epdpJc3J4G75I4WrplZE5jOL7Yq0p34+OVOKF4Se7WrdIdVC45XsSSmUTlht2FM/fM1FZb1mfQeA==}
     engines: {node: '>=0.10.0'}
     peerDependencies:
       react: ^19.2.0
 
-  react@18.3.1:
-    resolution: {integrity: sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==}
-    engines: {node: '>=0.10.0'}
-
   react@19.2.8:
     resolution: {integrity: sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw==}
+    engines: {node: '>=0.10.0'}
+
+  react@19.3.0:
+    resolution: {integrity: sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog==}
     engines: {node: '>=0.10.0'}
 
   read-pkg-up@7.0.1:
@@ -6426,9 +6391,6 @@ packages:
   saxes@6.0.0:
     resolution: {integrity: sha512-xAg7SOnEhrm5zI3puOOKyy1OMcMlIJZYNJY7xLBwSze0UjhPLnWfj2GF2EpT0jmzaJKIWKHLsaSSajf35bcYnA==}
     engines: {node: '>=v12.22.7'}
-
-  scheduler@0.23.2:
-    resolution: {integrity: sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==}
 
   scheduler@0.27.0:
     resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
@@ -6689,6 +6651,10 @@ packages:
 
   strip-ansi@7.1.2:
     resolution: {integrity: sha512-gmBGslpoQJtgnMAvOVqGZpEz9dyoKTCzy2nfz/n8aIFhN/jCE/rCmcxabB6jOOHV+0WNnylOxaxBQPSvcWklhA==}
+    engines: {node: '>=12'}
+
+  strip-ansi@7.2.0:
+    resolution: {integrity: sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w==}
     engines: {node: '>=12'}
 
   strip-bom@3.0.0:
@@ -7237,18 +7203,6 @@ packages:
     resolution: {integrity: sha512-7KxauUdBmSdWnmpaGFg+ppNjKF8uNLry8LyzjauQDOVONfFLNKrKvQOxZ/VuTIcS/gge/YNahf5RIIQWTSarlg==}
     engines: {node: ^12.13.0 || ^14.15.0 || >=16.0.0}
 
-  ws@8.19.0:
-    resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
-    peerDependenciesMeta:
-      bufferutil:
-        optional: true
-      utf-8-validate:
-        optional: true
-
   ws@8.21.1:
     resolution: {integrity: sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==}
     engines: {node: '>=10.0.0'}
@@ -7347,9 +7301,6 @@ packages:
   yoga-layout@3.2.1:
     resolution: {integrity: sha512-0LPOt3AxKqMdFBZA3HBAt/t/8vIKq7VaQYbuA8WxCgung+p9TVyKRYdpvCb80HcdTN2NkbIKbhNwKUfm3tQywQ==}
 
-  yoga-wasm-web@0.3.3:
-    resolution: {integrity: sha512-N+d4UJSJbt/R3wqY7Coqs5pcV0aUj2j9IaQ3rNj9bVCLld8tTGKRa2USARjnvZJWVx1NDmQev8EknoczaOQDOA==}
-
   zod@4.3.6:
     resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
 
@@ -7401,11 +7352,6 @@ snapshots:
       undici: 5.29.0
 
   '@actions/io@1.1.3': {}
-
-  '@alcalzone/ansi-tokenize@0.1.3':
-    dependencies:
-      ansi-styles: 6.2.3
-      is-fullwidth-code-point: 4.0.0
 
   '@alcalzone/ansi-tokenize@0.3.0':
     dependencies:
@@ -9830,16 +9776,17 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@oclif/table@0.5.2':
+  '@oclif/table@1.0.1':
     dependencies:
-      '@types/react': 18.3.27
+      '@types/react': 19.3.0
       change-case: 5.4.4
       cli-truncate: 4.0.0
-      ink: 5.0.1(@types/react@18.3.27)(react@18.3.1)
+      ink: 7.1.1(@types/react@19.3.0)(react@19.3.0)
       natural-orderby: 3.0.2
       object-hash: 3.0.0
-      react: 18.3.1
-      strip-ansi: 7.1.2
+      react: 19.3.0
+      string-width: 8.2.2
+      strip-ansi: 7.2.0
       wrap-ansi: 9.0.2
     transitivePeerDependencies:
       - bufferutil
@@ -10949,14 +10896,11 @@ snapshots:
     dependencies:
       pino-pretty: 13.1.3
 
-  '@types/prop-types@15.7.15': {}
-
-  '@types/react@18.3.27':
+  '@types/react@19.2.17':
     dependencies:
-      '@types/prop-types': 15.7.15
       csstype: 3.2.3
 
-  '@types/react@19.2.17':
+  '@types/react@19.3.0':
     dependencies:
       csstype: 3.2.3
 
@@ -11282,7 +11226,7 @@ snapshots:
 
   acorn-globals@7.0.1:
     dependencies:
-      acorn: 8.15.0
+      acorn: 8.18.0
       acorn-walk: 8.3.4
 
   acorn-import-attributes@1.9.5(acorn@8.15.0):
@@ -13157,39 +13101,6 @@ snapshots:
 
   ini@1.3.8: {}
 
-  ink@5.0.1(@types/react@18.3.27)(react@18.3.1):
-    dependencies:
-      '@alcalzone/ansi-tokenize': 0.1.3
-      ansi-escapes: 7.2.0
-      ansi-styles: 6.2.3
-      auto-bind: 5.0.1
-      chalk: 5.6.2
-      cli-boxes: 3.0.0
-      cli-cursor: 4.0.0
-      cli-truncate: 4.0.0
-      code-excerpt: 4.0.0
-      indent-string: 5.0.0
-      is-in-ci: 0.1.0
-      lodash: 4.17.23
-      patch-console: 2.0.0
-      react: 18.3.1
-      react-reconciler: 0.29.2(react@18.3.1)
-      scheduler: 0.23.2
-      signal-exit: 3.0.7
-      slice-ansi: 7.1.2
-      stack-utils: 2.0.6
-      string-width: 7.2.0
-      type-fest: 4.41.0
-      widest-line: 5.0.0
-      wrap-ansi: 9.0.2
-      ws: 8.19.0
-      yoga-wasm-web: 0.3.3
-    optionalDependencies:
-      '@types/react': 18.3.27
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
-
   ink@7.1.1(@types/react@19.2.17)(react@19.2.8):
     dependencies:
       '@alcalzone/ansi-tokenize': 0.3.0
@@ -13220,6 +13131,40 @@ snapshots:
       yoga-layout: 3.2.1
     optionalDependencies:
       '@types/react': 19.2.17
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  ink@7.1.1(@types/react@19.3.0)(react@19.3.0):
+    dependencies:
+      '@alcalzone/ansi-tokenize': 0.3.0
+      ansi-escapes: 7.3.0
+      ansi-styles: 6.2.3
+      auto-bind: 5.0.1
+      chalk: 5.6.2
+      cli-boxes: 4.0.1
+      cli-cursor: 4.0.0
+      cli-truncate: 6.1.1
+      code-excerpt: 4.0.0
+      es-toolkit: 1.50.0
+      indent-string: 5.0.0
+      is-in-ci: 2.0.0
+      patch-console: 2.0.0
+      react: 19.3.0
+      react-reconciler: 0.33.0(react@19.3.0)
+      scheduler: 0.27.0
+      signal-exit: 3.0.7
+      slice-ansi: 9.0.0
+      stack-utils: 2.0.6
+      string-width: 8.2.2
+      terminal-size: 4.0.1
+      type-fest: 5.8.0
+      widest-line: 6.0.0
+      wrap-ansi: 10.0.0
+      ws: 8.21.1
+      yoga-layout: 3.2.1
+    optionalDependencies:
+      '@types/react': 19.3.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -13321,8 +13266,6 @@ snapshots:
   is-glob@4.0.3:
     dependencies:
       is-extglob: 2.1.1
-
-  is-in-ci@0.1.0: {}
 
   is-in-ci@2.0.0: {}
 
@@ -13624,7 +13567,7 @@ snapshots:
 
   jest-message-util@29.7.0:
     dependencies:
-      '@babel/code-frame': 7.28.6
+      '@babel/code-frame': 7.29.7
       '@jest/types': 29.6.3
       '@types/stack-utils': 2.0.3
       chalk: 4.1.2
@@ -13661,7 +13604,7 @@ snapshots:
       jest-pnp-resolver: 1.2.3(jest-resolve@29.7.0)
       jest-util: 29.7.0
       jest-validate: 29.7.0
-      resolve: 1.22.11
+      resolve: 1.22.12
       resolve.exports: 2.0.3
       slash: 3.0.0
 
@@ -13823,7 +13766,7 @@ snapshots:
   jsdom@20.0.3(supports-color@8.1.1):
     dependencies:
       abab: 2.0.6
-      acorn: 8.15.0
+      acorn: 8.18.0
       acorn-globals: 7.0.1
       cssom: 0.5.0
       cssstyle: 2.3.0
@@ -14037,10 +13980,6 @@ snapshots:
       wrap-ansi: 9.0.2
 
   long@5.3.2: {}
-
-  loose-envify@1.4.0:
-    dependencies:
-      js-tokens: 4.0.0
 
   loupe@2.3.7:
     dependencies:
@@ -14751,22 +14690,19 @@ snapshots:
 
   react-is@18.3.1: {}
 
-  react-reconciler@0.29.2(react@18.3.1):
-    dependencies:
-      loose-envify: 1.4.0
-      react: 18.3.1
-      scheduler: 0.23.2
-
   react-reconciler@0.33.0(react@19.2.8):
     dependencies:
       react: 19.2.8
       scheduler: 0.27.0
 
-  react@18.3.1:
+  react-reconciler@0.33.0(react@19.3.0):
     dependencies:
-      loose-envify: 1.4.0
+      react: 19.3.0
+      scheduler: 0.27.0
 
   react@19.2.8: {}
+
+  react@19.3.0: {}
 
   read-pkg-up@7.0.1:
     dependencies:
@@ -14996,10 +14932,6 @@ snapshots:
   saxes@6.0.0:
     dependencies:
       xmlchars: 2.2.0
-
-  scheduler@0.23.2:
-    dependencies:
-      loose-envify: 1.4.0
 
   scheduler@0.27.0: {}
 
@@ -15292,6 +15224,10 @@ snapshots:
       ansi-regex: 5.0.1
 
   strip-ansi@7.1.2:
+    dependencies:
+      ansi-regex: 6.2.2
+
+  strip-ansi@7.2.0:
     dependencies:
       ansi-regex: 6.2.2
 
@@ -15832,8 +15768,6 @@ snapshots:
       imurmurhash: 0.1.4
       signal-exit: 3.0.7
 
-  ws@8.19.0: {}
-
   ws@8.21.1: {}
 
   xml-name-validator@4.0.0: {}
@@ -15906,7 +15840,5 @@ snapshots:
   yoctocolors@2.1.2: {}
 
   yoga-layout@3.2.1: {}
-
-  yoga-wasm-web@0.3.3: {}
 
   zod@4.3.6: {}
