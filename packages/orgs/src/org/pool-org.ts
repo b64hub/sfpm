@@ -84,6 +84,17 @@ export interface PoolOrgUsage {
 }
 
 /**
+ * Build a default pool-org alias from a pool tag and 1-based index.
+ *
+ * Scratch orgs: `${tag}-${index}` (e.g. `ci-1`).
+ * Sandboxes: `${tag}${index}`, uppercased with hyphens stripped (e.g. `CI1`),
+ * since sandbox names don't support hyphens.
+ */
+export function buildPoolAlias(tag: string, isSandboxPool: boolean, index: number): string {
+  return isSandboxPool ? `${tag.toUpperCase().replaceAll('-', '')}${index}` : `${tag}-${index}`;
+}
+
+/**
  * Narrow a `PoolOrg` to `Sandbox`.
  *
  * @example
