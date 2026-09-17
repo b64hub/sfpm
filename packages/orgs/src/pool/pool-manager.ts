@@ -5,6 +5,7 @@ import {OrgTypes, SfError} from '@salesforce/core';
 import type {OrgCreateOptions, OrgProvider} from '../org/org-provider.js';
 import type {PoolOrg, PoolOrgRecord} from '../org/pool-org.js';
 
+import {buildPoolAlias} from '../org/pool-org.js';
 import {
   OrgError,
   PoolStage,
@@ -438,12 +439,11 @@ export default class PoolManager {
     concurrency: number,
   ): Array<{alias: string; index: number;}[]> {
     const isSandboxPool = type === OrgTypes.Sandbox;
-    const prefix = isSandboxPool ? tag.toUpperCase().replaceAll('-', '') : tag;
     const batches: Array<{alias: string; index: number;}[]> = [];
     for (let batchStart = 0; batchStart < count; batchStart += concurrency) {
       const batchEnd = Math.min(batchStart + concurrency, count);
       const batch = Array.from({length: batchEnd - batchStart}, (_, i) => ({
-        alias: isSandboxPool ? `${prefix}${batchStart + i + 1}` : `${prefix}-${batchStart + i + 1}`,
+        alias: buildPoolAlias(tag, isSandboxPool, batchStart + i + 1),
         index: batchStart + i,
       }));
       batches.push(batch);

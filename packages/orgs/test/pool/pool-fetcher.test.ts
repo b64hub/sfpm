@@ -39,6 +39,7 @@ function createScratchOrg(overrides?: Record<string, unknown>) {
       ...(overrides?.auth as Record<string, unknown>),
     },
     orgId: (overrides?.orgId as string) ?? '00D000000000001',
+    orgType: (overrides?.orgType as string) ?? 'scratch',
     pool: {
       status: 'Available',
       tag: 'test-pool',
@@ -251,8 +252,21 @@ describe('PoolFetcher', () => {
 
       const result = await fetcher.fetchAll('test-pool');
 
-      expect(result[0].auth.alias).toBe('SO1');
-      expect(result[1].auth.alias).toBe('SO2');
+      expect(result[0].auth.alias).toBe('test-pool-1');
+      expect(result[1].auth.alias).toBe('test-pool-2');
+    });
+
+    it('should assign uppercased, hyphen-free aliases for sandboxes', async () => {
+      const org1 = createScratchOrg({orgType: 'sandbox'});
+      const org2 = createScratchOrg({orgType: 'sandbox'});
+      orgSource.getAvailableByTag.mockResolvedValue([org1, org2]);
+
+      const fetcher = new PoolFetcher(orgSource as any);
+
+      const result = await fetcher.fetchAll('dev-pool');
+
+      expect(result[0].auth.alias).toBe('DEVPOOL1');
+      expect(result[1].auth.alias).toBe('DEVPOOL2');
     });
 
     it('should return all available orgs', async () => {

@@ -4,6 +4,7 @@ import type {OrgProvider} from '../org/org-provider.js';
 import type {PoolOrg} from '../org/pool-org.js';
 import type {PoolFetchOptions, PostClaimAction} from './types.js';
 
+import {buildPoolAlias, isSandbox} from '../org/pool-org.js';
 import {OrgError, PoolStage} from '../org/types.js';
 import {PoolFetcherEventBus} from './pool-fetcher-event-bus.js';
 
@@ -157,7 +158,7 @@ export default class PoolFetcher {
 
     const orgs: PoolOrg[] = candidates.map((org, i) => ({
       ...org,
-      auth: {...org.auth, alias: `SO${i + 1}`},
+      auth: {...org.auth, alias: buildPoolAlias(tag, isSandbox(org), i + 1)},
       pool: {stage: PoolStage.Available, tag: org.pool?.tag ?? tag, timestamp: org.pool?.timestamp ?? Date.now()},
     }));
 
