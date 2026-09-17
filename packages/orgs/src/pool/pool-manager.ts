@@ -18,6 +18,7 @@ import {
   type PoolOrgTask,
   type PoolOrgTaskResult,
   type PoolSize,
+  type PoolType,
 } from './types.js';
 
 /**
@@ -424,16 +425,25 @@ export default class PoolManager {
 
   /**
    * Build batch definitions for org creation.
+   * @param tag The pool tag, used as the alias prefix (e.g. `ci-1`, `CI1`).
+   * @param type The pool type — sandbox aliases are uppercased with hyphens stripped.
    * @param count The total number of orgs to create.
    * @param concurrency The maximum number of orgs to create concurrently.
    * @returns An array of batches, each containing org aliases and their indices.
    */
-  private buildBatchDefinitions(count: number, concurrency: number): Array<{alias: string; index: number;}[]> {
+  private buildBatchDefinitions(
+    tag: string,
+    type: PoolType,
+    count: number,
+    concurrency: number,
+  ): Array<{alias: string; index: number;}[]> {
+    const isSandboxPool = type === OrgTypes.Sandbox;
+    const prefix = isSandboxPool ? tag.toUpperCase().replaceAll('-', '') : tag;
     const batches: Array<{alias: string; index: number;}[]> = [];
     for (let batchStart = 0; batchStart < count; batchStart += concurrency) {
       const batchEnd = Math.min(batchStart + concurrency, count);
       const batch = Array.from({length: batchEnd - batchStart}, (_, i) => ({
-        alias: `SO${batchStart + i + 1}`,
+        alias: isSandboxPool ? `${prefix}${batchStart + i + 1}` : `${prefix}-${batchStart + i + 1}`,
         index: batchStart + i,
       }));
       batches.push(batch);
@@ -531,7 +541,7 @@ export default class PoolManager {
     count: number,
     concurrency: number,
   ): Promise<OrgProvisionResult[]> {
-    const batches: Array<{alias: string; index: number;}[]> = this.buildBatchDefinitions(count, concurrency);
+    const batches: Array<{alias: string; index: number;}[]> = this.buildBatchDefinitions(tag, config.type, count, concurrency);
     const allResults: OrgProvisionResult[] = [];
 
     for (const batch of batches) {

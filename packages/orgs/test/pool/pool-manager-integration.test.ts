@@ -177,6 +177,39 @@ describe('PoolManager', () => {
       expect(result.failed).toBe(0);
     });
 
+    it('should alias scratch orgs with the pool tag prefix', async () => {
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
+      provider.createOrg.mockResolvedValue(createScratchOrg());
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue(undefined);
+
+      const manager = new PoolManager({provider: provider as any});
+      await manager.provision('ci', createPoolConfig({sizing: {batch: 5, max: 2}}));
+
+      const aliases = provider.createOrg.mock.calls.map(([opts]: any[]) => opts.alias);
+      expect(aliases).toEqual(['ci-1', 'ci-2']);
+    });
+
+    it('should alias sandbox orgs with an uppercased, hyphen-free pool tag prefix', async () => {
+      provider.getRemainingCapacity.mockResolvedValue(100);
+      provider.getActiveCountByTag.mockResolvedValue(0);
+      provider.createOrg.mockResolvedValue(createScratchOrg());
+      provider.isOrgActive.mockResolvedValue(true);
+      provider.getRecordIds.mockImplementation((orgs: any[]) => orgs);
+      provider.updatePoolMetadata.mockResolvedValue(undefined);
+
+      const manager = new PoolManager({provider: provider as any});
+      const config = createPoolConfig({
+        sizing: {batch: 5, max: 2}, type: OrgTypes.Sandbox,
+      });
+      await manager.provision('dev-pool', config);
+
+      const aliases = provider.createOrg.mock.calls.map(([opts]: any[]) => opts.alias);
+      expect(aliases).toEqual(['DEVPOOL1', 'DEVPOOL2']);
+    });
+
     it('should handle partial failures during creation', async () => {
       provider.getRemainingCapacity.mockResolvedValue(100);
       provider.getActiveCountByTag.mockResolvedValue(0);
