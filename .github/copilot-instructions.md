@@ -64,7 +64,7 @@ GitHub Actions integration patterns
 - `GitHubActionsLogger` integrating with `@actions/core`
 - `ActionsProgressRenderer` for event-driven log output
 - Action inputs/outputs and workflow usage
-- node24 JavaScript actions running a committed esbuild bundle
+- node24 JavaScript actions running an esbuild bundle that exists only on release tag commits (never on `main`)
 
 ## How These Are Used
 

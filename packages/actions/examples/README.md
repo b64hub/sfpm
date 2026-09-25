@@ -7,7 +7,7 @@ templates and reference the actions remotely
 (`b64hub/sfpm/packages/actions/<name>@<sha>`) as shown in each file — see
 [../CONSUMING.md](../CONSUMING.md).
 
-Requires [`act`](https://github.com/nektos/act) and a running Docker daemon.
+Requires [`act`](https://github.com/nektos/act) v0.2.81 (released 2025-09-01) or later for node24 action support, and a running Docker daemon.
 
 ## One-time setup
 
@@ -23,6 +23,15 @@ docker build -f packages/actions/docker/Dockerfile -t ghcr.io/b64hub/sfpm-action
 that local image instead of trying to fetch it from ghcr.io.
 
 ## Running a workflow
+
+First, build the action bundle locally (required — `act` runs the `.mjs` files in `packages/actions/bundle/`):
+
+```bash
+pnpm build
+node scripts/build-action-bundle.mjs
+```
+
+Then run your chosen workflow:
 
 ```bash
 act pull_request \
@@ -74,7 +83,8 @@ steps:
   - run: |
       cd .sfpm-actions
       pnpm install
-      pnpm turbo build --filter=@b64hub/sfpm-actions...
+      pnpm build
+      node scripts/build-action-bundle.mjs
 
   - uses: ./.sfpm-actions/packages/actions/build
     with:
@@ -108,7 +118,8 @@ jobs:
       - run: |
           cd .sfpm-actions
           pnpm install --ignore-scripts
-          pnpm turbo build --filter=@b64hub/sfpm-actions...
+          pnpm build
+          node scripts/build-action-bundle.mjs
 
       - uses: ./.sfpm-actions/packages/actions/validate-pr
 ```
@@ -121,11 +132,23 @@ mount.
 
 `--ignore-scripts` on the sfpm-actions `pnpm install` skips its `husky
 install` postinstall hook, which fails outside a real git checkout (a plain
-bind mount has no `.git`). Also watch for turbo's build cache replaying a
-stale `dist/*.js` from an earlier `pnpm build` (plain `tsc -b`, no bundler)
-on the same sfpm checkout. `rm -rf packages/actions/dist
-packages/actions/tsconfig.tsbuildinfo && pnpm turbo build --force` if a test
-is running against unexpectedly old code.
+bind mount has no `.git`).
+
+If you modify action source code, rebuild the bundle afterwards:
+
+```bash
+node scripts/build-action-bundle.mjs
+```
+
+If in doubt, delete the entire bundle and rebuild from scratch:
+
+```bash
+rm -rf packages/actions/bundle
+node scripts/build-action-bundle.mjs
+```
+
+`act` always runs whatever `.mjs` files are in `bundle/` regardless of whether
+sources have changed, so stale bundle output is a common debugging issue.
 
 ## Debugging an action inside a consuming project
 
@@ -135,3 +158,16 @@ and `validate-pr.yml` meant to be dropped into a *consuming* project's
 container job can't be reached by a debugger the same way) and install the
 same toolchain directly on the runner instead. See
 packages/actions/DEBUGGING.md for the full attach-a-debugger walkthrough.
+
+### Debugging with `NODE_OPTIONS=--inspect-brk`
+
+When you add `NODE_OPTIONS: --inspect-brk` to debug an action, **note that
+you are debugging the bundled code** (the `.mjs` files under
+`packages/actions/bundle/`), not the original TypeScript sources. Breakpoints
+and step-through will show line numbers and file paths from the bundled output.
+
+This build script does not currently emit source maps, so source-level mapping
+is not available. If you need to match breakpoints to source code, use a text
+comparison: open both the original `src/*.ts` file and the bundled
+`bundle/*-main.mjs` side-by-side and search for the source code text in the
+bundled file to find the corresponding location.

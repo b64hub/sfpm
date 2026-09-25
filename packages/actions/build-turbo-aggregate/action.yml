@@ -30,7 +30,7 @@ outputs:
 
 runs:
   using: node24
-  # packages/actions/bundle is a committed, code-split esbuild bundle
-  # (built by scripts/build-action-bundle.mjs at release time), so no
-  # install step is needed at runtime.
+  # packages/actions/bundle is a code-split esbuild bundle, added only to
+  # the commit a release tag points to (see .github/workflows/release.yml);
+  # it is absent on main. No install step is needed at runtime.
   main: ../bundle/build-turbo-aggregate-main.mjs
