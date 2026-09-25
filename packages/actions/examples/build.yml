@@ -37,11 +37,13 @@
 # Requires repo secrets: SFDX_CONSUMER_KEY, SFDX_JWT_KEY, DEVHUB_USERNAME,
 # TARGET_ORG_USERNAME, NPM_TOKEN.
 #
-# Runs on the sfpm image (node + pnpm + turbo + sf CLI + sfpm CLI preinstalled)
-# so this workflow doesn't need to set those up itself. This is just a
-# convenience image, not a requirement — swap `container:` for any `node:22`
-# image and add back `pnpm/action-setup`, `actions/setup-node`, and
-# `npm install --global @salesforce/cli` if you'd rather not depend on it.
+# This is a consumer workflow: it references the sfpm actions remotely
+# (`b64hub/sfpm/packages/actions/<name>@<ref>`, no local checkout of sfpm and
+# no container image) and sets up its own prerequisites (Node.js, sf CLI) on
+# a plain runner in each job. Replace `<sha>` with the commit SHA of the sfpm
+# release you're pinning to — see packages/actions/CONSUMING.md in the sfpm
+# repo for prerequisites, egress, and allowlisting guidance.
+
 name: SFPM Build
 
 on:
@@ -49,18 +51,23 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/b64hub/sfpm-actions:latest
     outputs:
       result: ${{ steps.build.outputs.result }}
     steps:
       - uses: actions/checkout@v4
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install sf CLI
+        run: npm install --global @salesforce/cli
 
       - name: Authenticate DevHub
         run: |
@@ -75,7 +82,7 @@ jobs:
 
       - name: Build packages
         id: build
-        uses: ./packages/actions/build
+        uses: b64hub/sfpm/packages/actions/build@<sha>
         with:
           devhub-username: devhub
 
@@ -93,13 +100,15 @@ jobs:
   install:
     needs: build
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/b64hub/sfpm-actions:latest
     steps:
       - uses: actions/checkout@v4
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install sf CLI
+        run: npm install --global @salesforce/cli
 
       - name: Download build output
         uses: actions/download-artifact@v4
@@ -121,7 +130,7 @@ jobs:
       # install semantics (e.g. unlocked packages install the exact version
       # just created, not a source-only deploy).
       - name: Install packages
-        uses: ./packages/actions/install
+        uses: b64hub/sfpm/packages/actions/install@<sha>
         with:
           origin: local
           packages: my-package
@@ -130,13 +139,15 @@ jobs:
   build-validation:
     needs: build
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/b64hub/sfpm-actions:latest
     steps:
       - uses: actions/checkout@v4
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install sf and sfpm CLIs
+        run: npm install --global @salesforce/cli @b64hub/sfpm-cli
 
       - name: Download build output
         uses: actions/download-artifact@v4
@@ -156,7 +167,7 @@ jobs:
 
       - name: Resume validation
         id: resume
-        uses: ./packages/actions/build-validation
+        uses: b64hub/sfpm/packages/actions/build-validation@<sha>
         with:
           build-result: ${{ needs.build.outputs.result }}
           max-wait-minutes: '60'

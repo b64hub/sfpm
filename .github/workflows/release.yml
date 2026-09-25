@@ -58,7 +58,7 @@ jobs:
         id: version
         run: |
           version=$(node -p "require('./package.json').version")
-          tag="$version"
+          tag="v$version"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "major=v${version%%.*}" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

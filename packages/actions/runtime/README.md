@@ -8,6 +8,13 @@ npm ci --prefix "$GITHUB_ACTION_PATH/../runtime" --ignore-scripts
 "$GITHUB_ACTION_PATH/../runtime/node_modules/.bin/sfpm-action" <action-name>
 ```
 
+## What this means for consumers
+
+Installing this tree at runtime means every sfpm action needs npm registry
+(or configured mirror) access on the runner. See
+[../CONSUMING.md](../CONSUMING.md) for the full prerequisites and egress
+table.
+
 ## Why this is separate from `../package.json`
 
 `../package.json` declares *this repository's* `@b64hub/sfpm-actions` package:

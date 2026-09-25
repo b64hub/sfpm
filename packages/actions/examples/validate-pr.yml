@@ -1,5 +1,8 @@
 # Validates a PR. Default mode is 'local': compile + dependency checks via
 # the local nimbus validator only — no scratch org, no DevHub auth needed.
+# nimbus must be on PATH; if it's missing the action skips local validation
+# with a warning instead of failing, so a green run here is not on its own
+# proof that validation happened — check for that warning.
 #
 # For a real deploy against a pooled scratch org instead, set mode: org (see
 # commented block below) — requires repo secrets SFDX_CONSUMER_KEY,
@@ -8,22 +11,23 @@
 # creates a real package version (that only happens on push to main, via the
 # `build` action), so concurrent PRs can't race for conflicting build numbers.
 #
-# Runs on the sfpm image (node + pnpm + turbo + sf CLI + sfpm CLI preinstalled)
-# so this workflow doesn't need to set those up itself. This is just a
-# convenience image, not a requirement — swap `container:` for any `node:22`
-# image and add back `pnpm/action-setup`, `actions/setup-node`, and
-# `npm install --global @salesforce/cli` if you'd rather not depend on it.
+# This is a consumer workflow: it references the sfpm action remotely
+# (`b64hub/sfpm/packages/actions/validate-pr@<ref>`, no local checkout of sfpm
+# and no container image). Replace `<sha>` with the commit SHA of the sfpm
+# release you're pinning to — see packages/actions/CONSUMING.md in the sfpm
+# repo for prerequisites and allowlisting guidance.
 name: SFPM Validate PR
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/b64hub/sfpm-actions:latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,13 +37,17 @@ jobs:
           # falls back to validating all packages (with a warning).
           fetch-depth: 0
 
-      # Builds the actions package (and its workspace deps) so dist/validate-main.js exists.
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Install nimbus through your own approved channel for local
+      # validation to actually run (optional but recommended — see the
+      # header comment above).
 
       - name: Validate PR
         id: validate
-        uses: ./packages/actions/validate-pr
+        uses: b64hub/sfpm/packages/actions/validate-pr@<sha>
 
       # --- org mode instead (deploy to a pooled scratch org) ---
       # - name: Authenticate DevHub
@@ -55,7 +63,7 @@ jobs:
       #
       # - name: Validate PR
       #   id: validate
-      #   uses: ./packages/actions/validate-pr
+      #   uses: b64hub/sfpm/packages/actions/validate-pr@<sha>
       #   with:
       #     mode: org
       #     devhub-username: devhub

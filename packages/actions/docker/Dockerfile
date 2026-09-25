@@ -1,3 +1,8 @@
+# Local development and `act` convenience image only — not published to any
+# registry (see packages/actions/examples/README.md). Do not reference this
+# image from a consuming workflow; it is not part of the supported
+# integration surface (see packages/actions/CONSUMING.md).
+#
 # Reproducible CI environment for sfpm actions/workflows:
 # Node + pnpm + turbo + sf CLI + sfpm CLI + nimbus, so workflow jobs can skip
 # `pnpm/action-setup`, `actions/setup-node`, and manual CLI installs.

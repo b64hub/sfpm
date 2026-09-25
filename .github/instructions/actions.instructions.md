@@ -11,8 +11,8 @@ applyTo: 'packages/actions/src/**/*.ts'
 
 ```
 packages/actions/
-  validate-pr/action.yml  # GitHub Action definition for the validate-pr action
-  esbuild.config.mjs      # Bundler for single-file dist/validate-main.js
+  validate-pr/action.yml  # Composite action definition for validate-pr
+  runtime/                # Shared, pinned npm-installable dependency tree every action.yml installs
   src/
     validate-main.ts     # Action entry point (reads inputs, runs validatePr)
     index.ts              # Library exports
@@ -145,14 +145,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       # Authenticate to DevHub (JWT flow)
       - name: Authenticate DevHub
         run: sf org login jwt ...
 
       - name: Validate PR
-        uses: ./packages/actions/validate-pr
+        uses: b64hub/sfpm/packages/actions/validate-pr@<sha>
         with:
           mode: org
           devhub-username: devhub@myorg.com
@@ -194,14 +194,31 @@ jobs:
 
 ## Building
 
-The action requires bundling into a single file for GitHub Actions:
+Each action is a composite action (`runs: using: composite`), not a bundled
+JS entrypoint. Bundling with esbuild isn't viable here — it fails on
+`@salesforce/core`'s import/require patterns. Instead every `action.yml` runs
+a shared step that installs a pinned, committed-lockfile dependency tree from
+`packages/actions/runtime` and invokes the dispatcher out of it:
 
 ```bash
-pnpm build       # TypeScript compilation
-pnpm bundle      # esbuild → dist/validate-main.js (single bundled file)
+runtime="$GITHUB_ACTION_PATH/../runtime"
+[ -d "$runtime/node_modules" ] || npm ci --prefix "$runtime" --ignore-scripts
+"$runtime/node_modules/.bin/sfpm-action" <action-name>
 ```
 
-The `action.yml` points to `dist/validate-main.js` as the entry point.
+`packages/actions/src/` still compiles with `pnpm build` (plain TypeScript,
+no bundler) into the `@b64hub/sfpm-actions` package that the runtime installs
+from npm — there is no `dist/*-main.js` entrypoint referenced by any
+`action.yml`.
+
+The runtime's lockfile can only pin a version that exists on the registry, so
+`release.yml` repins it after publishing to npm and commits the result before
+creating the release tag (see [runtime/README.md](../../packages/actions/runtime/README.md)):
+
+```bash
+node scripts/sync-action-runtime.mjs --version X.Y.Z   # repin + regenerate
+node scripts/sync-action-runtime.mjs --check           # CI: lockfile matches manifest
+```
 
 ## Testing
 
@@ -229,9 +246,9 @@ vi.mock('@actions/core', () => ({
 ## Adding a New Action
 
 1. Create `src/my-action.ts` with the pipeline logic
-2. Create `src/my-action-main.ts` as the entry point
-3. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) with `main: '../dist/my-action-main.js'`
-4. Add esbuild entry point if separate bundle needed
+2. Create `src/my-action-main.ts` as the entry point (plain `tsc` output to `dist/my-action-main.js`, no bundler)
+3. Register it in `bin/sfpm-action.mjs`'s `ACTIONS` map (`'my-action': 'my-action-main.js'`)
+4. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) as a composite action that installs `../runtime` and runs `sfpm-action my-action` — copy the `run:`/`env:` shape from an existing `action.yml`
 5. Export from `src/index.ts` for library use
 6. Add tests with mocked `@actions/*` dependencies
 7. Update this instructions file

@@ -1,11 +1,19 @@
 # Testing example workflows locally with `act`
 
+**For sfpm contributors only.** These instructions test the action source in
+this checkout with `act` and a local Docker image; they are not part of the
+consumer-facing docs. Consumers should use the workflows in this directory as
+templates and reference the actions remotely
+(`b64hub/sfpm/packages/actions/<name>@<sha>`) as shown in each file — see
+[../CONSUMING.md](../CONSUMING.md).
+
 Requires [`act`](https://github.com/nektos/act) and a running Docker daemon.
 
 ## One-time setup
 
-Build and tag the sfpm image locally (it isn't published anywhere yet, so
-`act` needs to find it in the local Docker cache instead of pulling):
+Build and tag the sfpm image locally (it's a local/`act` convenience image
+only, not published anywhere, so `act` needs to find it in the local Docker
+cache instead of pulling):
 
 ```bash
 docker build -f packages/actions/docker/Dockerfile -t ghcr.io/b64hub/sfpm-actions:latest packages/actions/docker
@@ -43,14 +51,15 @@ sound even without live credentials.
 - `.github/act/pull_request.json` — minimal `pull_request` event payload
   (`resolvePrNumber()` in `validate-pr.ts` needs `pull_request.number`)
 
-## Testing from a real Salesforce project
+## Testing against a real Salesforce project (debugging option)
 
 This repo has no fixture Salesforce project, so meaningful testing (actually
 building/validating packages) needs to happen from a real project's repo.
-That repo's workflows can't use `uses: ./packages/actions/build` directly —
-that path only resolves within this repo's own checkout, and `dist/` isn't
-published anywhere a remote `uses:` could pull from. Checkout this repo as a
-sibling directory, build it, then reference the local path inside it:
+The recipe below checks out sfpm as a sibling directory and references it by
+local path — this is a debugging convenience for sfpm contributors, not
+something a consuming workflow should do. A real consuming workflow always
+uses the remote `uses: b64hub/sfpm/packages/actions/<name>@<sha>` form (see
+[../CONSUMING.md](../CONSUMING.md)); it never needs its own checkout of sfpm.
 
 ```yaml
 steps:
@@ -112,10 +121,9 @@ mount.
 
 `--ignore-scripts` on the sfpm-actions `pnpm install` skips its `husky
 install` postinstall hook, which fails outside a real git checkout (a plain
-bind mount has no `.git`). Also watch for turbo/tsc output collisions if
-you've run both `pnpm build` (tsc) and `pnpm bundle` (esbuild) locally on the
-same sfpm checkout — they write to the same `dist/*.js` filenames, and
-turbo's cache can replay a stale one. `rm -rf packages/actions/dist
+bind mount has no `.git`). Also watch for turbo's build cache replaying a
+stale `dist/*.js` from an earlier `pnpm build` (plain `tsc -b`, no bundler)
+on the same sfpm checkout. `rm -rf packages/actions/dist
 packages/actions/tsconfig.tsbuildinfo && pnpm turbo build --force` if a test
 is running against unexpectedly old code.
 

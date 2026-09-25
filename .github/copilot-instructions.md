@@ -64,7 +64,7 @@ GitHub Actions integration patterns
 - `GitHubActionsLogger` integrating with `@actions/core`
 - `ActionsProgressRenderer` for event-driven log output
 - Action inputs/outputs and workflow usage
-- Bundling with esbuild for single-file distribution
+- Composite actions installing a shared pinned runtime (no bundler)
 
 ## How These Are Used
 
