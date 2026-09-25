@@ -1,11 +1,11 @@
 # Sweeps stale/in-progress orgs out of a scratch org pool on a schedule.
 # Requires repo secrets: SFDX_CONSUMER_KEY, SFDX_JWT_KEY, DEVHUB_USERNAME.
 #
-# Runs on the sfpm image (node + pnpm + turbo + sf CLI + sfpm CLI preinstalled)
-# so this workflow doesn't need to set those up itself. This is just a
-# convenience image, not a requirement — swap `container:` for any `node:22`
-# image and add back `pnpm/action-setup`, `actions/setup-node`, and
-# `npm install --global @salesforce/cli` if you'd rather not depend on it.
+# This is a consumer workflow: it references the sfpm actions remotely
+# (`b64hub/sfpm/packages/actions/<name>@<ref>`, no local checkout of sfpm and
+# no container image) and sets up its own prerequisites. Replace `<sha>` with
+# the commit SHA of the sfpm release you're pinning to — see
+# packages/actions/CONSUMING.md in the sfpm repo for allowlisting guidance.
 name: SFPM Clean Pool
 
 on:
@@ -13,16 +13,21 @@ on:
     - cron: '0 2 * * *' # nightly
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   clean:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/b64hub/sfpm-actions:latest
     steps:
       - uses: actions/checkout@v4
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo build --filter=@b64hub/sfpm-actions...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install sf CLI
+        run: npm install --global @salesforce/cli
 
       - name: Authenticate DevHub
         run: |
@@ -37,7 +42,7 @@ jobs:
 
       - name: Clean pool
         id: clean
-        uses: ./packages/actions/clean-pool
+        uses: b64hub/sfpm/packages/actions/clean-pool@<sha>
         with:
           devhub-username: devhub
           pool-tag: ci-pool

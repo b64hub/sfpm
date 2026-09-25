@@ -16,20 +16,22 @@ earlier `v0.x` minors.
 ## Scope of the GitHub Actions
 
 The actions under `packages/actions/` are the supported integration surface.
-Their security posture:
+Runner prerequisites, the full network egress table, and allowlisting
+guidance for a whitelisting review live in
+[packages/actions/CONSUMING.md](packages/actions/CONSUMING.md). The summary
+here:
 
 **Permissions.** The actions do not read `GITHUB_TOKEN`, take no
 `github-token` input, and make no GitHub API calls. `validate-pr` reads the PR
 number and base SHA from the local event payload only. `contents: read` is
 sufficient for every action; nothing requires write scope.
 
-**Network egress.** Only:
-
-- Salesforce APIs — the DevHub and target orgs you point the action at
-- the npm registry — `install` with `origin: registry`, to resolve published
-  package artifacts (run with `--ignore-scripts`; artifacts are never
-  permitted to execute install hooks)
-- the GitHub Actions cache — `validate-pr` org reuse
+**Network egress.** Every action needs npm registry (or configured mirror)
+access at runtime to install its shared, pinned dependency tree — this is not
+limited to `install` with `origin: registry`, which is a separate, second use
+of the registry to resolve the consumer's own package artifacts. Actions also
+reach the Salesforce DevHub and target orgs, and `validate-pr` in `org` mode
+uses the GitHub Actions cache. See CONSUMING.md for the full table.
 
 There is no telemetry endpoint, no analytics, and no vendor callback. Tracing
 is OpenTelemetry-based and inert unless *you* set
@@ -58,6 +60,10 @@ the matching tag.
 
 No dependency lifecycle scripts execute (`--ignore-scripts`), so installing
 the action's dependency tree cannot run third-party code.
+
+Runner prerequisites (Node.js, `sf` CLI, nimbus, authenticated orgs) and
+allowlist entry formats are documented in
+[packages/actions/CONSUMING.md](packages/actions/CONSUMING.md), not here.
 
 ## Versioning and pinning
 

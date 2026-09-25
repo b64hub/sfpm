@@ -40,7 +40,7 @@ This is a pnpm + Turborepo monorepo.
 
 ## Requirements
 
-- Node.js >= 18
+- Node.js >= 22
 - pnpm >= 8 (required for workspace development; end users installing the CLI can use any package manager)
 - [Salesforce CLI](https://developer.salesforce.com/tools/salesforcecli) (`sf`), authenticated to your DevHub and target orgs
 - Git
@@ -71,8 +71,8 @@ Run `sfpm --help` for the current command reference — this changes frequently 
 The actions live under `packages/actions/` and are referenced by sub-path:
 
 ```yaml
-- uses: b64hub/sfpm/packages/actions/build@v0
-- uses: b64hub/sfpm/packages/actions/validate-pr@v0
+- uses: b64hub/sfpm/packages/actions/build@v0.3.1
+- uses: b64hub/sfpm/packages/actions/validate-pr@v0.3.1
 ```
 
 Available: `build`, `build-validation`, `build-turbo-aggregate`, `install`,
@@ -87,20 +87,29 @@ authenticated in the runner** before the step runs.
 
 | Reference | Mutability | Use for |
 | --- | --- | --- |
-| `v0.2.0` | immutable | audits, pinned production use |
+| `v0.3.1` | immutable, protected create-only | audits, pinned production use |
 | `v0` | moved on every release | convenience |
 | commit SHA | immutable | strictest supply-chain policies |
 
 Pre-1.0, `v0` may include breaking changes between minors. Pin `v0.x.y` or a
 SHA if you need stability.
 
+### Prerequisites and allowlisting
+
+The actions install none of their own prerequisites — Node.js, the `sf` CLI,
+nimbus, and authenticated orgs must already be on the runner. Full
+prerequisites, network egress, and a tested allowlist entry format are in
+[packages/actions/CONSUMING.md](packages/actions/CONSUMING.md), the reference
+for a whitelisting review. For strictest supply-chain policies, pin a commit
+SHA rather than a tag.
+
 ### Security posture
 
 `contents: read` is sufficient for every action — none of them read
-`GITHUB_TOKEN` or call the GitHub API. Network egress is limited to Salesforce
-orgs, the npm registry, and the Actions cache; there is no telemetry endpoint.
-See [SECURITY.md](SECURITY.md) for the full statement, which is written to be
-pasted into an action-whitelisting review.
+`GITHUB_TOKEN` or call the GitHub API. See [SECURITY.md](SECURITY.md) for the
+project's security policy, and
+[packages/actions/CONSUMING.md](packages/actions/CONSUMING.md) for the full
+network egress table.
 
 ## Contributing from source
 
