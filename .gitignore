@@ -15,6 +15,12 @@ yarn.lock
 **/node_modules
 **/dist
 
+# Except for the committed action bundle (release-time only, see
+# scripts/build-action-bundle.mjs), which ships a real node_modules/jiti/
+# copy that the blanket rule above would otherwise swallow.
+!/packages/actions/bundle
+!/packages/actions/bundle/**
+
 .sfpm
 .sfdx
 .sf
