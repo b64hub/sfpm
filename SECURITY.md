@@ -26,12 +26,12 @@ here:
 number and base SHA from the local event payload only. `contents: read` is
 sufficient for every action; nothing requires write scope.
 
-**Network egress.** Every action needs npm registry (or configured mirror)
-access at runtime to install its shared, pinned dependency tree — this is not
-limited to `install` with `origin: registry`, which is a separate, second use
-of the registry to resolve the consumer's own package artifacts. Actions also
-reach the Salesforce DevHub and target orgs, and `validate-pr` in `org` mode
-uses the GitHub Actions cache. See CONSUMING.md for the full table.
+**Network egress.** There is no network egress required for action execution
+itself; the bundle is committed and checked out with the action. The `install`
+action accesses the npm registry for consumer package artifacts (separate use
+case, `origin: registry`). Actions also reach the Salesforce DevHub and target
+orgs, and `validate-pr` in `org` mode uses the GitHub Actions cache. See
+CONSUMING.md for the full table.
 
 There is no telemetry endpoint, no analytics, and no vendor callback. Tracing
 is OpenTelemetry-based and inert unless *you* set
@@ -47,19 +47,22 @@ through the DevHub. Installation keys and auth URLs are registered with
 `core.setSecret()` so they are masked in logs.
 
 **Distribution and pinning.** The actions are composite actions. Each
-`action.yml` installs a shared runtime
-(`packages/actions/runtime`) with `npm ci --ignore-scripts` and invokes
-`@b64hub/sfpm-actions`, published from this repository.
+`action.yml` invokes an entry from a committed esbuild bundle at
+`packages/actions/bundle/`. The bundle is built once at release time by
+`scripts/build-action-bundle.mjs` using actual esbuild bundling (not a
+vendored node_modules install). It includes two small shim assets that
+are necessary for correct behavior: `@salesforce/packaging`'s `messages/`
+directory (read at runtime) and a real copy of the `jiti` package (used
+to load consumer sfpm.config files at runtime).
 
-That runtime's `package-lock.json` is committed, so the **entire transitive
-dependency tree is pinned to exact versions**, and `npm ci` verifies the
-SHA-512 integrity hash of every tarball it downloads. Nothing floats at run
-time: the same tag always installs the same bytes. Both the pin set and the
-versions it resolves to are reviewable as a normal diff in this repository at
-the matching tag.
+The bundle is built from the repo's already-compiled `dist/` output
+(produced by `pnpm build`), so the same git commit always produces the same
+bytes. Both the bundle source and the build script are reviewable, and
+consumers can verify the bundle by re-running `node scripts/build-action-bundle.mjs`
+from the release commit and diffing the result.
 
-No dependency lifecycle scripts execute (`--ignore-scripts`), so installing
-the action's dependency tree cannot run third-party code.
+No dependency lifecycle scripts execute, so building or running the action
+cannot run third-party code.
 
 Runner prerequisites (Node.js, `sf` CLI, nimbus, authenticated orgs) and
 allowlist entry formats are documented in

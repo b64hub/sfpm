@@ -12,7 +12,7 @@ applyTo: 'packages/actions/src/**/*.ts'
 ```
 packages/actions/
   validate-pr/action.yml  # Composite action definition for validate-pr
-  runtime/                # Shared, pinned npm-installable dependency tree every action.yml installs
+  bundle/                 # Committed, release-built esbuild bundle: 8 per-action entries + shared chunks + shims
   src/
     validate-main.ts     # Action entry point (reads inputs, runs validatePr)
     index.ts              # Library exports
@@ -194,31 +194,42 @@ jobs:
 
 ## Building
 
-Each action is a composite action (`runs: using: composite`), not a bundled
-JS entrypoint. Bundling with esbuild isn't viable here — it fails on
-`@salesforce/core`'s import/require patterns. Instead every `action.yml` runs
-a shared step that installs a pinned, committed-lockfile dependency tree from
-`packages/actions/runtime` and invokes the dispatcher out of it:
+Each action is a composite action (`runs: using: composite`). Each `action.yml`
+invokes a single entry from a committed esbuild bundle at `packages/actions/bundle/`:
 
 ```bash
-runtime="$GITHUB_ACTION_PATH/../runtime"
-[ -d "$runtime/node_modules" ] || npm ci --prefix "$runtime" --ignore-scripts
-"$runtime/node_modules/.bin/sfpm-action" <action-name>
+node "$GITHUB_ACTION_PATH/../bundle/<entry>.mjs"
 ```
 
-`packages/actions/src/` still compiles with `pnpm build` (plain TypeScript,
-no bundler) into the `@b64hub/sfpm-actions` package that the runtime installs
-from npm — there is no `dist/*-main.js` entrypoint referenced by any
-`action.yml`.
+The bundle is built once at release time by `scripts/build-action-bundle.mjs`,
+using actual esbuild bundling with code-splitting: all 8 action entrypoints are
+bundled together (`splitting: true`) so the shared dependency graph (@salesforce/core,
+@b64hub/sfpm-core, etc.) is stored once in `bundle/chunks/` instead of
+duplicated per action. The bundle is roughly 15–20MB total for all 8 actions.
 
-The runtime's lockfile can only pin a version that exists on the registry, so
-`release.yml` repins it after publishing to npm and commits the result before
-creating the release tag (see [runtime/README.md](../../packages/actions/runtime/README.md)):
+**Why not a pure single JS file with zero extra assets?** Three issues required
+workarounds during bundling discovery:
 
-```bash
-node scripts/sync-action-runtime.mjs --version X.Y.Z   # repin + regenerate
-node scripts/sync-action-runtime.mjs --check           # CI: lockfile matches manifest
-```
+1. **@salesforce/packaging** reads its own runtime message bundles from a
+   `messages/` directory on disk (via `Messages.importMessagesDirectory`),
+   which a bundled file cannot structurally provide. Fix: ship its real
+   `package.json` and `messages/` directory as sibling files in the bundle.
+2. **jiti** (used to load a consumer's own `sfpm.config.ts` at runtime — this
+   must remain dynamic since that file doesn't exist at build time) does its
+   own internal `require()` relative to its own module file, which breaks if
+   inlined. Fix: mark it esbuild `external` and ship a real copy at
+   `bundle/node_modules/jiti/`.
+3. **@salesforce/core's Logger** optionally spawns a pino worker-thread
+   transport for file-based logging, which needs a real file on disk once
+   inlined. Fix: the bundle's esbuild banner sets
+   `process.env.SF_DISABLE_LOG_FILE ??= 'true'`, which routes logging through
+   an in-memory logger instead (also a better default for ephemeral runners).
+
+`packages/actions/src/` compiles with `pnpm build` (plain TypeScript) to
+`dist/*-main.js`. `scripts/build-action-bundle.mjs` re-bundles the 8
+`src/*-main.ts` entrypoints directly with esbuild (not from `dist/`) into
+`packages/actions/bundle/*-main.mjs`, which is committed and checked out
+with the action, so no install step is needed at runtime.
 
 ## Testing
 
@@ -246,9 +257,9 @@ vi.mock('@actions/core', () => ({
 ## Adding a New Action
 
 1. Create `src/my-action.ts` with the pipeline logic
-2. Create `src/my-action-main.ts` as the entry point (plain `tsc` output to `dist/my-action-main.js`, no bundler)
-3. Register it in `bin/sfpm-action.mjs`'s `ACTIONS` map (`'my-action': 'my-action-main.js'`)
-4. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) as a composite action that installs `../runtime` and runs `sfpm-action my-action` — copy the `run:`/`env:` shape from an existing `action.yml`
+2. Create `src/my-action-main.ts` as the entry point (plain `tsc` output to `dist/my-action-main.mjs`, no bundler)
+3. Register it in `scripts/build-action-bundle.mjs`'s `ENTRY_POINTS` list (`'src/my-action-main.ts'`)
+4. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) as a composite action that runs `node "$GITHUB_ACTION_PATH/../bundle/my-action-main.mjs"` — copy the full `run:` shape from an existing `action.yml` and update only the entry filename
 5. Export from `src/index.ts` for library use
 6. Add tests with mocked `@actions/*` dependencies
 7. Update this instructions file
