@@ -75,7 +75,7 @@ importers:
         specifier: ^6.0.0
         version: 6.0.1
       '@b64hub/sfpm-core':
-        specifier: workspace:^0.3.0
+        specifier: workspace:^0.4.0
         version: link:../core
       '@b64hub/sfpm-orgs':
         specifier: workspace:^0.2.0
@@ -103,7 +103,7 @@ importers:
   packages/cli:
     dependencies:
       '@b64hub/sfpm-core':
-        specifier: workspace:^0.3.0
+        specifier: workspace:^0.4.0
         version: link:../core
       '@b64hub/sfpm-orgs':
         specifier: workspace:^
@@ -291,7 +291,7 @@ importers:
   packages/hooks:
     dependencies:
       '@b64hub/sfpm-core':
-        specifier: workspace:^0.3.0
+        specifier: workspace:^0.4.0
         version: link:../core
       '@salesforce/core':
         specifier: ^8.31.0
@@ -310,7 +310,7 @@ importers:
   packages/jest:
     dependencies:
       '@b64hub/sfpm-core':
-        specifier: workspace:^0.3.0
+        specifier: workspace:^0.4.0
         version: link:../core
       '@lwc/engine-dom':
         specifier: 8.28.2
@@ -329,7 +329,7 @@ importers:
   packages/orgs:
     dependencies:
       '@b64hub/sfpm-core':
-        specifier: workspace:^0.3.0
+        specifier: workspace:^0.4.0
         version: link:../core
       '@salesforce/core':
         specifier: ^8.31.0
@@ -345,7 +345,7 @@ importers:
   packages/sfdmu:
     dependencies:
       '@b64hub/sfpm-core':
-        specifier: workspace:^0.3.0
+        specifier: workspace:^0.4.0
         version: link:../core
       '@salesforce/core':
         specifier: ^8.31.0
@@ -364,7 +364,7 @@ importers:
   packages/telemetry:
     dependencies:
       '@b64hub/sfpm-core':
-        specifier: workspace:^0.3.0
+        specifier: workspace:^0.4.0
         version: link:../core
       '@opentelemetry/api':
         specifier: ^1.9.0
@@ -392,7 +392,7 @@ importers:
   packages/validation:
     dependencies:
       '@b64hub/sfpm-core':
-        specifier: workspace:^0.3.0
+        specifier: workspace:^0.4.0
         version: link:../core
       '@salesforce/source-deploy-retrieve':
         specifier: ^12.31.7
@@ -11282,7 +11282,7 @@ snapshots:
 
   acorn-globals@7.0.1:
     dependencies:
-      acorn: 8.15.0
+      acorn: 8.18.0
       acorn-walk: 8.3.4
 
   acorn-import-attributes@1.9.5(acorn@8.15.0):
@@ -13624,7 +13624,7 @@ snapshots:
 
   jest-message-util@29.7.0:
     dependencies:
-      '@babel/code-frame': 7.28.6
+      '@babel/code-frame': 7.29.7
       '@jest/types': 29.6.3
       '@types/stack-utils': 2.0.3
       chalk: 4.1.2
@@ -13661,7 +13661,7 @@ snapshots:
       jest-pnp-resolver: 1.2.3(jest-resolve@29.7.0)
       jest-util: 29.7.0
       jest-validate: 29.7.0
-      resolve: 1.22.11
+      resolve: 1.22.12
       resolve.exports: 2.0.3
       slash: 3.0.0
 
@@ -13823,7 +13823,7 @@ snapshots:
   jsdom@20.0.3(supports-color@8.1.1):
     dependencies:
       abab: 2.0.6
-      acorn: 8.15.0
+      acorn: 8.18.0
       acorn-globals: 7.0.1
       cssom: 0.5.0
       cssstyle: 2.3.0
