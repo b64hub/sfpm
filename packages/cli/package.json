@@ -75,14 +75,17 @@
     ],
     "topicSeparator": " ",
     "topics": {
-      "install": {
-        "description": "Install and deploy packages to environments"
-      },
       "build": {
         "description": "Build packages and manage async validation"
       },
+      "install": {
+        "description": "Install and deploy packages to environments"
+      },
       "pool": {
         "description": "Manage scratch org pools"
+      },
+      "release": {
+        "description": "Create and run releases"
       }
     },
     "theme": "theme.json"
