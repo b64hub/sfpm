@@ -16,6 +16,11 @@ export interface ReleasePackage {
 /**
  * Options controlling release installation behavior.
  * Mirrors InstallOrchestrator options.
+ *
+ * `unlocked.sourceOnly` is deliberately not modeled here: `release run`
+ * always installs from built artifacts (`InstallOrchestrator.forArtifact`),
+ * never from source, so a source-only routing flag has no valid meaning
+ * in a release manifest.
  */
 export interface ReleaseOptions {
   force?: boolean;
@@ -25,7 +30,6 @@ export interface ReleaseOptions {
   unlocked?: {
     [key: string]: unknown;
     installationKeys?: Record<string, string>;
-    sourceOnly?: boolean;
   };
 }
 
@@ -64,7 +68,6 @@ export const ReleaseDefinitionSchema = z.object({
     testLevel: z.string().optional(),
     unlocked: z.object({
       installationKeys: z.record(z.string(), z.string()).optional(),
-      sourceOnly: z.boolean().optional(),
     }).passthrough().optional(),
   }).passthrough().optional(),
   packages: z.array(ReleasePackageSchema),

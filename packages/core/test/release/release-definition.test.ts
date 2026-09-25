@@ -34,7 +34,6 @@ describe('release-definition YAML round-trip', () => {
           installationKeys: {
             'managed-pkg': 'installation-key-12345',
           },
-          sourceOnly: true,
         },
       },
       packages: [
@@ -158,7 +157,6 @@ describe('release-definition validation', () => {
         force: true,
         unlocked: {
           customUnlockedField: 'custom-value',
-          sourceOnly: true,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
