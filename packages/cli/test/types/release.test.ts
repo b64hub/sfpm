@@ -1,6 +1,8 @@
 import {expect} from 'chai'
 
 import {
+  getDistinctTags,
+  isBareInvocation,
   reconcileManifest,
   resolveSelectionMode,
   selectPackageNames, type WorkspaceCandidate,
@@ -41,6 +43,52 @@ describe('release types and functions', () => {
     it('throws error when packages, tags, and path are all active', () => {
       expect(() => resolveSelectionMode(['pkg1'], ['core'], 'packages/core'))
       .to.throw(/Select packages by exactly one of/)
+    })
+  })
+
+  describe('isBareInvocation', () => {
+    it('is true when argv and all naming/selection flags are empty', () => {
+      expect(isBareInvocation([], {})).to.be.true
+    })
+
+    it('is false when a package name is given', () => {
+      expect(isBareInvocation(['pkg1'], {})).to.be.false
+    })
+
+    it('is false when --tag is given', () => {
+      expect(isBareInvocation([], {tag: ['core']})).to.be.false
+    })
+
+    it('is false when --path is given', () => {
+      expect(isBareInvocation([], {path: 'packages/core'})).to.be.false
+    })
+
+    it('is false when --name is given', () => {
+      expect(isBareInvocation([], {name: 'summer-2025'})).to.be.false
+    })
+
+    it('is false when --tag is an empty array', () => {
+      expect(isBareInvocation([], {tag: []})).to.be.true
+    })
+  })
+
+  describe('getDistinctTags', () => {
+    const candidates: WorkspaceCandidate[] = [
+      {dir: '/project/packages/core', keywords: ['core', 'objects'], name: '@org/core-objects'},
+      {dir: '/project/packages/sales', keywords: ['sales', 'core'], name: '@org/sales-flow'},
+      {dir: '/project/packages/data', keywords: [], name: '@org/data-sync'},
+    ]
+
+    it('collects distinct tags across all candidates, sorted', () => {
+      expect(getDistinctTags(candidates)).to.deep.equal(['core', 'objects', 'sales'])
+    })
+
+    it('returns an empty array when no candidates have keywords', () => {
+      expect(getDistinctTags([{dir: '/x', keywords: [], name: 'x'}])).to.deep.equal([])
+    })
+
+    it('returns an empty array for an empty candidate list', () => {
+      expect(getDistinctTags([])).to.deep.equal([])
     })
   })
 

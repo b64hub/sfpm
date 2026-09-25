@@ -73,6 +73,40 @@ function isWithin(parent: string, child: string): boolean {
 }
 
 /**
+ * Decide whether `release create` was invoked with no selection or naming
+ * signal at all — i.e. bare `sfpm release create`, which should launch the
+ * interactive guided walkthrough instead of failing on a missing --name.
+ *
+ * @param argv - Positional package name arguments
+ * @param flags - The subset of flags that count as a selection/naming signal
+ * @param flags.name - The --name flag value, if supplied
+ * @param flags.path - The --path flag value, if supplied
+ * @param flags.tag - The --tag flag value(s), if supplied
+ * @returns true when nothing was supplied and the wizard should run
+ */
+export function isBareInvocation(argv: string[], flags: {name?: string; path?: string; tag?: string[]}): boolean {
+  return argv.length === 0 && !flags.tag?.length && !flags.path && !flags.name
+}
+
+/**
+ * Collect the distinct package tags (package.json keywords) present across
+ * a set of workspace candidates, sorted for stable prompt/display order.
+ *
+ * @param candidates - Available workspace packages with metadata
+ * @returns Sorted array of distinct tag values
+ */
+export function getDistinctTags(candidates: WorkspaceCandidate[]): string[] {
+  const tags = new Set<string>()
+  for (const candidate of candidates) {
+    for (const keyword of candidate.keywords) {
+      tags.add(keyword)
+    }
+  }
+
+  return [...tags].sort()
+}
+
+/**
  * Select package names from candidates using the specified selection mode.
  *
  * @param candidates - Available workspace packages with metadata
