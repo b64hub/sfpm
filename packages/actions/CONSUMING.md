@@ -8,23 +8,26 @@ versions, credential handling), see [SECURITY.md](../../SECURITY.md).
 ## What these actions are
 
 Composite actions (`runs: using: composite`) — plain shell steps, not bundled
-JavaScript. Each `action.yml` installs a shared, pinned dependency tree from
-`packages/actions/runtime` and runs a small dispatcher out of it:
+JavaScript. Each `action.yml` runs a single entry from a committed esbuild bundle:
 
 ```bash
-runtime="$GITHUB_ACTION_PATH/../runtime"
-[ -d "$runtime/node_modules" ] || npm ci --prefix "$runtime" --ignore-scripts
-"$runtime/node_modules/.bin/sfpm-action" <action-name>
+node "$GITHUB_ACTION_PATH/../bundle/<entry-file>.mjs"
 ```
 
-`$runtime` resolves inside the runner's checkout of the action itself, not
-the consumer's workspace — a consumer-side `npm ci` does not satisfy it. The
-first sfpm action in a job performs the install; every later sfpm action in
-that same job reuses the resulting `node_modules`.
+The bundle is at `packages/actions/bundle/`, built once at release time by
+`scripts/build-action-bundle.mjs`. It contains 8 per-action entry files
+(e.g. `validate-main.mjs`, `build-main.mjs`) plus shared dependency code
+in a `chunks/` directory, so dependencies like `@salesforce/core` are stored
+once instead of duplicated per action. Two small shim assets are also shipped:
+`@salesforce/packaging`'s `messages/` directory (read at runtime) and a real
+copy of the `jiti` package (used to load consumer sfpm.config files).
+Total size is roughly 15–20MB for all 8 actions combined.
 
-Bundling this into a single committed JS file isn't viable today: esbuild
-fails on `@salesforce/core`'s import/require patterns. That's why the runtime
-is a pinned, `npm ci`-installed lockfile instead of a committed bundle.
+Bundling is viable because the apparent failures on `@salesforce/core` were
+incomplete — core itself bundles fine. The three real issues that required
+workarounds (packaging's message loader, jiti's internal require, and
+core's optional pino file transport) are all solved without modifying source
+code, only with build-time shims and configuration.
 
 ## Runner prerequisites
 
@@ -33,7 +36,7 @@ sfpm step runs:
 
 | Requirement | Why | Provided by |
 | --- | --- | --- |
-| Node.js 22 LTS or newer, with npm | Composite step runs `npm ci` and `node` | Consumer (`actions/setup-node` or runner image) |
+| Node.js 22 LTS or newer | Composite step runs `node` to invoke the bundled entry | Consumer (`actions/setup-node` or runner image) |
 | `sf` CLI on PATH | Org auth and Salesforce operations | Consumer |
 | DevHub and target orgs authenticated | Actions never handle credentials | Consumer (for example JWT with their own secrets) |
 | nimbus on PATH | Local validation. Skipped with a warning if absent — a green run is not proof validation ran | Consumer, optional but recommended, through an approved channel |
@@ -43,16 +46,18 @@ sfpm step runs:
 
 | Destination | Used by | When |
 | --- | --- | --- |
-| npm registry or configured mirror | Every action | First sfpm action in each job (`npm ci` of the pinned runtime) |
 | npm registry or configured mirror | `install` | Only with `origin: registry` (consumer package artifacts) |
 | Salesforce DevHub and target orgs | All except the local mode of `validate-pr` | Every run |
 | GitHub Actions cache service | `validate-pr` (`mode: org`) | Org reuse per PR |
 
-**A registry mirror is supported.** npm's default `replace-registry-host`
-behavior sends the runtime lockfile's `registry.npmjs.org` URLs to whatever
-registry the runner is configured with, and integrity hashes are still
-verified against the lockfile. Consumers with an internal mirror only need to
-allow that mirror, not `registry.npmjs.org` itself.
+There is no network egress for action execution itself. The bundle is committed
+to the repository and checked out with the action, so no install step is needed
+at runtime.
+
+**A registry mirror is supported** for the `install` action's own package
+installs (consumer artifacts). npm's default `replace-registry-host` behavior
+will apply to those registrations. Consumers with an internal mirror only need
+to allow that mirror for this use case.
 
 There is no telemetry. OpenTelemetry export only happens if the consumer sets
 `OTEL_EXPORTER_OTLP_ENDPOINT` to their own collector; there is no default or
@@ -68,9 +73,11 @@ fallback endpoint.
   actions themselves. A typical consuming workflow also needs
   `actions/checkout`, `actions/setup-node`, and, for a build pipeline,
   `actions/upload-artifact` and `actions/download-artifact`.
-- Recommend pinning a commit SHA rather than a tag. A SHA pins both
-  `action.yml` and the runtime lockfile it ships with, so the whole
-  transitive dependency tree is fixed, not just the entrypoint.
+- **Pin the commit SHA of a release**, not an arbitrary commit. The bundle at
+  `packages/actions/bundle/` is only rebuilt and committed by the release
+  workflow. A SHA pinned to a non-release commit will have no bundle and the
+  action will fail. Use `git rev-parse v<major>.<minor>.<patch>` to find the
+  release commit's SHA, or copy the SHA shown in the GitHub release.
 
 ## Minimal consumer workflow
 

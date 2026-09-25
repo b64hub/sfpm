@@ -93,6 +93,9 @@ importers:
         specifier: ^4.3.0
         version: 4.18.12(supports-color@8.1.1)
     devDependencies:
+      esbuild:
+        specifier: ^0.27.2
+        version: 0.27.2
       vitest:
         specifier: ^4.0.17
         version: 4.0.18(@opentelemetry/api@1.9.1)(@types/node@20.19.30)(jiti@2.6.1)(jsdom@20.0.3(supports-color@8.1.1))(yaml@2.9.0)

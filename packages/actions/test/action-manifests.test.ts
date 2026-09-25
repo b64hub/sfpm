@@ -92,13 +92,13 @@ describe('action manifests', () => {
     const outputs = Object.keys(manifest.outputs ?? {});
     const files = importGraph(join(srcDir, (actions[dir] ?? '').replace(/\.js$/, '.ts')));
 
-    it('is a composite action running the shared pinned runtime', () => {
+    it('is a composite action invoking its bundled entrypoint directly', () => {
       expect(manifest.runs.using).toBe('composite');
       const run = manifest.runs.steps.map((s: {run?: string}) => s.run ?? '').join('\n');
-      expect(run).toContain('npm ci --prefix');
-      expect(run).toContain('--ignore-scripts');
-      expect(run).toContain(`sfpm-action" ${dir}`);
-      // The version must come from the runtime lockfile, never the manifest.
+      const bundleEntry = actions[dir].replace(/\.js$/, '.mjs');
+      expect(run).toContain(`"$GITHUB_ACTION_PATH/../bundle/${bundleEntry}"`);
+      // No install step left at runtime — the bundle is already committed.
+      expect(run).not.toContain('npm ci');
       expect(run).not.toMatch(/\d+\.\d+\.\d+/);
     });
 
