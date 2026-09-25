@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # commit the regenerated CLI README, create the release, move rolling major tag
+  contents: write # commit the regenerated CLI README, create the tag commit and release, move rolling major tag
   id-token: write # OIDC token for npm trusted publishing (pnpm publish uses this automatically)
 
 concurrency:
@@ -38,17 +38,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm build
-
-      - name: Build action bundle
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          node scripts/build-action-bundle.mjs
-          if [ -n "$(git status --porcelain packages/actions/bundle)" ]; then
-            git add packages/actions/bundle
-            git commit -m "chore: rebuild action bundle"
-            git push origin HEAD:main
-          fi
 
       - name: Regenerate CLI README
         run: |
@@ -85,13 +74,26 @@ jobs:
         if: steps.version.outputs.skip == 'false'
         run: pnpm publish -r --access public --no-git-checks
 
-      - name: Create release and move rolling major tag
+      - name: Build action bundle
+        if: steps.version.outputs.skip == 'false'
+        run: node scripts/build-action-bundle.mjs
+
+      - name: Smoke test action bundle
+        if: steps.version.outputs.skip == 'false'
+        run: node scripts/smoke-test-action-bundle.mjs
+
+      - name: Create tag commit and release
         if: steps.version.outputs.skip == 'false'
         run: |
-          # Re-read HEAD: the bundle and README regen commits above may have moved it.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --detach
+          git add -f packages/actions/bundle
+          git commit -m "release: action bundle for $TAG"
           sha=$(git rev-parse HEAD)
-          gh release create "$TAG" --target "$sha" --title "$TAG" --generate-notes
-          # vN is the only tag that ever moves; vN.x.y are protected create-only.
+          git tag -a "$TAG" -m "$TAG" "$sha"
+          git push origin "refs/tags/$TAG"
+          gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
           git tag -f -a "$MAJOR" -m "Rolling tag for $TAG" "$sha"
           git push --force origin "$MAJOR"
         env:
