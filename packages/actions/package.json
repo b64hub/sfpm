@@ -24,15 +24,11 @@
     "@b64hub/sfpm-telemetry": "workspace:^0.2.0",
     "@b64hub/sfpm-validation": "workspace:^0.2.0",
     "@salesforce/core": "^8.31.0",
-    "@salesforce/packaging": "^4.3.0"
+    "@salesforce/packaging": "^4.18.10"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "sfpm-action": "./bin/sfpm-action.mjs"
-  },
   "files": [
-    "bin",
     "dist"
   ],
   "exports": {

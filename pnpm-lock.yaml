@@ -90,7 +90,7 @@ importers:
         specifier: ^8.31.0
         version: 8.31.0(supports-color@8.1.1)
       '@salesforce/packaging':
-        specifier: ^4.3.0
+        specifier: ^4.18.10
         version: 4.18.12(supports-color@8.1.1)
     devDependencies:
       esbuild:

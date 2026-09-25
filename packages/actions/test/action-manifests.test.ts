@@ -16,16 +16,23 @@ import {parse} from 'yaml';
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const srcDir = join(packageRoot, 'src');
 
-/** Action name -> compiled entrypoint, read from the dispatcher's fixed map. */
-const dispatcherActions = (): Record<string, string> => {
-  const source = readFileSync(join(packageRoot, 'bin', 'sfpm-action.mjs'), 'utf8');
-  const map = source.match(/const ACTIONS = \{([^}]*)\}/s);
-  if (!map) throw new Error('Could not find the ACTIONS map in bin/sfpm-action.mjs');
-
-  return Object.fromEntries(
-    [...map[1].matchAll(/'([^']+)':\s*'([^']+)'/g)].map(([, name, file]) => [name, file]),
-  );
-};
+/**
+ * Action name -> compiled entrypoint. A fixed map, independent of the
+ * action.yml manifests themselves so the tests below actually cross-check
+ * something (deriving it from the manifests would be circular). Keep this in
+ * sync with `scripts/build-action-bundle.mjs`'s `ENTRY_POINTS` and
+ * `scripts/smoke-test-action-bundle.mjs`'s `ACTIONS` list.
+ */
+const dispatcherActions = (): Record<string, string> => ({
+  'build': 'build-main.js',
+  'build-turbo-aggregate': 'build-turbo-aggregate-main.js',
+  'build-validation': 'build-validation-main.js',
+  'clean-pool': 'clean-pool-main.js',
+  'deploy': 'deploy-main.js',
+  'fill-pool': 'fill-pool-main.js',
+  'install': 'install-main.js',
+  'validate-pr': 'validate-main.js',
+});
 
 /** Directories holding an action.yml. */
 const actionDirs = (): string[] =>
