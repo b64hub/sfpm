@@ -11,7 +11,7 @@ applyTo: 'packages/actions/src/**/*.ts'
 
 ```
 packages/actions/
-  validate-pr/action.yml  # node20 action definition for validate-pr
+  validate-pr/action.yml  # node24 action definition for validate-pr
   bundle/                 # Committed, release-built esbuild bundle: 8 per-action entries + shared chunks + shims
   src/
     validate-main.ts     # Action entry point (reads inputs, runs validatePr)
@@ -194,11 +194,11 @@ jobs:
 
 ## Building
 
-Each action is a JavaScript (`node20`) action. Each `action.yml` points `main:` at a single entry from a committed esbuild bundle at `packages/actions/bundle/`:
+Each action is a JavaScript (`node24`) action. Each `action.yml` points `main:` at a single entry from a committed esbuild bundle at `packages/actions/bundle/`:
 
 ```yaml
 runs:
-  using: node20
+  using: node24
   main: ../bundle/<entry>.mjs
 ```
 
@@ -262,7 +262,7 @@ vi.mock('@actions/core', () => ({
 1. Create `src/my-action.ts` with the pipeline logic
 2. Create `src/my-action-main.ts` as the entry point (plain `tsc` output to `dist/my-action-main.mjs`, no bundler)
 3. Register it in `scripts/build-action-bundle.mjs`'s `ENTRY_POINTS` list (`'src/my-action-main.ts'`)
-4. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) as a node20 action with `main: ../bundle/my-action-main.mjs` — copy the `runs:` block from an existing `action.yml` and update only the entry filename
+4. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) as a node24 action with `main: ../bundle/my-action-main.mjs` — copy the `runs:` block from an existing `action.yml` and update only the entry filename
 5. Export from `src/index.ts` for library use
 6. Add tests with mocked `@actions/*` dependencies
 7. Update this instructions file

@@ -29,37 +29,20 @@ inputs:
 outputs:
   success:
     description: 'Whether all matching orgs were deleted successfully (true/false)'
-    value: ${{ steps.clean-pool.outputs.success }}
   tag:
     description: 'The pool tag'
-    value: ${{ steps.clean-pool.outputs.tag }}
   deleted:
     description: 'Number of orgs deleted'
-    value: ${{ steps.clean-pool.outputs.deleted }}
   duration:
     description: 'Total cleanup duration in milliseconds'
-    value: ${{ steps.clean-pool.outputs.duration }}
   org-usernames:
     description: 'Comma-separated list of deleted org usernames'
-    value: ${{ steps.clean-pool.outputs.org-usernames }}
   result:
     description: 'Full JSON result'
-    value: ${{ steps.clean-pool.outputs.result }}
 
 runs:
-  using: composite
-  steps:
-    - id: clean-pool
-      shell: bash
-      # packages/actions/bundle is a committed, code-split esbuild bundle
-      # (built by scripts/build-action-bundle.mjs at release time), so no
-      # install step is needed at runtime.
-      run: node "$GITHUB_ACTION_PATH/../bundle/clean-pool-main.mjs"
-      # Composite actions do not receive INPUT_* automatically, so each input is
-      # forwarded explicitly. Callers still use plain `with:`.
-      env:
-        INPUT_DEVHUB-USERNAME: ${{ inputs.devhub-username }}
-        INPUT_POOL-TAG: ${{ inputs.pool-tag }}
-        INPUT_POOL-TYPE: ${{ inputs.pool-type }}
-        INPUT_IN-PROGRESS-ONLY: ${{ inputs.in-progress-only }}
-        INPUT_MY-POOL: ${{ inputs.my-pool }}
+  using: node24
+  # packages/actions/bundle is a committed, code-split esbuild bundle
+  # (built by scripts/build-action-bundle.mjs at release time), so no
+  # install step is needed at runtime.
+  main: ../bundle/clean-pool-main.mjs

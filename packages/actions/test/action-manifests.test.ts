@@ -6,11 +6,11 @@ import {describe, expect, it} from 'vitest';
 import {parse} from 'yaml';
 
 /**
- * Contract tests for the composite `action.yml` manifests.
+ * Contract tests for the node24 `action.yml` manifests.
  *
- * Composite actions do not receive `INPUT_*` automatically, so a forgotten
- * `env:` entry makes an input silently empty at run time — or throws for a
- * required one. These tests tie each manifest to the code behind it.
+ * Inputs arrive as `INPUT_*` automatically, so a renamed input silently reads
+ * empty instead of failing loudly — these tests tie each manifest to the code
+ * behind it.
  */
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -92,31 +92,17 @@ describe('action manifests', () => {
     const outputs = Object.keys(manifest.outputs ?? {});
     const files = importGraph(join(srcDir, (actions[dir] ?? '').replace(/\.js$/, '.ts')));
 
-    it('is a composite action invoking its bundled entrypoint directly', () => {
-      expect(manifest.runs.using).toBe('composite');
-      const run = manifest.runs.steps.map((s: {run?: string}) => s.run ?? '').join('\n');
+    it('is a node24 action pointing at its bundled entrypoint', () => {
+      expect(manifest.runs.using).toBe('node24');
       const bundleEntry = actions[dir].replace(/\.js$/, '.mjs');
-      expect(run).toContain(`"$GITHUB_ACTION_PATH/../bundle/${bundleEntry}"`);
-      // No install step left at runtime — the bundle is already committed.
-      expect(run).not.toContain('npm ci');
-      expect(run).not.toMatch(/\d+\.\d+\.\d+/);
+      expect(manifest.runs.main).toBe(`../bundle/${bundleEntry}`);
+      expect(manifest.runs.steps).toBeUndefined();
+      // No install step left at runtime — the bundle is already committed, unpinned.
+      expect(manifest.runs.main).not.toMatch(/\d+\.\d+\.\d+/);
     });
 
-    it('forwards every declared input as INPUT_*, with no strays', () => {
-      const env = manifest.runs.steps.find((s: {env?: unknown}) => s.env)?.env ?? {};
-      expect(Object.keys(env).sort()).toEqual(inputs.map(n => `INPUT_${n.toUpperCase()}`).sort());
-
-      // Each variable must carry its own input, not a neighbour's.
-      for (const name of inputs) {
-        expect(env[`INPUT_${name.toUpperCase()}`]).toBe(`\${{ inputs.${name} }}`);
-      }
-    });
-
-    it('wires every declared output to the step that produces it', () => {
-      const stepId = manifest.runs.steps[0].id;
-      for (const name of outputs) {
-        expect(manifest.outputs[name].value).toBe(`\${{ steps.${stepId}.outputs.${name} }}`);
-      }
+    it('declares outputs without a composite value:', () => {
+      for (const name of outputs) expect(manifest.outputs[name].value).toBeUndefined();
     });
 
     // Catches an input that is declared and forwarded but never actually read

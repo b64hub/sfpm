@@ -7,11 +7,11 @@ versions, credential handling), see [SECURITY.md](../../SECURITY.md).
 
 ## What these actions are
 
-JavaScript actions (`runs: using: node20`). Each `action.yml` points `main:` at a single entry from a committed esbuild bundle:
+JavaScript actions (`runs: using: node24`). Each `action.yml` points `main:` at a single entry from a committed esbuild bundle:
 
 ```yaml
 runs:
-  using: node20
+  using: node24
   main: ../bundle/<entry-file>.mjs
 ```
 
@@ -37,7 +37,7 @@ sfpm step runs:
 
 | Requirement | Why | Provided by |
 | --- | --- | --- |
-| npm on PATH | The `install` action runs `npm install` for registry-origin packages. The actions themselves run on the runner's own Node 20 | Consumer (runner image or `actions/setup-node`) |
+| npm on PATH | The `install` action runs `npm install` for registry-origin packages. The actions themselves run on the runner's own Node 24 | Consumer (runner image or `actions/setup-node`) |
 | `sf` CLI on PATH | Org auth and Salesforce operations | Consumer |
 | DevHub and target orgs authenticated | Actions never handle credentials | Consumer (for example JWT with their own secrets) |
 | nimbus on PATH | Local validation. Skipped with a warning if absent — a green run is not proof validation ran | Consumer, optional but recommended, through an approved channel |
