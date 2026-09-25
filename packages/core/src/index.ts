@@ -87,6 +87,8 @@ export {
   type MigrateOptions, WorkspaceInitializer, type WorkspaceInitOptions, type WorkspaceInitResult,
 } from './project/workspace-init.js';
 export {WorkspaceSync, type WorkspaceSyncOptions} from './project/workspace-sync.js';
+export * from './release/release-definition.js';
+export * from './release/tag-resolver.js';
 export {
   type DeployComponentError, type DeployOptions, type DeployProgress, type DeployResult,
   type TestRunResult as DeployTestRunResult, MetadataDeployService, type TestFailure,

@@ -73,9 +73,11 @@ export function toNpmPackageJson(
   delete (sfpmMeta as any).sourceBehaviorOptions;
   delete (sfpmMeta as any).metadataDependencies;
 
-  // Build keywords
+  // Build keywords. Only 'sfpm' is auto-injected — workspace-authored
+  // keywords (which double as sfpm package tags, see release/tag selection)
+  // pass through untouched so they aren't drowned out by generated noise.
   const baseKeywords = workspacePkgJson.keywords ?? [];
-  const sfpmKeywords = ['sfpm', 'salesforce', String(pkg.type)];
+  const sfpmKeywords = ['sfpm'];
   const additionalKeywords = options.additionalKeywords ?? [];
   const keywords = [...new Set([...additionalKeywords, ...baseKeywords, ...sfpmKeywords])];
 

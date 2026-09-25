@@ -282,9 +282,10 @@ describe('npm-package-adapter', () => {
 
       expect(result.keywords).toContain('my-org');
       expect(result.keywords).toContain('sfpm');
-      expect(result.keywords).toContain('salesforce');
-      expect(result.keywords).toContain('unlocked');
       expect(result.keywords).toContain('custom');
+      // Only 'sfpm' is auto-injected — packageType is no longer mirrored
+      // into keywords, to keep the field free for user-defined package tags.
+      expect(result.keywords).not.toContain('unlocked');
     });
 
     it('should deduplicate keywords', async () => {
