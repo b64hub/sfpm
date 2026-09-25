@@ -46,8 +46,8 @@ Actions cache, passed between steps, or emitted as an action output —
 through the DevHub. Installation keys and auth URLs are registered with
 `core.setSecret()` so they are masked in logs.
 
-**Distribution and pinning.** The actions are composite actions. Each
-`action.yml` invokes an entry from a committed esbuild bundle at
+**Distribution and pinning.** The actions are JavaScript (`node24`) actions. Each
+`action.yml` points `main:` at an entry from a committed esbuild bundle at
 `packages/actions/bundle/`. The bundle is built once at release time by
 `scripts/build-action-bundle.mjs` using actual esbuild bundling (not a
 vendored node_modules install). It includes two small shim assets that

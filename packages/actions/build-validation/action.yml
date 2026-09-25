@@ -28,40 +28,22 @@ inputs:
 outputs:
   success:
     description: 'Whether all validations passed (true/false)'
-    value: ${{ steps.build-validation.outputs.success }}
   duration:
     description: 'Total resume duration in milliseconds'
-    value: ${{ steps.build-validation.outputs.duration }}
   validated-count:
     description: 'Number of packages that passed validation'
-    value: ${{ steps.build-validation.outputs.validated-count }}
   failed-count:
     description: 'Number of packages that failed validation'
-    value: ${{ steps.build-validation.outputs.failed-count }}
   failed-packages:
     description: 'Comma-separated list of packages that failed validation'
-    value: ${{ steps.build-validation.outputs.failed-packages }}
   publishable-packages:
     description: 'Comma-separated list of packages safe to publish: built successfully, not build-skipped, and validated if validation was required'
-    value: ${{ steps.build-validation.outputs.publishable-packages }}
   result:
     description: 'Full JSON result with per-package validation outcomes'
-    value: ${{ steps.build-validation.outputs.result }}
 
 runs:
-  using: composite
-  steps:
-    - id: build-validation
-      shell: bash
-      # packages/actions/bundle is a committed, code-split esbuild bundle
-      # (built by scripts/build-action-bundle.mjs at release time), so no
-      # install step is needed at runtime.
-      run: node "$GITHUB_ACTION_PATH/../bundle/build-validation-main.mjs"
-      # Composite actions do not receive INPUT_* automatically, so each input is
-      # forwarded explicitly. Callers still use plain `with:`.
-      env:
-        INPUT_BUILD-RESULT: ${{ inputs.build-result }}
-        INPUT_PACKAGES: ${{ inputs.packages }}
-        INPUT_MAX-WAIT-MINUTES: ${{ inputs.max-wait-minutes }}
-        INPUT_POLLING-INTERVAL-SECONDS: ${{ inputs.polling-interval-seconds }}
-        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}
+  using: node24
+  # packages/actions/bundle is a committed, code-split esbuild bundle
+  # (built by scripts/build-action-bundle.mjs at release time), so no
+  # install step is needed at runtime.
+  main: ../bundle/build-validation-main.mjs

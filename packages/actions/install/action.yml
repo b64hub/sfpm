@@ -42,35 +42,16 @@ inputs:
 outputs:
   success:
     description: 'Whether all installs succeeded (true/false)'
-    value: ${{ steps.install.outputs.success }}
   duration:
     description: 'Total install duration in milliseconds'
-    value: ${{ steps.install.outputs.duration }}
   failed-packages:
     description: 'Comma-separated list of packages that failed to install'
-    value: ${{ steps.install.outputs.failed-packages }}
   result:
     description: 'Full JSON result with per-package outcomes'
-    value: ${{ steps.install.outputs.result }}
 
 runs:
-  using: composite
-  steps:
-    - id: install
-      shell: bash
-      # packages/actions/bundle is a committed, code-split esbuild bundle
-      # (built by scripts/build-action-bundle.mjs at release time), so no
-      # install step is needed at runtime.
-      run: node "$GITHUB_ACTION_PATH/../bundle/install-main.mjs"
-      # Composite actions do not receive INPUT_* automatically, so each input is
-      # forwarded explicitly. Callers still use plain `with:`.
-      env:
-        INPUT_TARGET-ORG: ${{ inputs.target-org }}
-        INPUT_PACKAGES: ${{ inputs.packages }}
-        INPUT_ORIGIN: ${{ inputs.origin }}
-        INPUT_FORCE: ${{ inputs.force }}
-        INPUT_INCLUDE-DEPENDENCIES: ${{ inputs.include-dependencies }}
-        INPUT_INSTALLATION-KEYS: ${{ inputs.installation-keys }}
-        INPUT_TEST-LEVEL: ${{ inputs.test-level }}
-        INPUT_REGRESSION-TEST: ${{ inputs.regression-test }}
-        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}
+  using: node24
+  # packages/actions/bundle is a committed, code-split esbuild bundle
+  # (built by scripts/build-action-bundle.mjs at release time), so no
+  # install step is needed at runtime.
+  main: ../bundle/install-main.mjs

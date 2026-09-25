@@ -37,46 +37,24 @@ inputs:
 outputs:
   success:
     description: 'Whether all validations succeeded (true/false)'
-    value: ${{ steps.validate-pr.outputs.success }}
   org-username:
     description: 'Username of the scratch org used for validation'
-    value: ${{ steps.validate-pr.outputs.org-username }}
   org-id:
     description: 'Org ID of the scratch org used'
-    value: ${{ steps.validate-pr.outputs.org-id }}
   cache-hit:
     description: 'Whether a cached org was reused (true/false)'
-    value: ${{ steps.validate-pr.outputs.cache-hit }}
   cache-age-minutes:
     description: 'Age in minutes of the reused cached org. Empty unless cache-hit is true.'
-    value: ${{ steps.validate-pr.outputs.cache-age-minutes }}
   pr-number:
     description: 'PR number that was validated'
-    value: ${{ steps.validate-pr.outputs.pr-number }}
   duration:
     description: 'Total validation duration in milliseconds'
-    value: ${{ steps.validate-pr.outputs.duration }}
   result:
     description: 'Full JSON result with per-package outcomes including coverage'
-    value: ${{ steps.validate-pr.outputs.result }}
 
 runs:
-  using: composite
-  steps:
-    - id: validate-pr
-      shell: bash
-      # packages/actions/bundle is a committed, code-split esbuild bundle
-      # (built by scripts/build-action-bundle.mjs at release time), so no
-      # install step is needed at runtime.
-      run: node "$GITHUB_ACTION_PATH/../bundle/validate-main.mjs"
-      # Composite actions do not receive INPUT_* automatically, so each input is
-      # forwarded explicitly. Callers still use plain `with:`.
-      env:
-        INPUT_DEVHUB-USERNAME: ${{ inputs.devhub-username }}
-        INPUT_MODE: ${{ inputs.mode }}
-        INPUT_POOL-TAG: ${{ inputs.pool-tag }}
-        INPUT_POOL-TYPE: ${{ inputs.pool-type }}
-        INPUT_CACHE-TTL-HOURS: ${{ inputs.cache-ttl-hours }}
-        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}
-        INPUT_PACKAGES: ${{ inputs.packages }}
-        INPUT_BASE-REF: ${{ inputs.base-ref }}
+  using: node24
+  # packages/actions/bundle is a committed, code-split esbuild bundle
+  # (built by scripts/build-action-bundle.mjs at release time), so no
+  # install step is needed at runtime.
+  main: ../bundle/validate-main.mjs

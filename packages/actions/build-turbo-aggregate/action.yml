@@ -21,29 +21,16 @@ inputs:
 outputs:
   success:
     description: 'Whether all builds succeeded (true/false)'
-    value: ${{ steps.build-turbo-aggregate.outputs.success }}
   duration:
     description: 'Total aggregation duration in milliseconds'
-    value: ${{ steps.build-turbo-aggregate.outputs.duration }}
   failed-packages:
     description: 'Comma-separated list of packages that failed to build'
-    value: ${{ steps.build-turbo-aggregate.outputs.failed-packages }}
   result:
     description: "Full JSON result with per-package outcomes, in the same shape as the build action's result output. Pass this into build-validation's build-result input as needs.build.outputs.result"
-    value: ${{ steps.build-turbo-aggregate.outputs.result }}
 
 runs:
-  using: composite
-  steps:
-    - id: build-turbo-aggregate
-      shell: bash
-      # packages/actions/bundle is a committed, code-split esbuild bundle
-      # (built by scripts/build-action-bundle.mjs at release time), so no
-      # install step is needed at runtime.
-      run: node "$GITHUB_ACTION_PATH/../bundle/build-turbo-aggregate-main.mjs"
-      # Composite actions do not receive INPUT_* automatically, so each input is
-      # forwarded explicitly. Callers still use plain `with:`.
-      env:
-        INPUT_PACKAGES: ${{ inputs.packages }}
-        INPUT_TASK-NAME: ${{ inputs.task-name }}
-        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}
+  using: node24
+  # packages/actions/bundle is a committed, code-split esbuild bundle
+  # (built by scripts/build-action-bundle.mjs at release time), so no
+  # install step is needed at runtime.
+  main: ../bundle/build-turbo-aggregate-main.mjs

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Builds the committed esbuild bundle for the composite GitHub Actions
+ * Builds the committed esbuild bundle for the GitHub Actions
  * (`packages/actions/bundle`).
  *
  *   node scripts/build-action-bundle.mjs
@@ -88,7 +88,7 @@ await esbuild.build({
   outdir: bundleDir,
   outExtension: {'.js': '.mjs'},
   platform: 'node',
-  target: 'node20',
+  target: 'node24',
   // jiti loads a consumer's own sfpm.config.ts at runtime (must stay dynamic
   // — that file doesn't exist at build time) and does its own internal
   // require() relative to its own module file. Inlined, that require

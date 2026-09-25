@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
- * Dispatcher invoked by the composite actions, from the shared pinned runtime:
- *   <runtime>/node_modules/.bin/sfpm-action <action-name>
+ * Dispatcher for the published npm CLI (`sfpm-action <name>`). The GitHub
+ * Actions run the committed bundle directly via `runs.main:` and no longer
+ * use this file.
  *
- * Inputs arrive as INPUT_* environment variables mapped in each action.yml,
- * so the entrypoints keep using @actions/core `getInput`/`setOutput` unchanged.
+ * Inputs arrive as INPUT_* environment variables automatically in native
+ * actions, so the entrypoints keep using @actions/core `getInput`/`setOutput`
+ * unchanged.
  */
 
 /** Action name -> compiled entrypoint. A fixed map, never a path built from argv. */

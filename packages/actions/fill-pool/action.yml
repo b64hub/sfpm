@@ -42,45 +42,22 @@ inputs:
 outputs:
   success:
     description: 'Whether all orgs were provisioned successfully (true/false)'
-    value: ${{ steps.fill-pool.outputs.success }}
   tag:
     description: 'The pool tag'
-    value: ${{ steps.fill-pool.outputs.tag }}
   succeeded:
     description: 'Number of orgs successfully provisioned'
-    value: ${{ steps.fill-pool.outputs.succeeded }}
   failed:
     description: 'Number of orgs that failed to provision'
-    value: ${{ steps.fill-pool.outputs.failed }}
   duration:
     description: 'Total provisioning duration in milliseconds'
-    value: ${{ steps.fill-pool.outputs.duration }}
   org-usernames:
     description: 'Comma-separated list of provisioned org usernames'
-    value: ${{ steps.fill-pool.outputs.org-usernames }}
   result:
     description: 'Full JSON result'
-    value: ${{ steps.fill-pool.outputs.result }}
 
 runs:
-  using: composite
-  steps:
-    - id: fill-pool
-      shell: bash
-      # packages/actions/bundle is a committed, code-split esbuild bundle
-      # (built by scripts/build-action-bundle.mjs at release time), so no
-      # install step is needed at runtime.
-      run: node "$GITHUB_ACTION_PATH/../bundle/fill-pool-main.mjs"
-      # Composite actions do not receive INPUT_* automatically, so each input is
-      # forwarded explicitly. Callers still use plain `with:`.
-      env:
-        INPUT_DEVHUB-USERNAME: ${{ inputs.devhub-username }}
-        INPUT_POOL-TAG: ${{ inputs.pool-tag }}
-        INPUT_MAX-ALLOCATION: ${{ inputs.max-allocation }}
-        INPUT_POOL-TYPE: ${{ inputs.pool-type }}
-        INPUT_DEFINITION-FILE: ${{ inputs.definition-file }}
-        INPUT_PROJECT-DIR: ${{ inputs.project-dir }}
-        INPUT_EXPIRY-DAYS: ${{ inputs.expiry-days }}
-        INPUT_BATCH-SIZE: ${{ inputs.batch-size }}
-        INPUT_SANDBOX-NAME-PATTERN: ${{ inputs.sandbox-name-pattern }}
-        INPUT_USE-LOCAL-SOURCE: ${{ inputs.use-local-source }}
+  using: node24
+  # packages/actions/bundle is a committed, code-split esbuild bundle
+  # (built by scripts/build-action-bundle.mjs at release time), so no
+  # install step is needed at runtime.
+  main: ../bundle/fill-pool-main.mjs
