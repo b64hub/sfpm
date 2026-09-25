@@ -15,11 +15,12 @@ yarn.lock
 **/node_modules
 **/dist
 
-# Except for the committed action bundle (release-time only, see
-# scripts/build-action-bundle.mjs), which ships a real node_modules/jiti/
-# copy that the blanket rule above would otherwise swallow.
-!/packages/actions/bundle
-!/packages/actions/bundle/**
+# Action bundle: built at release time, force-added to the tag commit only.
+# Never committed to main. The release workflow uses `git add -f` to include it.
+/packages/actions/bundle/
+# esbuild metafile written alongside the bundle by build-action-bundle.mjs
+# (used for license notices and reproducibility diffing) — never shipped or committed.
+/packages/actions/bundle-metafile.json
 
 .sfpm
 .sfdx
