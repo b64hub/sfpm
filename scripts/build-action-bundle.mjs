@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Builds the committed esbuild bundle for the composite GitHub Actions
+ * Builds the committed esbuild bundle for the GitHub Actions
  * (`packages/actions/bundle`).
  *
  *   node scripts/build-action-bundle.mjs
