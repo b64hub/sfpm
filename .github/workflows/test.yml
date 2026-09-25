@@ -17,6 +17,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure action bundle is not tracked
+        shell: bash
+        run: test -z "$(git ls-files packages/actions/bundle)"
       - name: Enable pnpm
         run: corepack enable
       - uses: actions/setup-node@v4
@@ -26,3 +29,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
+
+  bundle-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable pnpm
+        run: corepack enable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Build action bundle
+        run: node scripts/build-action-bundle.mjs
+      - name: Run smoke test
+        run: node scripts/smoke-test-action-bundle.mjs
+      - name: Clean up bundle
+        if: always()
+        run: rm -rf packages/actions/bundle

@@ -27,7 +27,7 @@ number and base SHA from the local event payload only. `contents: read` is
 sufficient for every action; nothing requires write scope.
 
 **Network egress.** There is no network egress required for action execution
-itself; the bundle is committed and checked out with the action. The `install`
+itself; the bundle is built and shipped only at release time in tag commits. The `install`
 action accesses the npm registry for consumer package artifacts (separate use
 case, `origin: registry`). Actions also reach the Salesforce DevHub and target
 orgs, and `validate-pr` in `org` mode uses the GitHub Actions cache. See
@@ -47,22 +47,34 @@ through the DevHub. Installation keys and auth URLs are registered with
 `core.setSecret()` so they are masked in logs.
 
 **Distribution and pinning.** The actions are JavaScript (`node24`) actions. Each
-`action.yml` points `main:` at an entry from a committed esbuild bundle at
-`packages/actions/bundle/`. The bundle is built once at release time by
+`action.yml` points `main:` at an entry from an esbuild bundle at
+`packages/actions/bundle/`. The bundle is built only at release time by
 `scripts/build-action-bundle.mjs` using actual esbuild bundling (not a
-vendored node_modules install). It includes two small shim assets that
+vendored node_modules install). It exists only in the commit that a release tag
+points to (a detached-HEAD commit created by `.github/workflows/release.yml`,
+whose only content change vs its `main` parent is `packages/actions/bundle/**`).
+The bundle never exists on `main`. It includes two small shim assets that
 are necessary for correct behavior: `@salesforce/packaging`'s `messages/`
 directory (read at runtime) and a real copy of the `jiti` package (used
 to load consumer sfpm.config files at runtime).
 
-The bundle is built from the repo's already-compiled `dist/` output
-(produced by `pnpm build`), so the same git commit always produces the same
-bytes. Both the bundle source and the build script are reviewable, and
-consumers can verify the bundle by re-running `node scripts/build-action-bundle.mjs`
-from the release commit and diffing the result.
+The bundle is built from the actions' source entrypoints bundled directly via esbuild,
+which pulls in workspace package dependencies (`@b64hub/sfpm-core`, etc.) from their
+own built `dist/` output via each package's `main` field in package.json. Therefore,
+`pnpm build` is a required prerequisite before running the bundle script. To verify
+the bundle, check out the tag's parent commit (`git checkout vX.Y.Z^`), use Node 22
+with the pinned pnpm (`corepack enable`), then run `pnpm install --frozen-lockfile`,
+`pnpm build`, and `node scripts/build-action-bundle.mjs`, then diff the result against
+`git show vX.Y.Z:packages/actions/bundle`. Byte-identical output is not yet a proven
+guarantee — it is only established once a reproducibility-verification CI workflow
+exists and passes. Both the bundle source and the build script are reviewable.
 
-No dependency lifecycle scripts execute, so building or running the action
-cannot run third-party code.
+At action runtime, nothing is installed or fetched, and no dependency lifecycle
+scripts run. Building (at release time) runs the toolchain: `pnpm install` executes
+build scripts for exactly three allowed dependencies per `pnpm-workspace.yaml`'s
+`allowBuilds` setting — `esbuild`, `protobufjs`, and `unrs-resolver` — and no
+others. Running the bundled code executes the bundled dependency code plus the
+consumer's own `sfpm.config.ts` through jiti.
 
 Runner prerequisites (Node.js, `sf` CLI, nimbus, authenticated orgs) and
 allowlist entry formats are documented in
@@ -72,7 +84,7 @@ allowlist entry formats are documented in
 
 | Reference | Mutability | Use for |
 | --- | --- | --- |
-| `v0.2.0` | immutable, protected create-only | audits, pinned production use |
+| `v0.4.0` | created once per release; v*.*.* tags not force-pushed | audits, pinned production use |
 | `v0` | moved on every release | convenience |
 | commit SHA | immutable | strictest supply-chain policies |
 

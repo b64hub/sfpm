@@ -1,0 +1,77 @@
+# Verify that the action bundle was built reproducibly at release time.
+#
+# This workflow runs when a release tag (v*.*.*) is pushed. It checks out the tag's
+# parent commit (the last main commit before the release), rebuilds the bundle using
+# the same toolchain (Node 22 + pnpm) and steps as the release workflow, then compares
+# the freshly rebuilt bundle against what was actually committed to the tag.
+#
+# If the bundles are byte-identical, the release workflow's bundling is reproducible
+# and reviewable. Any differences indicate a dependency drift or an issue with the
+# build environment — both are worth investigating before the release proceeds.
+#
+# This addresses SECURITY.md's reproducibility requirement:
+# "To verify the bundle, check out the tag's parent commit (`git checkout vX.Y.Z^`),
+# use Node 22 with the pinned pnpm (`corepack enable`), then run
+# `pnpm install --frozen-lockfile`, `pnpm build`, and `node scripts/build-action-bundle.mjs`,
+# then diff the result against `git show vX.Y.Z:packages/actions/bundle`."
+
+name: Verify Action Bundle Reproducibility
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract tag name
+        id: tag
+        run: |
+          tag="${{ github.ref_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "parent=${tag}^" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tag's parent (last main commit before release)
+        run: git checkout "${{ steps.tag.outputs.parent }}"
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm build
+
+      - name: Build action bundle
+        run: node scripts/build-action-bundle.mjs
+
+      - name: Extract original bundle from tag
+        id: extract
+        run: |
+          tmpdir=$(mktemp -d)
+          echo "tmpdir=$tmpdir" >> "$GITHUB_OUTPUT"
+          git archive "${{ steps.tag.outputs.tag }}" -- packages/actions/bundle | tar -x -C "$tmpdir"
+          echo "Extracted $(find "$tmpdir/packages/actions/bundle" -type f | wc -l) files from tag ${{ steps.tag.outputs.tag }}"
+
+      - name: Compare rebuilt bundle against original
+        run: |
+          git diff --no-index packages/actions/bundle "${{ steps.extract.outputs.tmpdir }}/packages/actions/bundle"
+
+      - name: Clean up temp directory
+        if: always()
+        run: rm -rf "${{ steps.extract.outputs.tmpdir }}"

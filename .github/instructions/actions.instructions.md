@@ -12,7 +12,7 @@ applyTo: 'packages/actions/src/**/*.ts'
 ```
 packages/actions/
   validate-pr/action.yml  # node24 action definition for validate-pr
-  bundle/                 # Committed, release-built esbuild bundle: 8 per-action entries + shared chunks + shims
+  bundle/                 # Release-built esbuild bundle (gitignored; exists only on release tag commits): 8 per-action entries + shared chunks + shims
   src/
     validate-main.ts     # Action entry point (reads inputs, runs validatePr)
     index.ts              # Library exports
@@ -194,7 +194,19 @@ jobs:
 
 ## Building
 
-Each action is a JavaScript (`node24`) action. Each `action.yml` points `main:` at a single entry from a committed esbuild bundle at `packages/actions/bundle/`:
+Each action is a JavaScript (`node24`) action. Each `action.yml` points `main:` at a single entry from an esbuild bundle at `packages/actions/bundle/`.
+
+The bundle is built only at release time by `scripts/build-action-bundle.mjs`.
+It is gitignored (listed in `.gitignore` as `/packages/actions/bundle/`) and never
+committed to `main`. Only the release workflow (`release.yml`) force-adds it
+(`git add -f packages/actions/bundle`) to a detached-HEAD commit, which a
+release tag then points to. This means:
+
+- On `main`, `packages/actions/bundle/` does not exist (ignored).
+- On a release tag commit (e.g., `v0.4.0`), the bundle exists and is reviewed
+  as part of the tagged diff: one commit, parent on `main`, bundle as the only change.
+- A consumer's `uses: b64hub/sfpm/packages/actions/<name>@v0.4.0` checks out that
+  tag commit, which includes the bundle, so no runtime install step is needed.
 
 ```yaml
 runs:
@@ -204,14 +216,13 @@ runs:
 
 Inputs arrive as `INPUT_*` environment variables automatically; outputs declare only `description:`, with values coming from `core.setOutput` at run time.
 
-The bundle is built once at release time by `scripts/build-action-bundle.mjs`,
-using actual esbuild bundling with code-splitting: all 8 action entrypoints are
+The bundle uses actual esbuild bundling with code-splitting: all 8 action entrypoints are
 bundled together (`splitting: true`) so the shared dependency graph (@salesforce/core,
 @b64hub/sfpm-core, etc.) is stored once in `bundle/chunks/` instead of
 duplicated per action. The bundle is roughly 15–20MB total for all 8 actions.
 
-**Why not a pure single JS file with zero extra assets?** Three issues required
-workarounds during bundling discovery:
+**Why not a pure single JS file with zero extra assets, and why bundling is viable:**
+Three runtime issues required workarounds:
 
 1. **@salesforce/packaging** reads its own runtime message bundles from a
    `messages/` directory on disk (via `Messages.importMessagesDirectory`),
@@ -228,11 +239,17 @@ workarounds during bundling discovery:
    `process.env.SF_DISABLE_LOG_FILE ??= 'true'`, which routes logging through
    an in-memory logger instead (also a better default for ephemeral runners).
 
+Bundling is viable because these three issues are solved with build-time shims and
+configuration only — no source code is modified. The bundler itself can package
+@salesforce/core and all other Salesforce libraries without further modifications.
+
 `packages/actions/src/` compiles with `pnpm build` (plain TypeScript) to
-`dist/*-main.js`. `scripts/build-action-bundle.mjs` re-bundles the 8
-`src/*-main.ts` entrypoints directly with esbuild (not from `dist/`) into
-`packages/actions/bundle/*-main.mjs`, which is committed and checked out
-with the action, so no install step is needed at runtime.
+`dist/*-main.js`. The prerequisite `pnpm build` ensures all workspace packages
+have their own built `dist/` output available — `scripts/build-action-bundle.mjs`
+then re-bundles the 8 `src/*-main.ts` entrypoints directly with esbuild (not from
+`dist/`), resolving workspace dependencies through their built `main` fields.
+The result goes into `packages/actions/bundle/*-main.mjs`. Only the release
+workflow commits this; it is never on `main`.
 
 ## Testing
 
@@ -257,10 +274,30 @@ vi.mock('@actions/core', () => ({
 }));
 ```
 
+### Bundle Smoke Test
+
+Unit tests run against `src/` (TypeScript source). The bundle itself is built and
+tested separately via `scripts/smoke-test-action-bundle.mjs`. This smoke test:
+
+- Builds the complete bundle via esbuild (exactly as the release workflow does)
+- Runs each of the 8 compiled action entrypoints as a child process in an empty
+  temp directory with minimal `INPUT_*` environment variables
+- Asserts that each action either succeeds or fails with a legitimate domain error
+  (e.g., "No workspace packages found") — never with a module-resolution error,
+  a Messages-loading error, or a pino/worker-thread crash
+- Verifies that jiti can load a trivial `sfpm.config.ts` through the bundled copy
+- Checks that all required Messages files from Salesforce libraries are present
+
+This test runs in CI (`test.yml`) and in the release workflow (`release.yml`)
+before a release is allowed to proceed. Bundling introduces failures that only
+appear at runtime on the code paths that trigger them — a missing `messages/`
+directory, a dynamic `require()`, an external module that isn't shipped — so
+the smoke test is essential and cannot be skipped.
+
 ## Adding a New Action
 
 1. Create `src/my-action.ts` with the pipeline logic
-2. Create `src/my-action-main.ts` as the entry point (plain `tsc` output to `dist/my-action-main.mjs`, no bundler)
+2. Create `src/my-action-main.ts` as the entry point (plain `tsc` output to `dist/my-action-main.js`, no bundler)
 3. Register it in `scripts/build-action-bundle.mjs`'s `ENTRY_POINTS` list (`'src/my-action-main.ts'`)
 4. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) as a node24 action with `main: ../bundle/my-action-main.mjs` — copy the `runs:` block from an existing `action.yml` and update only the entry filename
 5. Export from `src/index.ts` for library use

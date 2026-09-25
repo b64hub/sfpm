@@ -71,8 +71,8 @@ Run `sfpm --help` for the current command reference — this changes frequently 
 The actions live under `packages/actions/` and are referenced by sub-path:
 
 ```yaml
-- uses: b64hub/sfpm/packages/actions/build@v0.3.1
-- uses: b64hub/sfpm/packages/actions/validate-pr@v0.3.1
+- uses: b64hub/sfpm/packages/actions/build@v0.4.0
+- uses: b64hub/sfpm/packages/actions/validate-pr@v0.4.0
 ```
 
 Available: `build`, `build-validation`, `build-turbo-aggregate`, `install`,
@@ -87,7 +87,7 @@ authenticated in the runner** before the step runs.
 
 | Reference | Mutability | Use for |
 | --- | --- | --- |
-| `v0.3.1` | immutable, protected create-only | audits, pinned production use |
+| `v0.4.0` | created once per release; `v*.*.*` tags not force-pushed | audits, pinned production use |
 | `v0` | moved on every release | convenience |
 | commit SHA | immutable | strictest supply-chain policies |
 
