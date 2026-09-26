@@ -31,7 +31,7 @@ sfpm step runs:
 
 | Requirement | Why | Provided by |
 | --- | --- | --- |
-| Node 24 | Actions use `runs.using: node24` | GitHub Actions runner v2.327.0+ (July 2025) or `actions/setup-node@v4+`. For self-hosted or GHES runners, confirm your version supports node24. |
+| Node 24 | Actions use `runs.using: node24` | GitHub Actions runner v2.327.1+ (minimum for node24 support, per actions/checkout@v5 and actions/upload-artifact@v6). For self-hosted or GHES runners, confirm your version supports node24. |
 | npm on PATH | The `install` action runs `npm install` for registry-origin packages. | Consumer (runner image or `actions/setup-node`) |
 | `sf` CLI on PATH | Org auth and Salesforce operations | Consumer |
 | DevHub and target orgs authenticated | Actions never handle credentials | Consumer (for example JWT with their own secrets) |
