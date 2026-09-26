@@ -217,10 +217,10 @@ runs:
 
 Inputs arrive as `INPUT_*` environment variables automatically; outputs declare only `description:`, with values coming from `core.setOutput` at run time.
 
-The bundle uses actual esbuild bundling with code-splitting: all 8 action entrypoints are
+The bundle uses actual esbuild bundling with code-splitting: all action entrypoints are
 bundled together (`splitting: true`) so the shared dependency graph (@salesforce/core,
 @b64hub/sfpm-core, etc.) is stored once in `bundle/chunks/` instead of
-duplicated per action. The bundle is roughly 15–20MB total for all 8 actions.
+duplicated per action. The bundle is roughly 15–20MB total across all actions.
 
 **Why not a pure single JS file with zero extra assets, and why bundling is viable:**
 Three runtime issues required workarounds:
@@ -278,18 +278,18 @@ vi.mock('@actions/core', () => ({
 ### Bundle Smoke Test
 
 Unit tests run against `src/` (TypeScript source). The bundle itself is built and
-tested separately via `scripts/smoke-test-action-bundle.mjs`. This smoke test assumes
-the bundle has already been built by `node scripts/build-action-bundle.mjs` and:
+tested separately via `scripts/smoke-test-action-bundle.mjs`. This smoke test discovers
+actions from their `action.yml` files via `scripts/lib/action-manifests.mjs` and:
 
-- Runs each of the 8 compiled action entrypoints as a child process in a minimal
-  temp directory seeded with a fixture project (scripts/fixtures/smoke-project/: a trivial
-  sfdx-project.json, one Apex class, and sfpm.config.ts) — this seed lets actions reach
-  deeper domain errors (DevHub auth failure, org pool lookup) instead of failing
-  immediately on project-load, proving project loading, jiti config loading, and packaging
-  code all actually ran
-- Asserts that each action either succeeds or fails with a legitimate domain error
-  (e.g., "No authorization information found") — never with a module-resolution error,
-  a Messages-loading error, or a pino/worker-thread crash
+- Copies the bundle into an isolated temporary directory before running anything, so
+  Node's module resolution cannot accidentally find a dependency (e.g., `jiti`) via
+  the surrounding repo's `node_modules` instead of the bundle's own shipped copy
+- For each action, runs both the bundled entry from the isolated copy AND the unbundled
+  `dist/*.js` output (pre-built TypeScript) with identical inputs, and compares their
+  normalized `::error::` lines for parity; also checks each action against its own
+  expected-error regex
+- For `deploy` and `install`, sets `npm_config_registry=http://127.0.0.1:9` (a closed port)
+  so the test is deterministic and offline, rather than depending on the npm registry's 404 responses
 - Verifies that jiti can load a trivial `sfpm.config.ts` through the bundled copy
 - Fails if any bundled library other than `@salesforce/packaging` is found loading
   message files from disk at runtime, and also fails if `@salesforce/packaging` itself
@@ -306,8 +306,8 @@ the smoke test is essential and cannot be skipped.
 
 1. Create `src/my-action.ts` with the pipeline logic
 2. Create `src/my-action-main.ts` as the entry point (plain `tsc` output to `dist/my-action-main.js`, no bundler)
-3. Register it in `scripts/build-action-bundle.mjs`'s `ENTRY_POINTS` list (`'src/my-action-main.ts'`)
-4. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) as a node24 action with `main: ../bundle/my-action-main.mjs` — copy the `runs:` block from an existing `action.yml` and update only the entry filename
+3. Add `my-action/action.yml` (own subdirectory, following the `build/`, `install/`, `deploy/`, `build-validation/`, `fill-pool/` convention) as a node24 action with `main: ../bundle/my-action-main.mjs` — copy the `runs:` block from an existing `action.yml` and update only the entry filename. Entries are derived automatically from `action.yml`'s `runs.main` via `scripts/lib/action-manifests.mjs`.
+4. Add the action to `ACTION_CONFIG` in `scripts/smoke-test-action-bundle.mjs` with the expected domain error regex for that action. The smoke test fails loudly if any discovered action has no matching `ACTION_CONFIG` entry, so this step is required for the test to pass.
 5. Export from `src/index.ts` for library use
 6. Add tests with mocked `@actions/*` dependencies
 7. Update this instructions file

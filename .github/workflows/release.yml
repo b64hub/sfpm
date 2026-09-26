@@ -65,7 +65,6 @@ jobs:
           tag="v$version"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "major=v${version%%.*}" >> "$GITHUB_OUTPUT"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "::warning file=package.json,line=1::$tag is already released. Bump the version in package.json to publish a new release."
@@ -94,9 +93,14 @@ jobs:
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists on remote. Verifying existing tag commit..."
             
-            # Verify the tag commit contains the bundle directory
-            if ! git ls-tree -r "$TAG" --name-only | grep -q '^packages/actions/bundle/'; then
-              echo "::error::Existing tag $TAG does not contain packages/actions/bundle/. Tag does not look like a valid release commit. Manual investigation required."
+            # Fetch the tag explicitly (fetch-depth: 0 doesn't guarantee branchless/detached commits are available).
+            git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+            
+            # Verify the tag commit contains a bundled entry file. This confirms the tag has a bundle
+            # and a main-reachable parent, but does NOT prove it's the exact bundle this run built —
+            # the separate verify job (rebuild + diff) is what guarantees reproducibility.
+            if ! git cat-file -e "$TAG:packages/actions/bundle/validate-main.mjs"; then
+              echo "::error::Existing tag $TAG does not contain packages/actions/bundle/validate-main.mjs. Tag does not look like a valid release commit. Manual investigation required."
               exit 1
             fi
             
