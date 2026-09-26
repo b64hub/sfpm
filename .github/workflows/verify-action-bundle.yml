@@ -18,6 +18,18 @@
 name: Verify Action Bundle Reproducibility
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag to verify (e.g., v0.4.0)'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to verify (e.g., v0.4.0)'
+        required: true
+        type: string
   push:
     tags:
       - 'v*.*.*'
@@ -36,7 +48,7 @@ jobs:
       - name: Extract tag name
         id: tag
         run: |
-          tag="${{ github.ref_name }}"
+          tag="${{ inputs.tag || github.ref_name }}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "parent=${tag}^" >> "$GITHUB_OUTPUT"
 
