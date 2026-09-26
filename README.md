@@ -98,7 +98,7 @@ SHA if you need stability.
 
 The actions install none of their own prerequisites — Node.js, the `sf` CLI,
 nimbus, and authenticated orgs must already be on the runner. Full
-prerequisites, network egress, and a tested allowlist entry format are in
+prerequisites, network egress, and the expected allowlist entry format are in
 [packages/actions/CONSUMING.md](packages/actions/CONSUMING.md), the reference
 for a whitelisting review. For strictest supply-chain policies, pin a commit
 SHA rather than a tag.

@@ -152,6 +152,7 @@ jobs:
         run: sf org login jwt ...
 
       - name: Validate PR
+        id: validate
         uses: b64hub/sfpm/packages/actions/validate-pr@<sha>
         with:
           mode: org
@@ -277,16 +278,23 @@ vi.mock('@actions/core', () => ({
 ### Bundle Smoke Test
 
 Unit tests run against `src/` (TypeScript source). The bundle itself is built and
-tested separately via `scripts/smoke-test-action-bundle.mjs`. This smoke test:
+tested separately via `scripts/smoke-test-action-bundle.mjs`. This smoke test assumes
+the bundle has already been built by `node scripts/build-action-bundle.mjs` and:
 
-- Builds the complete bundle via esbuild (exactly as the release workflow does)
-- Runs each of the 8 compiled action entrypoints as a child process in an empty
-  temp directory with minimal `INPUT_*` environment variables
+- Runs each of the 8 compiled action entrypoints as a child process in a minimal
+  temp directory seeded with a fixture project (scripts/fixtures/smoke-project/: a trivial
+  sfdx-project.json, one Apex class, and sfpm.config.ts) — this seed lets actions reach
+  deeper domain errors (DevHub auth failure, org pool lookup) instead of failing
+  immediately on project-load, proving project loading, jiti config loading, and packaging
+  code all actually ran
 - Asserts that each action either succeeds or fails with a legitimate domain error
-  (e.g., "No workspace packages found") — never with a module-resolution error,
+  (e.g., "No authorization information found") — never with a module-resolution error,
   a Messages-loading error, or a pino/worker-thread crash
 - Verifies that jiti can load a trivial `sfpm.config.ts` through the bundled copy
-- Checks that all required Messages files from Salesforce libraries are present
+- Fails if any bundled library other than `@salesforce/packaging` is found loading
+  message files from disk at runtime, and also fails if `@salesforce/packaging` itself
+  is NOT found doing so (which would mean detection broke or packaging changed, and
+  the shipped messages/ directory should be revisited)
 
 This test runs in CI (`test.yml`) and in the release workflow (`release.yml`)
 before a release is allowed to proceed. Bundling introduces failures that only

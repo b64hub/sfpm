@@ -13,26 +13,175 @@
  * Exit code: 0 if all entries pass, 1 otherwise.
  */
 
-import {execFileSync, spawnSync} from 'node:child_process';
-import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync, statSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
+import {createRequire} from 'node:module';
+import {cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync, statSync} from 'node:fs';
+import {randomBytes} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
+const require = createRequire(import.meta.url);
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const bundleDir = join(repoRoot, 'packages', 'actions', 'bundle');
+const actionsDir = join(repoRoot, 'packages', 'actions');
 
-/** Action entries and their required inputs from their -main.ts files. */
-const ACTIONS = [
-  {name: 'build', entry: 'build-main.mjs', required: []},
-  {name: 'build-turbo-aggregate', entry: 'build-turbo-aggregate-main.mjs', required: []},
-  {name: 'build-validation', entry: 'build-validation-main.mjs', required: ['build-result']},
-  {name: 'clean-pool', entry: 'clean-pool-main.mjs', required: ['devhub-username', 'pool-tag']},
-  {name: 'deploy', entry: 'deploy-main.mjs', required: ['target-org', 'packages']},
-  {name: 'install', entry: 'install-main.mjs', required: ['target-org', 'packages']},
-  {name: 'validate-pr', entry: 'validate-main.mjs', required: []},
-  {name: 'fill-pool', entry: 'fill-pool-main.mjs', required: ['devhub-username', 'pool-tag']},
-];
+/**
+ * Minimal SFDX project (sfdx-project.json + one Apex class + a trivial
+ * sfpm.config.ts + a workspace package.json) copied into each action's temp
+ * directory before it runs. Without this, every action fails at the very
+ * first step ("does not contain a valid Salesforce DX project", from
+ * @salesforce/core's own SfProject.resolve()) and none of jiti's config
+ * loading or @salesforce/packaging's runtime code ever executes — so the
+ * one runtime dependency the bundle ships shims for (packaging's messages/)
+ * was never actually exercised. Seeding this fixture lets each action reach
+ * a deeper, more meaningful domain error instead (see each ACTION_CONFIG
+ * entry's comment for what that deeper error proves).
+ */
+const fixtureDir = join(repoRoot, 'scripts', 'fixtures', 'smoke-project');
+
+/**
+ * Per-action configuration: required inputs and expected domain error regex.
+ * Keyed by action directory name.
+ */
+const ACTION_CONFIG = {
+  'build': {
+    required: [],
+    // With the fixture project present, the build actually stages the
+    // package and calls into @salesforce/packaging to create a package
+    // version, which needs a connected DevHub. Reaching this error (instead
+    // of "not a valid SFDX project") proves project loading AND packaging's
+    // own runtime code (including its on-disk messages/ loading) both ran.
+    expect: /Must run connect\(\) before exec\(\)/,
+  },
+  'build-turbo-aggregate': {
+    required: [],
+    // This action aggregates a prior `turbo run --summarize` output; it
+    // doesn't call packaging. Reaching this error (instead of "not a valid
+    // SFDX project") proves project loading got past the initial check and
+    // the action moved on to looking for turbo's run summary.
+    expect: /No turbo run summary found/,
+  },
+  'build-validation': {
+    required: ['build-result'],
+    // build-result input name has hyphen, becomes INPUT_BUILD-RESULT env var.
+    // A well-formed (not empty-object) build-result is required here: an
+    // empty `{}` crashes with a bare TypeError (`state.packages` is
+    // undefined) before any real validation-resolution code runs, which is
+    // exactly the kind of infrastructure-looking failure this test must not
+    // let pass.
+    buildResultValue: JSON.stringify({
+      packages: [{
+        packageName: 'test-pkg',
+        pendingValidation: {
+          operationType: 'package-version-request',
+          packageName: 'test-pkg',
+          packageVersionRequestId: '09Sxxxxxxxxxxxxxxx',
+          devhub: 'placeholder-dh-user',
+        },
+      }],
+    }),
+    // Reaching a per-package validation failure (rather than "not a valid
+    // SFDX project") proves project loading and the ValidationResolver's own
+    // code path both ran.
+    expect: /Validation failed for: test-pkg/,
+  },
+  'clean-pool': {
+    required: ['devhub-username', 'pool-tag'],
+    // Doesn't touch the project directory at all (pool orgs are looked up by
+    // tag against the DevHub) — the fixture makes no difference here, but is
+    // seeded anyway for consistency. Reaching a DevHub-auth error proves the
+    // action's own connection code ran.
+    expect: /No authorization information found/,
+  },
+  'deploy': {
+    required: ['target-org', 'packages'],
+    // Resolves `packages` from the npm registry regardless of the local
+    // project contents, so the fixture doesn't change this action's error;
+    // seeded anyway for consistency.
+    expect: /npm error 404|not found in the npm registry/i,
+  },
+  'fill-pool': {
+    required: ['devhub-username', 'pool-tag'],
+    // With the fixture's sfpm.config.ts present, this action logs "Loaded
+    // SFPM config with 0 hook set(s)" before connecting to the DevHub —
+    // proof that jiti loaded the config through the bundle's own resolution
+    // — then reaches the same DevHub-auth error as without the fixture.
+    expect: /No authorization information found/,
+  },
+  'install': {
+    required: ['target-org', 'packages'],
+    // Resolves `packages` from the npm registry regardless of the local
+    // project contents; seeded anyway for consistency.
+    expect: /npm error 404|not found in the npm registry/i,
+  },
+  'validate-pr': {
+    required: [],
+    // Needs a `pull_request` GitHub event payload, which nothing in the local
+    // project fixture can provide, so the fixture doesn't change this
+    // action's error; seeded anyway for consistency.
+    expect: /Could not determine PR number/,
+  },
+};
+
+/**
+ * Scan packages/actions for action directories and derive ACTIONS list from action.yml.
+ * Returns array of {name, entry, entryPath, required, expect}.
+ */
+function discoverActions() {
+  const yaml = require(require.resolve('yaml', {paths: [actionsDir]}));
+  const actions = [];
+
+  const actionDirs = readdirSync(actionsDir)
+    .filter(d => {
+      try {
+        return statSync(join(actionsDir, d)).isDirectory() &&
+               existsSync(join(actionsDir, d, 'action.yml'));
+      } catch {
+        return false;
+      }
+    })
+    .sort();
+
+  for (const dir of actionDirs) {
+    const actionYmlPath = join(actionsDir, dir, 'action.yml');
+    const manifest = yaml.parse(readFileSync(actionYmlPath, 'utf8'));
+
+    if (!manifest.runs || !manifest.runs.main) {
+      console.error(`${dir}: no runs.main found in action.yml`);
+      continue;
+    }
+
+    // Resolve runs.main relative to the action directory
+    const entryPath = resolve(join(actionsDir, dir), manifest.runs.main);
+    if (!existsSync(entryPath)) {
+      console.error(`${dir}: resolved entry not found: ${entryPath}`);
+      continue;
+    }
+
+    const config = ACTION_CONFIG[dir];
+    if (!config) {
+      throw new Error(`No ACTION_CONFIG entry for discovered action: ${dir}`);
+    }
+
+    // Extract the entry filename from runs.main for reporting
+    const entry = manifest.runs.main.split('/').pop();
+
+    actions.push({
+      name: dir,
+      entry,
+      entryPath,
+      required: config.required,
+      expect: config.expect,
+      buildResultValue: config.buildResultValue,
+    });
+  }
+
+  return actions;
+}
+
+const ACTIONS = discoverActions();
 
 /**
  * Libraries to check for real, on-disk message loading at runtime.
@@ -50,8 +199,15 @@ const ACTIONS = [
  * Salesforce's own publish time, so core never reads a `messages/` directory
  * from disk at runtime. Exclude comment lines and known non-runtime files so
  * this check doesn't cry wolf.
+ *
+ * Patterns checked: importMessagesDirectory (CJS/ESM direct), importMessagesDirectoryFromMetaUrl (ESM via import.meta.url),
+ * and importMessageFile (ESM alternate API).
  */
-const MESSAGES_REAL_CALL = /\.importMessagesDirectory\(\s*(?:__dirname|path\.dirname\()/;
+const MESSAGES_PATTERNS = [
+  /\.importMessagesDirectory\(\s*(?:__dirname|path\.dirname\()/,
+  /\.importMessagesDirectoryFromMetaUrl\(/,
+  /\.importMessageFile\(/,
+];
 const MESSAGES_LIBRARIES = [
   '@salesforce/packaging',
   '@salesforce/source-deploy-retrieve',
@@ -60,6 +216,8 @@ const MESSAGES_LIBRARIES = [
 ];
 
 const results = [];
+let hasMessageFailures = false;
+const messageFailureReasons = [];
 
 // ============================================================================
 // Test each action entry
@@ -68,15 +226,10 @@ const results = [];
 console.log('Starting smoke test for bundled GitHub Actions...\n');
 
 for (const action of ACTIONS) {
-  const entryPath = join(bundleDir, action.entry);
-
-  if (!existsSync(entryPath)) {
-    results.push({name: action.name, status: 'FAIL', reason: `Bundle entry not found: ${entryPath}`});
-    continue;
-  }
-
-  // Create a temp directory for this action's run.
+  // Create a temp directory for this action's run, seeded with the minimal
+  // SFDX project fixture so actions get past initial project loading.
   const tempDir = mkdtempSync(join(tmpdir(), 'sfpm-smoke-'));
+  cpSync(fixtureDir, tempDir, {recursive: true});
 
   try {
     // Create temp files for @actions/core output.
@@ -95,18 +248,23 @@ for (const action of ACTIONS) {
 
     // Add minimal required inputs.
     for (const inputName of action.required) {
-      const envName = `INPUT_${inputName.toUpperCase()}`;
-      // Provide placeholder values; they'll likely fail for legit domain reasons.
+      // @actions/core converts input name: spaces -> underscores, hyphens preserved
+      const envName = `INPUT_${inputName.replace(/ /g, '_').toUpperCase()}`;
+      
       if (inputName === 'devhub-username') env[envName] = 'placeholder-dh-user';
       else if (inputName === 'pool-tag') env[envName] = 'placeholder-pool';
       else if (inputName === 'target-org') env[envName] = 'placeholder-target';
       else if (inputName === 'packages') env[envName] = 'placeholder-pkg';
-      else if (inputName === 'build-result') env[envName] = '{}';
-      else env[envName] = `placeholder-${inputName}`;
+      else if (inputName === 'build-result') {
+        // Use well-formed build-result with proper structure
+        env[envName] = action.buildResultValue || '{"packages":[]}';
+      } else {
+        env[envName] = `placeholder-${inputName}`;
+      }
     }
 
     // Run the action entry.
-    const result = spawnSync('node', [entryPath], {
+    const result = spawnSync('node', [action.entryPath], {
       cwd: tempDir,
       env,
       encoding: 'utf8',
@@ -118,15 +276,15 @@ for (const action of ACTIONS) {
     const stderr = result.stderr || '';
     const combined = stdout + '\n' + stderr;
 
-    // Check for infrastructure/module errors.
+    // Check for infrastructure/module errors (bad patterns).
     const badPatterns = [
       /ERR_MODULE_NOT_FOUND/,
       /Cannot find module/i,
-      /cannot find|no such/i, // Combined check for missing-file errors
-      /messages?.*(?:missing|cannot find|no such|not found)/i, // Messages loading failure
-      /(?:missing|cannot find|no such|not found).*messages?/i, // Reversed order
-      /worker.*ERR_|ERR_.*worker/i, // pino worker-thread errors
-      /Bare specifier/i, // Module resolution error specific to dynamic import
+      /cannot find|no such/i,
+      /messages?.*(?:missing|cannot find|no such|not found)/i,
+      /(?:missing|cannot find|no such|not found).*messages?/i,
+      /worker.*ERR_|ERR_.*worker/i,
+      /Bare specifier/i,
     ];
 
     let hasBadError = false;
@@ -143,13 +301,21 @@ for (const action of ACTIONS) {
     }
 
     if (!hasBadError) {
-      // Exit code and overall result: domain errors (non-zero exit) are OK.
-      results.push({
-        name: action.name,
-        status: 'PASS',
-        exitCode: result.status,
-        reason: result.status === 0 ? 'Clean exit' : `Domain error (exit ${result.status})`,
-      });
+      // Task 3.1: Check if the expect regex matches the output
+      if (action.expect.test(combined)) {
+        results.push({
+          name: action.name,
+          status: 'PASS',
+          exitCode: result.status,
+          reason: `Domain error (exit ${result.status})`,
+        });
+      } else {
+        results.push({
+          name: action.name,
+          status: 'FAIL',
+          reason: `Expected error pattern not found. Got: ${combined.slice(0, 200)}`,
+        });
+      }
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -173,49 +339,17 @@ console.log('\nChecking Messages-loading patterns in bundled libraries...\n');
 const messagesFindings = [];
 
 /**
- * Search a directory recursively for files matching a pattern.
- * Returns true if the pattern is found.
+ * Search a directory recursively for a real (non-comment) call matching any
+ * of the message patterns, skipping known non-runtime files. Returns true on the first hit.
  */
-function searchForPattern(dir, patternRegex, ext = /\.(js|cjs)$/) {
-  try {
-    const items = readdirSync(dir);
-    for (const item of items) {
-      const fullPath = join(dir, item);
-      const stat = statSync(fullPath);
-
-      if (stat.isDirectory() && !item.includes('node_modules')) {
-        if (searchForPattern(fullPath, patternRegex, ext)) {
-          return true;
-        }
-      } else if (stat.isFile() && ext.test(item)) {
-        try {
-          const content = readFileSync(fullPath, 'utf8');
-          if (patternRegex.test(content)) {
-            return true;
-          }
-        } catch (e) {
-          // Skip unreadable files
-        }
-      }
-    }
-  } catch (e) {
-    // Ignore directory read errors
-  }
-  return false;
-}
-
-/**
- * Search a directory recursively for a real (non-comment) call matching
- * `pattern`, skipping known non-runtime files. Returns true on the first hit.
- */
-function searchForRealCall(dir, pattern, ext = /\.(js|cjs)$/) {
+function searchForRealMessageCall(dir, patterns, ext = /\.(js|cjs)$/) {
   try {
     for (const item of readdirSync(dir)) {
       const fullPath = join(dir, item);
       const stat = statSync(fullPath);
 
       if (stat.isDirectory() && !item.includes('node_modules')) {
-        if (searchForRealCall(fullPath, pattern, ext)) return true;
+        if (searchForRealMessageCall(fullPath, patterns, ext)) return true;
       } else if (
         stat.isFile()
         && ext.test(item)
@@ -233,7 +367,9 @@ function searchForRealCall(dir, pattern, ext = /\.(js|cjs)$/) {
             const trimmed = line.trim();
             // Skip comment lines (docstring examples aren't real calls).
             if (trimmed.startsWith('*') || trimmed.startsWith('//')) continue;
-            if (pattern.test(line)) return true;
+            for (const pattern of patterns) {
+              if (pattern.test(line)) return true;
+            }
           }
         } catch {
           // Skip unreadable files.
@@ -246,61 +382,124 @@ function searchForRealCall(dir, pattern, ext = /\.(js|cjs)$/) {
   return false;
 }
 
-for (const libName of MESSAGES_LIBRARIES) {
-  // Find the actual installed package in pnpm's virtual store.
-  const pnpmDir = join(repoRoot, 'node_modules', '.pnpm');
-  let found = false;
-
+/**
+ * Task 3.4: Derive the set of bundled library directories from the metafile
+ * instead of searching by package name in the pnpm store.
+ */
+function getBundledLibraryDirectories() {
+  const metafilePath = join(actionsDir, 'bundle-metafile.json');
+  let metafile;
   try {
-    // pnpm stores packages like @salesforce+core@8.31.0_..., so search for the pattern.
-    const items = readdirSync(pnpmDir);
-    const baseLibName = libName.split('/')[1]; // Extract 'core' from '@salesforce/core'
+    metafile = JSON.parse(readFileSync(metafilePath, 'utf8'));
+  } catch {
+    return new Map();
+  }
 
-    for (const item of items) {
-      if (item.includes(baseLibName)) {
-        const libSearchPath = join(pnpmDir, item, 'node_modules', libName);
-        if (existsSync(libSearchPath)) {
-          const libDir = join(libSearchPath, 'lib');
-          if (existsSync(libDir) && searchForRealCall(libDir, MESSAGES_REAL_CALL)) {
-            found = true;
-            messagesFindings.push(`${libName}: FOUND (real \`.importMessagesDirectory(__dirname)\`-style call at runtime — reads messages/ from disk)`);
-            break;
+  const libDirs = new Map(); // libName -> Set of absolute lib/ directory paths
+
+  if (!metafile.inputs) return libDirs;
+
+  for (const inputPath of Object.keys(metafile.inputs)) {
+    // inputPath is relative to actionsDir, e.g. '../../node_modules/.pnpm/@salesforce+core@8.31.0_.../node_modules/@salesforce/core/lib/file.js'
+    const absInputPath = resolve(actionsDir, inputPath);
+
+    for (const libName of MESSAGES_LIBRARIES) {
+      // Match against the exact package name as a path segment (e.g.
+      // '/@salesforce/core/'), not a substring, so 'core' can't match an
+      // unrelated package name that merely contains it.
+      if (absInputPath.includes(`/${libName}/`)) {
+        const libDir = absInputPath.slice(0, absInputPath.indexOf('/lib/') + '/lib'.length);
+        if (existsSync(libDir)) {
+          if (!libDirs.has(libName)) {
+            libDirs.set(libName, new Set());
           }
+          libDirs.get(libName).add(libDir);
         }
       }
     }
+  }
 
-    if (!found) {
+  return libDirs;
+}
+
+const bundledLibDirs = getBundledLibraryDirectories();
+
+// Task 3.2 and 3.4: Check messages loading and fail if expectations aren't met
+for (const libName of MESSAGES_LIBRARIES) {
+  const libDirs = bundledLibDirs.get(libName);
+  let found = false;
+
+  if (!libDirs || libDirs.size === 0) {
+    // Library not bundled; that's OK if it's not packaging
+    if (libName === '@salesforce/packaging') {
+      hasMessageFailures = true;
+      messageFailureReasons.push(`CRITICAL: @salesforce/packaging not found in bundle, but messages/ directory is shipped. Detection may be broken.`);
+    } else {
+      messagesFindings.push(`${libName}: not bundled`);
+    }
+    continue;
+  }
+
+  // Check each bundled directory of this library
+  for (const libDir of libDirs) {
+    if (searchForRealMessageCall(libDir, MESSAGES_PATTERNS)) {
+      found = true;
+      break;
+    }
+  }
+
+  if (found) {
+    // Library loads messages at runtime
+    if (libName === '@salesforce/packaging') {
+      // This is expected and required
+      messagesFindings.push(`${libName}: FOUND (real messages loading at runtime — reads messages/ from disk)`);
+    } else {
+      // Any OTHER library loading messages is a problem
+      hasMessageFailures = true;
+      messageFailureReasons.push(`${libName}: FOUND loading messages at runtime, but only @salesforce/packaging should. The shipped messages/ directory won't account for this.`);
+    }
+  } else {
+    // Library does not load messages at runtime
+    if (libName === '@salesforce/packaging') {
+      hasMessageFailures = true;
+      messageFailureReasons.push(`@salesforce/packaging: NOT FOUND loading messages at runtime, but messages/ directory is shipped. Something may be wrong with detection.`);
+    } else {
       messagesFindings.push(`${libName}: no real on-disk messages loading at runtime (messages are pre-inlined or absent)`);
     }
-  } catch (error) {
-    messagesFindings.push(`${libName}: check skipped (${String(error).slice(0, 40)})`);
   }
 }
 
 // ============================================================================
-// Check jiti loading with a trivial sfpm.config.ts
+// Check jiti loading with a temporary probe file (task 7)
 // ============================================================================
 
 console.log('\nChecking jiti/sfpm.config.ts loading...\n');
 
 let jitiTestResult = 'UNKNOWN';
 const jitiTempDir = mkdtempSync(join(tmpdir(), 'sfpm-jiti-'));
+const jitiProbeDir = join(bundleDir, 'chunks');
+const jitiProbeFile = join(jitiProbeDir, `jiti-probe-${randomBytes(8).toString('hex')}.mjs`);
 
 try {
+  // Ensure chunks directory exists (it always does after a real build, since
+  // this bundle has multiple entry points and esbuild code-splitting always
+  // produces bundle/chunks/ — this is just a defensive fallback).
+  mkdirSync(jitiProbeDir, {recursive: true});
+
   // Write a minimal sfpm.config.ts
   const configContent = 'export default {};';
-  writeFileSync(join(jitiTempDir, 'sfpm.config.ts'), configContent);
+  const configPath = join(jitiTempDir, 'sfpm.config.ts');
+  writeFileSync(configPath, configContent);
 
-  // Create a test script that imports jiti from the bundle and loads the config.
-  // jiti is available as an external at bundle/node_modules/jiti/
-  const testScript = `
+  // Create a probe file that imports jiti as the bundled code would (via bare specifier resolution)
+  // The probe lives in bundle/chunks/, so `import('jiti')` resolves to bundle/chunks/../node_modules/jiti
+  const probeScript = `
+import createJiti from 'jiti';
+
 (async () => {
   try {
-    // Import jiti from the bundled copy
-    const {default: createJiti} = await import('${bundleDir}/node_modules/jiti/lib/jiti.cjs');
     const jiti = createJiti(import.meta.url, {});
-    const config = await jiti.import('./sfpm.config.ts');
+    const config = await jiti.import('${configPath}');
     console.log('SUCCESS: jiti loaded config');
     process.exit(0);
   } catch (error) {
@@ -310,10 +509,10 @@ try {
 })();
 `;
 
-  writeFileSync(join(jitiTempDir, 'test-jiti.mjs'), testScript);
+  writeFileSync(jitiProbeFile, probeScript);
 
-  const jitiTest = spawnSync('node', [join(jitiTempDir, 'test-jiti.mjs')], {
-    cwd: jitiTempDir,
+  const jitiTest = spawnSync('node', [jitiProbeFile], {
+    cwd: jitiProbeDir,  // Run from probe's directory so resolution works
     env: process.env,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -332,6 +531,14 @@ try {
 } catch (error) {
   jitiTestResult = `FAIL: ${String(error).slice(0, 100)}`;
 } finally {
+  // Always clean up the probe file so it never reaches the tag commit.
+  // The release workflow runs this smoke test BEFORE `git add -f packages/actions/bundle`,
+  // so a leftover probe would otherwise get accidentally committed.
+  try {
+    rmSync(jitiProbeFile, {force: true});
+  } catch {
+    // Ignore cleanup errors
+  }
   rmSync(jitiTempDir, {recursive: true, force: true});
 }
 
@@ -350,6 +557,9 @@ console.log('\n--- Messages Loading ---');
 for (const finding of messagesFindings) {
   console.log(`  ${finding}`);
 }
+for (const reason of messageFailureReasons) {
+  console.log(`  ✗ ${reason}`);
+}
 
 console.log('\n--- jiti/sfpm.config.ts Loading ---');
 console.log(`  ${jitiTestResult}`);
@@ -360,8 +570,11 @@ const hasJitiFailure = jitiTestResult.startsWith('FAIL');
 if (hasFailures) {
   console.log('\n❌ SMOKE TEST FAILED: Some entries have infrastructure errors.');
   process.exitCode = 1;
+} else if (hasMessageFailures) {
+  console.log('\n❌ SMOKE TEST FAILED: Messages loading expectations not met.');
+  process.exitCode = 1;
 } else if (hasJitiFailure) {
-  console.log('\n⚠️  SMOKE TEST PARTIAL: All bundle entries passed, but jiti loading may have issues.');
+  console.log('\n❌ SMOKE TEST FAILED: jiti loading check failed.');
   process.exitCode = 1;
 } else {
   console.log('\n✅ SMOKE TEST PASSED: All entries and checks passed.');

@@ -33,16 +33,50 @@ const require = createRequire(import.meta.url + '/');
 // it must be resolved relative to that package rather than imported directly.
 const esbuild = await import(require.resolve('esbuild', {paths: [actionsDir]}));
 
-const ENTRY_POINTS = [
-  'src/build-main.ts',
-  'src/build-turbo-aggregate-main.ts',
-  'src/build-validation-main.ts',
-  'src/clean-pool-main.ts',
-  'src/deploy-main.ts',
-  'src/fill-pool-main.ts',
-  'src/install-main.ts',
-  'src/validate-main.ts',
-];
+// yaml is a devDependency of packages/actions; resolve it the same way
+const yamlModule = await import(require.resolve('yaml', {paths: [actionsDir]}));
+const {parse: parseYaml} = yamlModule;
+
+/**
+ * Derive ENTRY_POINTS from action.yml files instead of hardcoding.
+ * Scans packages/actions directories for action.yml, reads runs.main, and maps to src/*-main.ts.
+ */
+function deriveEntryPoints() {
+  const entries = [];
+  const actionDirs = readdirSync(actionsDir)
+    .filter(name => {
+      const fullPath = join(actionsDir, name);
+      return statSync(fullPath).isDirectory() && existsSync(join(fullPath, 'action.yml'));
+    })
+    .sort();
+
+  for (const actionDir of actionDirs) {
+    const actionYmlPath = join(actionsDir, actionDir, 'action.yml');
+    const ymlContent = readFileSync(actionYmlPath, 'utf8');
+    const parsed = parseYaml(ymlContent);
+    const mainEntry = parsed?.runs?.main;
+
+    if (!mainEntry) {
+      throw new Error(`action.yml at ${actionYmlPath} missing runs.main`);
+    }
+
+    // Expected format: ../bundle/<name>.mjs -> map to src/<name>.ts
+    const match = mainEntry.match(/^\.\.\/bundle\/(.+)\.mjs$/);
+    if (!match) {
+      throw new Error(
+        `action.yml at ${actionYmlPath} has unexpected runs.main format: ${mainEntry}. ` +
+        `Expected format: ../bundle/<name>.mjs`
+      );
+    }
+
+    const name = match[1];
+    entries.push(`src/${name}.ts`);
+  }
+
+  return entries;
+}
+
+const ENTRY_POINTS = deriveEntryPoints();
 
 /**
  * Required so bundled CJS deps see a working require()/__dirname/__filename
@@ -138,6 +172,7 @@ const buildResult = await esbuild.build({
  * bundle/messages/<package>/ subdirectory, not attempted here since it isn't needed
  * today.
  */
+let metafilePackagingVersion = null;
 if (buildResult.metafile && buildResult.metafile.inputs) {
   const packagingVersions = new Set();
   for (const inputPath of Object.keys(buildResult.metafile.inputs)) {
@@ -155,6 +190,14 @@ if (buildResult.metafile && buildResult.metafile.inputs) {
       `If two versions are truly needed, implement per-library message subdirectories via an esbuild plugin.`
     );
   }
+
+  // If exactly one version was found, save it for later verification
+  if (packagingVersions.size === 1) {
+    let version = Array.from(packagingVersions)[0];
+    // pnpm stores packages with peer-dep suffixes like "4.18.12_supports-color@8.1.1"
+    // Extract just the base version before the first underscore
+    metafilePackagingVersion = version.split('_')[0];
+  }
 }
 
 // @salesforce/packaging reads its own message bundles from a `messages/`
@@ -166,6 +209,20 @@ const packagingPkgJson = require.resolve('@salesforce/packaging/package.json', {
 const packagingDir = dirname(packagingPkgJson);
 safeCopyDir('@salesforce/packaging', join(packagingDir, 'messages'), join(bundleDir, 'messages'));
 cpSync(packagingPkgJson, join(bundleDir, 'package.json'));
+
+// Task 4: Verify that the bundled @salesforce/packaging version matches the copied package.json
+if (metafilePackagingVersion) {
+  const packagingPkgData = JSON.parse(readFileSync(packagingPkgJson, 'utf8'));
+  const packageJsonVersion = packagingPkgData.version;
+  if (packageJsonVersion !== metafilePackagingVersion) {
+    throw new Error(
+      `@salesforce/packaging version mismatch: ` +
+      `bundled version (from metafile: ${metafilePackagingVersion}) ` +
+      `does not match the package.json messages are copied from (${packageJsonVersion}). ` +
+      `This suggests a dependency resolution issue.`
+    );
+  }
+}
 
 // Real jiti install for the `external: ['jiti']` import above. jiti is a
 // dependency of @b64hub/sfpm-core, not of packages/actions directly.
@@ -302,16 +359,49 @@ if (buildResult.metafile && buildResult.metafile.inputs) {
     '',
   ];
 
+  // Helper to look for and read NOTICE files
+  function findAndReadNoticeFile(pkgRoot) {
+    for (const noticeFilename of ['NOTICE', 'NOTICE.txt']) {
+      const noticeCandidate = join(pkgRoot, noticeFilename);
+      if (existsSync(noticeCandidate)) {
+        try {
+          return readFileSync(noticeCandidate, 'utf8');
+        } catch {
+          // Skip unreadable NOTICE files
+        }
+      }
+    }
+    return null;
+  }
+
   if (packages.size > 0) {
     for (const {name, version, licenseText} of packages.values()) {
       noticesLines.push(`## ${name}@${version}`);
       noticesLines.push('');
-      if (typeof licenseText === 'string' && licenseText.length > 5000) {
-        noticesLines.push(licenseText.slice(0, 5000));
-        noticesLines.push('[... license text truncated ...]');
-      } else {
-        noticesLines.push(licenseText);
+      // Task 8: Remove truncation, always write full license text
+      noticesLines.push(licenseText);
+
+      // Task 8: Also append NOTICE file if present (required for Apache-2.0)
+      // Resolve the package root from the metafile inputs to find NOTICE file
+      for (const inputPath of Object.keys(buildResult.metafile.inputs)) {
+        const absInputPath = resolve(actionsDir, inputPath);
+        const lastNodeModulesIdx = absInputPath.lastIndexOf('/node_modules/');
+        if (lastNodeModulesIdx === -1) continue;
+        const afterNodeModules = absInputPath.slice(lastNodeModulesIdx + '/node_modules/'.length);
+        const pkgMatch = afterNodeModules.match(/^(@[^/]+\/[^/]+|[^/@][^/]*)/);
+        if (!pkgMatch) continue;
+        const pkgName = pkgMatch[1];
+        if (pkgName !== name) continue;
+        const pkgRoot = absInputPath.slice(0, lastNodeModulesIdx) + '/node_modules/' + pkgName;
+        const noticeContent = findAndReadNoticeFile(pkgRoot);
+        if (noticeContent) {
+          noticesLines.push('');
+          noticesLines.push('NOTICE:');
+          noticesLines.push(noticeContent);
+        }
+        break;
       }
+
       noticesLines.push('');
       noticesLines.push('---');
       noticesLines.push('');
@@ -320,11 +410,46 @@ if (buildResult.metafile && buildResult.metafile.inputs) {
     noticesLines.push('(No third-party packages detected in metafile. This may indicate all code is internal or workspace-local.)');
   }
 
+  // Task 8: Add jiti entry (bundled as external, not in metafile)
+  noticesLines.push(`## jiti@${jitiPkgJson.version}`);
+  noticesLines.push('');
+
+  let jitiLicenseText = null;
+  for (const filename of ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'license', 'license.md']) {
+    const candidate = join(jitiPkgRoot, filename);
+    if (existsSync(candidate)) {
+      try {
+        jitiLicenseText = readFileSync(candidate, 'utf8');
+        break;
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  }
+
+  if (!jitiLicenseText) {
+    jitiLicenseText = jitiPkgJson.license || '(no license field in package.json)';
+  }
+
+  noticesLines.push(jitiLicenseText);
+
+  // Also check for NOTICE/NOTICE.txt file for jiti
+  const jitiNoticeContent = findAndReadNoticeFile(jitiPkgRoot);
+  if (jitiNoticeContent) {
+    noticesLines.push('');
+    noticesLines.push('NOTICE:');
+    noticesLines.push(jitiNoticeContent);
+  }
+
+  noticesLines.push('');
+  noticesLines.push('---');
+  noticesLines.push('');
+
   // Actually write the notices file:
   mkdirSync(dirname(noticesPath), {recursive: true});
   writeFileSync(noticesPath, noticesLines.join('\n') + '\n', 'utf8');
 
-  console.log(`Wrote third-party notices: ${noticesPath} (${packages.size} packages)`);
+  console.log(`Wrote third-party notices: ${noticesPath} (${packages.size} packages + jiti)`);
 }
 
 // Write metafile to a file outside the bundle for task 4.2 (license notices)
