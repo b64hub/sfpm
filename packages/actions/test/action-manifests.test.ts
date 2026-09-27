@@ -11,6 +11,11 @@ import {parse} from 'yaml';
  * Inputs arrive as `INPUT_*` automatically, so a renamed input silently reads
  * empty instead of failing loudly — these tests tie each manifest to the code
  * behind it.
+ *
+ * The action list is derived from `scripts/lib/action-manifests.mjs`, which
+ * reads `action.yml` files via YAML parsing. This test maintains a separate
+ * hand-maintained `dispatcherActions` map so the tests can cross-check the
+ * manifests against the intended source files independently.
  */
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,8 +25,7 @@ const srcDir = join(packageRoot, 'src');
  * Action name -> compiled entrypoint. A fixed map, independent of the
  * action.yml manifests themselves so the tests below actually cross-check
  * something (deriving it from the manifests would be circular). Keep this in
- * sync with `scripts/build-action-bundle.mjs`'s `ENTRY_POINTS` and
- * `scripts/smoke-test-action-bundle.mjs`'s `ACTIONS` list.
+ * sync with `scripts/lib/action-manifests.mjs`'s derived action list.
  */
 const dispatcherActions = (): Record<string, string> => ({
   'build': 'build-main.js',
@@ -104,7 +108,7 @@ describe('action manifests', () => {
       const bundleEntry = actions[dir].replace(/\.js$/, '.mjs');
       expect(manifest.runs.main).toBe(`../bundle/${bundleEntry}`);
       expect(manifest.runs.steps).toBeUndefined();
-      // No install step left at runtime — the bundle is already committed, unpinned.
+      // The bundle exists only in the release tag commit, never on main.
       expect(manifest.runs.main).not.toMatch(/\d+\.\d+\.\d+/);
     });
 

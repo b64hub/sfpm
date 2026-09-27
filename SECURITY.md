@@ -53,6 +53,12 @@ through the DevHub. Installation keys and auth URLs are registered with
 vendored node_modules install). It exists only in the commit that a release tag
 points to (a detached-HEAD commit created by `.github/workflows/release.yml`,
 whose only content change vs its `main` parent is `packages/actions/bundle/**`).
+Release tag commits are intentionally detached — created via `git checkout --detach`
+and never on any branch — so GitHub's web UI shows a
+"This commit does not belong to any branch on this repository" banner on them.
+This is expected and intentional. Only `.github/workflows/release.yml` ever creates
+these commits, and each one's parent is always a real commit on `main`. No tag
+ruleset currently restricts `v*` tag creation.
 The bundle never exists on `main`. It includes two small shim assets that
 are necessary for correct behavior: `@salesforce/packaging`'s `messages/`
 directory (read at runtime) and a real copy of the `jiti` package (used
