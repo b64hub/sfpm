@@ -115,7 +115,10 @@ const ACTION_CONFIG = {
       GITHUB_EVENT_NAME: 'pull_request',
       GITHUB_EVENT_PATH: join(tempDir, '.github-event.json'),
     }),
-    expect: /Could not determine PR number|Validation failed|no such|not found/i,
+    // Reaching this (rather than "Could not determine PR number") proves PR-event
+    // parsing, project loading, git diffing, and the local build/dependency-analysis
+    // pipeline all ran, down to a real per-package validation failure.
+    expect: /Validation failed for: smoke-test-pkg/,
     required: [],
   },
 };
@@ -138,13 +141,10 @@ const MESSAGES_PATTERNS = [
   /\.importMessageFile\(/,
 ];
 
-/**
- * Files that define the Messages API itself (loader implementation, not consumer
- * calls): excluded from the Messages-loading scan. Core's messages.js defines
- * importMessageFile and related methods; messageTransformer.js is a build-time
- * codemod tool (never imported at runtime).
- */
-const EXCLUDED_FILES = new Set(['messages.js', 'messageTransformer.js']);
+// Loader implementation inside @salesforce/core (the Messages class itself and
+// a build-time codemod), not consumer calls. Scoped to core so a same-named
+// file in another library is still scanned.
+const CORE_EXCLUDED_FILES = ['messages.js', 'messageTransformer.js'];
 
 // ============================================================================
 // Phases: Action Checks, Messages Check, jiti Check
@@ -378,7 +378,7 @@ function runMessagesCheck(metafilePath) {
     return [{details: 'No inputs in metafile', name: 'Messages', ok: false}];
   }
 
-  const libDirs = new Map(); // libName -> Set of {libDir, version}
+  const libDirs = new Map(); // libName -> Set of libDir path strings
 
   for (const inputPath of Object.keys(metafile.inputs)) {
     const resolved = resolvePackage(resolve(actionsDir, inputPath));
@@ -390,7 +390,7 @@ function runMessagesCheck(metafilePath) {
           libDirs.set(libName, new Set());
         }
 
-        libDirs.get(libName).add({libDir: join(resolved.pkgRoot, 'lib'), version: resolved.version});
+        libDirs.get(libName).add(join(resolved.pkgRoot, 'lib'));
       }
     }
   }
@@ -413,8 +413,14 @@ function runMessagesCheck(metafilePath) {
     }
 
     let found = false;
-    for (const {libDir} of entries) {
-      if (searchForRealMessageCall(libDir)) {
+    for (const libDir of entries) {
+      // Only @salesforce/core's own loader-implementation files are excluded,
+      // and only when scanning core itself — a same-named file in another
+      // library (packaging, SDR, apex-node) is still scanned in full.
+      const excluded = libName === '@salesforce/core'
+        ? new Set(CORE_EXCLUDED_FILES.map(file => join(libDir, file)))
+        : new Set();
+      if (searchForRealMessageCall(libDir, excluded)) {
         found = true;
         break;
       }
@@ -435,8 +441,7 @@ function runMessagesCheck(metafilePath) {
     }
   }
 
-  const excludedFilesList = [...EXCLUDED_FILES].join(', ');
-  findings.push(`Excluded files (loader internals, not runtime calls): ${excludedFilesList}`);
+  findings.push(`Excluded (loader internals): ${CORE_EXCLUDED_FILES.map(file => `@salesforce/core/lib/${file}`).join(', ')}`);
 
   return [{
     details: findings.join('; '),
@@ -583,15 +588,15 @@ function normalizeOutput(output) {
  * Search a library directory recursively for a real (non-comment, non-excluded)
  * Messages-loading call. Returns true on first match.
  */
-function searchForRealMessageCall(dir) {
+function searchForRealMessageCall(dir, excludedPaths = new Set()) {
   try {
     for (const item of readdirSync(dir)) {
       const fullPath = join(dir, item);
       const stat = statSync(fullPath);
 
       if (stat.isDirectory() && !item.includes('node_modules')) {
-        if (searchForRealMessageCall(fullPath)) return true;
-      } else if (stat.isFile() && /\.(js|cjs)$/.test(item) && !EXCLUDED_FILES.has(item)) {
+        if (searchForRealMessageCall(fullPath, excludedPaths)) return true;
+      } else if (stat.isFile() && /\.(js|cjs)$/.test(item) && !excludedPaths.has(fullPath)) {
         const content = readTextIfExists(fullPath);
         if (!content) continue;
 
