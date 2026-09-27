@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Ensure action bundle is not tracked
         shell: bash
         run: test -z "$(git ls-files packages/actions/bundle)"
@@ -33,7 +33,7 @@ jobs:
   bundle-smoke-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Enable pnpm
         run: corepack enable
       - uses: actions/setup-node@v4
