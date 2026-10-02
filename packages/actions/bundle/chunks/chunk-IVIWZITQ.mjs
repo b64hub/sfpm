@@ -1,0 +1,376 @@
+import {createRequire as ___createRequire} from 'node:module';
+import {fileURLToPath as ___fileURLToPath} from 'node:url';
+import {dirname as ___dirname_fn} from 'node:path';
+const require = ___createRequire(import.meta.url);
+const __filename = ___fileURLToPath(import.meta.url);
+const __dirname = ___dirname_fn(__filename);
+process.env.SF_DISABLE_LOG_FILE ??= 'true';
+import {
+  __toESM,
+  require_core
+} from "./chunk-YY7I435Q.mjs";
+
+// src/progress-renderer.ts
+var core = __toESM(require_core(), 1);
+var ActionsProgressRenderer = class {
+  events = [];
+  logger;
+  packages = [];
+  startTime;
+  constructor(logger) {
+    this.logger = logger;
+  }
+  // --------------------------------------------------------------------------
+  // Attach to emitters
+  // --------------------------------------------------------------------------
+  /**
+   * Attach to a build orchestrator to render build progress.
+   */
+  attachToBuildOrchestrator(buildBus, orchestrationBus) {
+    orchestrationBus.on("start", (data) => {
+      this.startTime = /* @__PURE__ */ new Date();
+      this.recordEvent("orchestration:start", data);
+      this.logger.info(`Starting build of ${data.totalPackages} package(s)`);
+    });
+    orchestrationBus.on("level:start", (data) => {
+      this.recordEvent("orchestration:level:start", data);
+      const names = data.packages ?? [];
+      this.logger.info(`Level ${data.level}: ${names.join(", ")}`);
+    });
+    buildBus.on("start", (data) => {
+      this.recordEvent("build:start", data);
+      this.bufferMessage(data.packageName, "info", `Building: ${data.packageName} (${data.packageType ?? "unknown"})`);
+    });
+    buildBus.on("complete", (data) => {
+      this.recordEvent("build:complete", data);
+      this.bufferMessage(data.packageName, "info", `Built: ${data.packageName} v${data.version ?? "?"}`);
+    });
+    buildBus.on("skip", (data) => {
+      this.recordEvent("build:skipped", data);
+      this.bufferMessage(data.packageName, "info", `Skipped: ${data.packageName} (${data.reason ?? "no changes"})`);
+    });
+    buildBus.on("error", (data) => {
+      this.recordEvent("build:error", data);
+      this.bufferMessage(data.packageName, "error", `Failed: ${data.packageName} \u2014 ${data.error ?? "unknown error"}`);
+    });
+    buildBus.on("stage:start", (data) => {
+      this.recordEvent("stage:start", data);
+      this.bufferMessage(data.packageName, "debug", "Staging package...");
+    });
+    buildBus.on("stage:complete", (data) => {
+      this.recordEvent("stage:complete", data);
+      this.bufferMessage(data.packageName, "debug", `Staged (${data.componentCount ?? "?"} components)`);
+    });
+    buildBus.on("connection:start", (data) => {
+      this.recordEvent("connection:start", data);
+      this.bufferMessage(data.packageName, "debug", `Connecting to ${data.username}...`);
+    });
+    buildBus.on("connection:complete", (data) => {
+      this.recordEvent("connection:complete", data);
+      this.bufferMessage(data.packageName, "debug", "Connected to DevHub");
+    });
+    buildBus.on("create:start", (data) => {
+      this.recordEvent("create:start", data);
+      this.bufferMessage(data.packageName, "info", `Creating package version for ${data.packageName}...`);
+    });
+    buildBus.on("create:progress", (data) => {
+      this.recordEvent("create:progress", data);
+      if (data.status) {
+        this.bufferMessage(data.packageName, "debug", `Package creation status: ${data.status}`);
+      }
+    });
+    buildBus.on("create:complete", (data) => {
+      this.recordEvent("create:complete", data);
+      this.bufferMessage(data.packageName, "info", `Package version created: ${data.packageVersionId ?? ""} (${data.versionNumber ?? ""})`);
+    });
+    buildBus.on("assemble:start", (data) => {
+      this.recordEvent("assemble:start", data);
+      this.bufferMessage(data.packageName, "debug", "Assembling artifact...");
+    });
+    buildBus.on("assemble:complete", (data) => {
+      this.recordEvent("assemble:complete", data);
+      this.bufferMessage(data.packageName, "info", `Artifact assembled: ${data.artifactPath ?? ""}`);
+    });
+    buildBus.on("task:start", (data) => {
+      this.recordEvent("task:start", data);
+      this.bufferMessage(data.packageName, "debug", `Running task: ${data.taskName ?? "unknown"}`);
+    });
+    buildBus.on("task:complete", (data) => {
+      this.recordEvent("task:complete", data);
+      this.bufferMessage(data.packageName, "debug", `Task complete: ${data.taskName ?? "unknown"}`);
+    });
+    orchestrationBus.on("package:complete", (data) => {
+      this.recordEvent("orchestration:package:complete", data);
+      this.flushPackageGroup("Build", data);
+    });
+    orchestrationBus.on("complete", (data) => {
+      this.recordEvent("orchestration:complete", data);
+    });
+  }
+  /**
+   * Attach to an install orchestrator to render install progress.
+   */
+  attachToInstaller(installBus, orchestrationBus) {
+    orchestrationBus.on("start", (data) => {
+      this.startTime = /* @__PURE__ */ new Date();
+      this.recordEvent("orchestration:start", data);
+      this.logger.info(`Starting installation of ${data.totalPackages} package(s)`);
+    });
+    orchestrationBus.on("level:start", (data) => {
+      this.recordEvent("orchestration:level:start", data);
+      const names = data.packages ?? [];
+      this.logger.info(`Level ${data.level}: ${names.join(", ")}`);
+    });
+    installBus.on("start", (data) => {
+      this.recordEvent("install:start", data);
+      this.bufferMessage(data.packageName, "info", `Package: ${data.packageName} (${data.packageType ?? "unknown"})`);
+    });
+    installBus.on("connection:start", (data) => {
+      this.recordEvent("connection:start", data);
+      this.bufferMessage(data.packageName, "debug", `Connecting to ${data.username}...`);
+    });
+    installBus.on("connection:complete", (data) => {
+      this.recordEvent("connection:complete", data);
+      this.bufferMessage(data.packageName, "debug", `Connected to org ${data.orgId ?? data.username}`);
+    });
+    installBus.on("deploy:start", (data) => {
+      this.recordEvent("deploy:start", data);
+      this.bufferMessage(data.packageName, "info", "Source deployment started");
+    });
+    installBus.on("deploy:progress", (data) => {
+      this.recordEvent("deploy:progress", data);
+      if (data.status) {
+        this.bufferMessage(data.packageName, "debug", `Deployment status: ${data.status}`);
+      }
+    });
+    installBus.on("deploy:complete", (data) => {
+      this.recordEvent("deploy:complete", data);
+      this.bufferMessage(data.packageName, "info", `Deployment complete (${data.numberComponentsDeployed ?? "?"} components)`);
+    });
+    installBus.on("version:start", (data) => {
+      this.recordEvent("version:start", data);
+      this.bufferMessage(data.packageName, "info", `Installing package version ${data.packageVersionId ?? ""}`);
+    });
+    installBus.on("version:progress", (data) => {
+      this.recordEvent("version:progress", data);
+      if (data.status) {
+        this.bufferMessage(data.packageName, "debug", `Version install status: ${data.status}`);
+      }
+    });
+    installBus.on("version:complete", (data) => {
+      this.recordEvent("version:complete", data);
+      this.bufferMessage(data.packageName, "info", "Version install complete");
+    });
+    installBus.on("skip", (data) => {
+      this.recordEvent("install:skip", data);
+      this.bufferMessage(data.packageName, "info", `Skipped: ${data.packageName} (${data.reason ?? "already installed"})`);
+    });
+    installBus.on("complete", (data) => {
+      this.recordEvent("install:complete", data);
+      this.bufferMessage(data.packageName, "info", `Installed: ${data.packageName} v${data.versionNumber ?? "?"}`);
+    });
+    installBus.on("error", (data) => {
+      this.recordEvent("install:error", data);
+      this.bufferMessage(data.packageName, "error", `Failed: ${data.packageName} \u2014 ${data.error ?? "unknown error"}`);
+    });
+    orchestrationBus.on("package:complete", (data) => {
+      this.recordEvent("orchestration:package:complete", data);
+      this.flushPackageGroup("Install", data);
+    });
+    orchestrationBus.on("complete", (data) => {
+      this.recordEvent("orchestration:complete", data);
+    });
+  }
+  /**
+   * Attach to a pool manager to render provisioning progress.
+   * Pool operations are not buffered — they write immediately.
+   */
+  attachToManager(emitter) {
+    emitter.on("pool:provision:start", (data) => {
+      this.startTime = /* @__PURE__ */ new Date();
+      this.recordEvent("pool:provision:start", data);
+      this.logger.group(`Provisioning pool "${data.tag}"`);
+      this.logger.info(`Provisioning ${data.toAllocate} org(s) for pool "${data.tag}"`);
+    });
+    emitter.on("pool:allocation:computed", (data) => {
+      this.recordEvent("pool:allocation:computed", data);
+      this.logger.info(`Allocation: ${data.toAllocate} to create (${data.currentAllocation} current, ${data.remaining} remaining on DevHub)`);
+    });
+    emitter.on("pool:org:created", (data) => {
+      this.recordEvent("pool:org:created", data);
+      this.logger.info(`Created org ${data.alias} (${data.index + 1}/${data.total})`);
+    });
+    emitter.on("pool:org:failed", (data) => {
+      this.recordEvent("pool:org:failed", data);
+      const suffix = data.timedOut ? " (timed out)" : "";
+      this.logger.error(`Failed ${data.alias}: ${data.error}${suffix}`);
+    });
+    emitter.on("pool:org:validated", (data) => {
+      this.recordEvent("pool:org:validated", data);
+      this.logger.debug(`Validated org ${data.username}`);
+    });
+    emitter.on("pool:org:discarded", (data) => {
+      this.recordEvent("pool:org:discarded", data);
+      this.logger.warn(`Discarded ${data.username}: ${data.reason}`);
+    });
+    emitter.on("pool:task:start", (data) => {
+      this.recordEvent("pool:task:start", data);
+      this.logger.info(`Running ${data.task} on ${data.username}`);
+    });
+    emitter.on("pool:task:complete", (data) => {
+      this.recordEvent("pool:task:complete", data);
+      if (data.success) {
+        this.logger.info(`${data.task} completed for ${data.username}`);
+      } else {
+        this.logger.error(`${data.task} failed for ${data.username}`);
+      }
+    });
+    emitter.on("pool:task:error", (data) => {
+      this.recordEvent("pool:task:error", data);
+      this.logger.error(`${data.task} error on ${data.username}: ${data.error}`);
+    });
+    emitter.on("pool:provision:complete", (data) => {
+      this.recordEvent("pool:provision:complete", data);
+      this.logger.info(`Provisioning complete: ${data.succeeded?.length ?? 0} succeeded, ${data.failed ?? 0} failed`);
+      this.logger.groupEnd();
+    });
+  }
+  /**
+   * Attach to a pool fetcher to render pool fetch progress.
+   */
+  attachToPoolFetcher(emitter) {
+    emitter.on("pool:fetch:start", (data) => {
+      this.recordEvent("pool:fetch:start", data);
+      this.logger.info(`Pool "${data.tag}": ${data.available} org(s) available`);
+    });
+    emitter.on("pool:fetch:claimed", (data) => {
+      this.recordEvent("pool:fetch:claimed", data);
+      this.logger.info(`Claimed org: ${data.username}`);
+    });
+    emitter.on("pool:fetch:skipped", (data) => {
+      this.recordEvent("pool:fetch:skipped", data);
+      this.logger.debug(`Skipped org ${data.username}: ${data.reason}`);
+    });
+    emitter.on("pool:fetch:complete", (data) => {
+      this.recordEvent("pool:fetch:complete", data);
+      this.logger.info(`Pool fetch complete (${data.count} org(s))`);
+    });
+  }
+  // --------------------------------------------------------------------------
+  // Summary
+  // --------------------------------------------------------------------------
+  /**
+   * Return collected events as a JSON-serializable array.
+   */
+  getEventLog() {
+    return [...this.events];
+  }
+  /**
+   * Print an enhanced summary table of all packages.
+   */
+  printSummary() {
+    const totalDuration = this.startTime ? Math.round((Date.now() - this.startTime.getTime()) / 1e3) : void 0;
+    this.logger.group(totalDuration === void 0 ? "Summary" : `Summary (${totalDuration}s)`);
+    if (this.packages.length > 0) {
+      for (const pkg of this.packages) {
+        const durationStr = pkg.duration === void 0 ? "" : `${Math.round(pkg.duration / 1e3)}s`;
+        if (pkg.skipped) {
+          this.logger.info(`  \u2298 ${pkg.name}  ${durationStr ? `${durationStr}  ` : ""}\u2014 skipped${pkg.error ? ` (${pkg.error})` : ""}`);
+        } else if (pkg.success) {
+          this.logger.info(`  \u2713 ${pkg.name}  ${durationStr}`);
+        } else {
+          this.logger.info(`  \u2717 ${pkg.name}  ${durationStr}  \u2014 ${pkg.error ?? "unknown error"}`);
+        }
+      }
+    } else {
+      this.logger.info(`Total events: ${this.events.length}`);
+    }
+    if (totalDuration !== void 0) {
+      this.logger.info(`Total duration: ${totalDuration}s`);
+    }
+    this.logger.groupEnd();
+  }
+  // --------------------------------------------------------------------------
+  // Private — Buffering
+  // --------------------------------------------------------------------------
+  /**
+   * Write a message to the child buffer for the given package.
+   * If no child buffer exists yet, creates one via the logger.
+   */
+  bufferMessage(packageName, level, message) {
+    if (!packageName) {
+      this.writeEntry({ level, message });
+      return;
+    }
+    if (!this.logger.hasChildBuffer(packageName)) {
+      this.logger.child({ package: packageName });
+    }
+    const buffer = this.logger.getChildBuffer(packageName);
+    buffer.push({ level, message });
+  }
+  /**
+   * Flush a package's buffered output as a collapsible group.
+   * Called on `orchestration:package:complete`.
+   */
+  flushPackageGroup(prefix, data) {
+    const { packageName } = data;
+    const success = data.success !== false;
+    const skipped = data.skipped === true;
+    const { duration } = data;
+    const durationStr = duration === void 0 ? "" : ` (${Math.round(duration / 1e3)}s)`;
+    this.packages.push({
+      duration,
+      error: data.error,
+      name: packageName,
+      skipped,
+      success
+    });
+    if (skipped) {
+      const reason = data.error ?? "no changes";
+      this.logger.info(`\u2298 ${prefix}: ${packageName} (skipped \u2014 ${reason})`);
+      this.logger.clearChildBuffer(packageName);
+      return;
+    }
+    const icon = success ? "\u2713" : "\u2717";
+    const label = `${prefix}: ${packageName} ${icon}${durationStr}`;
+    const entries = this.logger.getChildBuffer(packageName);
+    this.logger.group(label);
+    for (const entry of entries) {
+      this.writeEntry(entry);
+    }
+    this.logger.groupEnd();
+    this.logger.clearChildBuffer(packageName);
+  }
+  recordEvent(type, data) {
+    this.events.push({ data, timestamp: /* @__PURE__ */ new Date(), type });
+  }
+  /** Write a single buffer entry to output using the appropriate Actions command. */
+  writeEntry(entry) {
+    switch (entry.level) {
+      case "debug": {
+        core.debug(entry.message);
+        break;
+      }
+      case "error": {
+        core.error(entry.message);
+        break;
+      }
+      case "trace": {
+        core.debug(`[trace] ${entry.message}`);
+        break;
+      }
+      case "warn": {
+        core.warning(entry.message);
+        break;
+      }
+      default: {
+        core.info(entry.message);
+        break;
+      }
+    }
+  }
+};
+
+export {
+  ActionsProgressRenderer
+};
