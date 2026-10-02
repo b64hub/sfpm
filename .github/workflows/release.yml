@@ -117,7 +117,7 @@ jobs:
             echo "Creating new tag $TAG..."
             git checkout --detach
             git add -f packages/actions/bundle
-            git commit -m "release: action bundle for $TAG"
+            git commit -m "chore: release action bundle for $TAG"
             TAG_SHA=$(git rev-parse HEAD)
             git tag -a "$TAG" -m "$TAG" "$TAG_SHA"
             git push origin "refs/tags/$TAG"

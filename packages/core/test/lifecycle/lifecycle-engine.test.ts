@@ -72,6 +72,18 @@ describe('LifecycleEngine', () => {
 
       expect(() => LifecycleEngine.getInstance()).toThrow(/not initialized/i);
     });
+
+    it('should let SFPM_STAGE override the caller-provided stage', () => {
+      LifecycleEngine.resetForTest();
+      process.env.SFPM_STAGE = 'qa-pipeline';
+
+      try {
+        const instance = LifecycleEngine.stage('install');
+        expect(instance.stage).toBe('qa-pipeline');
+      } finally {
+        delete process.env.SFPM_STAGE;
+      }
+    });
   });
 
   // --------------------------------------------------------------------------
