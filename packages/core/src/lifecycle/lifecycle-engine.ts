@@ -135,11 +135,16 @@ export default class LifecycleEngine {
    * again with the same value returns the existing instance. Calling with
    * a different value throws — each execution has exactly one stage.
    *
+   * The `SFPM_STAGE` environment variable, when set, overrides whatever stage
+   * the caller (CLI command, GitHub Action) would otherwise default to — this
+   * lets users point their own pipelines at a custom stage name without
+   * touching SFPM's own commands.
+   *
    * @param activeStage - The lifecycle stage (e.g., 'build', 'deploy', 'validate').
-   *                      Defaults to 'local'.
+   *                      Defaults to 'local'. Overridden by `SFPM_STAGE` if set.
    */
   static stage(activeStage?: string): LifecycleEngine {
-    const resolvedStage = activeStage ?? DEFAULT_STAGE;
+    const resolvedStage = process.env.SFPM_STAGE || activeStage || DEFAULT_STAGE;
 
     if (!LifecycleEngine.instance) {
       LifecycleEngine.instance = new LifecycleEngine(resolvedStage);
