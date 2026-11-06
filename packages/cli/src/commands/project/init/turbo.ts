@@ -216,7 +216,7 @@ export default class InitTurbo extends SfpmCommand {
         this.log(`    1. ${chalk.dim(`${packageManager} install`)}`)
       }
 
-      this.log(`    2. ${chalk.dim('sfpm sync --turbo')}         ${chalk.dim('# generate sfdx-project.json from package.json files')}`)
+      this.log(`    2. ${chalk.dim('sfpm project sync')}         ${chalk.dim('# generate sfdx-project.json from package.json files')}`)
       this.log(`    3. ${chalk.dim('turbo run sfpm:build')}       ${chalk.dim('# build all packages')}`)
       this.log('')
     } catch (error) {
