@@ -83,7 +83,7 @@ export default class Build extends SfpmCommand {
     'installation-key': Flags.string({char: 'k', description: 'installation key for unlocked packages; repeat as <package>=<key>, or a bare value as the default', multiple: true}),
     'no-dependencies': Flags.boolean({default: false, description: 'build the specified packages without their transitive dependencies'}),
     'source-only': Flags.boolean({description: 'route all packages through source deployment (no DevHub, no package version IDs)', env: 'SFPM_SOURCE_ONLY'}),
-    tag: Flags.string({char: 't', description: 'tag for the build'}),
+    tag: Flags.string({char: 't', description: 'package version tag for unlocked packages (passed to sf package version create --tag)'}),
     'target-dev-hub': Flags.string({
       char: 'v',
       async defaultHelp() {
@@ -458,7 +458,7 @@ export default class Build extends SfpmCommand {
     const buildOptions: BuildOrchestratorOptions = {
       buildNumber: flags['build-number'],
       force: flags.force,
-      unlocked: {installationKeys: flags['installation-key']?.length ? parseInstallationKeys(flags['installation-key']) : undefined, sourceOnly: flags['source-only']},
+      unlocked: {installationKeys: flags['installation-key']?.length ? parseInstallationKeys(flags['installation-key']) : undefined, sourceOnly: flags['source-only'], tag: flags.tag},
       validation,
       waitTime: flags.wait,
     }
