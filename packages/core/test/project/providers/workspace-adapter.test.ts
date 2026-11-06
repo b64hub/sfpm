@@ -196,3 +196,21 @@ describe('toWorkspacePackageJson', () => {
     expect(result.sfpm.packageId).toBe('0HoAAAAAAAAAAAA');
   });
 });
+
+describe('toWorkspacePackageJson namespace', () => {
+  const projectDef: ProjectDefinition = {
+    packages: [{name: 'core', path: 'packages/core/force-app', type: 'unlocked', version: '1.2.0'}],
+  };
+
+  it('writes pkgDef.namespace to sfpm.namespace', () => {
+    const pkgDef: PackageDefinition = {name: 'core', namespace: 'myns', path: 'packages/core/force-app', type: 'unlocked', version: '1.2.0'};
+    const result = toWorkspacePackageJson(pkgDef, 'packages/core', 'force-app', 'unlocked', {npmScope: '@myorg'}, projectDef);
+    expect(result.sfpm.namespace).toBe('myns');
+  });
+
+  it('omits sfpm.namespace when pkgDef has no namespace', () => {
+    const pkgDef: PackageDefinition = {name: 'core', path: 'packages/core/force-app', type: 'unlocked', version: '1.2.0'};
+    const result = toWorkspacePackageJson(pkgDef, 'packages/core', 'force-app', 'unlocked', {npmScope: '@myorg'}, projectDef);
+    expect(result.sfpm.namespace).toBeUndefined();
+  });
+});

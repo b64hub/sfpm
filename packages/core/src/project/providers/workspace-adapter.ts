@@ -140,6 +140,10 @@ export function toWorkspacePackageJson(
     sfpm.packageOptions = pkgDef.packageOptions;
   }
 
+  if (pkgDef.namespace) {
+    sfpm.namespace = pkgDef.namespace;
+  }
+
   // Resolve metadataDependencies paths relative to package dir → store in sfpm config
   if (pkgDef.metadataDependencies) {
     const md: {seed?: string; unpackaged?: string} = {};
