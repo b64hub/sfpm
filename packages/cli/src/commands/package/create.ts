@@ -6,6 +6,7 @@ import {
   ProjectService,
   type SfpmPackageConfig,
   type WorkspacePackageJson,
+  WorkspaceProvider,
   WorkspaceSync,
 } from '@b64hub/sfpm-core'
 import {confirm, input, select} from '@inquirer/prompts'
@@ -68,7 +69,9 @@ export default class PackageCreate extends SfpmCommand {
     const provider = projectService.getDefinitionProvider()
 
     const npmName = npmScope ? `${npmScope}/${packageName}` : packageName
-    const packageDir = path.join(provider.projectDir, packageName)
+    const packagesDir = provider instanceof WorkspaceProvider ? provider.getPackagesDir() : undefined
+    const packageRelDir = packagesDir ? path.posix.join(packagesDir, packageName) : packageName
+    const packageDir = path.join(provider.projectDir, packageRelDir)
 
     // Validate the package doesn't already exist
     const existingNames = provider.getAllPackageNames()
@@ -77,14 +80,14 @@ export default class PackageCreate extends SfpmCommand {
     }
 
     if (await fs.pathExists(packageDir)) {
-      this.error(`Directory '${packageName}' already exists at ${packageDir}.`)
+      this.error(`Directory '${packageRelDir}' already exists at ${packageDir}.`)
     }
 
     if (isInteractive) {
       this.log(infoBox('New Package', {
         Name: npmName,
         'Org-Dependent': isOrgDependent ? 'Yes' : 'No',
-        Path: sourcePath === '.' ? packageName : `${packageName}/${sourcePath}`,
+        Path: sourcePath === '.' ? packageRelDir : `${packageRelDir}/${sourcePath}`,
         Type: packageType,
       }))
     }
@@ -92,7 +95,7 @@ export default class PackageCreate extends SfpmCommand {
     // For unlocked packages, optionally create the Package2 container in DevHub
     let packageId: string | undefined
     if (packageType === PackageType.Unlocked) {
-      packageId = await this.createPackage2Container(packageName, isOrgDependent, flags.devhub, isInteractive, logger)
+      packageId = await this.createPackage2Container(packageName, packageRelDir, isOrgDependent, flags.devhub, isInteractive, logger)
     }
 
     // Scaffold the package directory and package.json
@@ -112,7 +115,7 @@ export default class PackageCreate extends SfpmCommand {
       created: true,
       packageId,
       packageName,
-      packagePath: packageName,
+      packagePath: packageRelDir,
       packageType,
     }
 
@@ -122,17 +125,17 @@ export default class PackageCreate extends SfpmCommand {
     }
 
     this.log(successBox('Package Created', {
-      Directory: packageName,
+      Directory: packageRelDir,
       Name: npmName,
       ...(packageId ? {'Package ID': packageId} : {}),
       Type: packageType,
     }))
 
     this.log(chalk.dim('\nNext steps:'))
-    this.log(chalk.dim(`  1. Add your metadata to ${sourcePath === '.' ? packageName : `${packageName}/${sourcePath}`}/`))
+    this.log(chalk.dim(`  1. Add your metadata to ${sourcePath === '.' ? packageRelDir : `${packageRelDir}/${sourcePath}`}/`))
     this.log(chalk.dim('  2. Run \'pnpm install\' to update workspace references'))
     if (packageType === PackageType.Unlocked && !packageId) {
-      this.log(chalk.dim(`  3. Set sfpm.packageId in ${packageName}/package.json after creating the Package2 in your DevHub`))
+      this.log(chalk.dim(`  3. Set sfpm.packageId in ${packageRelDir}/package.json after creating the Package2 in your DevHub`))
     }
 
     return result
@@ -144,6 +147,7 @@ export default class PackageCreate extends SfpmCommand {
 
   private async createPackage2Container(
     packageName: string,
+    packageRelDir: string,
     isOrgDependent: boolean,
     devhubFlag: string | undefined,
     isInteractive: boolean,
@@ -177,7 +181,7 @@ export default class PackageCreate extends SfpmCommand {
           description: '',
           isOrgDependent,
           name: packageName,
-          path: packageName,
+          path: packageRelDir,
         },
         process.cwd(),
       )

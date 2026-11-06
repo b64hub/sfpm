@@ -73,10 +73,9 @@ export class WorkspaceSync {
 
     this.logger?.info(`Found ${sfpmPackages?.length ?? 0} SFPM package(s): ${sfpmPackages?.map(p => p.pkgJson.name).join(', ') ?? ''}`);
 
-    // Write sfdx-project.json
+    // resolve() writes sfdx-project.json when there are packages
     const sfdxProjectPath = path.join(this.options.projectDir, 'sfdx-project.json');
-    WorkspaceProvider.ensureSfdxProject(this.options.projectDir, projectDefinition);
-    this.logger?.info(`Generated ${sfdxProjectPath}`);
+    if (projectDefinition.packages.length > 0) this.logger?.info(`Generated ${sfdxProjectPath}`);
 
     // Build result
     const packages: WorkspaceSyncPackage[] = (sfpmPackages ?? []).map(({packageDir, pkgJson}) => ({
