@@ -57,6 +57,8 @@ export interface UnlockedBuildOptions {
    * No DevHub required. Designed for PR validation against scratch orgs.
    */
   sourceOnly?: boolean;
+  /** Salesforce package version tag (`sf package version create --tag`). */
+  tag?: string;
 }
 
 export interface InstallOptions {
