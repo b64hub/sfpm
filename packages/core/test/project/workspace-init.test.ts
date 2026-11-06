@@ -20,77 +20,79 @@ function readTurbo(dir: string): {tasks: Record<string, Record<string, unknown>>
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('WorkspaceInitializer.scaffold turbo.json', () => {
-  let dir: string;
+describe('WorkspaceInitializer', () => {
+  describe('WorkspaceInitializer.scaffold turbo.json', () => {
+    let dir: string;
 
-  beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfpm-init-'));
+    beforeEach(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sfpm-init-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(dir, {force: true, recursive: true});
+    });
+
+    it('generates sfpm:deploy as non-cacheable so Turbo never skips a deploy', async () => {
+      await new WorkspaceInitializer().scaffold({npmScope: '@myorg', projectDir: dir});
+
+      const deploy = readTurbo(dir).tasks['sfpm:deploy'];
+      expect(deploy.cache).toBe(false);
+      expect(deploy.inputs).toBeUndefined();
+      expect(deploy.outputs).toBeUndefined();
+    });
+
+    it('keeps sfpm:install non-cacheable and sfpm:build cacheable', async () => {
+      await new WorkspaceInitializer().scaffold({npmScope: '@myorg', projectDir: dir});
+
+      const {tasks} = readTurbo(dir);
+      expect(tasks['sfpm:install'].cache).toBe(false);
+      expect(tasks['sfpm:build'].cache).toBe(true);
+    });
+
+    it('overwrites an existing cacheable sfpm:deploy and preserves other tasks', async () => {
+      fs.writeFileSync(
+        path.join(dir, 'turbo.json'),
+        JSON.stringify({tasks: {custom: {cache: true}, 'sfpm:deploy': {cache: true, outputs: []}}}),
+        'utf8',
+      );
+
+      const result = await new WorkspaceInitializer().scaffold({npmScope: '@myorg', projectDir: dir});
+
+      const {tasks} = readTurbo(dir);
+      expect(tasks['sfpm:deploy'].cache).toBe(false);
+      expect(tasks.custom).toEqual({cache: true});
+      expect(result.modified).toContain('turbo.json');
+    });
   });
 
-  afterEach(() => {
-    fs.rmSync(dir, {force: true, recursive: true});
-  });
+  describe('WorkspaceInitializer.migrate namespace', () => {
+    let tmp: string;
 
-  it('generates sfpm:deploy as non-cacheable so Turbo never skips a deploy', async () => {
-    await new WorkspaceInitializer().scaffold({npmScope: '@myorg', projectDir: dir});
+    beforeEach(() => {
+      tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sfpm-migrate-'));
+      fs.writeFileSync(path.join(tmp, 'sfdx-project.json'), JSON.stringify({
+        namespace: 'myns',
+        packageDirectories: [
+          {package: 'core', path: 'force-app/core', versionNumber: '1.0.0.NEXT'},
+          {package: 'data', path: 'force-app/data', versionNumber: '1.0.0.NEXT'},
+        ],
+        sourceApiVersion: '63.0',
+      }, null, 2));
+    });
 
-    const deploy = readTurbo(dir).tasks['sfpm:deploy'];
-    expect(deploy.cache).toBe(false);
-    expect(deploy.inputs).toBeUndefined();
-    expect(deploy.outputs).toBeUndefined();
-  });
+    afterEach(() => {
+      fs.rmSync(tmp, {force: true, recursive: true});
+    });
 
-  it('keeps sfpm:install non-cacheable and sfpm:build cacheable', async () => {
-    await new WorkspaceInitializer().scaffold({npmScope: '@myorg', projectDir: dir});
+    it('keeps the namespace through migrate and sync for a multi-package project', async () => {
+      await new WorkspaceInitializer().migrate({npmScope: '@myorg', projectDir: tmp});
 
-    const {tasks} = readTurbo(dir);
-    expect(tasks['sfpm:install'].cache).toBe(false);
-    expect(tasks['sfpm:build'].cache).toBe(true);
-  });
+      const corePkg = JSON.parse(fs.readFileSync(path.join(tmp, 'force-app/core/package.json'), 'utf8'));
+      expect(corePkg.sfpm.namespace).toBe('myns');
 
-  it('overwrites an existing cacheable sfpm:deploy and preserves other tasks', async () => {
-    fs.writeFileSync(
-      path.join(dir, 'turbo.json'),
-      JSON.stringify({tasks: {custom: {cache: true}, 'sfpm:deploy': {cache: true, outputs: []}}}),
-      'utf8',
-    );
-
-    const result = await new WorkspaceInitializer().scaffold({npmScope: '@myorg', projectDir: dir});
-
-    const {tasks} = readTurbo(dir);
-    expect(tasks['sfpm:deploy'].cache).toBe(false);
-    expect(tasks.custom).toEqual({cache: true});
-    expect(result.modified).toContain('turbo.json');
-  });
-});
-
-describe('WorkspaceInitializer.migrate namespace', () => {
-  let tmp: string;
-
-  beforeEach(() => {
-    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sfpm-migrate-'));
-    fs.writeFileSync(path.join(tmp, 'sfdx-project.json'), JSON.stringify({
-      namespace: 'myns',
-      packageDirectories: [
-        {package: 'core', path: 'force-app/core', versionNumber: '1.0.0.NEXT'},
-        {package: 'data', path: 'force-app/data', versionNumber: '1.0.0.NEXT'},
-      ],
-      sourceApiVersion: '63.0',
-    }, null, 2));
-  });
-
-  afterEach(() => {
-    fs.rmSync(tmp, {force: true, recursive: true});
-  });
-
-  it('keeps the namespace through migrate and sync for a multi-package project', async () => {
-    await new WorkspaceInitializer().migrate({npmScope: '@myorg', projectDir: tmp});
-
-    const corePkg = JSON.parse(fs.readFileSync(path.join(tmp, 'force-app/core/package.json'), 'utf8'));
-    expect(corePkg.sfpm.namespace).toBe('myns');
-
-    await new WorkspaceSync({projectDir: tmp}).run();
-    const sfdx = JSON.parse(fs.readFileSync(path.join(tmp, 'sfdx-project.json'), 'utf8'));
-    expect(sfdx.namespace).toBe('myns');
+      await new WorkspaceSync({projectDir: tmp}).run();
+      const sfdx = JSON.parse(fs.readFileSync(path.join(tmp, 'sfdx-project.json'), 'utf8'));
+      expect(sfdx.namespace).toBe('myns');
+    });
   });
 });
