@@ -59,6 +59,15 @@ export interface MigrateOptions extends WorkspaceInitOptions {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** True when a `path.posix.relative` result points above its base (not a name like `..foo`). */
+function isOutsideDir(rel: string): boolean {
+  return rel === '..' || rel.startsWith('../');
+}
+
+// ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
 
@@ -87,20 +96,47 @@ export class WorkspaceInitializer {
       throw new Error('No package directories with package names found in sfdx-project.json.');
     }
 
+    const plan = packageDefs.map(pkgDef => {
+      const packageDir = this.resolvePackageDir(pkgDef, options);
+      return {packageDir, pkgDef, sourcePath: this.resolveTargetSourcePath(pkgDef, packageDir)};
+    });
+
+    // Validate all moves before touching disk so a bad layout can't leave a half-migrated repo
+    for (const {packageDir, pkgDef, sourcePath} of plan) {
+      if (sourcePath === path.posix.normalize(pkgDef.path)) continue;
+      if (!isOutsideDir(path.posix.relative(pkgDef.path, packageDir))) {
+        throw new Error(`Cannot migrate "${pkgDef.name}": workspace dir "${packageDir}" is inside its source path "${pkgDef.path}".`);
+      }
+
+      if (!fs.existsSync(path.join(options.projectDir, pkgDef.path))) {
+        throw new Error(`Cannot migrate "${pkgDef.name}": source path "${pkgDef.path}" not found.`);
+      }
+
+      if (fs.existsSync(path.join(options.projectDir, sourcePath))) {
+        throw new Error(`Cannot migrate "${pkgDef.name}": destination "${sourcePath}" already exists.`);
+      }
+    }
+
     // First scaffold the workspace infrastructure
     const result = await this.scaffold(options);
 
-    // Then create package.json for each SF package
+    // Then move sources into their package dirs and create package.json for each SF package
     const allPackageRelPaths: string[] = [];
 
-    for (const pkgDef of packageDefs) {
-      const packageDir = this.resolvePackageDir(pkgDef, options);
+    for (const {packageDir, pkgDef, sourcePath} of plan) {
       allPackageRelPaths.push(packageDir);
+
+      if (sourcePath !== path.posix.normalize(pkgDef.path)) {
+        const to = path.join(options.projectDir, sourcePath);
+        fs.mkdirSync(path.dirname(to), {recursive: true});
+        fs.renameSync(path.join(options.projectDir, pkgDef.path), to);
+        result.modified.push(`${pkgDef.path} -> ${sourcePath}`);
+      }
 
       const pkgJson = toWorkspacePackageJson(
         pkgDef,
         packageDir,
-        this.resolveSourcePath(pkgDef, packageDir),
+        this.resolveSourcePath(sourcePath, packageDir),
         this.inferPackageType(pkgDef),
         {npmScope: options.npmScope},
         projectDef,
@@ -254,9 +290,16 @@ export class WorkspaceInitializer {
    * e.g., package at "packages/core" with SF path "packages/core/force-app" → "force-app"
    *       package at "src/pkg-a" with SF path "src/pkg-a" → "."
    */
-  private resolveSourcePath(pkgDef: PackageDefinition, packageDir: string): string {
-    const relative = path.posix.relative(packageDir, pkgDef.path);
-    return relative || '.';
+  private resolveSourcePath(sourcePath: string, packageDir: string): string {
+    return path.posix.relative(packageDir, sourcePath) || '.';
+  }
+
+  /** Project-relative SF source path after migration: unchanged if already inside packageDir, else moved under it. */
+  private resolveTargetSourcePath(pkgDef: PackageDefinition, packageDir: string): string {
+    const rel = path.posix.relative(packageDir, pkgDef.path);
+    return isOutsideDir(rel)
+      ? path.posix.join(packageDir, path.posix.basename(pkgDef.path))
+      : path.posix.normalize(pkgDef.path);
   }
 
   private scaffoldPnpmWorkspace(

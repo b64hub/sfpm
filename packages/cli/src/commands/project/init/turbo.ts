@@ -90,7 +90,7 @@ export default class InitTurbo extends SfpmCommand {
       const choice = await select({
         choices: [
           {description: 'Keep package directories where they are', name: 'Keep original paths', value: ''},
-          {description: 'Group packages under packages/', name: 'packages/', value: 'packages'},
+          {description: 'Move package sources under packages/', name: 'packages/', value: 'packages'},
           {description: 'Enter a custom directory', name: 'Custom...', value: '__custom__'},
         ],
         message: 'Where should package directories live?',
