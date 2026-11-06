@@ -1,15 +1,21 @@
+import fs from 'fs-extra';
+import os from 'node:os';
+import path from 'node:path';
 import {
-  beforeEach, describe, expect, it, vi,
+  afterEach, beforeEach, describe, expect, it, vi,
 } from 'vitest';
 
 import {PackageBuilder} from '../../src/package/package-builder.js';
+import {BuildError} from '../../src/types/errors.js';
 import {PackageType} from '../../src/types/package.js';
 
 // ============================================================================
 // Hoisted mocks (accessible inside vi.mock factories)
 // ============================================================================
 
-const {SfpmMetadataPackageStub, mockBuilderInstance, mockPackageFactoryFn} = vi.hoisted(() => {
+const {SfpmMetadataPackageStub, mockAssemble, mockBuilderInstance, mockPackageFactoryFn} = vi.hoisted(() => {
+  const _mockAssemble = vi.fn();
+
   const _mockBuilderInstance = {
     connect: vi.fn().mockResolvedValue(undefined),
     exec: vi.fn().mockResolvedValue({}),
@@ -54,6 +60,7 @@ const {SfpmMetadataPackageStub, mockBuilderInstance, mockPackageFactoryFn} = vi.
 
   return {
     SfpmMetadataPackageStub: class SfpmMetadataPackageStub {},
+    mockAssemble: _mockAssemble,
     mockBuilderInstance: _mockBuilderInstance,
     mockPackageFactoryFn: _mockPackageFactoryFn,
   };
@@ -94,12 +101,7 @@ vi.mock('../../src/package/sfpm-package.js', () => {
 
 vi.mock('../../src/package/assemblers/package-assembler.js', () => ({
   default: function PackageAssembler() {
-    return {
-      assemble: vi.fn().mockResolvedValue({
-        componentCount: 10,
-        stagingDirectory: '/project/packages/my-pkg/dist',
-      }),
-    };
+    return {assemble: mockAssemble};
   },
 }));
 
@@ -175,6 +177,10 @@ describe('PackageBuilder', () => {
     mockPackageFactoryFn.packageVersionId = undefined;
     mockBuilderInstance.exec.mockResolvedValue({});
     mockBuilderInstance.tasks = [];
+    mockAssemble.mockImplementation(async () => ({
+      componentCount: 10,
+      stagingDirectory: '/project/packages/my-pkg/dist',
+    }));
   });
 
   // ==========================================================================
@@ -501,6 +507,96 @@ describe('PackageBuilder', () => {
       // Content analyzers always run — they enrich the package model
       // with data needed for deployment (test classes, FHT fields, etc.)
       expect(AnalyzerRegistry.getAnalyzers).toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
+  // previous build output on skip (#87)
+  // ==========================================================================
+
+  describe('previous build output on skip', () => {
+    let tmpDir: string;
+    let distDir: string;
+    let provider: any;
+
+    beforeEach(async () => {
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sfpm-pkg-builder-'));
+      distDir = path.join(tmpDir, 'dist');
+      await fs.outputJson(path.join(distDir, 'package.json'), {
+        name: '@test/my-pkg',
+        sfpm: {sourceHash: 'abc123'},
+        version: '1.0.0-1',
+      });
+      await fs.outputFile(path.join(distDir, 'changelog.json'), '{}');
+
+      provider = {...mockProvider, getPackageBuildDirectory: vi.fn().mockReturnValue(distDir)};
+
+      // Mirror PackageAssembler: stage into a clean dist/
+      mockAssemble.mockImplementation(async () => {
+        await fs.emptyDir(distDir);
+        await fs.outputFile(path.join(distDir, 'force-app', 'x.cls'), '');
+        return {componentCount: 1, stagingDirectory: distDir};
+      });
+    });
+
+    afterEach(async () => {
+      vi.restoreAllMocks();
+      await fs.remove(tmpDir);
+    });
+
+    it('restores the previous dist/ when the hash matches (skip)', async () => {
+      mockPackageFactoryFn.sourceHash = 'abc123';
+      const moveSpy = vi.spyOn(fs, 'move');
+
+      const builder = new PackageBuilder(provider, {}, {}, mockLogger);
+      const result = await builder.build('my-pkg');
+
+      expect(result).toEqual({skipped: true, skipReason: 'no-changes'});
+      expect(builderFactory).not.toHaveBeenCalled();
+      expect((await fs.readJson(path.join(distDir, 'package.json'))).sfpm.sourceHash).toBe('abc123');
+      expect(await fs.pathExists(path.join(distDir, 'changelog.json'))).toBe(true);
+      expect(await fs.pathExists(path.join(distDir, 'force-app', 'x.cls'))).toBe(false);
+
+      const backupDir = moveSpy.mock.calls[0][1] as string;
+      expect(await fs.pathExists(backupDir)).toBe(false);
+    });
+
+    it('builds and drops the previous dist/ when the hash differs', async () => {
+      mockPackageFactoryFn.sourceHash = 'different-hash';
+      const moveSpy = vi.spyOn(fs, 'move');
+
+      const builder = new PackageBuilder(provider, {}, {}, mockLogger);
+      await builder.build('my-pkg');
+
+      expect(builderFactory).toHaveBeenCalled();
+      expect(await fs.pathExists(path.join(distDir, 'package.json'))).toBe(false);
+      expect(await fs.pathExists(path.join(distDir, 'force-app', 'x.cls'))).toBe(true);
+
+      const backupDir = moveSpy.mock.calls[0][1] as string;
+      expect(await fs.pathExists(backupDir)).toBe(false);
+    });
+
+    it('does not back up dist/ when force is true', async () => {
+      mockPackageFactoryFn.sourceHash = 'abc123';
+      const moveSpy = vi.spyOn(fs, 'move');
+
+      const builder = new PackageBuilder(provider, {}, {force: true}, mockLogger);
+      await builder.build('my-pkg');
+
+      expect(moveSpy).not.toHaveBeenCalled();
+      expect(builderFactory).toHaveBeenCalled();
+    });
+
+    it('removes the backup and rejects with BuildError when staging fails', async () => {
+      mockPackageFactoryFn.sourceHash = 'abc123';
+      const moveSpy = vi.spyOn(fs, 'move');
+      mockAssemble.mockRejectedValue(new Error('staging exploded'));
+
+      const builder = new PackageBuilder(provider, {}, {}, mockLogger);
+      await expect(builder.build('my-pkg')).rejects.toBeInstanceOf(BuildError);
+
+      const backupDir = moveSpy.mock.calls[0][1] as string;
+      expect(await fs.pathExists(backupDir)).toBe(false);
     });
   });
 });
