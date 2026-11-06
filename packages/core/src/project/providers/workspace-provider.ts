@@ -52,6 +52,8 @@ export interface WorkspaceProviderOptions {
    */
   distAware?: boolean;
   logger?: Logger;
+  /** Salesforce namespace for the root sfdx-project.json */
+  namespace?: string;
   /** Absolute path to the project root directory */
   projectDir: string;
   /** Salesforce login URL */
@@ -274,6 +276,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     // 5. Build ProjectDefinition
     const projectDefinition: ProjectDefinition = {
       packages: packageDefinitions,
+      ...(this.options.namespace ? {namespace: this.options.namespace} : {}),
       sfdcLoginUrl: this.options.sfdcLoginUrl ?? 'https://login.salesforce.com',
       ...(this.options.sourceApiVersion ? {sourceApiVersion: this.options.sourceApiVersion} : {}),
       ...(this.options.sourceBehaviorOptions?.length ? {sourceBehaviorOptions: this.options.sourceBehaviorOptions} : {}),

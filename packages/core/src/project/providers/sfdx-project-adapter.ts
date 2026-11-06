@@ -164,10 +164,7 @@ export function toSalesforceProjectJson(definition: ProjectDefinition, options?:
     }
   }
 
-  let namespace: string | undefined;
-  if (definition.packages.length === 1 && definition.packages[0].namespace)  {
-    namespace = definition.packages[0].namespace;
-  }
+  const namespace = (definition.packages.length === 1 && definition.packages[0].namespace) || definition.namespace;
 
   const result: SalesforceProjectJson = {
     packageDirectories,
@@ -202,6 +199,7 @@ export function toSalesforceProjectJson(definition: ProjectDefinition, options?:
  */
 export function fromSalesforceProjectJson(projectJson: Record<string, unknown>): ProjectDefinition {
   const packageAliases = (projectJson.packageAliases ?? {}) as Record<string, string>;
+  const namespace = projectJson.namespace as string | undefined;
 
   const result: ProjectDefinition = {
     packages: [],
@@ -222,7 +220,6 @@ export function fromSalesforceProjectJson(projectJson: Record<string, unknown>):
   .map(dir => {
     const sfName = dir.package as string;
     const sfVersion = dir.versionNumber as string;
-    const namespace = projectJson.namspace as string;
 
     // Convert SF 4-part version to semver
     const versionParts = sfVersion.split('.');

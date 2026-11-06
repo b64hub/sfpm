@@ -379,3 +379,33 @@ describe('round-trip conversion', () => {
     expect(roundTripped.sourceApiVersion).toBe('63.0');
   });
 });
+
+describe('namespace handling', () => {
+  it('fromSalesforceProjectJson maps top-level namespace onto every package', () => {
+    const result = fromSalesforceProjectJson({...makeSfdxProjectJson(), namespace: 'myns'});
+    expect(result.packages.length).toBeGreaterThan(0);
+    for (const pkg of result.packages) {
+      expect(pkg.namespace).toBe('myns');
+    }
+  });
+
+  it('fromSalesforceProjectJson leaves package namespace undefined when absent', () => {
+    const result = fromSalesforceProjectJson(makeSfdxProjectJson());
+    expect(result.packages[0].namespace).toBeUndefined();
+  });
+
+  it('toSalesforceProjectJson emits project-level namespace for multi-package definitions', () => {
+    const result = toSalesforceProjectJson(makeDefinition({namespace: 'myns'}));
+    expect(result.namespace).toBe('myns');
+  });
+
+  it('toSalesforceProjectJson prefers a single package namespace over project-level namespace', () => {
+    const def = makeDefinition({namespace: 'projns', packages: [{name: 'core', path: 'packages/core', type: 'unlocked', version: '1.0.0', namespace: 'pkgns'}]});
+    expect(toSalesforceProjectJson(def).namespace).toBe('pkgns');
+  });
+
+  it('toSalesforceProjectJson omits namespace when unset', () => {
+    const result = toSalesforceProjectJson(makeDefinition());
+    expect(result).not.toHaveProperty('namespace');
+  });
+});
