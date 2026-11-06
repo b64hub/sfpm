@@ -6,6 +6,7 @@ import {
 } from 'vitest';
 
 import {WorkspaceInitializer} from '../../src/project/workspace-init.js';
+import {WorkspaceSync} from '../../src/project/workspace-sync.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,5 +61,36 @@ describe('WorkspaceInitializer.scaffold turbo.json', () => {
     expect(tasks['sfpm:deploy'].cache).toBe(false);
     expect(tasks.custom).toEqual({cache: true});
     expect(result.modified).toContain('turbo.json');
+  });
+});
+
+describe('WorkspaceInitializer.migrate namespace', () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sfpm-migrate-'));
+    fs.writeFileSync(path.join(tmp, 'sfdx-project.json'), JSON.stringify({
+      namespace: 'myns',
+      packageDirectories: [
+        {package: 'core', path: 'force-app/core', versionNumber: '1.0.0.NEXT'},
+        {package: 'data', path: 'force-app/data', versionNumber: '1.0.0.NEXT'},
+      ],
+      sourceApiVersion: '63.0',
+    }, null, 2));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmp, {force: true, recursive: true});
+  });
+
+  it('keeps the namespace through migrate and sync for a multi-package project', async () => {
+    await new WorkspaceInitializer().migrate({npmScope: '@myorg', projectDir: tmp});
+
+    const corePkg = JSON.parse(fs.readFileSync(path.join(tmp, 'force-app/core/package.json'), 'utf8'));
+    expect(corePkg.sfpm.namespace).toBe('myns');
+
+    await new WorkspaceSync({projectDir: tmp}).run();
+    const sfdx = JSON.parse(fs.readFileSync(path.join(tmp, 'sfdx-project.json'), 'utf8'));
+    expect(sfdx.namespace).toBe('myns');
   });
 });

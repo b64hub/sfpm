@@ -164,7 +164,12 @@ export function toSalesforceProjectJson(definition: ProjectDefinition, options?:
     }
   }
 
-  const namespace = (definition.packages.length === 1 && definition.packages[0].namespace) || definition.namespace;
+  // Migrated projects carry the namespace on every package, not on the root, so fall back to a shared one
+  const packageNamespaces = new Set(definition.packages.map(p => p.namespace));
+  const sharedPackageNamespace = packageNamespaces.size === 1 ? [...packageNamespaces][0] : undefined;
+  const namespace = (definition.packages.length === 1 && definition.packages[0].namespace)
+    || definition.namespace
+    || sharedPackageNamespace;
 
   const result: SalesforceProjectJson = {
     packageDirectories,
@@ -206,6 +211,7 @@ export function fromSalesforceProjectJson(projectJson: Record<string, unknown>):
     ...(projectJson.sfdcLoginUrl ? {sfdcLoginUrl: projectJson.sfdcLoginUrl as string} : {}),
     ...(projectJson.sourceApiVersion ? {sourceApiVersion: projectJson.sourceApiVersion as string} : {}),
     ...(projectJson.sourceBehaviorOptions ? {sourceBehaviorOptions: projectJson.sourceBehaviorOptions as string[]} : {}),
+    ...(namespace ? {namespace} : {}),
   };
 
   if (!Array.isArray(projectJson.packageDirectories)) return result;

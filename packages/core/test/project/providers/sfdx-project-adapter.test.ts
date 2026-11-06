@@ -400,8 +400,37 @@ describe('namespace handling', () => {
   });
 
   it('toSalesforceProjectJson prefers a single package namespace over project-level namespace', () => {
-    const def = makeDefinition({namespace: 'projns', packages: [{name: 'core', path: 'packages/core', type: 'unlocked', version: '1.0.0', namespace: 'pkgns'}]});
+    const def = makeDefinition({
+      namespace: 'projns',
+      packages: [{name: 'core', namespace: 'pkgns', path: 'packages/core', type: 'unlocked', version: '1.0.0'}],
+    });
     expect(toSalesforceProjectJson(def).namespace).toBe('pkgns');
+  });
+
+  it('toSalesforceProjectJson falls back to a namespace shared by every package', () => {
+    const def = makeDefinition({
+      packages: [
+        {name: 'a', namespace: 'myns', path: 'packages/a', type: 'unlocked', version: '1.0.0'},
+        {name: 'b', namespace: 'myns', path: 'packages/b', type: 'unlocked', version: '1.0.0'},
+      ],
+    });
+    expect(toSalesforceProjectJson(def).namespace).toBe('myns');
+  });
+
+  it('toSalesforceProjectJson omits namespace when packages disagree', () => {
+    const def = makeDefinition({
+      packages: [
+        {name: 'a', namespace: 'one', path: 'packages/a', type: 'unlocked', version: '1.0.0'},
+        {name: 'b', namespace: 'two', path: 'packages/b', type: 'unlocked', version: '1.0.0'},
+      ],
+    });
+    expect(toSalesforceProjectJson(def)).not.toHaveProperty('namespace');
+  });
+
+  it('round-trips a project-level namespace through sfdx-project.json', () => {
+    const json = {...makeSfdxProjectJson(), namespace: 'myns'};
+    const roundTripped = toSalesforceProjectJson(fromSalesforceProjectJson(json));
+    expect(roundTripped.namespace).toBe('myns');
   });
 
   it('toSalesforceProjectJson omits namespace when unset', () => {
