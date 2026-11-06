@@ -1,5 +1,9 @@
 import {Org} from '@salesforce/core';
 import {ComponentSet} from '@salesforce/source-deploy-retrieve';
+import fs from 'fs-extra';
+import {randomUUID} from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
 
 import type {ProjectDefinitionProvider} from '../project/providers/project-definition-provider.js';
 import type {HookContext, HookTiming} from '../types/lifecycle.js';
@@ -84,7 +88,7 @@ export interface PackageBuildResult {
  * Orchestrator for package builds.
  *
  * Manages the full build lifecycle:
- * 1. Stage package content to `./dist`
+ * 1. Stage package content to `./dist` (the previous `dist/` is restored if the build is skipped)
  * 2. Check if build is needed (source hash comparison)
  * 3. Run analyzers
  * 4. Run pre-build hooks
@@ -396,29 +400,41 @@ export default class PackageBuilder {
     logger?: Logger,
     sink?: BuildEventSink,
   ): Promise<PackageBuildResult> {
-    const componentCount = await this.stagePackage(sfpmPackage, logger, sink);
+    // Staging wipes dist/; keep the previous build so a hash-match skip can restore it.
+    const previousBuild = await this.stashPreviousBuild(sfpmPackage, options);
+    let componentCount: number;
+    try {
+      componentCount = await this.stagePackage(sfpmPackage, logger, sink);
 
-    if (componentCount === 0) {
-      sink?.skip({
-        packageType: sfpmPackage.type as PackageType,
-        reason: 'empty-package',
-        version: sfpmPackage.version,
-      });
-      return {skipped: true, skipReason: 'empty-package'};
-    }
-
-    // Check if build is needed (source hash comparison)
-    if (!options.force) {
-      const {needsBuild, reason} = await this.needsBuild(sfpmPackage, options, logger);
-      if (!needsBuild) {
+      if (componentCount === 0) {
         sink?.skip({
-          hash: sfpmPackage.sourceHash,
           packageType: sfpmPackage.type as PackageType,
-          reason: reason ?? 'no-changes',
+          reason: 'empty-package',
           version: sfpmPackage.version,
         });
-        return {skipped: true, skipReason: 'no-changes'};
+        return {skipped: true, skipReason: 'empty-package'};
       }
+
+      // Check if build is needed (source hash comparison)
+      if (!options.force) {
+        const {needsBuild, reason} = await this.needsBuild(sfpmPackage, options, logger);
+        if (!needsBuild) {
+          if (previousBuild) {
+            await fs.remove(previousBuild.distDir);
+            await fs.move(previousBuild.backupDir, previousBuild.distDir);
+          }
+
+          sink?.skip({
+            hash: sfpmPackage.sourceHash,
+            packageType: sfpmPackage.type as PackageType,
+            reason: reason ?? 'no-changes',
+            version: sfpmPackage.version,
+          });
+          return {skipped: true, skipReason: 'no-changes'};
+        }
+      }
+    } finally {
+      if (previousBuild) await fs.remove(previousBuild.backupDir).catch(() => {});
     }
 
     const modeConfig = resolveModeConfig(options.validation);
@@ -664,5 +680,25 @@ export default class PackageBuilder {
         {buildStep: 'staging', cause: error instanceof Error ? error : new Error(String(error))},
       );
     }
+  }
+
+  /**
+   * Moves an existing dist/ aside when a hash-match skip is possible, so staging can't destroy the
+   * previous build output. Returns undefined when no skip is possible (first build, force, non-metadata).
+   * shortcut: os.tmpdir() may be on another filesystem, so fs.move copies instead of renaming; a sibling
+   * dir would guarantee a rename, so switch to it if large dist/ folders make this slow.
+   */
+  private async stashPreviousBuild(
+    sfpmPackage: SfpmPackage,
+    options: BuildOptions,
+  ): Promise<undefined | {backupDir: string; distDir: string}> {
+    if (options.force || !(sfpmPackage instanceof SfpmMetadataPackage) || !sfpmPackage.sourceHash) return undefined;
+
+    const distDir = this.provider.getPackageBuildDirectory(sfpmPackage.name);
+    if (!distDir || !await fs.pathExists(distDir)) return undefined;
+
+    const backupDir = path.join(os.tmpdir(), `sfpm-prev-dist-${randomUUID()}`);
+    await fs.move(distDir, backupDir);
+    return {backupDir, distDir};
   }
 }
