@@ -334,11 +334,9 @@ export class WorkspaceInitializer {
           outputs: [`${DIST_DIR}/**`],
         },
         'sfpm:deploy': {
-          cache: true,
+          cache: false,
           dependsOn: ['^sfpm:deploy'],
           env: ['SF_TARGET_ORG', 'SFDX_AUTH_URL', 'SF_ACCESS_TOKEN'],
-          inputs: options.turboInputs ?? ['$TURBO_DEFAULT$'],
-          outputs: [],
         },
         'sfpm:install': {
           cache: false,
