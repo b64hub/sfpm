@@ -38,9 +38,9 @@
     }
   },
   "devDependencies": {
-    "esbuild": "^0.27.2",
+    "esbuild": "^0.28.2",
     "vitest": "^4.0.17",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   },
   "repository": "b64hub/sfpm"
 }
