@@ -8,7 +8,9 @@ import {
   type WorkspacePackageJson,
   WorkspaceSync,
 } from '@b64hub/sfpm-core'
-import {confirm, input, select} from '@inquirer/prompts'
+import {
+  confirm, input, search, select, Separator,
+} from '@inquirer/prompts'
 import {Flags} from '@oclif/core'
 import {Org} from '@salesforce/core'
 import chalk from 'chalk'
@@ -19,6 +21,37 @@ import ora from 'ora'
 import SfpmCommand from '../../sfpm-command.js'
 import {infoBox, successBox} from '../../ui/boxes.js'
 import {resolveCliProjectDir} from '../../utils/project-dir.js'
+
+const PATH_SCAN_IGNORE = new Set(['.git', '.turbo', 'dist', 'node_modules'])
+
+/** List subdirectories of `root` matching the path the user is typing, for search-as-you-type path autocomplete. */
+async function suggestDirectories(root: string, term: string): Promise<Array<{value: string}> | Separator[]> {
+  const normalized = (term || '').replaceAll('\\', '/').replace(/^\.\//, '')
+  const lastSlash = normalized.lastIndexOf('/')
+  const dirPart = lastSlash === -1 ? '' : normalized.slice(0, lastSlash)
+  const prefix = lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1)
+
+  let names: string[] = []
+  try {
+    names = (await fs.readdir(path.join(root, dirPart), {withFileTypes: true}))
+    .filter(e => e.isDirectory() && !PATH_SCAN_IGNORE.has(e.name) && e.name.toLowerCase().startsWith(prefix.toLowerCase()))
+    .map(e => e.name)
+    .sort()
+  } catch {
+    names = []
+  }
+
+  const choices = names.map(name => {
+    const value = dirPart ? `${dirPart}/${name}` : name
+    return {name: `${value}/`, value}
+  })
+
+  if (normalized && !choices.some(c => c.value === normalized)) {
+    choices.unshift({name: `${normalized} (new)`, value: normalized})
+  }
+
+  return choices
+}
 
 interface PackageCreateResult {
   created: boolean;
@@ -94,7 +127,14 @@ export default class PackageCreate extends SfpmCommand {
     // For unlocked packages, optionally create the Package2 container in DevHub
     let packageId: string | undefined
     if (packageType === PackageType.Unlocked) {
-      packageId = await this.createPackage2Container(packageName, packagePath, isOrgDependent, flags.devhub, isInteractive, logger)
+      packageId = await this.createPackage2Container({
+        devhubFlag: flags.devhub,
+        isInteractive,
+        isOrgDependent,
+        logger,
+        packageName,
+        packagePath,
+      })
     }
 
     // Scaffold the package directory and package.json
@@ -144,14 +184,15 @@ export default class PackageCreate extends SfpmCommand {
   // Private helpers
   // ====================================================================
 
-  private async createPackage2Container(
-    packageName: string,
-    packagePath: string,
-    isOrgDependent: boolean,
-    devhubFlag: string | undefined,
-    isInteractive: boolean,
-    logger: Logger,
-  ): Promise<string | undefined> {
+  private async createPackage2Container(options: {
+    devhubFlag: string | undefined;
+    isInteractive: boolean;
+    isOrgDependent: boolean;
+    logger: Logger;
+    packageName: string;
+    packagePath: string;
+  }): Promise<string | undefined> {
+    const {devhubFlag, isInteractive, isOrgDependent, logger, packageName, packagePath} = options
     let shouldCreate = false
 
     if (devhubFlag) {
@@ -250,9 +291,11 @@ export default class PackageCreate extends SfpmCommand {
 
     if (!isInteractive) return packageName
 
-    const value = await input({
-      default: packageName,
+    const projectDir = resolveCliProjectDir()
+
+    const value = await search<string>({
       message: 'Package directory path (relative to project root):',
+      source: term => suggestDirectories(projectDir, term ?? packageName),
     })
 
     return value.trim() || packageName
