@@ -41,6 +41,7 @@ export default class PackageCreate extends SfpmCommand {
     json: Flags.boolean({description: 'output as JSON for CI/CD'}),
     name: Flags.string({char: 'n', description: 'package name (without npm scope)'}),
     'org-dependent': Flags.boolean({description: 'create as org-dependent unlocked package'}),
+    'package-path': Flags.string({description: 'path to the package directory, relative to the project root (default: package name)'}),
     path: Flags.string({char: 'p', description: 'SF source path within the package directory (default: ".")'}),
     scope: Flags.string({char: 's', description: 'npm scope for the package (e.g., "@myorg")'}),
     type: Flags.string({
@@ -59,6 +60,7 @@ export default class PackageCreate extends SfpmCommand {
 
     const packageName = await this.resolvePackageName(flags.name, isInteractive)
     const packageType = await this.resolvePackageType(flags.type as PackageType | undefined, isInteractive)
+    const packagePath = await this.resolvePackagePath(flags['package-path'], packageName, isInteractive)
     const sourcePath = await this.resolveSourcePath(flags.path, isInteractive)
     const isOrgDependent = await this.resolveOrgDependent(flags['org-dependent'], packageType, isInteractive)
     const npmScope = await this.resolveNpmScope(flags.scope, isInteractive)
@@ -68,7 +70,7 @@ export default class PackageCreate extends SfpmCommand {
     const provider = projectService.getDefinitionProvider()
 
     const npmName = npmScope ? `${npmScope}/${packageName}` : packageName
-    const packageDir = path.join(provider.projectDir, packageName)
+    const packageDir = path.join(provider.projectDir, packagePath)
 
     // Validate the package doesn't already exist
     const existingNames = provider.getAllPackageNames()
@@ -77,14 +79,14 @@ export default class PackageCreate extends SfpmCommand {
     }
 
     if (await fs.pathExists(packageDir)) {
-      this.error(`Directory '${packageName}' already exists at ${packageDir}.`)
+      this.error(`Directory '${packagePath}' already exists at ${packageDir}.`)
     }
 
     if (isInteractive) {
       this.log(infoBox('New Package', {
         Name: npmName,
         'Org-Dependent': isOrgDependent ? 'Yes' : 'No',
-        Path: sourcePath === '.' ? packageName : `${packageName}/${sourcePath}`,
+        Path: sourcePath === '.' ? packagePath : `${packagePath}/${sourcePath}`,
         Type: packageType,
       }))
     }
@@ -92,7 +94,7 @@ export default class PackageCreate extends SfpmCommand {
     // For unlocked packages, optionally create the Package2 container in DevHub
     let packageId: string | undefined
     if (packageType === PackageType.Unlocked) {
-      packageId = await this.createPackage2Container(packageName, isOrgDependent, flags.devhub, isInteractive, logger)
+      packageId = await this.createPackage2Container(packageName, packagePath, isOrgDependent, flags.devhub, isInteractive, logger)
     }
 
     // Scaffold the package directory and package.json
@@ -112,7 +114,7 @@ export default class PackageCreate extends SfpmCommand {
       created: true,
       packageId,
       packageName,
-      packagePath: packageName,
+      packagePath,
       packageType,
     }
 
@@ -122,17 +124,17 @@ export default class PackageCreate extends SfpmCommand {
     }
 
     this.log(successBox('Package Created', {
-      Directory: packageName,
+      Directory: packagePath,
       Name: npmName,
       ...(packageId ? {'Package ID': packageId} : {}),
       Type: packageType,
     }))
 
     this.log(chalk.dim('\nNext steps:'))
-    this.log(chalk.dim(`  1. Add your metadata to ${sourcePath === '.' ? packageName : `${packageName}/${sourcePath}`}/`))
+    this.log(chalk.dim(`  1. Add your metadata to ${sourcePath === '.' ? packagePath : `${packagePath}/${sourcePath}`}/`))
     this.log(chalk.dim('  2. Run \'pnpm install\' to update workspace references'))
     if (packageType === PackageType.Unlocked && !packageId) {
-      this.log(chalk.dim(`  3. Set sfpm.packageId in ${packageName}/package.json after creating the Package2 in your DevHub`))
+      this.log(chalk.dim(`  3. Set sfpm.packageId in ${packagePath}/package.json after creating the Package2 in your DevHub`))
     }
 
     return result
@@ -144,6 +146,7 @@ export default class PackageCreate extends SfpmCommand {
 
   private async createPackage2Container(
     packageName: string,
+    packagePath: string,
     isOrgDependent: boolean,
     devhubFlag: string | undefined,
     isInteractive: boolean,
@@ -177,7 +180,7 @@ export default class PackageCreate extends SfpmCommand {
           description: '',
           isOrgDependent,
           name: packageName,
-          path: packageName,
+          path: packagePath,
         },
         process.cwd(),
       )
@@ -240,6 +243,19 @@ export default class PackageCreate extends SfpmCommand {
         return true
       },
     })
+  }
+
+  private async resolvePackagePath(flagValue: string | undefined, packageName: string, isInteractive: boolean): Promise<string> {
+    if (flagValue) return flagValue
+
+    if (!isInteractive) return packageName
+
+    const value = await input({
+      default: packageName,
+      message: 'Package directory path (relative to project root):',
+    })
+
+    return value.trim() || packageName
   }
 
   private async resolvePackageType(flagValue: PackageType | undefined, isInteractive: boolean): Promise<PackageType> {
