@@ -726,7 +726,7 @@ fetch an org from a pool
 ```
 USAGE
   $ sfpm pool fetch -t <value> [--json | --plain] [--log-level trace|debug|info|warn|error] [-a <value>]
-    [--limit <value>] [--my-pool] [--send-to <value>] [--set-default] [--source-tracking] [-v <value>] [--type
+    [--my-pool] [--send-to <value>] [--set-default] [--source-tracking] [-v <value>] [--type
     scratch|sandbox]
 
 FLAGS
@@ -734,7 +734,6 @@ FLAGS
   -t, --tag=<value>             (required) pool tag to fetch from
   -v, --target-dev-hub=<value>  target hub org username or alias
       --json                    output result as JSON
-      --limit=<value>           max orgs to return when using --all
       --log-level=<option>      [default: error, env: SFPM_LOG_LEVEL] diagnostic log level
                                 <options: trace|debug|info|warn|error>
       --my-pool                 only fetch from orgs created by the current user
@@ -756,8 +755,6 @@ EXAMPLES
   $ sfpm pool fetch --tag sb-pool --type sandbox -v my-prod-org
 
   $ sfpm pool fetch --tag dev-pool -v my-devhub --send-to user@example.com
-
-  $ sfpm pool fetch --tag dev-pool -v my-devhub --all --limit 5
 
   $ sfpm pool fetch --tag dev-pool -v my-devhub --json
 ```

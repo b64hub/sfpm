@@ -19,7 +19,7 @@
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-plugins": "^5",
-    "@oclif/table": "^0.5.1",
+    "@oclif/table": "^1.0.1",
     "@salesforce/core": "^8.31.0",
     "boxen": "^8.0.1",
     "chalk": "^5.6.2",
@@ -35,7 +35,7 @@
     "react": "^19.2.8"
   },
   "devDependencies": {
-    "@oclif/test": "^4",
+    "@oclif/test": "^5",
     "@types/chai": "^4",
     "@types/fs-extra": "^11.0.4",
     "@types/gradient-string": "^1.1.6",
@@ -46,7 +46,7 @@
     "@types/react": "^19.2.17",
     "chai": "^4",
     "mocha": "^10",
-    "oclif": "^4",
+    "oclif": "^6",
     "shx": "^0.3.3"
   },
   "engines": {

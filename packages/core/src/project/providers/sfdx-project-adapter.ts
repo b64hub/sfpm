@@ -164,10 +164,12 @@ export function toSalesforceProjectJson(definition: ProjectDefinition, options?:
     }
   }
 
-  let namespace: string | undefined;
-  if (definition.packages.length === 1 && definition.packages[0].namespace)  {
-    namespace = definition.packages[0].namespace;
-  }
+  // Migrated projects carry the namespace on every package, not on the root, so fall back to a shared one
+  const packageNamespaces = new Set(definition.packages.map(p => p.namespace));
+  const sharedPackageNamespace = packageNamespaces.size === 1 ? [...packageNamespaces][0] : undefined;
+  const namespace = (definition.packages.length === 1 && definition.packages[0].namespace)
+    || definition.namespace
+    || sharedPackageNamespace;
 
   const result: SalesforceProjectJson = {
     packageDirectories,
@@ -202,12 +204,14 @@ export function toSalesforceProjectJson(definition: ProjectDefinition, options?:
  */
 export function fromSalesforceProjectJson(projectJson: Record<string, unknown>): ProjectDefinition {
   const packageAliases = (projectJson.packageAliases ?? {}) as Record<string, string>;
+  const namespace = projectJson.namespace as string | undefined;
 
   const result: ProjectDefinition = {
     packages: [],
     ...(projectJson.sfdcLoginUrl ? {sfdcLoginUrl: projectJson.sfdcLoginUrl as string} : {}),
     ...(projectJson.sourceApiVersion ? {sourceApiVersion: projectJson.sourceApiVersion as string} : {}),
     ...(projectJson.sourceBehaviorOptions ? {sourceBehaviorOptions: projectJson.sourceBehaviorOptions as string[]} : {}),
+    ...(namespace ? {namespace} : {}),
   };
 
   if (!Array.isArray(projectJson.packageDirectories)) return result;
@@ -222,7 +226,6 @@ export function fromSalesforceProjectJson(projectJson: Record<string, unknown>):
   .map(dir => {
     const sfName = dir.package as string;
     const sfVersion = dir.versionNumber as string;
-    const namespace = projectJson.namspace as string;
 
     // Convert SF 4-part version to semver
     const versionParts = sfVersion.split('.');

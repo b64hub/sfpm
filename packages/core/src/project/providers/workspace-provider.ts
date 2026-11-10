@@ -52,6 +52,8 @@ export interface WorkspaceProviderOptions {
    */
   distAware?: boolean;
   logger?: Logger;
+  /** Salesforce namespace for the root sfdx-project.json */
+  namespace?: string;
   /** Absolute path to the project root directory */
   projectDir: string;
   /** Salesforce login URL */
@@ -217,6 +219,12 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     throw new Error(`No workspace package.json with sfpm config found for "${packageName}"`);
   }
 
+  /** Project-relative directory for new packages: base of the first `dir/*` or `dir/**` workspace glob, or undefined when there is none. */
+  getPackagesDir(): string | undefined {
+    const glob = this.readWorkspaceGlobs().find(g => g.endsWith('/*') || g.endsWith('/**'));
+    return glob?.replace(/\/\*\*?$/, '');
+  }
+
   getPackageType(packageName: string): PackageType {
     return getPackageType(this.resolve().definition, packageName);
   }
@@ -246,7 +254,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     // 2. Load and filter package.json files with sfpm config
     const sfpmPackages = this.loadSfpmPackages(workspaceDirs, warnings);
     if (sfpmPackages.length === 0) {
-      throw new Error('No workspace packages with an "sfpm" field found. '
+      warnings.push('No workspace packages with an "sfpm" field found. '
         + 'Each SF package directory needs a package.json with an "sfpm" configuration block.');
     }
 
@@ -274,6 +282,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     // 5. Build ProjectDefinition
     const projectDefinition: ProjectDefinition = {
       packages: packageDefinitions,
+      ...(this.options.namespace ? {namespace: this.options.namespace} : {}),
       sfdcLoginUrl: this.options.sfdcLoginUrl ?? 'https://login.salesforce.com',
       ...(this.options.sourceApiVersion ? {sourceApiVersion: this.options.sourceApiVersion} : {}),
       ...(this.options.sourceBehaviorOptions?.length ? {sourceBehaviorOptions: this.options.sourceBehaviorOptions} : {}),
@@ -283,7 +292,8 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
     const validated = this.validate(projectDefinition, warnings);
 
     // Keep sfdx-project.json in sync so @salesforce/core can load it
-    WorkspaceProvider.ensureSfdxProject(this.projectDir, validated);
+    // sfdx-project.json requires at least one packageDirectory
+    if (validated.packages.length > 0) WorkspaceProvider.ensureSfdxProject(this.projectDir, validated);
 
     if (this.options.distAware) this.cachedDistMtimes = distMtimes;
     this.cachedResult = {definition: validated, packages: sfpmPackages, warnings};
@@ -331,6 +341,7 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
 
     return {
       packages: [singlePkg],
+      ...(definition.namespace ? {namespace: definition.namespace} : {}),
       sfdcLoginUrl: definition.sfdcLoginUrl,
       ...(definition.sourceApiVersion ? {sourceApiVersion: definition.sourceApiVersion} : {}),
       ...(definition.sourceBehaviorOptions?.length ? {sourceBehaviorOptions: definition.sourceBehaviorOptions} : {}),
@@ -402,32 +413,10 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
   }
 
   /**
-   * Discover workspace member directories from pnpm-workspace.yaml or
-   * root package.json workspaces field.
+   * Discover workspace member directories from the raw workspace globs.
    */
   private discoverWorkspaceMembers(): string[] {
-    const {projectDir} = this.options;
-
-    const pnpmWorkspacePath = path.join(projectDir, 'pnpm-workspace.yaml');
-    const pnpmWorkspacePathAlt = path.join(projectDir, 'pnpm-workspace.yml');
-    if (fs.existsSync(pnpmWorkspacePath)) {
-      return this.parsePnpmWorkspace(pnpmWorkspacePath);
-    }
-
-    if (fs.existsSync(pnpmWorkspacePathAlt)) {
-      return this.parsePnpmWorkspace(pnpmWorkspacePathAlt);
-    }
-
-    const rootPkgPath = path.join(projectDir, 'package.json');
-    if (fs.existsSync(rootPkgPath)) {
-      const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'));
-      if (Array.isArray(rootPkg.workspaces)) {
-        return this.resolveGlobs(rootPkg.workspaces);
-      }
-    }
-
-    throw new Error('No workspace configuration found. Expected pnpm-workspace.yaml '
-      + 'or a "workspaces" field in the root package.json.');
+    return this.resolveGlobs(this.readWorkspaceGlobs());
   }
 
   // =========================================================================
@@ -545,7 +534,36 @@ export class WorkspaceProvider implements ProjectDefinitionProvider {
       }
     }
 
-    return this.resolveGlobs(globs);
+    return globs;
+  }
+
+  /**
+   * Read the raw workspace globs from pnpm-workspace.yaml or
+   * root package.json workspaces field.
+   */
+  private readWorkspaceGlobs(): string[] {
+    const {projectDir} = this.options;
+
+    const pnpmWorkspacePath = path.join(projectDir, 'pnpm-workspace.yaml');
+    const pnpmWorkspacePathAlt = path.join(projectDir, 'pnpm-workspace.yml');
+    if (fs.existsSync(pnpmWorkspacePath)) {
+      return this.parsePnpmWorkspace(pnpmWorkspacePath);
+    }
+
+    if (fs.existsSync(pnpmWorkspacePathAlt)) {
+      return this.parsePnpmWorkspace(pnpmWorkspacePathAlt);
+    }
+
+    const rootPkgPath = path.join(projectDir, 'package.json');
+    if (fs.existsSync(rootPkgPath)) {
+      const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'));
+      if (Array.isArray(rootPkg.workspaces)) {
+        return rootPkg.workspaces;
+      }
+    }
+
+    throw new Error('No workspace configuration found. Expected pnpm-workspace.yaml '
+      + 'or a "workspaces" field in the root package.json.');
   }
 
   private resolveGlobs(globs: string[]): string[] {

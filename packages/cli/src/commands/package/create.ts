@@ -6,6 +6,7 @@ import {
   ProjectService,
   type SfpmPackageConfig,
   type WorkspacePackageJson,
+  WorkspaceProvider,
   WorkspaceSync,
 } from '@b64hub/sfpm-core'
 import {
@@ -74,7 +75,7 @@ export default class PackageCreate extends SfpmCommand {
     json: Flags.boolean({description: 'output as JSON for CI/CD'}),
     name: Flags.string({char: 'n', description: 'package name (without npm scope)'}),
     'org-dependent': Flags.boolean({description: 'create as org-dependent unlocked package'}),
-    'package-path': Flags.string({description: 'path to the package directory, relative to the project root (default: package name)'}),
+    'package-path': Flags.string({description: 'path to the package directory, relative to the project root (default: workspace packages dir + package name)'}),
     path: Flags.string({char: 'p', description: 'SF source path within the package directory (default: ".")'}),
     scope: Flags.string({char: 's', description: 'npm scope for the package (e.g., "@myorg")'}),
     type: Flags.string({
@@ -93,14 +94,18 @@ export default class PackageCreate extends SfpmCommand {
 
     const packageName = await this.resolvePackageName(flags.name, isInteractive)
     const packageType = await this.resolvePackageType(flags.type as PackageType | undefined, isInteractive)
-    const packagePath = await this.resolvePackagePath(flags['package-path'], packageName, isInteractive)
-    const sourcePath = await this.resolveSourcePath(flags.path, isInteractive)
-    const isOrgDependent = await this.resolveOrgDependent(flags['org-dependent'], packageType, isInteractive)
-    const npmScope = await this.resolveNpmScope(flags.scope, isInteractive)
 
     const projectDir = resolveCliProjectDir()
     const projectService = await ProjectService.getInstance(projectDir)
     const provider = projectService.getDefinitionProvider()
+
+    const packagesDir = provider instanceof WorkspaceProvider ? provider.getPackagesDir() : undefined
+    const defaultPackagePath = packagesDir ? path.posix.join(packagesDir, packageName) : packageName
+    const packagePath = await this.resolvePackagePath(flags['package-path'], defaultPackagePath, isInteractive)
+
+    const sourcePath = await this.resolveSourcePath(flags.path, isInteractive)
+    const isOrgDependent = await this.resolveOrgDependent(flags['org-dependent'], packageType, isInteractive)
+    const npmScope = await this.resolveNpmScope(flags.scope, isInteractive)
 
     const npmName = npmScope ? `${npmScope}/${packageName}` : packageName
     const packageDir = path.join(provider.projectDir, packagePath)
@@ -286,19 +291,20 @@ export default class PackageCreate extends SfpmCommand {
     })
   }
 
-  private async resolvePackagePath(flagValue: string | undefined, packageName: string, isInteractive: boolean): Promise<string> {
+  /** `defaultPath` is the package name, prefixed with the workspace's configured packages dir (e.g. "packages/") when one exists. */
+  private async resolvePackagePath(flagValue: string | undefined, defaultPath: string, isInteractive: boolean): Promise<string> {
     if (flagValue) return flagValue
 
-    if (!isInteractive) return packageName
+    if (!isInteractive) return defaultPath
 
     const projectDir = resolveCliProjectDir()
 
     const value = await search<string>({
       message: 'Package directory path (relative to project root):',
-      source: term => suggestDirectories(projectDir, term ?? packageName),
+      source: term => suggestDirectories(projectDir, term ?? defaultPath),
     })
 
-    return value.trim() || packageName
+    return value.trim() || defaultPath
   }
 
   private async resolvePackageType(flagValue: PackageType | undefined, isInteractive: boolean): Promise<PackageType> {

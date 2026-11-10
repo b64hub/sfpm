@@ -3,7 +3,7 @@
  *
  * In this mode, each SF package directory contains a `package.json` that is
  * the source of truth for package identity, version, and dependencies.
- * `sfdx-project.json` is derived from these files via `sfpm sync`.
+ * `sfdx-project.json` is derived from these files via `sfpm project sync`.
  *
  * The `sfpm` field in each package.json carries static configuration only:
  * package type, SF source path, API version, and deployment options.
