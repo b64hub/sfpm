@@ -359,7 +359,7 @@ export default class PackageCreate extends SfpmCommand {
       name: options.npmName,
       private: true,
       sfpm,
-      version: '1.0.0',
+      version: '0.1.0',
     }
 
     // Create the package directory and source path
