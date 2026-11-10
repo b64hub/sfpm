@@ -9,7 +9,9 @@ import {
   WorkspaceProvider,
   WorkspaceSync,
 } from '@b64hub/sfpm-core'
-import {confirm, input, select} from '@inquirer/prompts'
+import {
+  confirm, input, search, select, Separator,
+} from '@inquirer/prompts'
 import {Flags} from '@oclif/core'
 import {Org} from '@salesforce/core'
 import chalk from 'chalk'
@@ -20,6 +22,37 @@ import ora from 'ora'
 import SfpmCommand from '../../sfpm-command.js'
 import {infoBox, successBox} from '../../ui/boxes.js'
 import {resolveCliProjectDir} from '../../utils/project-dir.js'
+
+const PATH_SCAN_IGNORE = new Set(['.git', '.turbo', 'dist', 'node_modules'])
+
+/** List subdirectories of `root` matching the path the user is typing, for search-as-you-type path autocomplete. */
+async function suggestDirectories(root: string, term: string): Promise<Array<{value: string}> | Separator[]> {
+  const normalized = (term || '').replaceAll('\\', '/').replace(/^\.\//, '')
+  const lastSlash = normalized.lastIndexOf('/')
+  const dirPart = lastSlash === -1 ? '' : normalized.slice(0, lastSlash)
+  const prefix = lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1)
+
+  let names: string[] = []
+  try {
+    names = (await fs.readdir(path.join(root, dirPart), {withFileTypes: true}))
+    .filter(e => e.isDirectory() && !PATH_SCAN_IGNORE.has(e.name) && e.name.toLowerCase().startsWith(prefix.toLowerCase()))
+    .map(e => e.name)
+    .sort()
+  } catch {
+    names = []
+  }
+
+  const choices = names.map(name => {
+    const value = dirPart ? `${dirPart}/${name}` : name
+    return {name: `${value}/`, value}
+  })
+
+  if (normalized && !choices.some(c => c.value === normalized)) {
+    choices.unshift({name: `${normalized} (new)`, value: normalized})
+  }
+
+  return choices
+}
 
 interface PackageCreateResult {
   created: boolean;
@@ -42,6 +75,7 @@ export default class PackageCreate extends SfpmCommand {
     json: Flags.boolean({description: 'output as JSON for CI/CD'}),
     name: Flags.string({char: 'n', description: 'package name (without npm scope)'}),
     'org-dependent': Flags.boolean({description: 'create as org-dependent unlocked package'}),
+    'package-path': Flags.string({description: 'path to the package directory, relative to the project root (default: workspace packages dir + package name)'}),
     path: Flags.string({char: 'p', description: 'SF source path within the package directory (default: ".")'}),
     scope: Flags.string({char: 's', description: 'npm scope for the package (e.g., "@myorg")'}),
     type: Flags.string({
@@ -60,18 +94,21 @@ export default class PackageCreate extends SfpmCommand {
 
     const packageName = await this.resolvePackageName(flags.name, isInteractive)
     const packageType = await this.resolvePackageType(flags.type as PackageType | undefined, isInteractive)
-    const sourcePath = await this.resolveSourcePath(flags.path, isInteractive)
-    const isOrgDependent = await this.resolveOrgDependent(flags['org-dependent'], packageType, isInteractive)
-    const npmScope = await this.resolveNpmScope(flags.scope, isInteractive)
 
     const projectDir = resolveCliProjectDir()
     const projectService = await ProjectService.getInstance(projectDir)
     const provider = projectService.getDefinitionProvider()
 
-    const npmName = npmScope ? `${npmScope}/${packageName}` : packageName
     const packagesDir = provider instanceof WorkspaceProvider ? provider.getPackagesDir() : undefined
-    const packageRelDir = packagesDir ? path.posix.join(packagesDir, packageName) : packageName
-    const packageDir = path.join(provider.projectDir, packageRelDir)
+    const defaultPackagePath = packagesDir ? path.posix.join(packagesDir, packageName) : packageName
+    const packagePath = await this.resolvePackagePath(flags['package-path'], defaultPackagePath, isInteractive)
+
+    const sourcePath = await this.resolveSourcePath(flags.path, isInteractive)
+    const isOrgDependent = await this.resolveOrgDependent(flags['org-dependent'], packageType, isInteractive)
+    const npmScope = await this.resolveNpmScope(flags.scope, isInteractive)
+
+    const npmName = npmScope ? `${npmScope}/${packageName}` : packageName
+    const packageDir = path.join(provider.projectDir, packagePath)
 
     // Validate the package doesn't already exist
     const existingNames = provider.getAllPackageNames()
@@ -80,14 +117,14 @@ export default class PackageCreate extends SfpmCommand {
     }
 
     if (await fs.pathExists(packageDir)) {
-      this.error(`Directory '${packageRelDir}' already exists at ${packageDir}.`)
+      this.error(`Directory '${packagePath}' already exists at ${packageDir}.`)
     }
 
     if (isInteractive) {
       this.log(infoBox('New Package', {
         Name: npmName,
         'Org-Dependent': isOrgDependent ? 'Yes' : 'No',
-        Path: sourcePath === '.' ? packageRelDir : `${packageRelDir}/${sourcePath}`,
+        Path: sourcePath === '.' ? packagePath : `${packagePath}/${sourcePath}`,
         Type: packageType,
       }))
     }
@@ -95,7 +132,14 @@ export default class PackageCreate extends SfpmCommand {
     // For unlocked packages, optionally create the Package2 container in DevHub
     let packageId: string | undefined
     if (packageType === PackageType.Unlocked) {
-      packageId = await this.createPackage2Container(packageName, packageRelDir, isOrgDependent, flags.devhub, isInteractive, logger)
+      packageId = await this.createPackage2Container({
+        devhubFlag: flags.devhub,
+        isInteractive,
+        isOrgDependent,
+        logger,
+        packageName,
+        packagePath,
+      })
     }
 
     // Scaffold the package directory and package.json
@@ -115,7 +159,7 @@ export default class PackageCreate extends SfpmCommand {
       created: true,
       packageId,
       packageName,
-      packagePath: packageRelDir,
+      packagePath,
       packageType,
     }
 
@@ -125,17 +169,17 @@ export default class PackageCreate extends SfpmCommand {
     }
 
     this.log(successBox('Package Created', {
-      Directory: packageRelDir,
+      Directory: packagePath,
       Name: npmName,
       ...(packageId ? {'Package ID': packageId} : {}),
       Type: packageType,
     }))
 
     this.log(chalk.dim('\nNext steps:'))
-    this.log(chalk.dim(`  1. Add your metadata to ${sourcePath === '.' ? packageRelDir : `${packageRelDir}/${sourcePath}`}/`))
+    this.log(chalk.dim(`  1. Add your metadata to ${sourcePath === '.' ? packagePath : `${packagePath}/${sourcePath}`}/`))
     this.log(chalk.dim('  2. Run \'pnpm install\' to update workspace references'))
     if (packageType === PackageType.Unlocked && !packageId) {
-      this.log(chalk.dim(`  3. Set sfpm.packageId in ${packageRelDir}/package.json after creating the Package2 in your DevHub`))
+      this.log(chalk.dim(`  3. Set sfpm.packageId in ${packagePath}/package.json after creating the Package2 in your DevHub`))
     }
 
     return result
@@ -145,14 +189,15 @@ export default class PackageCreate extends SfpmCommand {
   // Private helpers
   // ====================================================================
 
-  private async createPackage2Container(
-    packageName: string,
-    packageRelDir: string,
-    isOrgDependent: boolean,
-    devhubFlag: string | undefined,
-    isInteractive: boolean,
-    logger: Logger,
-  ): Promise<string | undefined> {
+  private async createPackage2Container(options: {
+    devhubFlag: string | undefined;
+    isInteractive: boolean;
+    isOrgDependent: boolean;
+    logger: Logger;
+    packageName: string;
+    packagePath: string;
+  }): Promise<string | undefined> {
+    const {devhubFlag, isInteractive, isOrgDependent, logger, packageName, packagePath} = options
     let shouldCreate = false
 
     if (devhubFlag) {
@@ -181,7 +226,7 @@ export default class PackageCreate extends SfpmCommand {
           description: '',
           isOrgDependent,
           name: packageName,
-          path: packageRelDir,
+          path: packagePath,
         },
         process.cwd(),
       )
@@ -246,6 +291,22 @@ export default class PackageCreate extends SfpmCommand {
     })
   }
 
+  /** `defaultPath` is the package name, prefixed with the workspace's configured packages dir (e.g. "packages/") when one exists. */
+  private async resolvePackagePath(flagValue: string | undefined, defaultPath: string, isInteractive: boolean): Promise<string> {
+    if (flagValue) return flagValue
+
+    if (!isInteractive) return defaultPath
+
+    const projectDir = resolveCliProjectDir()
+
+    const value = await search<string>({
+      message: 'Package directory path (relative to project root):',
+      source: term => suggestDirectories(projectDir, term ?? defaultPath),
+    })
+
+    return value.trim() || defaultPath
+  }
+
   private async resolvePackageType(flagValue: PackageType | undefined, isInteractive: boolean): Promise<PackageType> {
     if (flagValue) return flagValue
 
@@ -304,7 +365,7 @@ export default class PackageCreate extends SfpmCommand {
       name: options.npmName,
       private: true,
       sfpm,
-      version: '1.0.0',
+      version: '0.1.0',
     }
 
     // Create the package directory and source path

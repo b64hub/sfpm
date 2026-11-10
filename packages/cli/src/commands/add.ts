@@ -5,6 +5,29 @@ import path from 'node:path'
 
 import SfpmCommand from '../sfpm-command.js'
 
+/** Strip a version/tag specifier (`name@1.2.3` or `@scope/name@1.2.3`) down to the bare package name. */
+function parsePackageName(token: string): string {
+  const start = token.startsWith('@') ? 1 : 0
+  const atIndex = token.indexOf('@', start)
+  return atIndex === -1 ? token : token.slice(0, atIndex)
+}
+
+/** Names of all packages in the pnpm workspace (root + members), so `add` can prefer `workspace:*` over the registry. */
+function getWorkspacePackageNames(projectDir: string): Set<string> {
+  try {
+    const output = execSync('pnpm -r list --depth -1 --json', {cwd: projectDir, encoding: 'utf8'})
+    const entries = JSON.parse(output) as Array<{name?: string}>
+    const names = new Set<string>()
+    for (const entry of entries) {
+      if (entry.name) names.add(entry.name)
+    }
+
+    return names
+  } catch {
+    return new Set()
+  }
+}
+
 export default class Add extends SfpmCommand {
   static override args = {
     packages: Args.string({
@@ -28,9 +51,14 @@ export default class Add extends SfpmCommand {
     }
 
     const projectDir = process.env.SFPM_PROJECT_DIR || process.cwd()
-    const pkgArgs = packages.map(p => `'${p}'`).join(' ')
+    const workspaceNames = getWorkspacePackageNames(projectDir)
+    const resolvedPackages = packages.map(p => {
+      const name = parsePackageName(p)
+      return workspaceNames.has(name) ? `${name}@workspace:*` : p
+    })
+    const pkgArgs = resolvedPackages.map(p => `'${p}'`).join(' ')
 
-    this.log(`Adding: ${packages.join(', ')}`)
+    this.log(`Adding: ${resolvedPackages.join(', ')}`)
     execSync(`pnpm add ${pkgArgs}`, {cwd: projectDir, stdio: 'inherit'})
 
     // Validate that added packages are sfpm packages
