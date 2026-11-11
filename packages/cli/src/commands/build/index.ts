@@ -99,11 +99,10 @@ export default class Build extends SfpmCommand {
     }),
     turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies)'}),
     validation: Flags.string({
-      allowNo: true,
       char: 'l',
       default: 'local',
-      description: 'validation level (use --no-validation to skip)',
-      options: ['local', 'org', 'full'],
+      description: 'validation level (use --validation none to skip)',
+      options: ['local', 'org', 'full', 'none'],
     }),
     wait: Flags.integer({
       char: 'w', default: 120, description: 'timeout in minutes for package version creation', min: 1,
@@ -437,8 +436,7 @@ export default class Build extends SfpmCommand {
       this.turboResultDir = projectConfig.getPackageDir(resolvedPackages[0]);
     }
 
-    // Resolve validation level: --no-validation → 'none', --validation=X → X, default → 'local'
-    const validation = (flags.validation === 'false' ? 'none' : flags.validation ?? 'local') as 'full' | 'local' | 'none' | 'org';
+    const validation = flags.validation as ValidationLevel;
 
     // Resolve devhub (not required when validation doesn't need an org)
     const needsOrg = validation === 'org' || validation === 'full';

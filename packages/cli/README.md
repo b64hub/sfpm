@@ -134,7 +134,7 @@ build packages
 USAGE
   $ sfpm build PACKAGES... [--json | --plain] [--log-level trace|debug|info|warn|error] [--async] [-b
     <value>] [-o <value>] [-f] [-k <value>...] [--no-dependencies] [--source-only] [-t <value>] [-v <value>] [--turbo]
-    [-l local|org|full] [-w <value>]
+    [-l local|org|full|none] [-w <value>]
 
 ARGUMENTS
   PACKAGES...  package(s) to build
@@ -144,8 +144,8 @@ FLAGS
   -f, --force                        [env: SFPM_FORCE_BUILD] build even if no source changes detected
   -k, --installation-key=<value>...  installation key for unlocked packages; repeat as <package>=<key>, or a bare value
                                      as the default
-  -l, --validation=<option>          [default: local] validation level (use --no-validation to skip)
-                                     <options: local|org|full>
+  -l, --validation=<option>          [default: local] validation level (use --validation none to skip)
+                                     <options: local|org|full|none>
   -o, --build-org=<value>            target org for source package validation (deploy + test)
   -t, --tag=<value>                  tag for the build
   -v, --target-dev-hub=<value>       [env: SF_DEV_HUB] target dev hub username
