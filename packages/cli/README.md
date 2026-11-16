@@ -20,7 +20,7 @@ $ npm install -g @b64hub/sfpm-cli
 $ sfpm COMMAND
 running command...
 $ sfpm (--version)
-@b64hub/sfpm-cli/0.4.0 linux-x64 node-v22.23.3
+@b64hub/sfpm-cli/0.5.0 linux-x64 node-v22.23.3
 $ sfpm --help [COMMAND]
 USAGE
   $ sfpm COMMAND
@@ -48,6 +48,7 @@ USAGE
 * [`sfpm plugins uninstall [PLUGIN]`](#sfpm-plugins-uninstall-plugin)
 * [`sfpm plugins unlink [PLUGIN]`](#sfpm-plugins-unlink-plugin)
 * [`sfpm plugins update`](#sfpm-plugins-update)
+* [`sfpm pool clean`](#sfpm-pool-clean)
 * [`sfpm pool delete`](#sfpm-pool-delete)
 * [`sfpm pool fetch`](#sfpm-pool-fetch)
 * [`sfpm pool fill`](#sfpm-pool-fill)
@@ -90,7 +91,7 @@ EXAMPLES
   $ sfpm add @myorg/package-a @myorg/package-b
 ```
 
-_See code: [dist/commands/add.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/add.js)_
+_See code: [dist/commands/add.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/add.js)_
 
 ## `sfpm bootstrap`
 
@@ -124,7 +125,7 @@ EXAMPLES
   $ sfpm bootstrap -o my-prod-org --force
 ```
 
-_See code: [dist/commands/bootstrap.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/bootstrap.js)_
+_See code: [dist/commands/bootstrap.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/bootstrap.js)_
 
 ## `sfpm build PACKAGES`
 
@@ -175,7 +176,7 @@ EXAMPLES
   $ sfpm build package-a package-b -v my-devhub
 ```
 
-_See code: [dist/commands/build/index.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/build/index.js)_
+_See code: [dist/commands/build/index.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/build/index.js)_
 
 ## `sfpm build status`
 
@@ -203,7 +204,7 @@ EXAMPLES
   $ sfpm build status --poll
 ```
 
-_See code: [dist/commands/build/status.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/build/status.js)_
+_See code: [dist/commands/build/status.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/build/status.js)_
 
 ## `sfpm deploy PACKAGES`
 
@@ -245,7 +246,7 @@ EXAMPLES
   $ sfpm deploy package-a package-b -o my-sandbox
 ```
 
-_See code: [dist/commands/deploy/index.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/deploy/index.js)_
+_See code: [dist/commands/deploy/index.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/deploy/index.js)_
 
 ## `sfpm deploy artifact PACKAGES`
 
@@ -287,7 +288,7 @@ EXAMPLES
   $ sfpm deploy artifact package-a package-b -o my-sandbox
 ```
 
-_See code: [dist/commands/deploy/artifact.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/deploy/artifact.js)_
+_See code: [dist/commands/deploy/artifact.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/deploy/artifact.js)_
 
 ## `sfpm help [COMMAND]`
 
@@ -350,7 +351,7 @@ EXAMPLES
   $ sfpm install package-a package-b -o my-sandbox
 ```
 
-_See code: [dist/commands/install.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/install.js)_
+_See code: [dist/commands/install.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/install.js)_
 
 ## `sfpm package create`
 
@@ -387,7 +388,7 @@ EXAMPLES
   $ sfpm package create --json
 ```
 
-_See code: [dist/commands/package/create.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/package/create.js)_
+_See code: [dist/commands/package/create.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/package/create.js)_
 
 ## `sfpm plugins`
 
@@ -679,26 +680,67 @@ DESCRIPTION
 
 _See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v5.4.55/src/commands/plugins/update.ts)_
 
+## `sfpm pool clean`
+
+delete only available orgs from a pool (safe to run before refilling — never touches assigned or in-progress orgs by default)
+
+```
+USAGE
+  $ sfpm pool clean -t <value>... [--json | --plain] [--log-level trace|debug|info|warn|error] [--exclude-stage
+    Assigned|Available|InProgress...] [--my-pool] [-v <value>] [--type scratch|sandbox]
+
+FLAGS
+  -t, --tag=<value>...             (required) pool tag to delete from (repeat to delete from multiple pools)
+  -v, --target-dev-hub=<value>     target hub org username or alias
+      --exclude-stage=<option>...  [default: Assigned,InProgress] exclude orgs in this pool stage from deletion (repeat
+                                   for multiple; default: Assigned, InProgress — only Available orgs are cleaned)
+                                   <options: Assigned|Available|InProgress>
+      --json                       output result as JSON
+      --log-level=<option>         [default: error, env: SFPM_LOG_LEVEL] diagnostic log level
+                                   <options: trace|debug|info|warn|error>
+      --my-pool                    only delete orgs created by the current user
+      --plain                      non-interactive output (no spinners or cursor movement)
+      --type=<option>              [default: scratch] pool type: scratch or sandbox
+                                   <options: scratch|sandbox>
+
+DESCRIPTION
+  delete only available orgs from a pool (safe to run before refilling — never touches assigned or in-progress orgs by
+  default)
+
+EXAMPLES
+  $ sfpm pool clean --tag dev-pool -v my-devhub
+
+  $ sfpm pool clean --tag sb-pool --type sandbox -v my-prod-org
+
+  $ sfpm pool clean --tag dev-pool -v my-devhub --exclude-stage Assigned
+
+  $ sfpm pool clean --tag dev-pool -v my-devhub --json
+```
+
+_See code: [dist/commands/pool/clean.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/pool/clean.js)_
+
 ## `sfpm pool delete`
 
 delete orgs from a pool
 
 ```
 USAGE
-  $ sfpm pool delete -t <value>... [--json | --plain] [--log-level trace|debug|info|warn|error]
-    [--in-progress-only] [--my-pool] [-v <value>] [--type scratch|sandbox]
+  $ sfpm pool delete -t <value>... [--json | --plain] [--log-level trace|debug|info|warn|error] [--exclude-stage
+    Assigned|Available|InProgress...] [--my-pool] [-v <value>] [--type scratch|sandbox]
 
 FLAGS
-  -t, --tag=<value>...          (required) pool tag to delete from (repeat to delete from multiple pools)
-  -v, --target-dev-hub=<value>  target hub org username or alias
-      --in-progress-only        only delete orgs with "In Progress" status
-      --json                    output result as JSON
-      --log-level=<option>      [default: error, env: SFPM_LOG_LEVEL] diagnostic log level
-                                <options: trace|debug|info|warn|error>
-      --my-pool                 only delete orgs created by the current user
-      --plain                   non-interactive output (no spinners or cursor movement)
-      --type=<option>           [default: scratch] pool type: scratch or sandbox
-                                <options: scratch|sandbox>
+  -t, --tag=<value>...             (required) pool tag to delete from (repeat to delete from multiple pools)
+  -v, --target-dev-hub=<value>     target hub org username or alias
+      --exclude-stage=<option>...  exclude orgs in this pool stage from deletion (repeat for multiple; default: none,
+                                   deletes every stage)
+                                   <options: Assigned|Available|InProgress>
+      --json                       output result as JSON
+      --log-level=<option>         [default: error, env: SFPM_LOG_LEVEL] diagnostic log level
+                                   <options: trace|debug|info|warn|error>
+      --my-pool                    only delete orgs created by the current user
+      --plain                      non-interactive output (no spinners or cursor movement)
+      --type=<option>              [default: scratch] pool type: scratch or sandbox
+                                   <options: scratch|sandbox>
 
 DESCRIPTION
   delete orgs from a pool
@@ -708,7 +750,7 @@ EXAMPLES
 
   $ sfpm pool delete --tag sb-pool --type sandbox -v my-prod-org
 
-  $ sfpm pool delete --tag dev-pool -v my-devhub --in-progress-only
+  $ sfpm pool delete --tag dev-pool -v my-devhub --exclude-stage Assigned
 
   $ sfpm pool delete --tag dev-pool -v my-devhub --my-pool
 
@@ -717,7 +759,7 @@ EXAMPLES
   $ sfpm pool delete --tag dev-pool -v my-devhub --json
 ```
 
-_See code: [dist/commands/pool/delete.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/pool/delete.js)_
+_See code: [dist/commands/pool/delete.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/pool/delete.js)_
 
 ## `sfpm pool fetch`
 
@@ -759,7 +801,7 @@ EXAMPLES
   $ sfpm pool fetch --tag dev-pool -v my-devhub --json
 ```
 
-_See code: [dist/commands/pool/fetch.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/pool/fetch.js)_
+_See code: [dist/commands/pool/fetch.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/pool/fetch.js)_
 
 ## `sfpm pool fill`
 
@@ -800,7 +842,7 @@ EXAMPLES
   $ sfpm pool fill --tag dev-pool --max 10 -d config/project-scratch-def.json -v my-devhub --json
 ```
 
-_See code: [dist/commands/pool/fill.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/pool/fill.js)_
+_See code: [dist/commands/pool/fill.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/pool/fill.js)_
 
 ## `sfpm pool list`
 
@@ -835,7 +877,7 @@ EXAMPLES
   $ sfpm pool list --tag dev-pool -v my-devhub --json
 ```
 
-_See code: [dist/commands/pool/list.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/pool/list.js)_
+_See code: [dist/commands/pool/list.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/pool/list.js)_
 
 ## `sfpm project`
 
@@ -859,7 +901,7 @@ EXAMPLES
   $ sfpm project
 ```
 
-_See code: [dist/commands/project/index.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/project/index.js)_
+_See code: [dist/commands/project/index.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/project/index.js)_
 
 ## `sfpm project init`
 
@@ -885,7 +927,7 @@ EXAMPLES
   $ sfpm project init --fix
 ```
 
-_See code: [dist/commands/project/init/index.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/project/init/index.js)_
+_See code: [dist/commands/project/init/index.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/project/init/index.js)_
 
 ## `sfpm project init turbo`
 
@@ -923,7 +965,7 @@ EXAMPLES
   $ sfpm project init turbo --json
 ```
 
-_See code: [dist/commands/project/init/turbo.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/project/init/turbo.js)_
+_See code: [dist/commands/project/init/turbo.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/project/init/turbo.js)_
 
 ## `sfpm project sync`
 
@@ -949,7 +991,7 @@ EXAMPLES
   $ sfpm project sync --api-version 63.0
 ```
 
-_See code: [dist/commands/project/sync.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/project/sync.js)_
+_See code: [dist/commands/project/sync.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/project/sync.js)_
 
 ## `sfpm project version bump`
 
@@ -993,7 +1035,7 @@ EXAMPLES
   $ sfp project version bump --package mypackage --patch --projectfile path/to/sfdx-project.json
 ```
 
-_See code: [dist/commands/project/version/bump.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/project/version/bump.js)_
+_See code: [dist/commands/project/version/bump.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/project/version/bump.js)_
 
 ## `sfpm publish [PACKAGES]`
 
@@ -1026,7 +1068,7 @@ EXAMPLES
   $ sfpm publish all
 ```
 
-_See code: [dist/commands/publish.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/publish.js)_
+_See code: [dist/commands/publish.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/publish.js)_
 
 ## `sfpm release create [PACKAGES]`
 
@@ -1070,7 +1112,7 @@ EXAMPLES
   $ sfpm release create -n summer-2025
 ```
 
-_See code: [dist/commands/release/create.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/release/create.js)_
+_See code: [dist/commands/release/create.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/release/create.js)_
 
 ## `sfpm release run FILE`
 
@@ -1101,7 +1143,7 @@ EXAMPLES
   $ sfpm release run release/summer-2025.yaml -o my-sandbox --json
 ```
 
-_See code: [dist/commands/release/run.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/release/run.js)_
+_See code: [dist/commands/release/run.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/release/run.js)_
 
 ## `sfpm watch cancel ID`
 
@@ -1127,7 +1169,7 @@ EXAMPLES
   $ sfpm watch cancel 1234567890-abc123
 ```
 
-_See code: [dist/commands/watch/cancel.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/watch/cancel.js)_
+_See code: [dist/commands/watch/cancel.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/watch/cancel.js)_
 
 ## `sfpm watch clean`
 
@@ -1156,7 +1198,7 @@ EXAMPLES
   $ sfpm watch clean --json
 ```
 
-_See code: [dist/commands/watch/clean.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/watch/clean.js)_
+_See code: [dist/commands/watch/clean.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/watch/clean.js)_
 
 ## `sfpm watch status`
 
@@ -1189,5 +1231,5 @@ EXAMPLES
   $ sfpm watch status --json
 ```
 
-_See code: [dist/commands/watch/status.js](https://github.com/b64hub/sfpm/blob/v0.4.0/dist/commands/watch/status.js)_
+_See code: [dist/commands/watch/status.js](https://github.com/b64hub/sfpm/blob/v0.5.0/dist/commands/watch/status.js)_
 <!-- commandsstop -->

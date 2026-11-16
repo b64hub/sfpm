@@ -1,4 +1,4 @@
-import {createPoolServices, type PoolDeleteResult} from '@b64hub/sfpm-orgs';
+import {createPoolServices, type PoolDeleteResult, PoolStage} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
 import {
   ConfigAggregator, type Org, OrgTypes,
@@ -15,13 +15,17 @@ export default class PoolDelete extends SfpmCommand {
   static override examples = [
     '<%= config.bin %> pool delete --tag dev-pool -v my-devhub',
     '<%= config.bin %> pool delete --tag sb-pool --type sandbox -v my-prod-org',
-    '<%= config.bin %> pool delete --tag dev-pool -v my-devhub --in-progress-only',
+    '<%= config.bin %> pool delete --tag dev-pool -v my-devhub --exclude-stage Assigned',
     '<%= config.bin %> pool delete --tag dev-pool -v my-devhub --my-pool',
     '<%= config.bin %> pool delete --tag dev-pool --tag qa-pool -v my-devhub',
     '<%= config.bin %> pool delete --tag dev-pool -v my-devhub --json',
   ]
   static override flags = {
-    'in-progress-only': Flags.boolean({description: 'only delete orgs with "In Progress" status'}),
+    'exclude-stage': Flags.string({
+      description: 'exclude orgs in this pool stage from deletion (repeat for multiple; default: none, deletes every stage)',
+      multiple: true,
+      options: [PoolStage.Assigned, PoolStage.Available, PoolStage.InProgress],
+    }),
     'my-pool': Flags.boolean({description: 'only delete orgs created by the current user'}),
     tag: Flags.string({
       char: 't', description: 'pool tag to delete from (repeat to delete from multiple pools)', multiple: true, required: true,
@@ -46,9 +50,10 @@ export default class PoolDelete extends SfpmCommand {
   }
 
   public async execute(): Promise<any> {
-    const {flags} = await this.parse(PoolDelete);
+    const {flags} = await this.parse(this.constructor as typeof PoolDelete);
     const mode = this.outputMode;
     const tags = flags.tag as string[];
+    const excludeStages = flags['exclude-stage'] as PoolStage[] | undefined;
 
     const {alias, devhub} = await connectDevHub({
       alias: flags['target-dev-hub'],
@@ -63,7 +68,7 @@ export default class PoolDelete extends SfpmCommand {
     let results: PoolDeleteResult[];
     try {
       results = await Promise.all(tags.map(tag => this.deleteTag({
-        devhub, flags, tag, uiBus,
+        devhub, excludeStages, flags, tag, uiBus,
       })));
     } catch (error) {
       inkInstance?.unmount();
@@ -79,9 +84,9 @@ export default class PoolDelete extends SfpmCommand {
   }
 
   private async deleteTag(options: {
-    devhub: Org; flags: Record<string, any>; tag: string; uiBus?: EventEmitter;
+    devhub: Org; excludeStages?: PoolStage[]; flags: Record<string, any>; tag: string; uiBus?: EventEmitter;
   }): Promise<PoolDeleteResult> {
-    const {devhub, flags, tag, uiBus} = options;
+    const {devhub, excludeStages, flags, tag, uiBus} = options;
 
     const {manager} = createPoolServices({
       devhub,
@@ -95,7 +100,7 @@ export default class PoolDelete extends SfpmCommand {
     }
 
     const result = await manager.delete(tag, {
-      inProgressOnly: flags['in-progress-only'],
+      excludeStages,
       myPool: flags['my-pool'],
     });
 

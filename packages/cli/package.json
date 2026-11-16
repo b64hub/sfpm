@@ -2,7 +2,7 @@
   "name": "@b64hub/sfpm-cli",
   "description": "Salesforce package manager - CLI",
   "release": "Seedling",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": "b64",
   "bin": {
     "sfpm": "./bin/run.js"
