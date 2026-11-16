@@ -1,5 +1,5 @@
 import * as core from '@actions/core';
-import {createPoolServices} from '@b64hub/sfpm-orgs';
+import {createPoolServices, PoolStage} from '@b64hub/sfpm-orgs';
 import {Org, OrgTypes} from '@salesforce/core';
 
 import {createGitHubActionsLogger} from './logger.js';
@@ -11,8 +11,8 @@ import {createGitHubActionsLogger} from './logger.js';
 export interface CleanPoolOptions {
   /** DevHub username or alias */
   devhubUsername: string;
-  /** Only delete orgs with 'InProgress' stage */
-  inProgressOnly?: boolean;
+  /** Stages to exclude from deletion (e.g. protect orgs currently Assigned to a developer) */
+  excludeStages?: PoolStage[];
   /** Only delete orgs created by the current user */
   myPool?: boolean;
   /** Pool type: scratch or sandbox (default: scratch) */
@@ -78,7 +78,7 @@ export async function cleanPool(options: CleanPoolOptions): Promise<CleanPoolRep
 
     // eslint-disable-next-line no-await-in-loop -- pools are cleaned sequentially
     const deleteResult = await manager.delete(tag, {
-      inProgressOnly: options.inProgressOnly,
+      excludeStages: options.excludeStages,
       myPool: options.myPool,
     });
 

@@ -9,6 +9,7 @@ import type {
 
 import type {OrgProvider} from '../../src/org/org-provider.js';
 
+import {PoolStage} from '../../src/org/types.js';
 import PoolManager from '../../src/pool/pool-manager.js';
 
 // ============================================================================
@@ -663,21 +664,37 @@ describe('PoolManager', () => {
       expect(result.errors[0]).toContain('no recordId');
     });
 
-    it('should filter by inProgressOnly', async () => {
-      const org1 = createScratchOrg({pool: {status: 'InProgress', tag: 'test-pool', timestamp: Date.now()}, recordId: 'r1', username: 'ip@scratch.org'});
-      const org2 = createScratchOrg({pool: {status: 'Available', tag: 'test-pool', timestamp: Date.now()}, recordId: 'r2', username: 'av@scratch.org'});
-      provider.getOrgsByTag.mockResolvedValue([org1, org2]);
+    it('should exclude orgs by stage', async () => {
+      const org1 = createScratchOrg({pool: {stage: PoolStage.InProgress, tag: 'test-pool', timestamp: Date.now()}, recordId: 'r1', username: 'ip@scratch.org'});
+      const org2 = createScratchOrg({pool: {stage: PoolStage.Available, tag: 'test-pool', timestamp: Date.now()}, recordId: 'r2', username: 'av@scratch.org'});
+      const org3 = createScratchOrg({pool: {stage: PoolStage.Assigned, tag: 'test-pool', timestamp: Date.now()}, recordId: 'r3', username: 'as@scratch.org'});
+      provider.getOrgsByTag.mockResolvedValue([org1, org2, org3]);
       provider.deleteOrgs.mockResolvedValue(undefined);
 
       const manager = new PoolManager({
         provider: provider as any,
       });
 
-      const result = await manager.delete('test-pool', {inProgressOnly: true});
+      const result = await manager.delete('test-pool', {excludeStages: [PoolStage.Available, PoolStage.Assigned]});
 
       expect(provider.deleteOrgs).toHaveBeenCalledTimes(1);
       expect(result.deleted).toHaveLength(1);
       expect(result.deleted[0].auth.username).toBe('ip@scratch.org');
+    });
+
+    it('should not delete orgs with no recorded stage when excludeStages is set', async () => {
+      const orgNoStage = createScratchOrg({pool: undefined, recordId: 'r1', username: 'nostage@scratch.org'});
+      provider.getOrgsByTag.mockResolvedValue([orgNoStage]);
+      provider.deleteOrgs.mockResolvedValue(undefined);
+
+      const manager = new PoolManager({
+        provider: provider as any,
+      });
+
+      const result = await manager.delete('test-pool', {excludeStages: [PoolStage.Assigned]});
+
+      expect(provider.deleteOrgs).toHaveBeenCalledTimes(1);
+      expect(result.deleted).toHaveLength(1);
     });
 
     it('should handle deletion errors for individual orgs', async () => {

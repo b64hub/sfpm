@@ -46,7 +46,7 @@ jobs:
         with:
           devhub-username: devhub
           pool-tag: ci-pool
-          in-progress-only: 'true'
+          exclude-stages: 'Available,Assigned'
 
       - name: Report outcome
         if: always()

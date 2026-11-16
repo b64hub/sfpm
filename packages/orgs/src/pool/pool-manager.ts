@@ -195,10 +195,12 @@ export default class PoolManager {
   }
 
   /**
-   * Delete scratch orgs from a pool.
+   * Delete orgs from a pool.
    *
-   * Queries all orgs matching the pool tag, optionally filtering to
-   * only 'InProgress' orgs or orgs owned by the current user. Each
+   * By default, deletes every org matching the pool tag regardless of
+   * stage (`Assigned`, `Available`, or `InProgress`). Pass `excludeStages`
+   * to protect specific stages — e.g. `excludeStages: [PoolStage.Assigned]`
+   * to avoid deleting orgs currently checked out by a developer. Each
    * matching org with a valid `orgId` is deleted via the provider.
    *
    * @param options - Tag, filter, and ownership options
@@ -207,16 +209,17 @@ export default class PoolManager {
    */
   public async delete(tag: string, options?: PoolDeleteOptions): Promise<PoolDeleteResult> {
     const startTime = Date.now();
-    const {inProgressOnly, myPool} = options ?? {};
+    const {excludeStages, myPool} = options ?? {};
 
     this.logger?.info(`Querying pool "${tag}" for orgs to delete...`);
 
     // 1. Query orgs from the pool
     let orgs = await this.provider.getOrgsByTag(tag, myPool);
 
-    // 2. Apply status filter
-    if (inProgressOnly) {
-      orgs = orgs.filter(org => org.pool?.stage === PoolStage.InProgress);
+    // 2. Exclude protected stages
+    if (excludeStages?.length) {
+      const excluded = new Set(excludeStages);
+      orgs = orgs.filter(org => !org.pool || !excluded.has(org.pool.stage));
     }
 
     if (orgs.length === 0) {

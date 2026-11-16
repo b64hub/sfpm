@@ -78,7 +78,7 @@ importers:
         specifier: workspace:^0.4.0
         version: link:../core
       '@b64hub/sfpm-orgs':
-        specifier: workspace:^0.2.0
+        specifier: workspace:^0.3.0
         version: link:../orgs
       '@b64hub/sfpm-telemetry':
         specifier: workspace:^0.2.0
