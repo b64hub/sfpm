@@ -52,16 +52,17 @@ const ARRAY_PROPERTIES = new Set([
 function createParser(): XMLParser {
   return new XMLParser({
     ignoreAttributes: true,
-    isArray(_name: string, jpath: string) {
+    isArray(_name, jPathOrMatcher) {
       // Only arrayify at the "Profile.<section>" level (depth 2),
       // not deeper child properties like "Profile.classAccesses.apexClass"
-      const parts = jpath.split('.');
+      const parts = (jPathOrMatcher as string).split('.');
       if (parts.length === 2) {
         return ARRAY_PROPERTIES.has(parts[1]);
       }
 
       return false;
     },
+    jPath: true, // callbacks receive a string path (default); the cast below relies on it
     parseTagValue: true,
     trimValues: true,
   });
