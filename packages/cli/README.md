@@ -20,7 +20,7 @@ $ npm install -g @b64hub/sfpm-cli
 $ sfpm COMMAND
 running command...
 $ sfpm (--version)
-@b64hub/sfpm-cli/0.5.0 linux-x64 node-v22.23.3
+@b64hub/sfpm-cli/0.5.0 linux-x64 node-v22.23.4
 $ sfpm --help [COMMAND]
 USAGE
   $ sfpm COMMAND
@@ -148,7 +148,8 @@ FLAGS
   -l, --validation=<option>          [default: local] validation level (use --validation none to skip)
                                      <options: local|org|full|none>
   -o, --build-org=<value>            target org for source package validation (deploy + test)
-  -t, --tag=<value>                  tag for the build
+  -t, --tag=<value>                  package version tag for unlocked packages (passed to sf package version create
+                                     --tag)
   -v, --target-dev-hub=<value>       [env: SF_DEV_HUB] target dev hub username
   -w, --wait=<value>                 [default: 120] timeout in minutes for package version creation
       --async                        return immediately without waiting for validation results
@@ -360,20 +361,22 @@ Create a new SFPM package with interactive scaffolding
 ```
 USAGE
   $ sfpm package create [--log-level trace|debug|info|warn|error] [--plain | --json] [-d <value>] [-n <value>]
-    [--org-dependent] [-p <value>] [-s <value>] [-t unlocked|source|data]
+    [--org-dependent] [--package-path <value>] [-p <value>] [-s <value>] [-t unlocked|source|data]
 
 FLAGS
-  -d, --devhub=<value>      DevHub org username (required for unlocked packages)
-  -n, --name=<value>        package name (without npm scope)
-  -p, --path=<value>        SF source path within the package directory (default: ".")
-  -s, --scope=<value>       npm scope for the package (e.g., "@myorg")
-  -t, --type=<option>       package type
-                            <options: unlocked|source|data>
-      --json                output as JSON for CI/CD
-      --log-level=<option>  [default: error, env: SFPM_LOG_LEVEL] diagnostic log level
-                            <options: trace|debug|info|warn|error>
-      --org-dependent       create as org-dependent unlocked package
-      --plain               non-interactive output (no spinners or cursor movement)
+  -d, --devhub=<value>        DevHub org username (required for unlocked packages)
+  -n, --name=<value>          package name (without npm scope)
+  -p, --path=<value>          SF source path within the package directory (default: ".")
+  -s, --scope=<value>         npm scope for the package (e.g., "@myorg")
+  -t, --type=<option>         package type
+                              <options: unlocked|source|data>
+      --json                  output as JSON for CI/CD
+      --log-level=<option>    [default: error, env: SFPM_LOG_LEVEL] diagnostic log level
+                              <options: trace|debug|info|warn|error>
+      --org-dependent         create as org-dependent unlocked package
+      --package-path=<value>  path to the package directory, relative to the project root (default: workspace packages
+                              dir + package name)
+      --plain                 non-interactive output (no spinners or cursor movement)
 
 DESCRIPTION
   Create a new SFPM package with interactive scaffolding
@@ -768,8 +771,7 @@ fetch an org from a pool
 ```
 USAGE
   $ sfpm pool fetch -t <value> [--json | --plain] [--log-level trace|debug|info|warn|error] [-a <value>]
-    [--my-pool] [--send-to <value>] [--set-default] [--source-tracking] [-v <value>] [--type
-    scratch|sandbox]
+    [--my-pool] [--send-to <value>] [--set-default] [--source-tracking] [-v <value>] [--type scratch|sandbox]
 
 FLAGS
   -a, --alias=<value>           set a local alias for the fetched org
