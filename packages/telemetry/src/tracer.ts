@@ -1,14 +1,13 @@
 import {trace} from '@opentelemetry/api';
 import {OTLPTraceExporter} from '@opentelemetry/exporter-trace-otlp-http';
-import {Resource} from '@opentelemetry/resources';
+import {resourceFromAttributes} from '@opentelemetry/resources';
 import {NodeSDK} from '@opentelemetry/sdk-node';
 import {ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION} from '@opentelemetry/semantic-conventions';
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 
-import type {SpanMapping} from './span-map.js';
-
 import type {BusMap} from './span-engine.js';
+import type {SpanMapping} from './span-map.js';
 
 import {SpanEngine} from './span-engine.js';
 import {defaultSpanMappings} from './span-map.js';
@@ -71,7 +70,7 @@ export function createTracer(options: TracerOptions): SfpmTracer {
 
   const version = detectServiceVersion();
 
-  const resource = new Resource({
+  const resource = resourceFromAttributes({
     [ATTR_SERVICE_NAME]: options.serviceName,
     ...(version ? {[ATTR_SERVICE_VERSION]: version} : {}),
   });
