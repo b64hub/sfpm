@@ -21,7 +21,7 @@
     "@b64hub/sfpm-core": "workspace:^0.4.0",
     "@opentelemetry/api": "^1.10.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.301.0",
-    "@opentelemetry/resources": "^1.30.0",
+    "@opentelemetry/resources": "^3.1.0",
     "@opentelemetry/sdk-node": "^0.301.0",
     "@opentelemetry/sdk-trace-node": "^1.30.0",
     "@opentelemetry/semantic-conventions": "^1.45.0"
