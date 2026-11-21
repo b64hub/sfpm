@@ -14,7 +14,7 @@
     "@salesforce/apex-node": "^8.4.26",
     "@salesforce/core": "^8.31.0",
     "@salesforce/kit": "^3.0.0",
-    "@salesforce/packaging": "^4.18.10",
+    "@salesforce/packaging": "^5.0.32",
     "@salesforce/source-deploy-retrieve": "^12.31.7",
     "fast-glob": "^3.3.3",
     "fast-xml-parser": "^5.12.0",
