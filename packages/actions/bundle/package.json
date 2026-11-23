@@ -1,0 +1,158 @@
+{
+  "name": "@salesforce/packaging",
+  "version": "4.18.12",
+  "description": "Packaging library for the Salesforce packaging platform",
+  "main": "lib/exported",
+  "types": "lib/exported.d.ts",
+  "license": "Apache-2.0",
+  "repository": "forcedotcom/packaging",
+  "scripts": {
+    "build": "wireit",
+    "clean": "sf-clean",
+    "clean-all": "sf-clean all",
+    "compile": "wireit",
+    "docs": "sf-docs",
+    "fix-license": "eslint src test --fix --rule \"header/header: [2]\"",
+    "format": "wireit",
+    "link-check": "wireit",
+    "lint": "wireit",
+    "lint-fix": "yarn sf-lint --fix",
+    "postcompile": "tsc -p test",
+    "prepack": "sf-prepack",
+    "prepare": "sf-install",
+    "repl": "node --inspect ./scripts/repl.js",
+    "test": "wireit",
+    "test:nuts": "nyc mocha \"**/*.nut.ts\" --slow 4500 --timeout 1800000 --parallel --jobs 20",
+    "test:only": "wireit"
+  },
+  "keywords": [
+    "force",
+    "salesforce",
+    "sfdx",
+    "salesforcedx",
+    "packaging"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "docs",
+    "lib",
+    "messages",
+    "!lib/**/*.map"
+  ],
+  "dependencies": {
+    "@jsforce/jsforce-node": "^3.10.10",
+    "@salesforce/core": "^8.25.0",
+    "@salesforce/kit": "^3.2.4",
+    "@salesforce/schemas": "^1.10.3",
+    "@salesforce/source-deploy-retrieve": "^12.31.8",
+    "@salesforce/ts-types": "^2.0.12",
+    "@salesforce/types": "^1.6.0",
+    "fast-xml-parser": "^4.5.0",
+    "globby": "^11",
+    "graphology": "^0.26.0",
+    "graphology-traversal": "^0.3.1",
+    "graphology-types": "^0.24.7",
+    "jszip": "^3.10.1",
+    "object-treeify": "^2"
+  },
+  "devDependencies": {
+    "@salesforce/cli-plugins-testkit": "^5.3.41",
+    "@salesforce/dev-scripts": "^11.0.4",
+    "@types/globby": "^9.1.0",
+    "@types/jszip": "^3.4.1",
+    "eslint-plugin-sf-plugin": "^1.20.33",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "resolutions": {
+    "@jsforce/jsforce-node/node-fetch/whatwg-url": "^14.0.0",
+    "string-width": "^4.2.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "wireit": {
+    "build": {
+      "dependencies": [
+        "compile",
+        "lint"
+      ]
+    },
+    "compile": {
+      "command": "tsc -p . --pretty --incremental",
+      "files": [
+        "src/**/*.ts",
+        "**/tsconfig.json",
+        "messages/**"
+      ],
+      "output": [
+        "lib/**",
+        "*.tsbuildinfo"
+      ],
+      "clean": "if-file-deleted"
+    },
+    "format": {
+      "command": "prettier --write \"+(src|test|schemas)/**/*.+(ts|js|json)|command-snapshot.json\"",
+      "files": [
+        "src/**/*.ts",
+        "test/**/*.ts",
+        "schemas/**/*.json",
+        "command-snapshot.json",
+        ".prettier*"
+      ],
+      "output": []
+    },
+    "lint": {
+      "command": "eslint src test --color --cache --cache-location .eslintcache",
+      "files": [
+        "src/**/*.ts",
+        "test/**/*.ts",
+        "messages/**",
+        "**/.eslint*",
+        "**/tsconfig.json"
+      ],
+      "output": []
+    },
+    "test:compile": {
+      "command": "tsc -p \"./test\" --pretty",
+      "files": [
+        "test/**/*.ts",
+        "**/tsconfig.json"
+      ],
+      "output": []
+    },
+    "test": {
+      "dependencies": [
+        "test:only",
+        "test:compile",
+        "link-check"
+      ]
+    },
+    "test:only": {
+      "command": "nyc mocha \"test/**/*.test.ts\"",
+      "env": {
+        "FORCE_COLOR": "2"
+      },
+      "files": [
+        "test/**/*.ts",
+        "src/**/*.ts",
+        "**/tsconfig.json",
+        ".mocha*",
+        "!*.nut.ts",
+        ".nycrc"
+      ],
+      "output": []
+    },
+    "link-check": {
+      "command": "node -e \"process.exit(process.env.CI ? 0 : 1)\" || linkinator \"**/*.md\" --skip \"CHANGELOG.md|node_modules|test/|confluence.internal.salesforce.com|my.salesforce.com|localhost|%s\" --markdown --retry --directory-listing --verbosity error",
+      "files": [
+        "./*.md",
+        "./!(CHANGELOG).md",
+        "messages/**/*.md"
+      ],
+      "output": []
+    }
+  }
+}
