@@ -219,7 +219,7 @@ export default class PackageInstaller {
     if (!packageName) {
       throw new Error(`Package "${packageName}" has no npm name. `
         + 'In workspace mode, this is set from the package.json "name" field. '
-        + 'Run `sfpm init turbo` to migrate from sfdx-project.json.');
+        + 'Run `sfpm project init turbo` to migrate from sfdx-project.json.');
     }
 
     logger?.info(`Installing ${packageName}@${sfpmPackage.version}`);

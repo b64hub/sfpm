@@ -1,7 +1,7 @@
 /**
  * Workspace sync service: generates sfdx-project.json from workspace package.json files.
  *
- * This is the core engine behind `sfpm sync`. It delegates workspace discovery
+ * This is the core engine behind `sfpm project sync`. It delegates workspace discovery
  * and ProjectDefinition assembly to WorkspaceResolver, then writes the result
  * to sfdx-project.json.
  *
