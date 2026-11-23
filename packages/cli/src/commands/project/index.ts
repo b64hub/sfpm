@@ -9,7 +9,7 @@ import treeify from 'object-treeify'
 import SfpmCommand from '../../sfpm-command.js'
 
 export default class Project extends SfpmCommand {
-  static override description = 'Overview of the project'
+  static override description = 'Project overview'
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
   ]

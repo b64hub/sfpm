@@ -14,7 +14,7 @@ export default class Publish extends SfpmCommand {
       required: false,
     }),
   }
-  static override description = 'publish packages from their dist directories'
+  static override description = 'publish packages'
   static override examples = [
     '<%= config.bin %> <%= command.id %> my-package',
     '<%= config.bin %> <%= command.id %> my-package --tag next',

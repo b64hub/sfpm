@@ -63,7 +63,7 @@ interface PackageCreateResult {
 }
 
 export default class PackageCreate extends SfpmCommand {
-  static override description = 'Create a new SFPM package with interactive scaffolding'
+  static override description = 'Create a new package'
   static override examples = [
     '<%= config.bin %> <%= command.id %>',
     '<%= config.bin %> <%= command.id %> --name my-package --type unlocked --devhub my-devhub',

@@ -60,7 +60,7 @@ export default class Build extends SfpmCommand {
       required: true,
     }),
   }
-  static override description = 'build packages'
+  static override description = 'Build packages'
   /**
    * Lifecycle stage: **build**
    *
