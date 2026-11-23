@@ -20,7 +20,7 @@ $ npm install -g @b64hub/sfpm-cli
 $ sfpm COMMAND
 running command...
 $ sfpm (--version)
-@b64hub/sfpm-cli/0.5.0 linux-x64 node-v22.23.4
+@b64hub/sfpm-cli/0.5.0 linux-x64 node-v22.23.5
 $ sfpm --help [COMMAND]
 USAGE
   $ sfpm COMMAND
