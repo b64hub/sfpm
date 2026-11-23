@@ -56,6 +56,7 @@
     "./bin",
     "./dist",
     "./oclif.manifest.json",
+    "./skills",
     "./theme.json"
   ],
   "homepage": "https://github.com/b64hub/sfpm",
