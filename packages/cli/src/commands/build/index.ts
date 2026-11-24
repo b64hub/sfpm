@@ -196,9 +196,13 @@ export default class Build extends SfpmCommand {
         this.error(`Build failed for: ${failedNames}`, {exit: 1})
       }
 
-      this.handleResult(result, resolved, validationBus, inkInstance);
+      await this.handleResult(result, resolved, validationBus, inkInstance);
       return result;
     } catch (error) {
+      // Already a formatted oclif error (e.g. from handleResult's validation
+      // failure reporting) — rethrow as-is instead of re-wrapping with exit 2.
+      if (error && typeof error === 'object' && 'oclif' in error) throw error
+
       if (error instanceof Error) {
         this.error(error.message, {exit: 2})
       }
@@ -501,7 +505,7 @@ export default class Build extends SfpmCommand {
         if (result.status === 'failed') failures.push(`${packageName}: ${result.error}`);
       }
 
-      if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1});
+      if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s):\n${failures.map(f => `  - ${f}`).join('\n')}`, {exit: 1});
       return;
     }
 
@@ -522,6 +526,6 @@ export default class Build extends SfpmCommand {
       if (result.status === 'failed') failures.push(`${packageName}: ${result.error}`);
     }
 
-    if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1});
+    if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s):\n${failures.map(f => `  - ${f}`).join('\n')}`, {exit: 1});
   }
 }
