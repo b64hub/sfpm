@@ -72,6 +72,7 @@ async function detectProvider(projectDir: string, sfpmConfig: SfpmConfig): Promi
   if (WorkspaceProvider.hasWorkspace(projectDir)) {
     return new WorkspaceProvider({
       distAware: true,
+      namespace: sfpmConfig.namespace,
       projectDir,
       sfdcLoginUrl: sfpmConfig.sfdcLoginUrl,
       sourceApiVersion: sfpmConfig.sourceApiVersion,

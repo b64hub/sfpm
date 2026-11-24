@@ -17,12 +17,10 @@ export default class PoolFetch extends SfpmCommand {
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --alias my-scratch',
     '<%= config.bin %> pool fetch --tag sb-pool --type sandbox -v my-prod-org',
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --send-to user@example.com',
-    '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --all --limit 5',
     '<%= config.bin %> pool fetch --tag dev-pool -v my-devhub --json',
   ]
   static override flags = {
     alias: Flags.string({char: 'a', description: 'set a local alias for the fetched org'}),
-    limit: Flags.integer({description: 'max orgs to return when using --all', min: 1}),
     'my-pool': Flags.boolean({description: 'only fetch from orgs created by the current user'}),
     'send-to': Flags.string({description: 'email org details to this address instead of local login'}),
     'set-default': Flags.boolean({allowNo: true, default: true, description: 'set the fetched org as the default target org'}),

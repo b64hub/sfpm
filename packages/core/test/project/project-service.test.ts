@@ -1,4 +1,7 @@
 import { describe, test, expect, beforeEach, vi, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import ProjectService from '../../src/project/project-service.js';
 import { SfProject, Logger } from '@salesforce/core';
 import { PackageType } from '../../src/types/package.js';
@@ -108,6 +111,19 @@ describe('ProjectService', () => {
             expect(SfProject.resolve).toHaveBeenCalledWith('/mock/path');
             expect(service.getDefinitionProvider()).toBeDefined();
             expect(service.getProjectGraph()).toBeDefined();
+        });
+
+        test('should initialize an empty pnpm workspace with no packages', async () => {
+            const projectDir = mkdtempSync(join(tmpdir(), 'sfpm-ps-empty-'));
+            try {
+                writeFileSync(join(projectDir, 'pnpm-workspace.yaml'), "packages:\n  - 'packages/*'\n");
+
+                const service = await ProjectService.create(projectDir);
+
+                expect(service.getAllPackageNames()).toEqual([]);
+            } finally {
+                rmSync(projectDir, { force: true, recursive: true });
+            }
         });
     });
 

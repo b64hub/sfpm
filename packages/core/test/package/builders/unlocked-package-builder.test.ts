@@ -171,6 +171,19 @@ describe('UnlockedPackageBuilder', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Status: InProgress'));
     });
 
+    it('passes the CLI tag from unlocked build options to createPackageVersion', async () => {
+      const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, {...baseOptions, unlocked: {tag: 'cli-tag'}}, mockLogger);
+      await builder.connect(mockDevhub);
+
+      await builder.exec();
+
+      expect(mockCreatePackageVersion).toHaveBeenCalledWith(
+        '0Ho000000000001',
+        expect.objectContaining({tag: 'cli-tag'}),
+        expect.any(Function),
+      );
+    });
+
     it('skips validation and installation-key bypass changes with validation: none', async () => {
       const builder = new UnlockedPackageBuilder(mockProvider, mockSfpmPackage, {...baseOptions, validation: 'none'}, mockLogger);
       await builder.connect(mockDevhub);

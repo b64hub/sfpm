@@ -52,8 +52,10 @@ export default class Sync extends SfpmCommand {
         this.log(`    ${chalk.cyan(pkg.name)} ${chalk.dim(`(${pkg.type})`)} ${chalk.dim(pkg.packageDir)}`)
       }
 
-      this.log('')
-      this.log(`  ${chalk.dim('sfdx-project.json')} ${chalk.green('written')}`)
+      if (result.packages.length > 0) {
+        this.log('')
+        this.log(`  ${chalk.dim('sfdx-project.json')} ${chalk.green('written')}`)
+      }
 
       if (result.warnings.length > 0) {
         this.log('')

@@ -35,6 +35,13 @@ function createMockProvider(): any {
   };
 }
 
+function createGraph(resolution: DependencyResolution): any {
+  return {
+    getDirectDependents: vi.fn().mockReturnValue([]),
+    resolveDependencies: vi.fn().mockReturnValue(resolution),
+  };
+}
+
 function createResolution(
   levels: string[][],
   deps: Record<string, string[]> = {},
@@ -199,6 +206,28 @@ describe('InstallOrchestrator', () => {
       expect(result.results).toHaveLength(1);
       expect(result.results[0].packageName).toBe('pkg-b');
       expect(mockInstallPackage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('regression tests', () => {
+    it('should run regression test lookup for installed packages when regressionTest is enabled', async () => {
+      const graph = createGraph(mockResolution);
+      const regressionOrchestrator = InstallOrchestrator.forArtifact(
+        {} as any, mockProvider, graph, {regressionTest: true}, mockLogger,
+      );
+
+      await regressionOrchestrator.installAll(['pkg-a', 'pkg-b']);
+
+      expect(graph.getDirectDependents).toHaveBeenCalledWith(['pkg-a', 'pkg-b']);
+    });
+
+    it('should not run regression test lookup when regressionTest is not enabled', async () => {
+      const graph = createGraph(mockResolution);
+      const plainOrchestrator = InstallOrchestrator.forArtifact({} as any, mockProvider, graph, {}, mockLogger);
+
+      await plainOrchestrator.installAll(['pkg-a', 'pkg-b']);
+
+      expect(graph.getDirectDependents).not.toHaveBeenCalled();
     });
   });
 

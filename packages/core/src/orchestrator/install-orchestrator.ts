@@ -103,10 +103,19 @@ export class InstallOrchestrationTask implements OrchestrationTask<InstallResult
 export class InstallOrchestrator {
   readonly orchestrationBus: OrchestrationEventBus<InstallResult>;
   private readonly installer: PackageInstaller;
+  private readonly logger?: Logger;
   private readonly orchestrator: Orchestrator<InstallResult>;
+  private readonly regressionTest: boolean;
 
-  constructor(graph: ProjectGraph, installer: PackageInstaller, options: OrchestratorOptions, logger?: Logger) {
+  constructor(
+    graph: ProjectGraph,
+    installer: PackageInstaller,
+    options: OrchestratorOptions & Pick<InstallOptions, 'regressionTest'>,
+    logger?: Logger,
+  ) {
     this.installer = installer;
+    this.regressionTest = Boolean(options.regressionTest);
+    this.logger = logger;
     this.orchestrationBus = new OrchestrationEventBus(randomUUID());
     const task = new InstallOrchestrationTask(installer);
 
@@ -164,7 +173,7 @@ export class InstallOrchestrator {
   /**
    * Install multiple packages in dependency order.
    *
-   * When `regressionTest` is enabled, runs Apex tests in direct dependents
+   * When the `regressionTest` constructor/factory option is enabled, runs Apex tests in direct dependents
    * of successfully installed packages after all installs complete.
    * Regression test failures are non-blocking — they are reported in
    * {@link InstallOrchestrationResult.regressionTests} without affecting
@@ -175,17 +184,14 @@ export class InstallOrchestrator {
    *   are resolved and installed first.
    * @returns InstallOrchestrationResult with per-package outcomes and optional regression tests.
    */
-  public async installAll(
-    packageNames: string[],
-    options?: {regressionTest: boolean},
-  ): Promise<InstallOrchestrationResult> {
+  public async installAll(packageNames: string[]): Promise<InstallOrchestrationResult> {
     const orchestrationResult = await this.orchestrator.executeAll(packageNames);
 
-    if (!options?.regressionTest) {
+    if (!this.regressionTest) {
       return orchestrationResult;
     }
 
-    const regressionTests = await this.runRegressionTests(orchestrationResult);
+    const regressionTests = await this.runRegressionTests(orchestrationResult, this.logger);
     return {...orchestrationResult, ...(regressionTests.length > 0 && {regressionTests})};
   }
 

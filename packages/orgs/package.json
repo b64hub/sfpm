@@ -1,6 +1,6 @@
 {
   "name": "@b64hub/sfpm-orgs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Org management, pool provisioning, and validation/pooling lifecycle stages for SFPM",
   "type": "module",
   "scripts": {

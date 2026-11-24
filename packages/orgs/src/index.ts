@@ -17,6 +17,7 @@ export {
 } from './org/pool-org.js';
 
 export {default as SandboxProvider} from './org/sandbox/sandbox-provider.js';
+
 export {type SandboxPoolOrgRecord} from './org/sandbox/sandbox-provider.js';
 export {
   DEFAULT_SANDBOX,
@@ -25,11 +26,11 @@ export {
   type SandboxLicenseType,
   type SandboxPoolInfo,
 } from './org/sandbox/types.js';
-
 export {
   type ActiveScratchOrgRecord,
   default as ScratchOrgProvider,
 } from './org/scratch/scratch-org-provider.js';
+
 export {
   DEFAULT_SCRATCH_ORG,
   type PoolScratchOrgCreateResult,
@@ -38,9 +39,10 @@ export {
   type ScratchOrgInfoRecord,
   type ScratchOrgRequest,
 } from './org/scratch/types.js';
-
 export {default as AuthService} from './org/services/auth-service.js';
+
 export {default as DevHubService} from './org/services/devhub-service.js';
+export {PoolStage} from './org/types.js';
 
 export {PoolEventBus, type PoolEvents} from './pool/pool-event-bus.js';
 
