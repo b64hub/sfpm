@@ -58,6 +58,7 @@ export {
 export {ORG_ALIAS_DEFAULT_DIR, type OrgAliasResolution, OrgAliasResolver} from './package/org-alias-resolver.js';
 export {PackageBuilder, type PackageBuildResult} from './package/package-builder.js';
 export {type PackageCreateConfig, type PackageCreationResult, PackageCreator} from './package/package-creator.js';
+export {diffPackages, type PackageDiffEntry, type PackageDiffStatus} from './package/package-diff.js';
 export {type InstallResult, default as PackageInstaller} from './package/package-installer.js';
 export {default as PackageManager} from './package/package-manager.js';
 export {type Package2, PackageService} from './package/package-service.js';

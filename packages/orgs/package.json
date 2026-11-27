@@ -18,8 +18,9 @@
   "license": "MIT",
   "dependencies": {
     "@b64hub/sfpm-core": "workspace:^0.4.0",
-    "@salesforce/core": "^8.31.0",
-    "@salesforce/kit": "^3.0.0"
+    "@salesforce/core": "^8.32.6",
+    "@salesforce/kit": "^3.0.0",
+    "@salesforce/source-tracking": "^7.8.20"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

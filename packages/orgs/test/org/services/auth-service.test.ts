@@ -23,10 +23,18 @@ vi.mock('@salesforce/core', () => {
     Org: {
       create: vi.fn().mockResolvedValue({}),
     },
+    SfProject: {
+      resolve: vi.fn(),
+    },
   };
 });
 
-import {AuthInfo, Org} from '@salesforce/core';
+vi.mock('@salesforce/source-tracking', () => ({
+  SourceTracking: {create: vi.fn()},
+}));
+
+import {AuthInfo, Org, SfProject} from '@salesforce/core';
+import {SourceTracking} from '@salesforce/source-tracking';
 
 import AuthService from '../../../src/org/services/auth-service.js';
 
@@ -231,6 +239,61 @@ describe('AuthService', () => {
       await service.enableSourceTracking(org);
 
       expect(AuthInfo.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // resetSourceTracking
+  // --------------------------------------------------------------------------
+
+  describe('resetSourceTracking', () => {
+    it('should reset local and remote tracking when the org supports source tracking', async () => {
+      const service = new AuthService('hub@example.com');
+      const org = createOrg({username: 'user@test.org'});
+      const sfOrg = {supportsSourceTracking: vi.fn().mockResolvedValue(true)};
+      const project = {};
+      const tracking = {
+        resetLocalTracking: vi.fn().mockResolvedValue([]),
+        resetRemoteTracking: vi.fn().mockResolvedValue(0),
+      };
+      vi.mocked(Org.create).mockResolvedValueOnce(sfOrg as never);
+      vi.mocked(SfProject.resolve).mockResolvedValueOnce(project as never);
+      vi.mocked(SourceTracking.create).mockResolvedValueOnce(tracking as never);
+
+      await service.resetSourceTracking(org);
+
+      expect(SourceTracking.create).toHaveBeenCalledWith({org: sfOrg, project});
+      expect(tracking.resetLocalTracking).toHaveBeenCalledTimes(1);
+      expect(tracking.resetRemoteTracking).toHaveBeenCalledTimes(1);
+    });
+
+    it('should do nothing when the org does not support source tracking', async () => {
+      const service = new AuthService('hub@example.com');
+      const org = createOrg({username: 'user@test.org'});
+      vi.mocked(Org.create).mockResolvedValueOnce({supportsSourceTracking: vi.fn().mockResolvedValue(false)} as never);
+
+      await expect(service.resetSourceTracking(org)).resolves.toBeUndefined();
+
+      expect(SourceTracking.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject when the project cannot be resolved', async () => {
+      const service = new AuthService('hub@example.com');
+      const org = createOrg({username: 'user@test.org'});
+      const error = new Error('no sfdx-project.json');
+      vi.mocked(Org.create).mockResolvedValueOnce({supportsSourceTracking: vi.fn().mockResolvedValue(true)} as never);
+      vi.mocked(SfProject.resolve).mockRejectedValueOnce(error);
+
+      await expect(service.resetSourceTracking(org)).rejects.toBe(error);
+    });
+
+    it('should skip when username is missing', async () => {
+      const service = new AuthService('hub@example.com');
+      const org = createOrg({username: undefined as never});
+
+      await service.resetSourceTracking(org);
+
+      expect(Org.create).not.toHaveBeenCalled();
     });
   });
 });
