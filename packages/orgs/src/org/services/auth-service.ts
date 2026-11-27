@@ -1,4 +1,5 @@
-import {AuthInfo, Org} from '@salesforce/core';
+import {AuthInfo, Org, SfProject} from '@salesforce/core';
+import {SourceTracking} from '@salesforce/source-tracking';
 
 import type {PoolOrgAuthenticator} from '../../pool/types.js';
 import type {PoolOrg} from '../pool-org.js';
@@ -135,5 +136,24 @@ export default class AuthService implements PoolOrgAuthenticator {
 
     throw new Error(`No authentication method available for ${org.auth.username}. `
       + 'Provide an auth URL (Auth_Url__c) on the hub record or configure JWT.');
+  }
+
+  /**
+   * Reset local and remote source tracking for a claimed org, using the project in cwd.
+   *
+   * No-op when the org has no username or doesn't support source tracking.
+   *
+   * @throws {Error} When the org or project can't be loaded, or the reset fails.
+   *   Callers decide whether this is fatal.
+   */
+  async resetSourceTracking(org: PoolOrg): Promise<void> {
+    if (!org.auth.username) return;
+
+    const sfOrg = await Org.create({aliasOrUsername: org.auth.username});
+    if (!(await sfOrg.supportsSourceTracking())) return;
+
+    const project = await SfProject.resolve();
+    const tracking = await SourceTracking.create({org: sfOrg, project});
+    await Promise.all([tracking.resetRemoteTracking(), tracking.resetLocalTracking()]);
   }
 }

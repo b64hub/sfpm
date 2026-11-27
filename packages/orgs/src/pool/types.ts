@@ -152,6 +152,9 @@ export interface PoolOrgAuthenticator {
 
   /** Authenticate to an org (auth URL first, JWT fallback). */
   login(org: PoolOrg): Promise<void>;
+
+  /** Reset local + remote source tracking for a claimed org against the project in cwd. No-op if the org doesn't support tracking. */
+  resetSourceTracking?(org: PoolOrg): Promise<void>;
 }
 
 /**
@@ -161,6 +164,7 @@ export interface PoolOrgAuthenticator {
  * in order after a successful claim. Common actions include:
  * - Authentication (`authenticator.login`)
  * - Source tracking setup (`authenticator.enableSourceTracking`)
+ * - Source tracking reset (`authenticator.resetSourceTracking`)
  * - Sharing via email (`devHub.shareOrg`)
  *
  * The caller (CLI, factory, actions) composes the appropriate set of

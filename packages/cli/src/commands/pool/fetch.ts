@@ -1,5 +1,7 @@
+import {type PackageDiffEntry, PackageManager, ProjectService} from '@b64hub/sfpm-core';
 import {createPoolServices, setAlias} from '@b64hub/sfpm-orgs';
 import {Flags} from '@oclif/core';
+import {printTable} from '@oclif/table';
 import {
   AuthInfo, Config, ConfigAggregator, Org, OrgConfigProperties, OrgTypes,
 } from '@salesforce/core';
@@ -22,6 +24,15 @@ export default class PoolFetch extends SfpmCommand {
   static override flags = {
     alias: Flags.string({char: 'a', description: 'set a local alias for the fetched org'}),
     'my-pool': Flags.boolean({description: 'only fetch from orgs created by the current user'}),
+    'package-diff': Flags.boolean({
+      default: false,
+      description: 'show differences between packages installed in the fetched org and packages defined in the project',
+    }),
+    'reset-tracking': Flags.boolean({
+      allowNo: true,
+      default: true,
+      description: 'reset local and remote source tracking for the fetched org (requires an sfdx project; skipped with a warning if reset fails or isn\'t applicable)',
+    }),
     'send-to': Flags.string({description: 'email org details to this address instead of local login'}),
     'set-default': Flags.boolean({allowNo: true, default: true, description: 'set the fetched org as the default target org'}),
     'source-tracking': Flags.boolean({default: false, description: 'enable source tracking after fetch'}),
@@ -77,6 +88,16 @@ export default class PoolFetch extends SfpmCommand {
       if (flags['source-tracking']) {
         postClaimActions.push(org => authenticator.enableSourceTracking(org));
       }
+
+      if (flags['reset-tracking']) {
+        postClaimActions.push(async org => {
+          try {
+            await authenticator.resetSourceTracking(org);
+          } catch (error) {
+            this.warn(`Source tracking not reset: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        });
+      }
     }
 
     const fetchOptions = {
@@ -111,8 +132,24 @@ export default class PoolFetch extends SfpmCommand {
       }
     }
 
+    let packageDiff: PackageDiffEntry[] | undefined;
+    if (flags['package-diff'] && !flags['send-to'] && org.auth.username) {
+      try {
+        const targetOrg = await Org.create({aliasOrUsername: org.auth.username});
+        const project = await ProjectService.getInstance();
+        packageDiff = await PackageManager.getInstance(targetOrg, this.sfpmLogger).diffWithProject(project.getAllPackageDefinitions());
+      } catch (error) {
+        this.warn(`Package diff unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     if (this.outputMode === 'json') {
-      return {data: {...org, frontDoorUrl}, success: true, tag: flags.tag};
+      return {
+        data: {...org, frontDoorUrl},
+        packageDiff,
+        success: true,
+        tag: flags.tag,
+      };
     }
 
     const loginUrl     = frontDoorUrl ?? org.auth.loginUrl;
@@ -130,6 +167,24 @@ export default class PoolFetch extends SfpmCommand {
 
     if (flags['send-to']) {
       this.log(chalk.green(`Org details sent to ${flags['send-to']}`));
+    }
+
+    if (packageDiff) {
+      if (packageDiff.every(entry => entry.status === 'match')) {
+        this.log(chalk.green('Packages in sync with project'));
+      } else {
+        printTable({
+          borderStyle: 'headers-only-with-underline',
+          columns: [
+            {key: 'name', name: 'Package'},
+            {key: 'projectVersion', name: 'Project'},
+            {key: 'orgVersion', name: 'Org'},
+            {key: 'status', name: 'Status'},
+          ],
+          data: packageDiff.map(entry => ({...entry, orgVersion: entry.orgVersion ?? '', projectVersion: entry.projectVersion ?? ''})),
+          title: 'Package Diff',
+        });
+      }
     }
   }
 }

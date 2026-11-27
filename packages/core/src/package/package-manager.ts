@@ -5,9 +5,11 @@ import type {ProjectDefinitionProvider} from '../project/providers/project-defin
 import ArtifactService from '../artifacts/artifact-service.js';
 import Logger from '../types/logger.js';
 import {InstalledArtifact, PackageType} from '../types/package.js';
+import {PackageDefinition} from '../types/project.js';
 import {stripScope} from '../utils/scope-utils.js';
 import {InstallCheckResult} from './installers/installer-registry.js';
 import {VersionInstallable} from './installers/types.js';
+import {diffPackages, type PackageDiffEntry} from './package-diff.js';
 import PackageService, {type Package2} from './package-service.js';
 import SfpmPackage from './sfpm-package.js';
 
@@ -126,6 +128,15 @@ export default class PackageManager {
   }
 
   /**
+   * Diff packages installed in the target org against the given project package definitions.
+   * @throws when the installed-package/artifact query fails (network/API error) — this is a
+   * pass-through from `getAllInstalledArtifacts`.
+   */
+  public async diffWithProject(projectPackages: PackageDefinition[]): Promise<PackageDiffEntry[]> {
+    return diffPackages(projectPackages, await this.getAllInstalledArtifacts());
+  }
+
+  /**
    * Ensure all packages have Package2 records in the DevHub.
    *
    * For each package:
@@ -175,76 +186,74 @@ export default class PackageManager {
    * Artifacts tracked by sfpm get `isInstalledBySfpm: true` and are enriched
    * with subscriber version data when a matching 2GP package exists.
    * Subscriber packages without sfpm artifacts are appended separately.
+   *
+   * @throws when the artifact or subscriber package query fails, instead of
+   * silently returning an empty list.
    */
   public async getAllInstalledArtifacts(): Promise<InstalledArtifact[]> {
-    try {
-      const [artifacts, installedPackages] = await Promise.all([
-        this.artifactService.getInstalledPackages('Name'),
-        this.packageService.listInstalledPackages(),
-      ]);
+    const [artifacts, installedPackages] = await Promise.all([
+      this.artifactService.getInstalledPackages('Name'),
+      this.packageService.listInstalledPackages(),
+    ]);
 
-      const installedArtifacts: InstalledArtifact[] = [];
-      const matchedPackageIds = new Set<string>();
+    const installedArtifacts: InstalledArtifact[] = [];
+    const matchedPackageIds = new Set<string>();
 
-      // Pass 1: sfpm artifacts, enriched with subscriber package data
-      for (const artifact of artifacts) {
-        const installedArtifact: InstalledArtifact = {
-          commitId: artifact.sourceVersion,
-          isInstalledBySfpm: true,
-          name: artifact.name,
-          version: artifact.version,
-        };
+    // Pass 1: sfpm artifacts, enriched with subscriber package data
+    for (const artifact of artifacts) {
+      const installedArtifact: InstalledArtifact = {
+        commitId: artifact.sourceVersion,
+        isInstalledBySfpm: true,
+        name: artifact.name,
+        version: artifact.version,
+      };
 
-        const matchedPkg = installedPackages.find(pkg => pkg.SubscriberPackage?.Name === artifact.name);
+      const matchedPkg = installedPackages.find(pkg => stripScope(pkg.SubscriberPackage?.Name ?? '') === stripScope(artifact.name));
 
-        if (matchedPkg) {
-          matchedPackageIds.add(matchedPkg.SubscriberPackageVersionId);
-          installedArtifact.subscriberVersionId = matchedPkg.SubscriberPackageVersionId;
-          installedArtifact.type = PackageType.Unlocked;
-          installedArtifact.isOrgDependent = matchedPkg.SubscriberPackageVersion?.IsOrgDependent ?? false;
-        } else {
-          installedArtifact.subscriberVersionId = 'N/A';
-          installedArtifact.type = PackageType.Source;
-        }
-
-        installedArtifacts.push(installedArtifact);
+      if (matchedPkg) {
+        matchedPackageIds.add(matchedPkg.SubscriberPackageVersionId);
+        installedArtifact.subscriberVersionId = matchedPkg.SubscriberPackageVersionId;
+        installedArtifact.type = PackageType.Unlocked;
+        installedArtifact.isOrgDependent = matchedPkg.SubscriberPackageVersion?.IsOrgDependent ?? false;
+      } else {
+        installedArtifact.subscriberVersionId = 'N/A';
+        installedArtifact.type = PackageType.Source;
       }
 
-      // Pass 2: subscriber packages not tracked by sfpm
-      for (const pkg of installedPackages) {
-        if (matchedPackageIds.has(pkg.SubscriberPackageVersionId)) {
-          continue;
-        }
-
-        const spv = pkg.SubscriberPackageVersion;
-        const versionNumber = spv
-          ? `${spv.MajorVersion}.${spv.MinorVersion}.${spv.PatchVersion}.${spv.BuildNumber}`
-          : 'N/A';
-
-        let type: PackageType;
-        if (spv?.IsOrgDependent) {
-          type = PackageType.Unlocked;
-        } else if (spv?.Package2ContainerOptions === 'Managed') {
-          type = PackageType.Managed;
-        } else {
-          type = PackageType.Unlocked;
-        }
-
-        installedArtifacts.push({
-          isInstalledBySfpm: false,
-          isOrgDependent: spv?.IsOrgDependent ?? false,
-          name: pkg.SubscriberPackage?.Name ?? 'N/A',
-          subscriberVersionId: pkg.SubscriberPackageVersionId,
-          type,
-          version: versionNumber,
-        });
-      }
-
-      return installedArtifacts;
-    } catch {
-      this.logger?.warn('Unable to fetch all installed artifacts, returning empty list');
-      return [];
+      installedArtifacts.push(installedArtifact);
     }
+
+    // Pass 2: subscriber packages not tracked by sfpm
+    for (const pkg of installedPackages) {
+      if (matchedPackageIds.has(pkg.SubscriberPackageVersionId)) {
+        continue;
+      }
+
+      const spv = pkg.SubscriberPackageVersion;
+      const versionNumber = spv
+        ? `${spv.MajorVersion}.${spv.MinorVersion}.${spv.PatchVersion}.${spv.BuildNumber}`
+        : 'N/A';
+
+      let type: PackageType;
+      if (spv?.IsOrgDependent) {
+        type = PackageType.Unlocked;
+      } else if (spv?.Package2ContainerOptions === 'Managed') {
+        type = PackageType.Managed;
+      } else {
+        type = PackageType.Unlocked;
+      }
+
+      installedArtifacts.push({
+        isInstalledBySfpm: false,
+        isOrgDependent: spv?.IsOrgDependent ?? false,
+        name: pkg.SubscriberPackage?.Name ?? 'N/A',
+        subscriberVersionId: pkg.SubscriberPackageVersionId,
+        type,
+        version: versionNumber,
+      });
+    }
+
+    return installedArtifacts;
   }
 
   // -----------------------------------------------------------------------
