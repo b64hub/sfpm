@@ -1,4 +1,5 @@
 import type {EventSink} from './event-sink.js';
+import type {ErrorDetail} from './orchestration-event-bus.js';
 import type {BaseEvent} from './types.js';
 
 import {ScopedEventSink} from './event-sink.js';
@@ -26,6 +27,7 @@ export interface ResolveFailedPayload {
   componentsDeployed?: number;
   componentsTotal?: number;
   error: string;
+  errorDetails?: ErrorDetail[];
 }
 
 export interface ResolveTimeoutPayload {

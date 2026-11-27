@@ -5,7 +5,6 @@ import {
   type BuildWatcherPayload, LifecycleEngine,
   LocalValidator,
   Logger,
-  noopLogger,
   OrchestrationResult,
   PackageBuildResult,
   PackageType, parseInstallationKeys, type PendingValidationDescriptor, ProjectDefinitionProvider,
@@ -192,11 +191,16 @@ export default class Build extends SfpmCommand {
           inkInstance = undefined;
         }
 
-        const failedNames = result.failedPackages.join(', ')
-        this.error(`Build failed for: ${failedNames}`, {exit: 1})
+        const failedDetails = result.results
+        .filter(r => !r.success)
+        .map(r => `  - ${r.packageName}: ${(r.error ?? 'unknown error').replaceAll(/\s+/g, ' ').trim()}`);
+        const message = failedDetails.length > 0
+          ? `Build failed for ${failedDetails.length} package(s):\n${failedDetails.join('\n')}`
+          : `Build failed for: ${result.failedPackages.join(', ')}`;
+        this.error(message, {exit: 1})
       }
 
-      await this.handleResult(result, resolved, validationBus, inkInstance);
+      await this.handleResult(result, resolved, pinoLogger, validationBus, inkInstance);
       return result;
     } catch (error) {
       // Already a formatted oclif error (e.g. from handleResult's validation
@@ -285,7 +289,7 @@ export default class Build extends SfpmCommand {
     resolved.autoCreatedBuildOrg = {devhub: hubOrg, username}
   }
 
-  private async handleResult(result: OrchestrationResult<PackageBuildResult>, buildFlags: ResolvedBuildFlags, validationBus?: ValidationEventBus, inkInstance?: ReturnType<typeof renderApp>): Promise<void> {
+  private async handleResult(result: OrchestrationResult<PackageBuildResult>, buildFlags: ResolvedBuildFlags, logger: Logger, validationBus?: ValidationEventBus, inkInstance?: ReturnType<typeof renderApp>): Promise<void> {
     const pendingValidations = result.results
     .map(r => r.result?.pendingValidation)
     .filter((r): r is PendingValidationDescriptor => r !== null && r !== undefined)
@@ -294,7 +298,7 @@ export default class Build extends SfpmCommand {
       // Ink path: validation runs while ink is still mounted.
       // The bridge already wired validationBus → uiBus; just drive the resolver.
       if (pendingValidations.length > 0) {
-        await this.resolveValidationsInline(pendingValidations, buildFlags, validationBus)
+        await this.resolveValidationsInline(pendingValidations, buildFlags, logger, validationBus)
         // Validation is async enough that React has rendered all events by now.
         inkInstance?.unmount();
       } else {
@@ -310,7 +314,7 @@ export default class Build extends SfpmCommand {
       inkInstance?.unmount();
       inkInstance = undefined;
 
-      await this.handleValidationResults(pendingValidations, buildFlags)
+      await this.handleValidationResults(pendingValidations, buildFlags, logger)
     }
   }
 
@@ -323,6 +327,7 @@ export default class Build extends SfpmCommand {
   private async handleValidationResults(
     pendingValidations: PendingValidationDescriptor[],
     resolved: ResolvedBuildFlags,
+    logger: Logger,
   ): Promise<void> {
     if (pendingValidations.length === 0) return
 
@@ -331,7 +336,7 @@ export default class Build extends SfpmCommand {
       return;
     }
 
-    await this.resolveValidationsInline(pendingValidations, resolved);
+    await this.resolveValidationsInline(pendingValidations, resolved, logger);
   }
 
   private async handleValidationResultsAsync(pendingValidations: PendingValidationDescriptor[], resolved: ResolvedBuildFlags): Promise<void> {
@@ -484,6 +489,7 @@ export default class Build extends SfpmCommand {
   private async resolveValidationsInline(
     descriptors: PendingValidationDescriptor[],
     resolved: ResolvedBuildFlags,
+    logger: Logger,
     externalBus?: ValidationEventBus,
   ): Promise<void> {
     const projectService = await ProjectService.getInstance(resolved.projectDir);
@@ -494,7 +500,7 @@ export default class Build extends SfpmCommand {
       const resolver = new ValidationResolver(
         projectService.getDefinitionProvider(),
         projectService.getProjectGraph(),
-        noopLogger,
+        logger,
         externalBus,
       );
       const results = await resolver.resolve(descriptors, {
@@ -502,10 +508,13 @@ export default class Build extends SfpmCommand {
       });
       const failures: string[] = [];
       for (const [packageName, result] of results) {
-        if (result.status === 'failed') failures.push(`${packageName}: ${result.error}`);
+        if (result.status === 'failed') failures.push(`${packageName}: ${(result.error ?? 'unknown error').replaceAll(/\s+/g, ' ').trim()}`);
       }
 
-      if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s):\n${failures.map(f => `  - ${f}`).join('\n')}`, {exit: 1});
+      if (failures.length > 0) {
+        this.error(`Validation failed for ${failures.length} package(s):\n${failures.map(f => `  - ${f}`).join('\n')}`, {exit: 1});
+      }
+
       return;
     }
 
@@ -514,7 +523,7 @@ export default class Build extends SfpmCommand {
     const resolver = new ValidationResolver(
       projectService.getDefinitionProvider(),
       projectService.getProjectGraph(),
-      noopLogger,
+      logger,
     );
 
     const results = await resolver.resolve(descriptors, {
@@ -523,9 +532,11 @@ export default class Build extends SfpmCommand {
 
     const failures: string[] = [];
     for (const [packageName, result] of results) {
-      if (result.status === 'failed') failures.push(`${packageName}: ${result.error}`);
+      if (result.status === 'failed') failures.push(`${packageName}: ${(result.error ?? 'unknown error').replaceAll(/\s+/g, ' ').trim()}`);
     }
 
-    if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s):\n${failures.map(f => `  - ${f}`).join('\n')}`, {exit: 1});
+    if (failures.length > 0) {
+      this.error(`Validation failed for ${failures.length} package(s):\n${failures.map(f => `  - ${f}`).join('\n')}`, {exit: 1});
+    }
   }
 }

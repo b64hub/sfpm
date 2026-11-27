@@ -140,7 +140,12 @@ export class DeployValidationResolver {
         pkgResult.packageName,
         pkgResult.success
           ? {checks: ['deploy'], status: 'passed'}
-          : {checks: ['deploy'], error: pkgResult.error ?? 'Installation failed', status: 'failed'},
+          : {
+            checks: ['deploy'],
+            error: pkgResult.error ?? 'Installation failed',
+            errorDetails: pkgResult.errorDetails,
+            status: 'failed',
+          },
       );
     }
 

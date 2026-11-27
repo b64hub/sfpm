@@ -60,7 +60,9 @@ async function run(): Promise<void> {
       }
     }
 
-    const resultPayload = Object.fromEntries(results);
+    // errorDetails can be thousands of entries — keep them out of the watcher state file
+    const resultEntries = [...results].map(([packageName, result]) => [packageName, result.status === 'failed' ? {...result, errorDetails: undefined} : result] as const);
+    const resultPayload = Object.fromEntries(resultEntries);
 
     if (failures.length > 0) {
       state.watcherStatus = 'error';

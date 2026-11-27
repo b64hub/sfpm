@@ -1,9 +1,25 @@
+import type {ErrorDetail} from '@b64hub/sfpm-core';
 import type EventEmitter from 'node:events';
 
 import {formatDuration, type RenderHandle} from '../utils/renderer-utils.js';
 
-function onOrchestrationComplete({success}: {success: boolean}) {
-  console.log(success ? 'succeeded' : 'failed');
+/** Max component-level reasons printed under a failed package before summarizing. */
+const ERROR_LINES_MAX = 5;
+
+export interface RenderOrchestratorPlainOptions {
+  /** Path to the full run log, printed when there is more detail than shown inline. */
+  logPath?: string;
+}
+
+/** One bullet per component-level reason, capped at {@link ERROR_LINES_MAX}. */
+function printErrorDetails(errorDetails: ErrorDetail[], logPath: string | undefined): void {
+  for (const {label, message} of errorDetails.slice(0, ERROR_LINES_MAX)) {
+    // Salesforce problem strings can be multi-line; keep one bullet per line.
+    console.log(`  - ${label}: ${message.replaceAll(/\s+/g, ' ').trim()}`);
+  }
+
+  const remaining = errorDetails.length - ERROR_LINES_MAX;
+  if (remaining > 0) console.log(`  +${remaining} more — see full logs${logPath ? `: ${logPath}` : ''}`);
 }
 
 /**
@@ -14,23 +30,30 @@ function onOrchestrationComplete({success}: {success: boolean}) {
  * (attachBuildBridge/attachInstallBridge) already feeds — no separate
  * wiring needed, and no dependency on the interactive tree/reducer.
  */
-export function renderOrchestratorPlain(bus: EventEmitter): RenderHandle {
+export function renderOrchestratorPlain(bus: EventEmitter, options: RenderOrchestratorPlainOptions = {}): RenderHandle {
   const startedAt = new Map<string, number>();
+
+  const onOrchestrationComplete = ({success}: {success: boolean}) => {
+    console.log(success ? 'succeeded' : 'failed');
+    if (!success && options.logPath) console.log(`Full logs: ${options.logPath}`);
+  };
 
   const onRunning = ({packageName}: {packageName: string}) => {
     startedAt.set(packageName, Date.now());
     console.log(`${packageName}: started`);
   };
 
-  const onComplete = ({detail, packageName, status}: {detail?: string; packageName: string; status: string}) => {
+  const onComplete = ({detail, errorDetails, packageName, status}: {detail?: string; errorDetails?: ErrorDetail[]; packageName: string; status: string}) => {
     if (status === 'validating') return; // not terminal yet — wait for the real outcome
 
     const started = startedAt.get(packageName);
     startedAt.delete(packageName);
     const elapsed = started ? ` (${formatDuration(Date.now() - started)})` : '';
 
-    if (status === 'failed') console.log(`${packageName}: failed${detail ? ` — ${detail}` : ''}`);
-    else if (status === 'skipped') console.log(`${packageName}: skipped`);
+    if (status === 'failed') {
+      console.log(`${packageName}: failed${detail ? ` — ${detail}` : ''}`);
+      if (errorDetails?.length) printErrorDetails(errorDetails, options.logPath);
+    } else if (status === 'skipped') console.log(`${packageName}: skipped`);
     else console.log(`${packageName}: done${elapsed}`);
   };
 

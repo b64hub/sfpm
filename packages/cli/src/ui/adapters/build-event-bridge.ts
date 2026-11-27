@@ -153,7 +153,9 @@ export function attachBuildBridge(
     uiBus.emit('step:complete', {
       detail: e.error, packageName: e.packageName, status: 'failed', step: 'validate',
     });
-    uiBus.emit('package:complete', {detail: e.error, packageName: e.packageName, status: 'failed'});
+    uiBus.emit('package:complete', {
+      detail: e.error, errorDetails: e.errorDetails, packageName: e.packageName, status: 'failed',
+    });
   });
 
   validationBus.on('resolve:timeout' as any, (e: any) => {
