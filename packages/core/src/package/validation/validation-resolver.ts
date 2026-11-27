@@ -146,6 +146,7 @@ export class ValidationResolver {
         componentsDeployed: result.componentsDeployed,
         componentsTotal: result.componentsTotal,
         error: result.error ?? 'Installation failed',
+        errorDetails: result.errorDetails,
       });
     }
   }
@@ -170,8 +171,11 @@ export class ValidationResolver {
 
       try {
         const repo = new ArtifactRepository(definition.path, this.logger, packageName);
+        // errorDetails can be thousands of entries — keep them out of dist/package.json
+        const persisted: Record<string, unknown> = {...result};
+        delete persisted.errorDetails;
         // eslint-disable-next-line no-await-in-loop
-        await repo.updateValidation(result as unknown as Record<string, unknown>);
+        await repo.updateValidation(persisted);
         this.logger?.debug(`Persisted validation result for '${packageName}'`);
       } catch (error) {
         this.logger?.warn(`Failed to persist validation for '${packageName}': ${error instanceof Error ? error.message : String(error)}`);

@@ -32,7 +32,7 @@ export interface RenderAppOptions {
  */
 export function renderApp(bus: EventEmitter, options: RenderAppOptions = {}): RenderHandle {
   const mode = options.mode ?? (process.stdout.isTTY ? 'interactive' : 'plain');
-  if (mode === 'plain') return renderOrchestratorPlain(bus);
+  if (mode === 'plain') return renderOrchestratorPlain(bus, {logPath: options.logPath});
   return render(
     <App bus={bus} logPath={options.logPath} onAdvance={options.onAdvance} org={options.org} />,
     {interactive: true},

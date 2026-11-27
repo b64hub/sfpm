@@ -1,3 +1,5 @@
+import type {ErrorDetail} from '../events/orchestration-event-bus.js';
+
 import {TestLevel} from './package.js';
 
 /**
@@ -96,6 +98,8 @@ export interface ValidationStateFailed {
   componentsTotal?: number;
   /** Human-readable error description */
   error?: string;
+  /** Component-level failure details (label + message), when the install reported them */
+  errorDetails?: ErrorDetail[];
   status: 'failed';
   /** Test coverage percentage (0–100), if measured */
   testCoverage?: number;
