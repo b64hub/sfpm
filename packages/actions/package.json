@@ -23,7 +23,7 @@
     "@b64hub/sfpm-orgs": "workspace:^0.3.0",
     "@b64hub/sfpm-telemetry": "workspace:^0.2.0",
     "@b64hub/sfpm-validation": "workspace:^0.2.0",
-    "@salesforce/core": "^8.32.6",
+    "@salesforce/core": "^9.6.0",
     "@salesforce/packaging": "^4.18.10"
   },
   "main": "./dist/index.js",
