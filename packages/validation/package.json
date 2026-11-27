@@ -39,7 +39,7 @@
     "vitest": "^4.0.17"
   },
   "optionalDependencies": {
-    "@prettier-apex/apex-ast-serializer-linux-x64": "^2.3.0"
+    "@prettier-apex/apex-ast-serializer-linux-x64": "^2.4.0"
   },
   "repository": "b64hub/sfpm"
 }

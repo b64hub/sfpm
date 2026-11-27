@@ -15,7 +15,7 @@
     "@b64hub/sfpm-validation": "workspace:*",
     "@b64hub/sfpm-telemetry": "workspace:^0.2.0",
     "@inkjs/ui": "^2.0.0",
-    "@inquirer/prompts": "^8.7.5",
+    "@inquirer/prompts": "^8.8.1",
     "@oclif/core": "^4",
     "@oclif/plugin-help": "^6",
     "@oclif/plugin-plugins": "^5",
