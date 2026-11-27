@@ -1,7 +1,7 @@
 /**
  * Workspace sync service: generates sfdx-project.json from workspace package.json files.
  *
- * This is the core engine behind `sfpm sync`. It delegates workspace discovery
+ * This is the core engine behind `sfpm project sync`. It delegates workspace discovery
  * and ProjectDefinition assembly to WorkspaceResolver, then writes the result
  * to sfdx-project.json.
  *
@@ -63,6 +63,7 @@ export class WorkspaceSync {
     // Delegate discovery and definition building to WorkspaceProvider
     const provider = new WorkspaceProvider({
       logger: this.logger,
+      namespace: this.options.namespace,
       projectDir: this.options.projectDir,
       sfdcLoginUrl: this.options.sfdcLoginUrl,
       sourceApiVersion: this.options.sourceApiVersion,
@@ -73,10 +74,9 @@ export class WorkspaceSync {
 
     this.logger?.info(`Found ${sfpmPackages?.length ?? 0} SFPM package(s): ${sfpmPackages?.map(p => p.pkgJson.name).join(', ') ?? ''}`);
 
-    // Write sfdx-project.json
+    // resolve() writes sfdx-project.json when there are packages
     const sfdxProjectPath = path.join(this.options.projectDir, 'sfdx-project.json');
-    WorkspaceProvider.ensureSfdxProject(this.options.projectDir, projectDefinition);
-    this.logger?.info(`Generated ${sfdxProjectPath}`);
+    if (projectDefinition.packages.length > 0) this.logger?.info(`Generated ${sfdxProjectPath}`);
 
     // Build result
     const packages: WorkspaceSyncPackage[] = (sfpmPackages ?? []).map(({packageDir, pkgJson}) => ({

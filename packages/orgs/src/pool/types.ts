@@ -3,6 +3,7 @@ import type {Logger} from '@b64hub/sfpm-core';
 import {OrgTypes} from '@salesforce/core';
 
 import type {PoolOrg} from '../org/pool-org.js';
+import type {PoolStage} from '../org/types.js';
 
 /**
  * Config-friendly pool type — accepts plain strings so users
@@ -216,8 +217,12 @@ export interface PoolFetchOptions {
  * Options for deleting orgs from a pool.
  */
 export interface PoolDeleteOptions {
-  /** Only delete orgs with 'InProgress' stage */
-  inProgressOnly?: boolean;
+  /**
+   * Stages to exclude from deletion (e.g. protect orgs currently
+   * `Assigned` to a developer). Defaults to none — every stage is
+   * deletable unless explicitly excluded.
+   */
+  excludeStages?: PoolStage[];
   /** Only delete orgs owned by the current user */
   myPool?: boolean;
 }

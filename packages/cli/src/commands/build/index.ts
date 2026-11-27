@@ -60,7 +60,7 @@ export default class Build extends SfpmCommand {
       required: true,
     }),
   }
-  static override description = 'build packages'
+  static override description = 'Build packages'
   /**
    * Lifecycle stage: **build**
    *
@@ -83,7 +83,7 @@ export default class Build extends SfpmCommand {
     'installation-key': Flags.string({char: 'k', description: 'installation key for unlocked packages; repeat as <package>=<key>, or a bare value as the default', multiple: true}),
     'no-dependencies': Flags.boolean({default: false, description: 'build the specified packages without their transitive dependencies'}),
     'source-only': Flags.boolean({description: 'route all packages through source deployment (no DevHub, no package version IDs)', env: 'SFPM_SOURCE_ONLY'}),
-    tag: Flags.string({char: 't', description: 'tag for the build'}),
+    tag: Flags.string({char: 't', description: 'package version tag for unlocked packages (passed to sf package version create --tag)'}),
     'target-dev-hub': Flags.string({
       char: 'v',
       async defaultHelp() {
@@ -99,11 +99,10 @@ export default class Build extends SfpmCommand {
     }),
     turbo: Flags.boolean({description: 'single-package mode for external orchestrators (implies --no-dependencies)'}),
     validation: Flags.string({
-      allowNo: true,
       char: 'l',
       default: 'local',
-      description: 'validation level (use --no-validation to skip)',
-      options: ['local', 'org', 'full'],
+      description: 'validation level (use --validation none to skip)',
+      options: ['local', 'org', 'full', 'none'],
     }),
     wait: Flags.integer({
       char: 'w', default: 120, description: 'timeout in minutes for package version creation', min: 1,
@@ -197,9 +196,13 @@ export default class Build extends SfpmCommand {
         this.error(`Build failed for: ${failedNames}`, {exit: 1})
       }
 
-      this.handleResult(result, resolved, validationBus, inkInstance);
+      await this.handleResult(result, resolved, validationBus, inkInstance);
       return result;
     } catch (error) {
+      // Already a formatted oclif error (e.g. from handleResult's validation
+      // failure reporting) — rethrow as-is instead of re-wrapping with exit 2.
+      if (error && typeof error === 'object' && 'oclif' in error) throw error
+
       if (error instanceof Error) {
         this.error(error.message, {exit: 2})
       }
@@ -437,8 +440,7 @@ export default class Build extends SfpmCommand {
       this.turboResultDir = projectConfig.getPackageDir(resolvedPackages[0]);
     }
 
-    // Resolve validation level: --no-validation → 'none', --validation=X → X, default → 'local'
-    const validation = (flags.validation === 'false' ? 'none' : flags.validation ?? 'local') as 'full' | 'local' | 'none' | 'org';
+    const validation = flags.validation as ValidationLevel;
 
     // Resolve devhub (not required when validation doesn't need an org)
     const needsOrg = validation === 'org' || validation === 'full';
@@ -458,7 +460,7 @@ export default class Build extends SfpmCommand {
     const buildOptions: BuildOrchestratorOptions = {
       buildNumber: flags['build-number'],
       force: flags.force,
-      unlocked: {installationKeys: flags['installation-key']?.length ? parseInstallationKeys(flags['installation-key']) : undefined, sourceOnly: flags['source-only']},
+      unlocked: {installationKeys: flags['installation-key']?.length ? parseInstallationKeys(flags['installation-key']) : undefined, sourceOnly: flags['source-only'], tag: flags.tag},
       validation,
       waitTime: flags.wait,
     }
@@ -503,7 +505,7 @@ export default class Build extends SfpmCommand {
         if (result.status === 'failed') failures.push(`${packageName}: ${result.error}`);
       }
 
-      if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1});
+      if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s):\n${failures.map(f => `  - ${f}`).join('\n')}`, {exit: 1});
       return;
     }
 
@@ -524,6 +526,6 @@ export default class Build extends SfpmCommand {
       if (result.status === 'failed') failures.push(`${packageName}: ${result.error}`);
     }
 
-    if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s)`, {exit: 1});
+    if (failures.length > 0) this.error(`Validation failed for ${failures.length} package(s):\n${failures.map(f => `  - ${f}`).join('\n')}`, {exit: 1});
   }
 }

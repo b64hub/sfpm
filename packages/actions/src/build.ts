@@ -8,6 +8,7 @@ import {
   ValidationLevel,
 } from '@b64hub/sfpm-core';
 import {createTracer} from '@b64hub/sfpm-telemetry';
+import {Org} from '@salesforce/core';
 
 import {createGitHubActionsLogger} from './logger.js';
 import {ActionsProgressRenderer} from './progress-renderer.js';
@@ -134,11 +135,15 @@ export async function build(options: BuildOptions): Promise<BuildResult> {
   }
 
   // ------------------------------------------------------------------
-  // 3. Run BuildOrchestrator (default mode with full validation)
+  // 3. Run BuildOrchestrator (validation level comes from the `validation` input)
   // ------------------------------------------------------------------
+  const devhub = options.devhubUsername
+    ? await Org.create({aliasOrUsername: options.devhubUsername})
+    : undefined;
+
   const orchestrator = BuildOrchestrator.create(
     projectConfig,
-    {},
+    {devhub},
     projectGraph,
     {
       buildNumber: options.buildNumber,

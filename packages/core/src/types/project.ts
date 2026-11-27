@@ -152,6 +152,8 @@ export interface PackageDefinition {
  * format into this canonical shape.
  */
 export interface ProjectDefinition {
+  /** Salesforce namespace written to the root sfdx-project.json. */
+  namespace?: string;
   /** The list of package directories in this project. */
   packages: PackageDefinition[];
   /** Login URL for the Salesforce org. */
@@ -217,6 +219,7 @@ export const PackageDefinitionSchema = z.object({
 }).passthrough();
 
 export const ProjectDefinitionSchema = z.object({
+  namespace: z.string().optional(),
   packages: z.array(PackageDefinitionSchema),
   sfdcLoginUrl: z.string().optional(),
   sourceApiVersion: z.string().optional(),

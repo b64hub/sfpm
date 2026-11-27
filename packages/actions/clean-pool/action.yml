@@ -17,10 +17,10 @@ inputs:
     description: 'Pool type: scratch or sandbox (default: scratch)'
     required: false
     default: 'scratch'
-  in-progress-only:
-    description: 'Only delete orgs with "In Progress" status'
+  exclude-stages:
+    description: 'Exclude orgs in these pool stages from deletion. Comma or newline separated (e.g. "Assigned,InProgress"). Default: none, deletes every stage'
     required: false
-    default: 'false'
+    default: ''
   my-pool:
     description: 'Only delete orgs created by the current user'
     required: false
